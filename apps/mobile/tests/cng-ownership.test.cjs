@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const plist = require('@expo/plist').default;
+const withPennel = require('../plugins/with-pennel.cjs');
+const { serviceFiles } = require('../plugins/native-sources.cjs');
 const { afterExistingMod, patchPodfile, variantInfo, patchAppDelegateSwift, keyboardFeasibilityEnabled } = require('../plugins/with-pennel.cjs')._test;
 
 test('Pennel mods finish after the already-registered Expo generators', async () => {
@@ -32,6 +36,35 @@ test('pod composition is idempotent and keyboard targets own only lightweight he
     assert.match(block, /pod 'PennelTyping'/);
     assert.doesNotMatch(block, /use_expo|use_react_native|PennelMobile'/);
   }
+});
+
+test('all shipping plists declare the RN architecture before Pods can rewrite sealed files', async (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'pennel-plist-architecture-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const ios = path.join(workspace, 'ios');
+  for (const file of serviceFiles) {
+    const destination = path.join(workspace, 'native/ios/Services', file);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, 'fixture');
+  }
+  const keyboard = path.join(workspace, 'native/ios/Keyboard/Info.plist');
+  fs.mkdirSync(path.dirname(keyboard), { recursive: true });
+  fs.copyFileSync(path.resolve(__dirname, '../native/ios/Keyboard/Info.plist'), keyboard);
+  fs.mkdirSync(path.join(ios, 'ExpoWidgetsTarget'), { recursive: true });
+  fs.writeFileSync(path.join(ios, 'ExpoWidgetsTarget/Info.plist'), plist.build({ RCTNewArchEnabled: false }));
+  fs.writeFileSync(path.join(ios, 'Podfile'), "target 'Pennel' do\nend\n\ntarget 'ExpoWidgetsTarget' do\nend\n");
+  fs.writeFileSync(path.join(ios, 'Podfile.properties.json'), '{}\n');
+  const options = { bundleIdentifier: 'app.pennel.ios.preview', groupIdentifier: 'group.app.pennel.preview', scheme: 'pennel-preview', production: false };
+  const config = withPennel({ mods: { ios: { infoPlist: async (mod) => mod, dangerous: async (mod) => mod } } }, options);
+  const app = await config.mods.ios.infoPlist({ modRequest: {}, modResults: { RCTNewArchEnabled: false } });
+  assert.equal(app.modResults.RCTNewArchEnabled, true);
+  const request = { modRequest: { projectRoot: workspace, platformProjectRoot: ios } };
+  await config.mods.ios.dangerous(request);
+  const files = ['PennelKeyboard/Info.plist', 'ExpoWidgetsTarget/Info.plist'].map((file) => path.join(ios, file));
+  const original = files.map((file) => fs.readFileSync(file, 'utf8'));
+  for (const contents of original) assert.equal(plist.parse(contents).RCTNewArchEnabled, true);
+  await config.mods.ios.dangerous(request);
+  assert.deepEqual(files.map((file) => fs.readFileSync(file, 'utf8')), original);
 });
 
 test('keyboard routing probe is explicitly opt-in and cannot enter production', () => {
