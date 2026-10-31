@@ -8,7 +8,8 @@ const serviceFiles = [
   'Session/DictationSession.swift', 'Session/HandoffServer.swift', 'Session/SessionActivity.swift',
   'Meetings/MeetingRecorder.swift', 'Meetings/MeetingRuntime.swift', 'Meetings/MeetingShare.swift', 'Meetings/RecordingActivity.swift',
   'Cloud/CloudAccountModel.swift', 'Cloud/CloudFormat.swift', 'Cloud/CloudSyncRunner.swift', 'Cloud/KeychainSecretStore.swift',
-  'System/AppleIntelligence.swift', 'System/AppleSpeech.swift', 'Onboarding/OnboardingFlow.swift',
+  'System/AppleIntelligence.swift', 'System/AppleSpeech.swift', 'System/AppleSpeechPreview.swift', 'Onboarding/OnboardingFlow.swift',
+  'Keyboard/KeyboardWritingServer.swift',
   'Settings/SessionDurationSetting.swift', 'Intents/IntentEnvironment.swift',
 ];
 
@@ -28,6 +29,14 @@ function prepareNativeSources(workspace) {
   }
   link(path.join(workspace, 'artifacts/ios/PennelCore/pennel_core.swift'), path.join(generated, 'Bindings/pennel_core.swift'));
   link(path.join(workspace, 'artifacts/ios/PennelCoreFFI.xcframework'), path.join(generated, 'PennelCoreFFI.xcframework'), true);
+  const typing = path.join(workspace, 'native/ios/Typing/Generated/PennelTypingFFI.xcframework');
+  fs.mkdirSync(path.dirname(typing), { recursive: true });
+  const stagedTyping = fs.lstatSync(typing, { throwIfNoEntry: false });
+  if (stagedTyping) {
+    if (!stagedTyping.isSymbolicLink()) throw new Error('Pennel typing artifact staging must remain a generated symbolic link');
+    fs.unlinkSync(typing);
+  }
+  link(path.join(workspace, 'artifacts/ios/PennelTypingFFI.xcframework'), typing, true);
   return generated;
 }
 

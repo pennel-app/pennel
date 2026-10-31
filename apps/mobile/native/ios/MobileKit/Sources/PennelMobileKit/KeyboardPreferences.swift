@@ -40,6 +40,8 @@ public enum KeyboardPreferences {
     public static func setSuggestionsEnabled(_ enabled: Bool, in defaults: UserDefaults?) {
         defaults?.set(enabled, forKey: suggestionsKey)
         if !enabled { defaults?.removeObject(forKey: dictionaryKey) }
+        defaults?.set(UUID().uuidString, forKey: suggestionsRevisionKey)
+        touchTypingRevision(in: defaults)
     }
 
     public static func dictionary(in defaults: UserDefaults?) -> [String] {
@@ -48,11 +50,17 @@ public enum KeyboardPreferences {
     }
 
     public static func publish(dictionary: [String], interfaceLanguage: String, in defaults: UserDefaults?) {
-        defaults?.set(KeyboardInterfaceLanguage(rawValue: interfaceLanguage)?.rawValue, forKey: languageKey)
+        let language = KeyboardInterfaceLanguage(rawValue: interfaceLanguage)?.rawValue
+        let previousLanguage = defaults?.string(forKey: languageKey)
+        let previousWords = defaults?.stringArray(forKey: dictionaryKey)
+        defaults?.set(language, forKey: languageKey)
         if suggestionsEnabled(in: defaults) {
             defaults?.set(bounded(dictionary), forKey: dictionaryKey)
         } else {
             defaults?.removeObject(forKey: dictionaryKey)
+        }
+        if previousLanguage != language || previousWords != defaults?.stringArray(forKey: dictionaryKey) {
+            touchTypingRevision(in: defaults)
         }
     }
 

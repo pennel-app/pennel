@@ -435,14 +435,22 @@ public func meetingStop(_ handle: UnsafeMutableRawPointer?) -> UnsafeMutablePoin
 }
 
 @_cdecl("pennel_mac_transcribe")
-func transcribe(_ samples: UnsafePointer<Float>?, _ count: Int, _ rate: UInt32, _ rawLanguage: UnsafePointer<CChar>?, _ sink: @escaping TextSink, _ context: UnsafeMutableRawPointer?) {
+func transcribe(_ samples: UnsafePointer<Float>?, _ count: Int, _ rate: UInt32, _ rawLanguage: UnsafePointer<CChar>?, _ rawVocabulary: UnsafePointer<CChar>?, _ sink: @escaping TextSink, _ context: UnsafeMutableRawPointer?) {
     guard let samples, count > 0, rate > 0 else { completion(sink, context, value: nil, error: "No usable audio"); return }
     let owned = Array(UnsafeBufferPointer(start: samples, count: count))
     let language = decodeString(rawLanguage)
+    let vocabulary: [String]
+    if let json = decodeString(rawVocabulary) {
+        guard let words = try? JSONDecoder().decode([String].self, from: Data(json.utf8)) else {
+            completion(sink, context, value: nil, error: "Invalid speech vocabulary")
+            return
+        }
+        vocabulary = words
+    } else { vocabulary = [] }
     Task.detached {
         guard #available(macOS 26, *) else { completion(sink, context, value: nil, error: "Apple Dictation requires macOS 26 or later"); return }
         do {
-            let text = try AppleSpeechTranscriber().transcribe(samples: owned, sampleRate: rate, language: language)
+            let text = try AppleSpeechTranscriber().transcribe(samples: owned, sampleRate: rate, language: language, vocabulary: vocabulary)
             completion(sink, context, value: text)
         } catch { completion(sink, context, value: nil, error: error.localizedDescription) }
     }

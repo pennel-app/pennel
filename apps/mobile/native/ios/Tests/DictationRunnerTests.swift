@@ -4,10 +4,11 @@ import Testing
 
 private final class FakeTranscriber: SystemTranscriber, @unchecked Sendable {
     private let lock = NSLock()
-    private(set) var calls: [(count: Int, sampleRate: UInt32)] = []
+    private var recorded: [(count: Int, sampleRate: UInt32, language: String?, vocabulary: [String])] = []
+    var calls: [(count: Int, sampleRate: UInt32, language: String?, vocabulary: [String])] { lock.withLock { recorded } }
 
-    func transcribe(samples: [Float], sampleRate: UInt32, language: String?) throws -> String {
-        lock.withLock { calls.append((samples.count, sampleRate)) }
+    func transcribe(samples: [Float], sampleRate: UInt32, language: String?, vocabulary: [String]) throws -> String {
+        lock.withLock { recorded.append((samples.count, sampleRate, language, vocabulary)) }
         return "hallo wereld"
     }
 }
@@ -27,6 +28,53 @@ private func tone(seconds: Double) -> [Float] {
 }
 
 struct DictationRunnerTests {
+    @Test func apple_preview_uses_frozen_vocabulary_and_never_becomes_the_final_result() async throws {
+        let engine = try tempEngine()
+        let transcriber = FakeTranscriber()
+        engine.setSystemTranscriber(transcriber: transcriber)
+        try appleSpeechSettings(engine)
+        var settings = engine.settings()
+        settings.language = "nl"
+        settings.dictionary = ["Pennel Mobile", "pennel mobile"]
+        try engine.updateSettings(settings: settings)
+        let factory = PreviewFactoryFixture()
+        let values = PreviewTextFixture()
+        let runner = DictationRunner(engine: engine, keys: { ApiKeys(byProvider: [:]) }, previewFactory: { factory.make(language: $0, vocabulary: $1, onText: $2) })
+        settings.dictionary = ["later changed"]
+        try engine.updateSettings(settings: settings)
+        runner.startPreview { values.append($0) }
+        runner.feed(samples: [0.2, 0.3])
+        #expect(factory.language == "nl")
+        #expect(factory.vocabulary == ["Pennel Mobile"])
+        #expect(values.values == ["voorlopige woorden"])
+        let result = try await runner.run(samples: tone(seconds: 1)).get()
+        #expect(result.text == "hallo wereld")
+        #expect(transcriber.calls.first?.vocabulary == ["Pennel Mobile"])
+        factory.preview.emitLate()
+        #expect(values.values == ["voorlopige woorden"])
+    }
+
+    @Test func non_apple_provider_never_starts_a_shadow_apple_preview() throws {
+        let engine = try tempEngine()
+        var settings = engine.settings()
+        let provider = try #require(settings.providers.first { $0.kind == .groq })
+        settings.dictationStt = ModelChoice(providerId: provider.id, model: "whisper-large-v3-turbo")
+        try engine.updateSettings(settings: settings)
+        let factory = PreviewFactoryFixture()
+        let runner = DictationRunner(engine: engine, previewFactory: { factory.make(language: $0, vocabulary: $1, onText: $2) })
+        runner.startPreview { _ in Issue.record("unexpected preview") }
+        runner.feed(samples: [0.2])
+        runner.cancel()
+        #expect(factory.calls == 0)
+        #expect(try engine.history(limit: 10).isEmpty)
+    }
+
+    @Test func apple_auto_language_means_device_preferred_and_context_is_bounded() {
+        #expect(AppleSpeechTranscriber.requestedLocale(language: nil, preferredLanguages: ["nl-BE", "en-GB"]).identifier == "nl-BE")
+        #expect(AppleSpeechTranscriber.requestedLocale(language: "en-GB", preferredLanguages: ["nl-BE"]).identifier == "en-GB")
+        #expect(AppleSpeechTranscriber.analysisContext(vocabulary: (0..<120).map { "Naam \($0)" }).contextualStrings[.general]?.count == 100)
+    }
+
     @Test func runner_freezes_cleanup_verification_before_recognition() throws {
         let engine = try tempEngine()
         let runner = DictationRunner(engine: engine, keys: { ApiKeys(byProvider: [:]) })
@@ -107,4 +155,37 @@ struct DictationRunnerTests {
         #expect(after.providers.first { $0.id == after.llm.providerId }?.kind == .groq)
         #expect(after.mode == before.mode)
     }
+}
+
+private final class PreviewTextFixture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    var values: [String] { lock.withLock { recorded } }
+    func append(_ text: String) { lock.withLock { recorded.append(text) } }
+}
+
+private final class PreviewFactoryFixture: @unchecked Sendable {
+    private let lock = NSLock()
+    let preview = PreviewFixture()
+    private var savedLanguage: String?
+    private var savedVocabulary: [String] = []
+    private var count = 0
+    var language: String? { lock.withLock { savedLanguage } }
+    var vocabulary: [String] { lock.withLock { savedVocabulary } }
+    var calls: Int { lock.withLock { count } }
+    func make(language: String?, vocabulary: [String], onText: @escaping @Sendable (String) -> Void) -> any DictationPreviewing {
+        lock.withLock { savedLanguage = language; savedVocabulary = vocabulary; count += 1 }
+        preview.setCallback(onText)
+        return preview
+    }
+}
+
+private final class PreviewFixture: DictationPreviewing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var callback: (@Sendable (String) -> Void)?
+    func setCallback(_ callback: @escaping @Sendable (String) -> Void) { lock.withLock { self.callback = callback } }
+    func start() -> Bool { true }
+    func feed(_ samples: [Float]) { lock.withLock { callback }?("voorlopige woorden") }
+    func stop() {}
+    func emitLate() { lock.withLock { callback }?("late words") }
 }

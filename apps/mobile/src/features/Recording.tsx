@@ -37,7 +37,7 @@ export default function Recording() {
     }, save);
     if (result.stopped && result.saved && finalized && !draft.getCurrent().dirty && destination) {
       if (snapshot?.settings.onboarding.status === 'pending' && snapshot.settings.onboarding.goal === 'meeting') {
-        await run('onboarding-settings', 'settings.update', { settings: { ...snapshot.settings, onboarding: { ...snapshot.settings.onboarding, status: 'completed', resume_step: 'practice' } } });
+        await run('onboarding-settings', 'settings.update', { patch: { onboarding: { ...snapshot.settings.onboarding, status: 'completed', resume_step: 'practice' } } });
       }
       haptic('meetingSaved');
       router.replace({ pathname: '/meeting/[id]', params: { id: destination } });

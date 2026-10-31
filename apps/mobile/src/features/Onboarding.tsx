@@ -58,17 +58,18 @@ export default function Onboarding() {
     setStage(restoreOnboardingStep(settings.onboarding.resume_step));
   }, [settings]);
   useEffect(() => { if (snapshot) practiceSession.observe(snapshot.dictation); }, [practiceSession, snapshot?.dictation]);
-  const saveSettings = (next: Settings) => run<Settings>('onboarding-settings', 'settings.update', { settings: next });
+  const saveSettings = (patch: Partial<Settings>) => run<Settings>('onboarding-settings', 'settings.update', { patch });
   const progress = async (nextStage: OnboardingStage, nextGoal = goal, current = settings) => {
     if (!current) return false;
-    const result = await saveSettings({ ...current, onboarding: { ...current.onboarding, goal: nextGoal, resume_step: nextStage, status: 'pending' } });
+    const task = nextGoal === 'meeting' ? 'meeting_stt' : 'dictation_stt';
+    const result = await saveSettings({ [task]: current[task], onboarding: { ...current.onboarding, goal: nextGoal, resume_step: nextStage, status: 'pending' } });
     if (!result) return false;
     setGoal(nextGoal); setStage(nextStage);
     return true;
   };
   const finish = async (status: 'completed' | 'skipped') => {
     if (!settings || practiceActive || (status === 'completed' && !succeeded)) return;
-    const result = await saveSettings({ ...settings, onboarding: { ...settings.onboarding, goal, resume_step: stage, status } });
+    const result = await saveSettings({ onboarding: { ...settings.onboarding, goal, resume_step: stage, status } });
     if (result !== undefined) router.replace(goal === 'dictation' ? '/(tabs)/dictation' : '/(tabs)');
   };
   const chooseSpeech = async () => {
@@ -142,7 +143,7 @@ export default function Onboarding() {
         <Button title={copy('tryDictation')} icon="mic-outline" busy={transitioning} onPress={() => void progress('engine', 'dictation')} />
         <Button title={copy('recordMeeting')} icon="add" subtle disabled={transitioning} onPress={() => void progress('engine', 'meeting')} />
       </Section>
-      <Section><Choice label={t('interface.language')} value={settings.ui_language} options={[{ value: 'system', label: t('appearance.system') }, { value: 'en', label: 'English' }, { value: 'nl', label: 'Nederlands' }]} onChange={(ui_language) => void saveSettings({ ...settings, ui_language: ui_language as Settings['ui_language'] })} /></Section>
+      <Section><Choice label={t('interface.language')} value={settings.ui_language} options={[{ value: 'system', label: t('appearance.system') }, { value: 'en', label: 'English' }, { value: 'nl', label: 'Nederlands' }]} onChange={(ui_language) => void saveSettings({ ui_language: ui_language as Settings['ui_language'] })} /></Section>
     </>}
     {stage === 'engine' && <Section title={copy('engine')} description={copy('engineHelp')}>
       <Choice label={t('common.provider')} value={speech} options={[{ value: 'apple', label: t('mobile.onboarding.apple') }, { value: 'cloud', label: t('mobile.onboarding.cloud') }, { value: 'own', label: t('mobile.onboarding.own') }]} onChange={setSpeech} />

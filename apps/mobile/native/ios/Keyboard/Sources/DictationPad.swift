@@ -4,6 +4,7 @@ import SwiftUI
 struct DictationPad: View {
     let model: KeyboardModel
     let openSettings: () -> Void
+    var prepareFeedback: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -56,6 +57,13 @@ struct DictationPad: View {
                         .accessibilityLabel(model.copy.text(.cancel))
                 }
             }
+            if let partial = model.partialText, model.pad == .listening {
+                Text(partial)
+                    .font(.figtree(Brand.FontSize.content))
+                    .foregroundStyle(Brand.muted.color)
+                    .lineLimit(3)
+                    .accessibilityLabel(model.copy.language == .dutch ? "Voorbeeld: \(partial)" : "Preview: \(partial)")
+            }
             if let preview = model.lastResultPreview, model.pad != .listening, model.pad != .processing {
                 Text(preview)
                     .font(.figtree(Brand.FontSize.content))
@@ -104,7 +112,8 @@ struct DictationPad: View {
             KeyboardDictationGesture(label: model.primaryActionLabel,
                 hint: model.pad == .sessionOff ? model.copy.text(.manualStart) : "",
                 enabled: model.primaryActionEnabled, holdEnabled: model.pad == .ready,
-                tap: model.tapPill, holdBegan: model.holdBegan, holdEnded: model.holdEnded)
+                tap: model.tapPill, holdBegan: model.holdBegan, holdEnded: model.holdEnded,
+                prepareFeedback: prepareFeedback)
                 .padding(.horizontal, Brand.Spacing.s6)
         }
     }

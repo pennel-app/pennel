@@ -15,29 +15,90 @@ struct KeyboardRoot: View {
     let toggleSuggestions: () -> Void
     let feedback: (FeedbackEvent) -> Void
     let heightChanged: (CGFloat) -> Void
+    var prepareFeedback: () -> Void = {}
+    var moveCursor: (Int) -> Void = { _ in }
+    var deleteWord: () -> Void = {}
+    var swipe: (KeyboardSwipeGesture) -> Void = { _ in }
+    var insertToolText: (String) -> Void = { _ in }
+    var requestWriting: (KeyboardWritingAction) -> Void = { _ in }
+    var applyWriting: () -> Void = {}
+    var restoreWriting: () -> Void = {}
+    var cancelWriting: () -> Void = {}
+    var undoCorrection: () -> Void = {}
+    var saveSnippet: (String, String) -> Void = { _, _ in }
+    var deleteSnippet: (KeyboardSnippet) -> Void = { _ in }
+    var recordTouch: (KeyboardSwipeGesture) -> Void = { _ in }
     @State private var showsLetters = true
     @State private var showsHelp = false
+    @State private var showsTools = false
+    @State private var toolTab = KeyboardToolTab.emoji
+    @State private var toolQuery = ""
+    @State private var toolTypingState = KeyboardTypingState()
+    @State private var layerBeforeSlide = KeyboardLayer.letters
+    @State private var lettersBeforeSlide = true
+    @State private var toolsBeforeSlide = false
+    @State private var letterInputTarget = KeyboardLetterInputTarget()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ScaledMetric(relativeTo: .body) private var scaledKeyHeight = Brand.Spacing.s10 + Brand.Spacing.s1
     private let controlWidth = Brand.Spacing.s10 + Brand.Spacing.s1
-    private var keyHeight: CGFloat { max(controlWidth, min(scaledKeyHeight, Brand.Spacing.s10 + Brand.Spacing.s8)) }
+    private var keyHeight: CGFloat {
+        if verticalSizeClass == .compact { return max(Brand.Spacing.s8, min(scaledKeyHeight, Brand.Spacing.s10)) }
+        return max(controlWidth, min(scaledKeyHeight, Brand.Spacing.s10 + Brand.Spacing.s8))
+    }
 
     var body: some View {
         VStack(spacing: Brand.Spacing.s1) {
             if showsLetters { toolbar }
+            #if PENNEL_KEYBOARD_FEASIBILITY
+            if Bundle.main.bundleIdentifier == "app.pennel.ios.preview.keyboard" {
+                HStack(spacing: Brand.Spacing.s2) {
+                    Text("QA · Process routing only")
+                        .font(.figtree(Brand.FontSize.body))
+                        .foregroundStyle(Brand.muted.color)
+                    Spacer()
+                    KeyboardRecordingIntentProbeButton()
+                        .frame(minHeight: controlWidth)
+                        .accessibilityHint("Tests intent routing. No microphone capture is started.")
+                }
+                .font(.figtree(Brand.FontSize.content, weight: .semibold))
+                .padding(.horizontal, Brand.Spacing.s2)
+            }
+            #endif
             if showsLetters {
                 if showsHelp { guidance }
-                if let preview = model.lastResultPreview { recovery(preview) }
-                if typing.suggestionsEnabled { suggestionRow }
-                LetterPad(layout: layout, typing: typing, insert: insert, delete: delete, feedback: feedback)
+                if let preview = model.lastResultPreview, model.pad != .listening, model.pad != .processing { recovery(preview) }
+                if model.pad == .listening {
+                    Text(model.partialText ?? " ")
+                        .font(.figtree(Brand.FontSize.content))
+                        .foregroundStyle(Brand.muted.color)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, minHeight: controlWidth, maxHeight: controlWidth, alignment: .leading)
+                        .accessibilityLabel(typing.copy.language == .dutch ? "Voorbeeld: \(model.partialText ?? "")" : "Preview: \(model.partialText ?? "")")
+                        .accessibilityHidden(model.partialText == nil)
+                }
+                if showsTools {
+                    KeyboardToolsPanel(typing: typing, tab: $toolTab, query: $toolQuery, insert: insertToolText,
+                        requestWriting: requestWriting, applyWriting: applyWriting, restoreWriting: restoreWriting,
+                        cancelWriting: cancelWriting, saveSnippet: saveSnippet, deleteSnippet: deleteSnippet, feedback: feedback)
+                        .frame(height: keyHeight * (toolTab == .writing ? 5 : 3) + Brand.Spacing.s1 * 2)
+                } else if typing.suggestionsEnabled || typing.correctionOriginal != nil { suggestionRow }
+                if !showsTools || toolTab != .writing {
+                    LetterPad(layout: layout, typing: typing, insert: insertText, delete: deleteText, feedback: feedback,
+                        prepareFeedback: prepareFeedback, deleteWord: deletePreviousWord, swipe: swipe,
+                        inputTarget: letterInputTarget, allowSwipe: !searchesTools,
+                        recordTouch: { if !searchesTools { recordTouch($0) } },
+                        stateOverride: searchesTools ? $toolTypingState : nil)
+                }
             } else {
-                DictationPad(model: model, openSettings: openSettings)
+                DictationPad(model: model, openSettings: openSettings, prepareFeedback: prepareFeedback)
             }
             bottomRow
         }
         .padding(.horizontal, Brand.Spacing.s2)
         .padding(.vertical, Brand.Spacing.s2)
         .background(Brand.surface.color)
+        .buttonStyle(KeyboardPreparationButtonStyle(prepare: prepareFeedback))
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { heightChanged($0) }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: showsHelp)
@@ -49,7 +110,7 @@ struct KeyboardRoot: View {
 
     private var toolbar: some View {
         HStack(spacing: Brand.Spacing.s2) {
-            Button { showsLetters = false; feedback(.selection) } label: {
+            Button { showsLetters = false; showsTools = false; cancelWriting(); feedback(.selection) } label: {
                 Text("Pennel").font(.figtree(Brand.FontSize.content, weight: .semibold))
                     .foregroundStyle(Brand.foreground.color)
                     .frame(minWidth: controlWidth, minHeight: keyHeight)
@@ -70,7 +131,8 @@ struct KeyboardRoot: View {
                 KeyboardDictationGesture(label: model.primaryActionLabel,
                     hint: model.pad == .sessionOff ? typing.copy.text(.manualStart) : "",
                     value: actionValue, enabled: model.pad != .processing, holdEnabled: model.pad == .ready,
-                    tap: microphoneTapped, holdBegan: model.holdBegan, holdEnded: model.holdEnded)
+                    tap: microphoneTapped, holdBegan: { showsTools = false; cancelWriting(); model.holdBegan() }, holdEnded: model.holdEnded,
+                    prepareFeedback: prepareFeedback)
             }
             if model.pad == .listening || model.pad == .processing {
                 Button { model.cancel() } label: {
@@ -86,6 +148,17 @@ struct KeyboardRoot: View {
             }
             .accessibilityLabel(typing.copy.text(typing.suggestionsEnabled ? .suggestions : .suggestionsOff))
             .accessibilityHint(typing.copy.text(.suggestionsPrivacy))
+            Button {
+                showsTools.toggle(); toolQuery = ""
+                if !showsTools { cancelWriting() }
+                feedback(.selection)
+            } label: {
+                Image(systemName: showsTools ? "keyboard" : "square.grid.2x2")
+                    .foregroundStyle(showsTools ? Brand.accent.color : Brand.muted.color)
+                    .frame(width: controlWidth, height: keyHeight)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(typing.copy.language == .dutch ? (showsTools ? "Toon toetsenbord" : "Emoji, tekstfragmenten en schrijven") : (showsTools ? "Show keyboard" : "Emoji, snippets and writing"))
         }
         .frame(minHeight: keyHeight)
     }
@@ -143,7 +216,7 @@ struct KeyboardRoot: View {
         case .sessionOff, .needsFullAccess:
             showsHelp.toggle()
             feedback(.selection)
-        default: model.tapPill()
+        default: showsTools = false; cancelWriting(); model.tapPill()
         }
     }
 
@@ -169,7 +242,17 @@ struct KeyboardRoot: View {
 
     private var suggestionRow: some View {
         HStack(spacing: Brand.Spacing.s2) {
-            if typing.suggestions.isEmpty {
+            if let original = typing.correctionOriginal {
+                Button(action: undoCorrection) {
+                    HStack(spacing: Brand.Spacing.s1) {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text(original).lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: controlWidth)
+                }
+                .accessibilityLabel(typing.copy.language == .dutch ? "Herstel \(original)" : "Restore \(original)")
+            }
+            if typing.suggestions.isEmpty, typing.correctionOriginal == nil {
                 Text(typing.copy.text(.suggestionsPrivacy))
                     .foregroundStyle(Brand.muted.color)
                     .frame(maxWidth: .infinity)
@@ -196,18 +279,37 @@ struct KeyboardRoot: View {
                 KeyboardGlobeKey(target: inputModeTarget, label: typing.copy.text(.nextKeyboard))
                     .frame(width: controlWidth, height: keyHeight)
             }
-            key(text: !showsLetters || typing.state.layer != .letters ? typing.copy.text(.letters) : typing.copy.text(.numbers),
-                width: controlWidth + Brand.Spacing.s3, label: typing.copy.text(!showsLetters ? .showTyping : typing.state.layer != .letters ? .showLetters : .showNumbers)) {
-                if !showsLetters { showsLetters = true } else { typing.state.layer = typing.state.layer == .letters ? .numbers : .letters }
-                feedback(.keyPress)
-            }
-            if showsLetters { key(text: typing.showsAt ? "@" : ",", width: controlWidth - Brand.Spacing.s2) { insert(typing.showsAt ? "@" : ",") } }
-            key(text: typing.copy.text(.space), action: space)
-            if showsLetters { key(text: typing.showsURL ? ".com" : ".", width: typing.showsURL ? controlWidth + Brand.Spacing.s2 : controlWidth - Brand.Spacing.s2) { insert(typing.showsURL ? ".com" : ".") } }
+            KeyboardSymbolLayerKey(label: !showsLetters || activeLayer != .letters ? typing.copy.text(.letters) : typing.copy.text(.numbers),
+                accessibilityLabel: typing.copy.text(!showsLetters ? .showTyping : activeLayer != .letters ? .showLetters : .showNumbers),
+                inputTarget: letterInputTarget,
+                begin: {
+                    layerBeforeSlide = activeLayer
+                    lettersBeforeSlide = showsLetters; toolsBeforeSlide = showsTools
+                    if !showsLetters || (showsTools && toolTab == .writing) {
+                        showsLetters = true; showsTools = false; return false
+                    }
+                    let sliding = activeLayer == .letters
+                    setActiveLayer(sliding ? .numbers : .letters)
+                    return sliding
+                }, finish: { selected in
+                    if toolsBeforeSlide && !showsTools { cancelWriting() }
+                    if selected { setActiveLayer(.letters) } else { feedback(.keyPress) }
+                }, cancel: {
+                    showsLetters = lettersBeforeSlide; showsTools = toolsBeforeSlide; setActiveLayer(layerBeforeSlide)
+                }, insert: insertText, prepareFeedback: prepareFeedback)
+                .frame(width: controlWidth + Brand.Spacing.s3, height: keyHeight)
+            if showsLetters { key(text: typing.showsAt ? "@" : ",", width: controlWidth - Brand.Spacing.s2) { insertText(typing.showsAt ? "@" : ",") } }
+            KeyboardSpaceKey(label: typing.copy.text(.space), language: typing.copy.language, action: insertSpace,
+                moveCursor: { if !searchesTools { moveCursor($0) } }, prepareFeedback: prepareFeedback, feedback: feedback,
+                allowsCursorMovement: !searchesTools)
+                .frame(maxWidth: .infinity, minHeight: keyHeight)
+            if showsLetters { key(text: typing.showsURL ? ".com" : ".", width: typing.showsURL ? controlWidth + Brand.Spacing.s2 : controlWidth - Brand.Spacing.s2) { insertText(typing.showsURL ? ".com" : ".") } }
             if !showsLetters {
-                KeyboardDeleteKey(label: typing.copy.text(.delete), action: delete, feedback: { feedback(.keyPress) }).frame(width: controlWidth, height: keyHeight)
+                KeyboardDeleteKey(label: typing.copy.text(.delete), action: deleteText, feedback: { feedback(.keyPress) },
+                    prepareFeedback: prepareFeedback, deleteWord: deletePreviousWord).frame(width: controlWidth, height: keyHeight)
             }
-            key(text: typing.copy.text(typing.returnKey), width: controlWidth + Brand.Spacing.s5, enabled: typing.returnEnabled) { insert("\n") }
+            key(text: typing.copy.text(searchesTools ? .returnKey : typing.returnKey), width: controlWidth + Brand.Spacing.s5,
+                enabled: searchesTools || typing.returnEnabled) { insertText("\n") }
         }
     }
 
@@ -224,9 +326,40 @@ struct KeyboardRoot: View {
             .frame(maxWidth: .infinity, minHeight: keyHeight)
             .background(Brand.subtle.color, in: RoundedRectangle(cornerRadius: Brand.Radius.keycap))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyboardPreparationButtonStyle(prepare: prepareFeedback))
         .frame(width: width)
         .accessibilityLabel(label ?? text ?? "")
         .disabled(!enabled)
+    }
+
+    private var searchesTools: Bool { showsLetters && showsTools && toolTab != .writing }
+    private var activeLayer: KeyboardLayer { searchesTools ? toolTypingState.layer : typing.state.layer }
+
+    private func setActiveLayer(_ layer: KeyboardLayer) {
+        if searchesTools { toolTypingState.layer = layer } else { typing.state.layer = layer }
+    }
+
+    private func insertText(_ text: String) {
+        if searchesTools {
+            toolQuery = String((toolQuery + text).prefix(2_048))
+            toolTypingState.insertedCharacter()
+            feedback(.keyPress)
+        } else { insert(text) }
+    }
+
+    private func deleteText() {
+        if searchesTools { if !toolQuery.isEmpty { toolQuery.removeLast() } }
+        else { delete() }
+    }
+
+    private func insertSpace() {
+        if searchesTools { insertText(" ") } else { space() }
+    }
+
+    private func deletePreviousWord() {
+        if searchesTools {
+            while toolQuery.last?.isWhitespace == true { toolQuery.removeLast() }
+            while let last = toolQuery.last, !last.isWhitespace { toolQuery.removeLast() }
+        } else { deleteWord() }
     }
 }

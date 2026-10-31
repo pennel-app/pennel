@@ -325,7 +325,12 @@ mod tests {
                 samples: Vec<f32>,
                 rate: u32,
                 language: Option<String>,
+                vocabulary: Vec<String>,
             ) -> Result<String, PennelError> {
+                assert!(
+                    vocabulary.is_empty(),
+                    "provider qualification must not send private terms"
+                );
                 self.0.lock().unwrap().push((samples.len(), rate, language));
                 Ok("Synthetic local example".into())
             }

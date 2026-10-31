@@ -4,6 +4,7 @@ core/target/
 build/
 apps/macos-platform/.build/
 .DS_Store
+__pycache__/
 branding/
 build/release/
 apps/desktop/node_modules/
@@ -11,6 +12,7 @@ apps/desktop/dist/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 core/speakers/target/
+core/keyboard/target/
 output/localization-2026-10-26/
 apps/mobile/node_modules/
 apps/mobile/ios/
@@ -22,6 +24,7 @@ apps/mobile/build/
 apps/mobile/modules/pennel-mobile/generated/
 apps/mobile/native/ios/MobileKit/.build/
 apps/mobile/native/ios/MobileKit/.swiftpm/
+apps/mobile/native/ios/Typing/Generated/
 
 # Preserve ignored build artifacts in checkouts that predate shell retirement.
 apps/macos/.build/
