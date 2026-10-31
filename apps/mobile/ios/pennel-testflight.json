@@ -1,0 +1,76 @@
+{
+  "apple_team_id": "B538Q2K76C",
+  "bundle_identifier": "app.pennel.ios.preview",
+  "generated_files": {
+    "apps/mobile/ios/.xcode.env": "3c02dca07775b31ce4e77dfb3bb660d7c6e577474d65a6216f1ea9bef54e1ca6",
+    "apps/mobile/ios/ExpoWidgetsTarget/ExpoWidgetsLayoutRegistry.config.json": "271620d307dc2ca404a0661d93b30947d5e29324eac6383890fbebb4b8422175",
+    "apps/mobile/ios/ExpoWidgetsTarget/ExpoWidgetsTarget.entitlements": "41e90d3d1c308c5dabeed3b3d1b7514c5f804533f3a1e3ae785e5f50f19540e8",
+    "apps/mobile/ios/ExpoWidgetsTarget/Info.plist": "369bd6b9c2c331baa47be42ef0e853e24ee46be9598a5393ac56d61b8444516a",
+    "apps/mobile/ios/ExpoWidgetsTarget/index.swift": "e73989102a8b1eb8963c941726f9c0bb1870788891bca58a6dcd9a87af7af301",
+    "apps/mobile/ios/Pennel.xcodeproj/project.pbxproj": "0ce425bfe57b086c16d5cf60442e8f47d3afd55d22c690c760d6025a4ea07d2b",
+    "apps/mobile/ios/Pennel.xcodeproj/project.xcworkspace/contents.xcworkspacedata": "7f3b00b5c3fdb45242d7b87e1e5c4e25d1fa8129a16c94295ecc4e8ea2235c5f",
+    "apps/mobile/ios/Pennel.xcodeproj/xcshareddata/xcschemes/Pennel.xcscheme": "f58451021d6ae61ae48e2799dd2473bc96ccd98bc8c0a2796ed94fac2594e484",
+    "apps/mobile/ios/Pennel.xcworkspace/contents.xcworkspacedata": "529bff1b888b37a0001cffb07c621bc07fa3839e2309b36b94501a3e3f1a5f38",
+    "apps/mobile/ios/Pennel/AppDelegate.swift": "4b94eb12300fc88530f62ac73c61f79699a13765d7da25fe4ac0e5646165b7cb",
+    "apps/mobile/ios/Pennel/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png": "d0af41e04e8b34fba075e34db0f3cc2a908ba11f5ba6d393d13468b9d1b11e30",
+    "apps/mobile/ios/Pennel/Images.xcassets/AppIcon.appiconset/Contents.json": "344a731ecf43e614be1d95fc1549918fae139fc41bce5db8d00c8359f712e3b2",
+    "apps/mobile/ios/Pennel/Images.xcassets/Contents.json": "632a1481b9e3b957f3b34267728744d61272e3db32751432551b9eb7c58ad7a2",
+    "apps/mobile/ios/Pennel/Info.plist": "2b0b549ee185ca522d8d46bf80d8165556e833dc5312936c0b3625ac7057a51f",
+    "apps/mobile/ios/Pennel/Pennel-Bridging-Header.h": "4a625b53abd4333ca454a4161ba62ab1b0cb44e8a4581326c0bcfe03dc26dd5c",
+    "apps/mobile/ios/Pennel/Pennel.entitlements": "41e90d3d1c308c5dabeed3b3d1b7514c5f804533f3a1e3ae785e5f50f19540e8",
+    "apps/mobile/ios/Pennel/SceneDelegate.swift": "61429e238705597529eb503571ff28b33ae8c2d00fef8726693b1f29b8d2939a",
+    "apps/mobile/ios/Pennel/SplashScreen.storyboard": "0763588212466aaec0b9121db1e318eba07aff23b29940f7df97728c6f69f2d1",
+    "apps/mobile/ios/Pennel/Supporting/Expo.plist": "9e93c2a9d202979e3b37d5b3e4e20f4dd6e88c2d48add9769a7ea98bfc7556a8",
+    "apps/mobile/ios/Pennel/Supporting/en.lproj/InfoPlist.strings": "20247669aa6c0b889008dd3b3fe118c48ffd2d48d8a16346e558a0073e9f885f",
+    "apps/mobile/ios/Pennel/Supporting/nl.lproj/InfoPlist.strings": "2a9562767284bff3ea90e35d6ac52dede2e2de7a37ae6c79bc172732bdb1b892",
+    "apps/mobile/ios/PennelKeyboard/Info.plist": "b6da4b607e7c5f23aa4814b61106d9ab11ab0cd9f1dbd41041e970ff9a079088",
+    "apps/mobile/ios/PennelKeyboard/PennelKeyboard.entitlements": "41e90d3d1c308c5dabeed3b3d1b7514c5f804533f3a1e3ae785e5f50f19540e8",
+    "apps/mobile/ios/Podfile": "5df3bdab65e8bd2f3190673083d6a071a45986d72a5caa8b9ebf061796b3f392",
+    "apps/mobile/ios/Podfile.lock": "6933d08f0eae0729f1e4ab2418b96b07125753398ec905791a193ff6dffe610d",
+    "apps/mobile/ios/Podfile.properties.json": "ac93a6f3f35514bfb10551de85d88def5fab3477262d231431284fb8144e11dc",
+    "apps/mobile/ios/TestFlight/WhatToTest.en-US.txt": "53802c0c1ac23ae3befd79ed6c05aa1c97a6d50f7c4c5c015003999d90c7d421",
+    "apps/mobile/ios/ci_scripts/ci_post_clone.sh": "5f7bcfbf02ab2bbef82d11782f5b97564cbcdffd32f0753faa0e982c66001876",
+    "apps/mobile/ios/ci_scripts/ci_post_xcodebuild.sh": "69d55d9cfff628a4d686cb2c84a76967f2409d0815316350c4e48bce11a87c93",
+    "apps/mobile/ios/ci_scripts/ci_pre_xcodebuild.sh": "cecc928e6c7285e804457d268ade09d8f5ac4561a0b5f986c78c976b7d3f8a11"
+  },
+  "inputs": {
+    "apps/mobile/Podfile.lock": "6933d08f0eae0729f1e4ab2418b96b07125753398ec905791a193ff6dffe610d",
+    "apps/mobile/app.config.ts": "26bc89c368731096ea2f061293b51c3253a1f79d72126ef8c4667ec1c9090465",
+    "apps/mobile/package-lock.json": "7c3dca94f6abf62445ec006c7e10319cd0226c4f3fc1d61515f22508c0d1fa99",
+    "apps/mobile/package.json": "1a242890bc1865431dbdcb7a91b6f80a1447741a4988cb14989fa4d32dd38f0b",
+    "apps/mobile/plugins/native-sources.cjs": "b73af105f9acaa5cba0cec461a439e64eeaab0488bc753800227e7ba4710aa17",
+    "apps/mobile/plugins/pod_helpers.rb": "9cc2630158602f703d21fec9490ff5b56f26c55f3da4cef83c794d639406b3ef",
+    "apps/mobile/plugins/with-pennel.cjs": "85dff33bcfdf46294a9a744718f00162334de6dbb0da6533c7c38c53d699dfc3",
+    "scripts/mobile-testflight-snapshot.py": "fb188f5826348ec1db1cf78b184d2251618a2d88c190b5b87acaf0b0040b8e07",
+    "scripts/xcode-cloud-post-clone.sh": "c5a21f56e2ac23b924d86adacee443cc87f6fccdec1263697d17518da9aaa10e",
+    "scripts/xcode-cloud-post-xcodebuild.sh": "0f16ee4011a71daaf6551907898c7b68039b8cd979de8550d1c9b93d3698e77c",
+    "scripts/xcode-cloud-pre-xcodebuild.sh": "b0b8e22e3db649c742835a81a9784dbb316e428b2fcfa97d78d012795c8cf75d"
+  },
+  "notes": "Verify that existing history and settings survive this update. Launch Pennel Preview without Metro or a development server. Test dictation with your chosen provider, keyboard typing and immediate Undo, and widgets. Subsequent builds of this same revision measure cold and warm build reuse.",
+  "schema": 1,
+  "source_sha": "b163616a96bd9cc0305441c5d8f2581e3a0970d2",
+  "source_tree_sha": "36766b9f573c2caadeed47e25fcce579a6178d02",
+  "validation": {
+    "checks": [
+      {
+        "name": "ci.yml",
+        "status": "success",
+        "url": "https://github.com/pennel-app/pennel/actions/runs/41239387205"
+      },
+      {
+        "name": "desktop.yml",
+        "status": "success",
+        "url": "https://github.com/pennel-app/pennel/actions/runs/41239390366"
+      },
+      {
+        "name": "mobile.yml",
+        "status": "success",
+        "url": "https://github.com/pennel-app/pennel/actions/runs/41239392781"
+      }
+    ],
+    "schema": 1,
+    "source_sha": "b163616a96bd9cc0305441c5d8f2581e3a0970d2",
+    "status": "success"
+  },
+  "variant": "preview"
+}
