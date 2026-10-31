@@ -12,31 +12,40 @@ private final class MockCloudServer: @unchecked Sendable {
     private var bodies: [String: [String: Any]] = [:]
     private let queue: DispatchQueue
     private var startup: Result<UInt16, any Error>?
+    private var startupState = "setup"
     private(set) var url = ""
 
-    init(queue: DispatchQueue = DispatchQueue(label: "mock-cloud"), startupTimeout: Duration = .seconds(5)) async throws {
+    // Hosted native-suite load has delayed listener startup checks for about 25 seconds.
+    init(queue: DispatchQueue = DispatchQueue(label: "mock-cloud"), startupTimeout: Duration = .seconds(60),
+         onStart: (@Sendable () -> Void)? = nil) async throws {
         guard startupTimeout > .zero else { throw StartupError.deadline }
+        try Task.checkCancellation()
+        let began = ContinuousClock.now
         self.queue = queue
         listener = try NWListener(using: .tcp, on: .any)
         listener.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
-            let result: Result<UInt16, any Error>
+            let result: Result<UInt16, any Error>?
             switch state {
             case .ready:
                 if let port = self.listener.port?.rawValue, port > 0 { result = .success(port) }
                 else { result = .failure(StartupError.invalidPort) }
             case .failed(let error): result = .failure(error)
             case .cancelled: result = .failure(StartupError.cancelled)
-            default: return
+            default: result = nil
             }
-            self.lock.withLock { if self.startup == nil { self.startup = result } }
+            self.lock.withLock {
+                self.startupState = String(describing: state)
+                if self.startup == nil { self.startup = result }
+            }
         }
         listener.newConnectionHandler = { [weak self] connection in
             guard let self else { connection.cancel(); return }
             self.handle(connection)
         }
         listener.start(queue: queue)
-        let deadline = ContinuousClock.now.advanced(by: startupTimeout)
+        let deadline = began.advanced(by: startupTimeout)
+        onStart?()
         do {
             while true {
                 try Task.checkCancellation()
@@ -48,6 +57,10 @@ private final class MockCloudServer: @unchecked Sendable {
                 try await Task.sleep(for: .milliseconds(10))
             }
         } catch {
+            if error as? StartupError == .deadline {
+                let state = lock.withLock { startupState }
+                print("MockCloudServer startup deadline after \(began.duration(to: ContinuousClock.now)); state=\(state)")
+            }
             listener.cancel()
             throw error
         }
@@ -183,11 +196,62 @@ struct CloudAccountTests {
         await #expect(throws: MockCloudServer.StartupError.deadline) {
             _ = try await MockCloudServer(queue: .main, startupTimeout: .zero)
         }
-        let cancelled = Task { try await MockCloudServer(queue: .main) }
+        let started = AsyncStream<Void>.makeStream()
+        let cancelled = Task {
+            defer { started.continuation.finish() }
+            return try await MockCloudServer(queue: .main, onStart: { started.continuation.yield() })
+        }
         cancelled.cancel()
         await #expect(throws: CancellationError.self) { _ = try await cancelled.value }
+        let didStart: Void? = await started.stream.first(where: { @Sendable _ in true })
+        #expect(didStart == nil)
         #expect(throws: MockCloudServer.StartupError.invalidPort) { try MockCloudServer.endpoint(port: nil) }
         #expect(throws: MockCloudServer.StartupError.invalidPort) { try MockCloudServer.endpoint(port: 0) }
+    }
+
+    @Test nonisolated func mock_listener_accepts_callbacks_delayed_beyond_five_seconds() async throws {
+        let queue = DispatchQueue(label: "mock-cloud-delayed-callbacks")
+        queue.suspend()
+        var resumed = false
+        defer { if !resumed { queue.resume() } }
+        let started = AsyncStream<Void>.makeStream()
+        let pending = Task {
+            defer { started.continuation.finish() }
+            return try await MockCloudServer(queue: queue, onStart: {
+                dispatchPrecondition(condition: .notOnQueue(queue))
+                started.continuation.yield()
+            })
+        }
+        var delayError: (any Error)?
+        if await started.stream.first(where: { _ in true }) != nil {
+            do { try await Task.sleep(for: .seconds(6)) }
+            catch { delayError = error }
+        }
+        queue.resume()
+        resumed = true
+        if delayError != nil { pending.cancel() }
+        let server = try await pending.value
+        defer { server.stop() }
+        if let delayError { throw delayError }
+        let readyPort = try #require(server.readyPort)
+        #expect(URL(string: server.url)?.port == Int(readyPort))
+    }
+
+    @Test nonisolated func mock_listener_stalled_callbacks_keep_deadline_and_cancellation() async throws {
+        let queue = DispatchQueue(label: "mock-cloud-stalled-callbacks")
+        queue.suspend()
+        defer { queue.resume() }
+        await #expect(throws: MockCloudServer.StartupError.deadline) {
+            _ = try await MockCloudServer(queue: queue, startupTimeout: .milliseconds(50))
+        }
+        let started = AsyncStream<Void>.makeStream()
+        let pending = Task {
+            defer { started.continuation.finish() }
+            return try await MockCloudServer(queue: queue, onStart: { started.continuation.yield() })
+        }
+        _ = await started.stream.first(where: { _ in true })
+        pending.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await pending.value }
     }
 
     @Test func login_start_sends_ios_platform() async throws {
