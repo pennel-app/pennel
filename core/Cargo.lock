@@ -1337,6 +1337,7 @@ dependencies = [
  "hkdf 0.13.0",
  "hmac 0.13.0",
  "mockito",
+ "pennel-keyboard",
  "pennel-speakers",
  "qrcodegen",
  "rusqlite",
@@ -1352,6 +1353,14 @@ dependencies = [
  "ureq 3.5.0",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "pennel-keyboard"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1049,8 +1049,9 @@ impl pennel_core::SystemTranscriber for AppleTranscriber {
         samples: Vec<f32>,
         sample_rate: u32,
         language: Option<String>,
+        vocabulary: Vec<String>,
     ) -> Result<String, pennel_core::PennelError> {
-        macos::transcribe(&samples, sample_rate, language.as_deref())
+        macos::transcribe(&samples, sample_rate, language.as_deref(), &vocabulary)
             .map_err(|message| pennel_core::PennelError::InvalidResponse { message })
     }
 }

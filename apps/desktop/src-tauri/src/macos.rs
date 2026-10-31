@@ -89,6 +89,7 @@ unsafe extern "C" {
         count: usize,
         rate: u32,
         language: *const c_char,
+        vocabulary: *const c_char,
         sink: TextSink,
         context: *mut c_void,
     );
@@ -695,14 +696,23 @@ impl Drop for AppleSpeechPreview {
     }
 }
 
-pub fn transcribe(samples: &[f32], rate: u32, language: Option<&str>) -> Result<String, String> {
+pub fn transcribe(
+    samples: &[f32],
+    rate: u32,
+    language: Option<&str>,
+    vocabulary: &[String],
+) -> Result<String, String> {
     let language = language.map(c_string).transpose()?;
+    let vocabulary = c_string(
+        &serde_json::to_string(vocabulary).map_err(|_| "Invalid speech vocabulary".to_owned())?,
+    )?;
     wait_text(|sink, context| unsafe {
         pennel_mac_transcribe(
             samples.as_ptr(),
             samples.len(),
             rate,
             language.as_ref().map_or(ptr::null(), |l| l.as_ptr()),
+            vocabulary.as_ptr(),
             sink,
             context,
         )

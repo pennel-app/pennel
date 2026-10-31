@@ -633,6 +633,30 @@ impl PennelEngine {
         self.command_with_settings_observed(request, selection, self.settings(), None)
     }
 
+    pub fn keyboard_writing_configuration(&self) -> String {
+        let _capture = self.inference_capture_gate();
+        crate::keyboard_writing::configuration(self, &self.settings())
+    }
+
+    /// An explicit, one-use preview job; ordinary typing never enters this provider path.
+    pub fn prepare_keyboard_writing(
+        self: Arc<Self>,
+        action: crate::KeyboardRewriteAction,
+        selection: String,
+        expected_configuration: String,
+        keys: ApiKeys,
+    ) -> Result<Arc<crate::KeyboardWritingJob>, PennelError> {
+        let system_model = self.system_llm.read().unwrap().clone();
+        crate::keyboard_writing::KeyboardWritingJob::prepare(
+            self,
+            action,
+            selection,
+            expected_configuration,
+            keys,
+            system_model,
+        )
+    }
+
     pub fn retry(&self, history_id: String, keys: ApiKeys) -> Result<DictationResult, PennelError> {
         let retained = self
             .unsaved_history
@@ -1659,6 +1683,8 @@ impl PennelEngine {
         if current.decision != settings.decision
             || current.reranking != settings.reranking
             || current.providers != settings.providers
+            || current.llm != settings.llm
+            || current.dictionary != settings.dictionary
             || current.cleanup_verification_enabled != settings.cleanup_verification_enabled
         {
             // Invalidate queued requests before their captured destination can be used.
@@ -1703,6 +1729,11 @@ impl PennelEngine {
                 message: "Finish speaker recognition before changing the Pennel Cloud account."
                     .into(),
             });
+        }
+        for request in &self.inference_requests.lock().unwrap().requests {
+            if let Some(cancellation) = request.upgrade() {
+                cancellation.cancel();
+            }
         }
         Ok(())
     }
@@ -2276,7 +2307,12 @@ impl PennelEngine {
                 message: "bad audio".into(),
             })?;
             return transcriber
-                .transcribe(samples, rate, settings.language.clone())
+                .transcribe(
+                    samples,
+                    rate,
+                    settings.language.clone(),
+                    crate::system_stt::bounded_vocabulary(&settings.dictionary),
+                )
                 .map(|text| text.trim().to_owned());
         }
         if account.kind == ProviderKind::Local {
@@ -3497,6 +3533,7 @@ mod tests {
                 _: Vec<f32>,
                 _: u32,
                 _: Option<String>,
+                _: Vec<String>,
             ) -> Result<String, PennelError> {
                 self.0.store(true, std::sync::atomic::Ordering::SeqCst);
                 Ok(String::new())
@@ -3823,7 +3860,9 @@ mod tests {
             samples: Vec<f32>,
             sample_rate: u32,
             language: Option<String>,
+            vocabulary: Vec<String>,
         ) -> Result<String, PennelError> {
+            assert_eq!(vocabulary, vec!["Pennel Mobile"]);
             Ok(format!(
                 " {} samples at {sample_rate} Hz in {} ",
                 samples.len(),
@@ -3845,6 +3884,7 @@ mod tests {
         };
         settings.providers.push(apple);
         settings.language = Some("nl".into());
+        settings.dictionary = vec!["  Pennel   Mobile ".into(), "pennel mobile".into()];
         engine.update_settings(settings).unwrap();
 
         assert_eq!(

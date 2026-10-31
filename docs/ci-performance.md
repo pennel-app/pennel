@@ -1,5 +1,11 @@
 # CI performance and compiler-cache pilot
 
+## Selected TestFlight archives
+
+The [Preview distribution route](mobile-testflight.md) adds an independent Xcode Cloud archive lane. It reuses exact-source validation, prepares only device Rust libraries and retains complete checksummed native release inputs in Cloud DerivedData. This does not qualify or enable the GitHub CAS experiment below.
+
+Measure publisher preparation, ready-job queue, toolchain/dependencies, native cache restore/build, archive/signing, upload and Apple processing separately. Preserve source/toolchain/configuration identities, native hit/miss and artifact/binding hashes. Compare one cold and at least three matched warm observations with equivalent archive controls, including setup and transfer costs. Installation/update on both iPhones is separate acceptance. No measured Cloud speedup is established merely by adding the pipeline.
+
 The CI acceleration work is tracked in [#73](https://github.com/pennel-app/pennel/issues/73). The initial changes preserve affected-platform coverage and use existing standard hosted runners. Desktop release planning/build/publication remains serialized so concurrent main pushes cannot choose the same automatic version.
 
 ## Cache ownership

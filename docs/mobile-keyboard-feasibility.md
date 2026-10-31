@@ -1,14 +1,16 @@
 # iPhone keyboard: implementation and feasibility evidence
 
-Evidence date: 27 October 2026; reproduction paths updated for shell retirement on 30 October 2026. Tracking: [keyboard improvement #39](https://github.com/pennel-app/pennel/issues/39), [Expo migration #42](https://github.com/pennel-app/pennel/issues/42), [device acceptance #18](https://github.com/pennel-app/pennel/issues/18), [signing/review #20](https://github.com/pennel-app/pennel/issues/20).
+Initial evidence: 27 October 2026; signed process-routing investigation: 31 October 2026. Tracking: [keyboard improvement #39](https://github.com/pennel-app/pennel/issues/39), [Expo migration #42](https://github.com/pennel-app/pennel/issues/42), [device acceptance #18](https://github.com/pennel-app/pennel/issues/18), [signing/review #20](https://github.com/pennel-app/pennel/issues/20). The expanded typing candidate and acceptance receipt are in [keyboard experience](mobile-keyboard-experience.md) and [mobile implementation](mobile.md#keyboard-experience-candidate--31-october-2026).
 
 ## Current conclusion
 
 The requested complete keyboard-only flow, including a cold or expired containing-app session, is **not verified**. An active microphone session can still receive the keyboard's start/stop/cancel commands. The implementation displays the inactive-session requirement honestly and never launches the containing app through the responder chain. This interim capability does not complete #39, and no decision to release with an alternative has been made.
 
-Source inspection and compiler checks are not signed-device or App Review evidence. The available paired iPhone was disconnected during the environment inspection; no physical microphone, force-quit, keyboard memory, or App Review acceptance was performed for this change.
+The signed Preview process probe now has physical evidence on an iPhone 16 Pro / iOS 27.0.1 over USB. Invoking its public SwiftUI intent button ran the harmless action in the keyboard extension, including from Settings with the containing app terminated. That route did not establish a containing-app recording path. No microphone, user force-quit, keyboard resource or App Review acceptance follows from the probe.
 
-## Implemented behavior
+## Initial implementation — 27 October 2026
+
+These bullets record the original baseline. The expanded [31 October candidate](mobile-keyboard-experience.md) adds bilingual native spelling/Rust ranking, correction, gestures, feedback profiles and explicit writing actions; its defaults and bounds are documented there.
 
 - Regular typing is the default surface, with QWERTY/AZERTY, one-shot shift and double-tap caps lock, numbers/symbols, hold-to-repeat delete, return-key traits, email/URL punctuation, and double-space period for suitable text contexts.
 - A visible Pennel microphone control supports tap and hold gestures for an already-ready session. Cancellation covers listening and processing; the native runtime owns stopping and cancelling the actual recording/recognition.
@@ -35,12 +37,24 @@ The guarded compiler/process-routing probe is `apps/mobile/native/ios/Keyboard/F
 
 The probe never requests microphone permission, starts capture, or reports recording success. If deliberately installed in a signed test harness, it writes only a bundle/process receipt with `recordingStarted: false` to the configured App Group. That receipt can establish where `perform()` ran; it cannot establish containing-app wakeup or microphone eligibility.
 
-Next signed-device investigation:
+#### Signed process-routing result — 31 October 2026
 
-1. Compile the intent declarations into the test app and keyboard targets, preserving native App Intents metadata.
-2. Invoke the dedicated probe button and inspect the receipt to establish execution process, whether the host app appears, and whether behavior differs for resident/suspended/cold/force-quit states.
-3. Only if the system provides a documented, review-compatible host execution path, test the real native recording action and required Live Activity on a controlled test recording. Record actual microphone indicators and background limits.
-4. If no allowed path is established, document the exact barrier and alternatives for the user's product decision. Do not substitute direct `perform()` calls, a forced app launch, a private API, an unrelated background mode, or an indefinitely active microphone.
+The personally signed diagnostic Preview at `3bb2ad3` compiled the probe into both app and keyboard, with native App Intents metadata extraction. The actual `Button(intent:)` was tapped on the phone; the test did not replace system invocation with a direct `perform()` call.
+
+| Host and containing-app state | Observed execution | Recording |
+| --- | --- | --- |
+| Pennel practice field; containing app running | Keyboard extension | Not started |
+| Settings search; containing app absent after a targeted `SIGTERM` | Keyboard extension; containing app still absent afterward | Not started |
+
+Both receipts identify `app.pennel.ios.preview.keyboard`, `isExtension: true` and `recordingStarted: false`. The Settings host remained visible. The process check before termination matched only the installed Preview app, and the after check confirmed its main process was absent. `SIGTERM` is not evidence of the user's app-switcher force-quit behavior. Complete private process snapshots remain local; the [public receipt](evidence/keyboard-experience-2026-10-31.json) contains only the relevant aggregate result.
+
+This narrows the result to the tested button/intent declaration on that OS and device. It does not prove that every supported system action has the same routing, that background microphone capture is permitted, or that the full #39 interaction is impossible. The normal flag-off candidates, including the final `7fad205`, were personally signed and reinstalled afterward; its artifact and final device checks are recorded separately in the final receipt.
+
+Remaining signed-device investigation:
+
+1. Investigate documented system execution paths and untested resident/suspended/cold/expired/user-force-quit states, preserving intent metadata and recording actual host visibility and execution placement.
+2. Only if the system provides a documented, review-compatible containing-app execution path, test the real native recording action and required Live Activity on a controlled test recording. Record actual microphone indicators, background limits, idle expiry, microphone release, interruption and repeated restart.
+3. If no allowed path is established, document the exact barrier and alternatives for the user's product decision. Do not substitute direct `perform()` calls, a forced app launch, a private API, an unrelated background mode, or an indefinitely active microphone.
 
 Adopting `AudioRecordingIntent` does not itself prove permission to begin audio capture from a keyboard or background process. [Apple recording-intent documentation](https://developer.apple.com/documentation/appintents/audiorecordingintent).
 
@@ -63,7 +77,7 @@ None of these alternatives has been accepted as fulfillment of #39. Keep the iss
 | Ready app session, tap/hold and stop | Command sequence and same-context once-only delivery unit tests pass | Real insertion in representative host apps |
 | App session off or expired | No launch/no start command; truthful inactive state and heartbeat expiry tests | Cold-start candidate and user-visible interaction |
 | App suspended | Native handoff design retained; keyboard compile passes | Recording/processing continue within actual OS limits |
-| App terminated or force-quit | No attempt to resurrect capture; stale heartbeat reads off | Exact OS behavior, microphone release and recovery |
+| App terminated or force-quit | No attempt to resurrect capture; stale heartbeat reads off. Signed harmless intent stayed in the extension after containing-app `SIGTERM` | Real recording path, user force-quit, microphone release and recovery |
 | Field/selection change while processing | Result is deferred; document and generation tests pass | Host callbacks and cursor movement in actual apps |
 | Keyboard dismissed/recreated | No automatic result insertion across keyboard lifetimes | Cross-app switching and keyboard process termination |
 | Cancel during processing, late result | Late result is not inserted or offered in the keyboard tests | Native inference cancellation and history behavior |
@@ -75,30 +89,33 @@ None of these alternatives has been accepted as fulfillment of #39. Keep the iss
 
 Test on supported iOS 26 and iOS 27 devices, recording exact patch versions. Include secure fields, phone pads, apps that reject third-party keyboards, long host documents, AZERTY + symbols + dictation, lock/unlock, connectivity changes and phone-call interruptions. Automated/simulator observations must remain separate from these signed-device results.
 
-## Reproducing the compiler checks
+## Reproducing the generated candidates
 
-From the repository root, with Xcode selected:
+Use canonical Expo sources and the prepared narrow typing framework. The earlier standalone `swiftc` recipe predates that framework and is not the reproduction route for the expanded candidate. From the repository root, run the normal candidate first:
 
 ```sh
-swift test --package-path apps/mobile/native/ios/MobileKit
-probe_sdk_path="$(xcrun --sdk iphoneos --show-sdk-path)"
-probe_build_dir="$(mktemp -d -t pennel-keyboard-probe)"
-xcrun swiftc -parse-as-library -swift-version 6 -target arm64-apple-ios26.0 \
-  -sdk "$probe_sdk_path" -application-extension -emit-module -enable-testing \
-  -module-name PennelMobileKit -emit-module-path "$probe_build_dir/PennelMobileKit.swiftmodule" \
-  apps/mobile/native/ios/MobileKit/Sources/PennelMobileKit/*.swift
-xcrun swiftc -typecheck -parse-as-library -swift-version 6 -target arm64-apple-ios26.0 \
-  -sdk "$probe_sdk_path" -application-extension -I "$probe_build_dir" -module-name PennelKeyboard \
-  apps/mobile/native/ios/Keyboard/Model/*.swift apps/mobile/native/ios/Keyboard/Sources/*.swift
-xcrun swiftc -typecheck -parse-as-library -swift-version 6 -target arm64-apple-ios26.0 \
-  -sdk "$probe_sdk_path" -application-extension -I "$probe_build_dir" \
-  -DPENNEL_KEYBOARD_FEASIBILITY -module-name PennelKeyboardIntentProbe \
-  apps/mobile/native/ios/Keyboard/Feasibility/KeyboardRecordingIntentProbe.swift
+env CI=1 PENNEL_VARIANT=preview make mobile-prebuild
+env CI=1 PENNEL_VARIANT=preview make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=<verified-test-simulator>'
+env CI=1 PENNEL_VARIANT=preview PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios
 ```
 
-Observed toolchain: Xcode 27.0 (27A266a), iPhoneOS SDK 27.0, Swift 6.4. Deployment target for these checks: iOS 26.0. These commands typecheck source; they do not produce signed-device or runtime acceptance.
+For the isolated process-only diagnostic, prepare the current native libraries, then generate with the opt-in Preview flag and use a separate build directory:
 
-## Local build receipt
+```sh
+env CI=1 PENNEL_VARIANT=preview npm --prefix apps/mobile run native:prepare
+env CI=1 PENNEL_VARIANT=preview PENNEL_KEYBOARD_FEASIBILITY=1 npm --prefix apps/mobile run prebuild
+(cd apps/mobile/ios && pod install)
+bash scripts/ci-xcodebuild.sh build -workspace apps/mobile/ios/Pennel.xcworkspace \
+  -scheme Pennel -configuration Release -destination 'generic/platform=iOS' \
+  -derivedDataPath apps/mobile/build/KeyboardProbeDerivedData \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
+```
+
+Run large native commands through `/Users/landerparren/.local/bin/worktree-storage run --`. Production rejects the diagnostic flag. Before a signed test, verify personal Preview signing, app/keyboard/widget entitlements and device eligibility; install in place. Restore a normal flag-off generation, build and signed installation afterward. The [final receipt](evidence/keyboard-experience-2026-10-31.json) records that restoration separately. Building or signing establishes neither microphone eligibility nor tactile/runtime acceptance.
+
+Observed toolchain: Xcode 27.0 (27A266a), iPhoneOS SDK 27.0, Swift 6.4; deployment target iOS 26.0. Full local commands, source/artifact matching and retained signing recipes are recorded in [mobile implementation](mobile.md#keyboard-experience-candidate--31-october-2026).
+
+## Initial local build receipt — 27 October 2026
 
 The working-tree keyboard change was checked on 27 October 2026:
 

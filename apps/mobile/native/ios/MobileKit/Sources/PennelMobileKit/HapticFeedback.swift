@@ -29,6 +29,61 @@ public enum FeedbackPolicy {
     }
 }
 
+public enum KeyboardFeedbackImpactStyle: String, Hashable, Sendable {
+    case soft, light, medium, rigid
+}
+
+public enum KeyboardFeedbackPulse: Equatable, Sendable {
+    case impact(style: KeyboardFeedbackImpactStyle, intensity: Double)
+    case selection, success, warning, error
+}
+
+public enum KeyboardFeedbackPolicy {
+    public static func typingPulse(
+        for style: KeyboardTypingFeedbackStyle,
+        trialProfile: KeyboardFeedbackTrialProfile? = nil
+    ) -> KeyboardFeedbackPulse? {
+        guard style != .off else { return nil }
+        if let trialProfile { return previewPulse(for: trialProfile) }
+        switch style {
+        case .off: return nil
+        case .gentle: return .impact(style: .soft, intensity: 0.4)
+        case .crisp: return .impact(style: .rigid, intensity: 0.65)
+        }
+    }
+
+    public static func previewPulse(for profile: KeyboardFeedbackTrialProfile) -> KeyboardFeedbackPulse? {
+        switch profile {
+        case .baseline, .prepared: return .impact(style: .soft, intensity: 0.4)
+        case .light: return .impact(style: .light, intensity: 0.35)
+        case .rigid: return .impact(style: .rigid, intensity: 0.25)
+        case .off: return nil
+        }
+    }
+
+    public static func preparesTyping(for preferences: KeyboardFeedbackPreferences) -> Bool {
+        typingPulse(for: preferences.typingStyle, trialProfile: preferences.trialProfile) != nil
+            && preferences.trialProfile != .baseline
+    }
+
+    public static func pulse(for event: FeedbackEvent, preferences: KeyboardFeedbackPreferences) -> KeyboardFeedbackPulse? {
+        if event == .keyPress {
+            return typingPulse(for: preferences.typingStyle, trialProfile: preferences.trialProfile)
+        }
+        guard preferences.actionFeedbackEnabled else { return nil }
+        switch event {
+        case .selection: return .selection
+        case .recordingStarted: return .impact(style: .light, intensity: 1)
+        case .recordingStopped: return .impact(style: .medium, intensity: 1)
+        case .recordingCancelled: return .impact(style: .soft, intensity: 0.4)
+        case .resultDelivered, .meetingSaved, .deviceConnected: return .success
+        case .warning: return .warning
+        case .error: return .error
+        case .keyPress: return nil
+        }
+    }
+}
+
 @MainActor
 public enum HapticFeedback {
     #if canImport(UIKit)

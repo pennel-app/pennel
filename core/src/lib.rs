@@ -24,6 +24,7 @@ mod history;
 mod http;
 mod inference;
 mod inference_engine;
+mod keyboard_writing;
 mod live_dictation;
 mod llm;
 mod local_engine;
@@ -83,6 +84,7 @@ pub use inference::{
     new_inference_config,
 };
 pub use inference_engine::{InferenceAvailability, InferenceMutation, InferenceVerification};
+pub use keyboard_writing::{KeyboardRewriteAction, KeyboardWritingJob};
 pub use live_dictation::{
     DictationPreviewMode, DictationPreviewObserver, DictationPreviewUpdate, LiveDictationSession,
 };
@@ -101,6 +103,7 @@ pub use meeting_recording::{
 pub use meetings::{MeetingInfo, NoteLine, Segment, Speaker, SpeakerName, mark_lines};
 pub use models::{DownloadListener, LocalModel, ModelState};
 pub use paste_queue::PasteQueue;
+pub use pennel_typing as keyboard;
 pub use provider::{
     ProviderAccount, ProviderKind, ProviderTask, default_base_url, default_model, new_account,
     requires_key, supports,

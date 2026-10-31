@@ -1651,6 +1651,7 @@ mod tests {
             _: Vec<f32>,
             _: u32,
             _: Option<String>,
+            _: Vec<String>,
         ) -> Result<String, PennelError> {
             self.entered.send(()).unwrap();
             self.release

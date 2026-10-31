@@ -10,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 TEST_ARGS = ["test", "--manifest-path", "core/Cargo.toml"]
+KEYBOARD_TEST_ARGS = ["test", "--manifest-path", "core/keyboard/Cargo.toml"]
 RELEASE_ARGS = ["build", "--manifest-path", "core/Cargo.toml", "--release", "--lib"]
 
 
@@ -38,7 +39,12 @@ class CoreMakeTargetTests(unittest.TestCase):
                 output.write(json.dumps(args) + "\\n")
             if args[0] == "build" and "--release" in args:
                 Path("release-built").write_text("release fixture")
-            if args[0] == os.environ.get("PENNEL_TEST_CARGO_FAILURE"):
+            failure_manifest = os.environ.get("PENNEL_TEST_CARGO_FAILURE_MANIFEST")
+            matches_manifest = not failure_manifest or (
+                "--manifest-path" in args
+                and args[args.index("--manifest-path") + 1] == failure_manifest
+            )
+            if args[0] == os.environ.get("PENNEL_TEST_CARGO_FAILURE") and matches_manifest:
                 sys.exit(17)
             """))
         cargo.chmod(0o755)
@@ -47,12 +53,15 @@ class CoreMakeTargetTests(unittest.TestCase):
         for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL"):
             self.environment.pop(name, None)
         self.environment.pop("PENNEL_TEST_CARGO_FAILURE", None)
+        self.environment.pop("PENNEL_TEST_CARGO_FAILURE_MANIFEST", None)
         self.environment["PATH"] = str(tools) + os.pathsep + os.environ["PATH"]
         self.environment["PENNEL_TEST_CARGO_LOG"] = str(self.log)
 
-    def run_make(self, target, *, failure=None, parallel=False):
+    def run_make(self, target, *, failure=None, failure_manifest=None, parallel=False):
         if failure:
             self.environment["PENNEL_TEST_CARGO_FAILURE"] = failure
+        if failure_manifest:
+            self.environment["PENNEL_TEST_CARGO_FAILURE_MANIFEST"] = failure_manifest
         command = ["make", "--no-print-directory", "-f", str(ROOT / "Makefile")]
         if parallel:
             command.append("--jobs=2")
@@ -64,7 +73,7 @@ class CoreMakeTargetTests(unittest.TestCase):
     def test_regular_tests_do_not_build_release_artifacts(self):
         result, calls = self.run_make("test")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(calls, [TEST_ARGS])
+        self.assertEqual(calls, [TEST_ARGS, KEYBOARD_TEST_ARGS])
         self.assertFalse((self.workspace / "release-built").exists())
 
     def test_core_still_builds_the_explicit_release_library(self):
@@ -76,7 +85,7 @@ class CoreMakeTargetTests(unittest.TestCase):
     def test_combined_verification_orders_release_before_tests_even_with_parallel_make(self):
         result, calls = self.run_make("verify-core", parallel=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(calls, [RELEASE_ARGS, TEST_ARGS])
+        self.assertEqual(calls, [RELEASE_ARGS, TEST_ARGS, KEYBOARD_TEST_ARGS])
 
     def test_combined_verification_stops_when_release_build_fails(self):
         result, calls = self.run_make("verify-core", failure="build", parallel=True)
@@ -93,6 +102,17 @@ class CoreMakeTargetTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(calls, [TEST_ARGS])
         self.assertFalse((self.workspace / "release-built").exists())
+
+    def test_regular_tests_propagate_keyboard_policy_failure_without_release_build(self):
+        result, calls = self.run_make("test", failure="test", failure_manifest="core/keyboard/Cargo.toml")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [TEST_ARGS, KEYBOARD_TEST_ARGS])
+        self.assertFalse((self.workspace / "release-built").exists())
+
+    def test_combined_verification_propagates_keyboard_policy_failure(self):
+        result, calls = self.run_make("verify-core", failure="test", failure_manifest="core/keyboard/Cargo.toml", parallel=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [RELEASE_ARGS, TEST_ARGS, KEYBOARD_TEST_ARGS])
 
 
 if __name__ == "__main__":

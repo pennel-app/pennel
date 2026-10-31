@@ -1,0 +1,137 @@
+name: Preview TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source commit, branch or tag to validate and distribute
+        type: string
+        required: true
+        default: main
+      what_to_test:
+        description: Optional instructions for the internal TestFlight testers
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: preview-testflight-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Validate source and publish native snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      PENNEL_VARIANT: preview
+      PENNEL_TESTFLIGHT: "1"
+    steps:
+      - name: Check out the workflow controller
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Resolve the selected source once
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: python3 scripts/mobile-testflight-checks.py resolve --source-ref "$SOURCE_REF"
+      - name: Reuse or run checks for that exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/mobile-testflight-checks.py verify --source-sha '${{ steps.source.outputs.source_sha }}'
+      - name: Check out the immutable candidate
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.source.outputs.source_sha }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require canonical Expo source
+        working-directory: candidate
+        run: |
+          test -z "$(git ls-files apps/mobile/ios)"
+          test -f apps/mobile/Podfile.lock
+          test -f scripts/xcode-cloud-post-clone.sh
+          test -f scripts/xcode-cloud-pre-xcodebuild.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: candidate/apps/mobile/package-lock.json
+      - name: Install the canonical icon converter
+        run: |
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y librsvg2-bin
+      - name: Install locked mobile dependencies
+        working-directory: candidate/apps/mobile
+        run: npm ci
+      - name: Generate the selected Preview project once
+        working-directory: candidate/apps/mobile
+        run: npm run prebuild:clean
+      - name: Prepare the allowlisted snapshot
+        env:
+          TEST_NOTES: ${{ inputs.what_to_test }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          notes = os.environ.get("TEST_NOTES", "")
+          if len(notes) > 4000:
+              raise SystemExit("Test instructions exceed 4000 characters")
+          Path("build/testflight/notes.txt").write_text(notes)
+          PY
+          python3 scripts/mobile-testflight-snapshot.py --root candidate --source-sha "$SOURCE_SHA" --validation-receipt build/testflight/validation.json --notes-file build/testflight/notes.txt
+      - name: Publish the generated build branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          gh auth setup-git --hostname github.com
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          root = Path("candidate")
+          def git(*args, **kwargs):
+              return subprocess.check_output(["git", "-C", str(root), *args], text=True, **kwargs).strip()
+          source = os.environ["SOURCE_SHA"]
+          if git("rev-parse", "HEAD") != source:
+              raise SystemExit("Candidate source changed before publication")
+          paths = json.loads((root / "build/testflight/snapshot-paths.json").read_text())
+          if not paths or any(not path.startswith("apps/mobile/ios/") for path in paths):
+              raise SystemExit("Snapshot staging paths are invalid")
+          git("add", "--force", "--", *paths)
+          tree = git("write-tree")
+          branch = "refs/heads/codex/ios-testflight"
+          previous = git("ls-remote", "--heads", "origin", branch).split()
+          parents = ["-p", source]
+          if previous:
+              git("fetch", "--no-tags", "origin", branch)
+              if previous[0] != source:
+                  parents += ["-p", previous[0]]
+          environment = dict(os.environ, GIT_AUTHOR_NAME="Pennel build publisher", GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com", GIT_COMMITTER_NAME="Pennel build publisher", GIT_COMMITTER_EMAIL="41898282+github-actions[bot]@users.noreply.github.com")
+          message = "ci(ios): publish the selected Preview source for TestFlight\n\nSource-commit: " + source + "\nConstraint: generated native project for Xcode Cloud discovery\nScope-risk: narrow\nTested: exact-source CI, desktop and mobile checks\n"
+          snapshot = git("commit-tree", tree, *parents, input=message, env=environment)
+          git("push", "origin", snapshot + ":" + branch)
+          receipt = {"schema": 1, "source_sha": source, "snapshot_sha": snapshot, "branch": branch, "validation": json.loads(Path("build/testflight/validation.json").read_text())}
+          Path("build/testflight/publication.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("Selected source: " + source + "\n\nGenerated snapshot: " + snapshot + "\n\nXcode Cloud follows codex/ios-testflight and handles signing and internal TestFlight distribution.\n")
+          PY
+      - name: Preserve publication provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-testflight-${{ steps.source.outputs.source_sha }}
+          path: |
+            build/testflight/validation.json
+            build/testflight/publication.json
+            candidate/apps/mobile/ios/pennel-testflight.json
+          if-no-files-found: warn
+          retention-days: 30

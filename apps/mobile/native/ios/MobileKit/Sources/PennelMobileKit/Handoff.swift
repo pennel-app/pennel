@@ -10,12 +10,21 @@ public struct SessionState: Codable, Equatable, Sendable {
     public var expiresAt: Date?
     public var heartbeatAt: Date
     public var level: Float
+    public var partialText: String?
+    public var previewRequestID: UUID?
 
-    public init(phase: SessionPhase, expiresAt: Date?, heartbeatAt: Date, level: Float) {
+    private enum CodingKeys: String, CodingKey {
+        case phase, expiresAt, heartbeatAt, level, partialText
+        case previewRequestID = "previewRequestId"
+    }
+
+    public init(phase: SessionPhase, expiresAt: Date?, heartbeatAt: Date, level: Float, partialText: String? = nil, previewRequestID: UUID? = nil) {
         self.phase = phase
         self.expiresAt = expiresAt
         self.heartbeatAt = heartbeatAt
         self.level = level
+        self.partialText = partialText
+        self.previewRequestID = previewRequestID
     }
 }
 
@@ -202,6 +211,15 @@ public struct HandoffClient: Sendable {
 
     public func level() -> Float {
         store.read(SessionState.self, as: .session)?.level ?? 0
+    }
+
+    public func partialText(for requestID: UUID, now: Date = Date()) -> String? {
+        guard let state = store.read(SessionState.self, as: .session), state.phase == .listening,
+              (-2...Self.heartbeatTimeout).contains(now.timeIntervalSince(state.heartbeatAt)),
+              state.expiresAt.map({ $0 > now }) != false,
+              state.previewRequestID == requestID, let text = state.partialText,
+              !text.isEmpty, text.count <= 2_048 else { return nil }
+        return text
     }
 
     /// Results older than `resultLifetime` are never inserted; they are removed and the pending id is dropped.

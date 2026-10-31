@@ -3,6 +3,8 @@ import tokens from '../../assets/brand/tokens.json';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const production = process.env.PENNEL_VARIANT === 'production';
+  const testFlight = process.env.PENNEL_TESTFLIGHT === '1';
+  if (testFlight && production) throw new Error('TestFlight distribution is restricted to Pennel Preview');
   const bundleIdentifier = production ? 'app.pennel.ios' : 'app.pennel.ios.preview';
   const groupIdentifier = production ? 'group.app.pennel' : 'group.app.pennel.preview';
   const scheme = production ? 'pennel' : 'pennel-preview';
@@ -19,10 +21,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     locales: { en: './locales/en.json', nl: './locales/nl.json' },
     ios: {
       bundleIdentifier,
+      appleTeamId: testFlight ? 'B538Q2K76C' : undefined,
       supportsTablet: true,
       buildNumber: '1',
       entitlements: { 'com.apple.security.application-groups': [groupIdentifier] },
       infoPlist: {
+        // The owner-confirmed internal Preview excludes France; see docs/mobile-testflight.md.
+        ...(testFlight ? { ITSAppUsesNonExemptEncryption: false } : {}),
         CFBundleDisplayName: production ? 'Pennel' : 'Pennel Preview',
         NSMicrophoneUsageDescription: 'Pennel uses your microphone for dictation and meeting recordings you start.',
         NSCameraUsageDescription: 'Pennel uses your camera to scan a temporary device connection code. You can enter the code instead.',
@@ -55,7 +60,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         enablePushNotifications: false,
         widgets: [],
       }],
-      ['./plugins/with-pennel.cjs', { bundleIdentifier, groupIdentifier, scheme, production }],
+      ['./plugins/with-pennel.cjs', { bundleIdentifier, groupIdentifier, scheme, production, testFlight }],
     ],
     experiments: { typedRoutes: true },
     extra: { pennelVariant: production ? 'production' : 'preview' },

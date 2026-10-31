@@ -6,11 +6,11 @@ import Speech
 /// nothing to download beyond the language assets macOS manages itself.
 @available(macOS 26, *)
 final class AppleSpeechTranscriber: @unchecked Sendable {
-    func transcribe(samples: [Float], sampleRate: UInt32, language: String?) throws -> String {
+    func transcribe(samples: [Float], sampleRate: UInt32, language: String?, vocabulary: [String]) throws -> String {
         let box = ResultBox()
         let done = DispatchSemaphore(value: 0)
         Task.detached {
-            box.result = await Result { try await Self.run(samples: samples, sampleRate: Double(sampleRate), language: language) }
+            box.result = await Result { try await Self.run(samples: samples, sampleRate: Double(sampleRate), language: language, vocabulary: vocabulary) }
             done.signal()
         }
         done.wait()
@@ -25,7 +25,7 @@ final class AppleSpeechTranscriber: @unchecked Sendable {
         return supported
     }
 
-    private static func run(samples: [Float], sampleRate: Double, language: String?) async throws -> String {
+    private static func run(samples: [Float], sampleRate: Double, language: String?, vocabulary: [String]) async throws -> String {
         let transcriber = DictationTranscriber(locale: try await locale(for: language), preset: .longDictation)
         if let install = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await install.downloadAndInstall()
@@ -37,6 +37,9 @@ final class AppleSpeechTranscriber: @unchecked Sendable {
             if result.isFinal { text += String(result.text.characters) }
         }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let context = AnalysisContext()
+        context.contextualStrings[.general] = Array(vocabulary.prefix(100))
+        try await analyzer.setContext(context)
         try await analyzer.start(inputAudioFile: file, finishAfterFile: true)
         return try await text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
