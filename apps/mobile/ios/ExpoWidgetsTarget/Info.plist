@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>NSExtension</key>
+    <dict>
+      <key>NSExtensionPointIdentifier</key>
+      <string>com.apple.widgetkit-extension</string>
+    </dict>
+    <key>ExpoWidgetsAppGroupIdentifier</key>
+    <string>group.app.pennel.preview</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>PennelAppGroupIdentifier</key>
+    <string>group.app.pennel.preview</string>
+    <key>PennelHandoffNamespace</key>
+    <string>app.pennel.ios.preview.handoff</string>
+    <key>PennelKeychainService</key>
+    <string>app.pennel.ios.preview</string>
+    <key>PennelURLScheme</key>
+    <string>pennel-preview</string>
+    <key>PennelSyncTaskIdentifier</key>
+    <string>app.pennel.ios.preview.sync</string>
+    <key>PennelFinishTaskIdentifier</key>
+    <string>app.pennel.ios.preview.finish</string>
+    <key>UIAppFonts</key>
+    <array>
+      <string>Figtree-Regular.ttf</string>
+      <string>Figtree-Medium.ttf</string>
+      <string>Figtree-SemiBold.ttf</string>
+    </array>
+  </dict>
+</plist>
