@@ -75,6 +75,7 @@ function prepareNativeFiles(config, options) {
   Object.assign(keyboardInfo, variantInfo(options), {
     CFBundleDisplayName: options.production ? 'Pennel' : 'Pennel Preview',
     CFBundleDevelopmentRegion: 'en',
+    RCTNewArchEnabled: true,
     UIAppFonts: ['Figtree-Regular.ttf', 'Figtree-Medium.ttf', 'Figtree-SemiBold.ttf'],
   });
   keyboardInfo.NSExtension.NSExtensionAttributes.IsASCIICapable = true;
@@ -86,7 +87,7 @@ function prepareNativeFiles(config, options) {
   const widgetInfoPath = path.join(ios, widgetName, 'Info.plist');
   if (!fs.existsSync(widgetInfoPath)) throw new Error('Run the expo-widgets generator before Pennel native configuration');
   const widgetInfo = plist.parse(fs.readFileSync(widgetInfoPath, 'utf8'));
-  Object.assign(widgetInfo, variantInfo(options), { UIAppFonts: keyboardInfo.UIAppFonts });
+  Object.assign(widgetInfo, variantInfo(options), { RCTNewArchEnabled: true, UIAppFonts: keyboardInfo.UIAppFonts });
   writePlist(widgetInfoPath, widgetInfo);
   const podsPath = path.join(ios, 'Podfile');
   fs.writeFileSync(podsPath, patchPodfile(fs.readFileSync(podsPath, 'utf8')));
@@ -352,7 +353,8 @@ function configureScheme(ios, testTargets, targetIds) {
 
 function withPennel(config, options) {
   config = withInfoPlist(config, (mod) => {
-    Object.assign(mod.modResults, variantInfo(options));
+    // RN's pod installer scans every shipping plist; declare its flag before sealing the snapshot.
+    Object.assign(mod.modResults, variantInfo(options), { RCTNewArchEnabled: true });
     return mod;
   });
   config = withPodfileProperties(config, (mod) => {
