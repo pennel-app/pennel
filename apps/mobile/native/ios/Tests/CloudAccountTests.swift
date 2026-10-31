@@ -58,6 +58,13 @@ private final class MockCloudServer: @unchecked Sendable {
         return "http://127.0.0.1:\(port)"
     }
 
+    var readyPort: UInt16? {
+        lock.withLock {
+            guard case .success(let port) = startup else { return nil }
+            return port
+        }
+    }
+
     func body(for path: String) -> [String: Any]? { lock.withLock { bodies[path] } }
 
     func stop() { listener.cancel() }
@@ -157,11 +164,19 @@ private func filesContaining(_ needle: Data, under root: URL) -> [String] {
 
 @MainActor
 struct CloudAccountTests {
-    @Test func mock_listener_becomes_ready_without_blocking_the_main_queue() async throws {
-        let server = try await MockCloudServer(queue: .main)
-        defer { server.stop() }
-        let port = try #require(URL(string: server.url)?.port)
-        #expect(port > 0)
+    @Test nonisolated func mock_listener_becomes_ready_without_blocking_the_caller_queue() async throws {
+        let queue = DispatchQueue(label: "mock-cloud-readiness")
+        // Sharing a private caller/callback executor tests suspension without competing for the suite's MainActor.
+        try await withTaskExecutorPreference(queue) {
+            dispatchPrecondition(condition: .onQueue(queue))
+            let server = try await MockCloudServer(queue: queue)
+            defer { server.stop() }
+            dispatchPrecondition(condition: .onQueue(queue))
+            let readyPort = try #require(server.readyPort)
+            let urlPort = try #require(URL(string: server.url)?.port)
+            #expect(readyPort > 0)
+            #expect(urlPort == Int(readyPort))
+        }
     }
 
     @Test func mock_listener_reports_deadline_and_rejects_missing_ports() async throws {
