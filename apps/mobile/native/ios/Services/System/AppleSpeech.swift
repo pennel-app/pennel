@@ -6,9 +6,9 @@ import Speech
 /// Apple's on-device dictation model (iOS 26+) as a Pennel speech provider: free, offline,
 /// nothing to download beyond the language assets iOS manages itself.
 final class AppleSpeechTranscriber: SystemTranscriber, @unchecked Sendable {
-    func transcribe(samples: [Float], sampleRate: UInt32, language: String?) throws -> String {
+    func transcribe(samples: [Float], sampleRate: UInt32, language: String?, vocabulary: [String]) throws -> String {
         do {
-            return try transcribeBlocking(samples: samples, sampleRate: sampleRate, language: language)
+            return try transcribeBlocking(samples: samples, sampleRate: sampleRate, language: language, vocabulary: vocabulary)
         } catch let error as PennelError {
             throw error
         } catch {
@@ -16,26 +16,30 @@ final class AppleSpeechTranscriber: SystemTranscriber, @unchecked Sendable {
         }
     }
 
-    private func transcribeBlocking(samples: [Float], sampleRate: UInt32, language: String?) throws -> String {
+    private func transcribeBlocking(samples: [Float], sampleRate: UInt32, language: String?, vocabulary: [String]) throws -> String {
         let box = ResultBox()
         let done = DispatchSemaphore(value: 0)
         Task.detached {
-            box.result = await Result { try await Self.run(samples: samples, sampleRate: Double(sampleRate), language: language) }
+            box.result = await Result { try await Self.run(samples: samples, sampleRate: Double(sampleRate), language: language, vocabulary: vocabulary) }
             done.signal()
         }
         done.wait()
         return try box.result!.get()
     }
 
+    static func requestedLocale(language: String?, preferredLanguages: [String] = Locale.preferredLanguages) -> Locale {
+        Locale(identifier: language ?? preferredLanguages.first ?? "en")
+    }
+
     private static func locale(for language: String?) async throws -> Locale {
-        let wanted = Locale(identifier: language ?? Locale.preferredLanguages.first ?? "en")
+        let wanted = requestedLocale(language: language)
         guard let supported = await DictationTranscriber.supportedLocale(equivalentTo: wanted) else {
             throw NativeSpeechError(message: "Apple Dictation does not support \(wanted.identifier)")
         }
         return supported
     }
 
-    private static func run(samples: [Float], sampleRate: Double, language: String?) async throws -> String {
+    private static func run(samples: [Float], sampleRate: Double, language: String?, vocabulary: [String]) async throws -> String {
         let transcriber = DictationTranscriber(locale: try await locale(for: language), preset: .longDictation)
         if let install = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await install.downloadAndInstall()
@@ -47,8 +51,22 @@ final class AppleSpeechTranscriber: SystemTranscriber, @unchecked Sendable {
             if result.isFinal { text += String(result.text.characters) }
         }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
+        try await analyzer.setContext(analysisContext(vocabulary: vocabulary))
         try await analyzer.start(inputAudioFile: file, finishAfterFile: true)
         return try await text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func analysisContext(vocabulary: [String]) -> AnalysisContext {
+        let context = AnalysisContext()
+        context.contextualStrings[.general] = Array(vocabulary.prefix(100))
+        return context
+    }
+
+    /// Capability probe only; a supported locale does not establish bilingual recognition quality.
+    static func speechTranscriberExperimentAvailable(language: String?) async -> Bool {
+        guard SpeechTranscriber.isAvailable,
+              let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale(language: language)) else { return false }
+        return await AssetInventory.status(forModules: [SpeechTranscriber(locale: locale, preset: .transcription)]) == .installed
     }
 
     private static func writeTemporaryFile(_ samples: [Float], sampleRate: Double) throws -> AVAudioFile {

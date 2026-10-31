@@ -22,6 +22,18 @@ struct HandoffClientTests {
         HandoffClient(store: store, pending: PendingHandoff())
     }
 
+    @Test func session_preview_fields_round_trip_and_legacy_states_decode() throws {
+        let request = UUID()
+        let state = SessionState(phase: .listening, expiresAt: now.addingTimeInterval(300), heartbeatAt: now, level: 0.3, partialText: "Een voorlopig woord", previewRequestID: request)
+        try store.write(state, as: .session)
+        #expect(store.read(SessionState.self, as: .session) == state)
+        let legacy = SessionState(phase: .ready, expiresAt: now.addingTimeInterval(300), heartbeatAt: now, level: 0)
+        let data = try JSONEncoder().encode(legacy)
+        let decoded = try JSONDecoder().decode(SessionState.self, from: data)
+        #expect(decoded.partialText == nil)
+        #expect(decoded.previewRequestID == nil)
+    }
+
     @Test func failure_codes_round_trip_and_legacy_results_still_decode() throws {
         let result = HandoffResult(id: UUID(), text: nil, error: "No connection", errorCode: "network", at: now)
         let encoder = JSONEncoder()

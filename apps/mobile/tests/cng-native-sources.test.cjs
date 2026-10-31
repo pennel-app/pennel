@@ -18,6 +18,7 @@ function fixture(context) {
   fs.mkdirSync(path.dirname(bindings), { recursive: true });
   fs.writeFileSync(bindings, 'matched bindings\n');
   fs.mkdirSync(path.join(workspace, 'artifacts/ios/PennelCoreFFI.xcframework'), { recursive: true });
+  fs.mkdirSync(path.join(workspace, 'artifacts/ios/PennelTypingFFI.xcframework'), { recursive: true });
   return { root, workspace };
 }
 
@@ -34,6 +35,7 @@ test('native preparation links mobile-owned services and artifacts without creat
   }
   assert.equal(fs.realpathSync(path.join(first, 'Bindings/pennel_core.swift')), path.join(workspace, 'artifacts/ios/PennelCore/pennel_core.swift'));
   assert.equal(fs.realpathSync(path.join(first, 'PennelCoreFFI.xcframework')), path.join(workspace, 'artifacts/ios/PennelCoreFFI.xcframework'));
+  assert.equal(fs.realpathSync(path.join(workspace, 'native/ios/Typing/Generated/PennelTypingFFI.xcframework')), path.join(workspace, 'artifacts/ios/PennelTypingFFI.xcframework'));
   assert(!fs.existsSync(path.join(root, 'apps/ios')));
   assert(!fs.existsSync(path.join(root, 'apps/macos')));
 });

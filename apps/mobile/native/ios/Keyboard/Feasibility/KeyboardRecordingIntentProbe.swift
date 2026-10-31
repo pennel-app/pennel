@@ -12,7 +12,8 @@ struct KeyboardRecordingIntentProbe: AudioRecordingIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        guard let directory = HandoffStore.groupDirectory else { return .result() }
+        guard let group = HandoffStore.groupDirectory?.deletingLastPathComponent() else { return .result() }
+        let directory = group.appendingPathComponent("Library/Caches/PennelKeyboardQA", isDirectory: true)
         let receipt = Receipt(
             bundleIdentifier: Bundle.main.bundleIdentifier ?? "unknown",
             processIdentifier: ProcessInfo.processInfo.processIdentifier,
@@ -35,6 +36,8 @@ struct KeyboardRecordingIntentProbe: AudioRecordingIntent {
 struct KeyboardRecordingIntentProbeButton: View {
     var body: some View {
         Button(intent: KeyboardRecordingIntentProbe()) { Text("Test intent routing") }
+            .frame(minHeight: Brand.Spacing.s10 + Brand.Spacing.s1)
+            .accessibilityIdentifier("pennel.qa.intentRouting")
     }
 }
 #endif

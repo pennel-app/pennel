@@ -43,7 +43,14 @@ private final class FakeAudioSession: AudioSessionControlling, @unchecked Sendab
 private final class FakeRunner: DictationRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var received: [[Float]] = []
+    private var previews: [@Sendable (String) -> Void] = []
+    private var fed: [[Float]] = []
     var calls: [[Float]] { lock.withLock { received } }
+    var previewSamples: [[Float]] { lock.withLock { fed } }
+
+    func startPreview(onText: @escaping @Sendable (String) -> Void) { lock.withLock { previews.append(onText) } }
+    func feed(samples: [Float]) { lock.withLock { fed.append(samples) } }
+    func emitPreview(_ text: String, index: Int) { lock.withLock { previews[index] }(text) }
 
     func run(samples: [Float]) async -> Result<DictationResult, PennelError> {
         lock.withLock { received.append(samples) }
@@ -120,6 +127,39 @@ private final class Harness {
 
 @MainActor
 struct DictationSessionTests {
+    @Test func preview_is_scoped_to_the_start_and_cleared_before_final_insertion() async throws {
+        let h = Harness()
+        #expect(await h.session.start())
+        let client = h.client
+        let startID = try await h.send(.start, with: client)
+        h.capture.feed([0.2, 0.3])
+        #expect(h.runner.previewSamples == [[0.2, 0.3]])
+        h.runner.emitPreview("voorlopig", index: 0)
+        for _ in 0..<100 { if h.state?.partialText == "voorlopig" { break }; await Task.yield() }
+        #expect(h.state?.partialText == "voorlopig")
+        #expect(h.state?.previewRequestID == startID)
+        #expect(h.result == nil)
+        try await h.send(.cancel, with: client)
+        #expect(h.state?.partialText == nil)
+        #expect(h.state?.previewRequestID == nil)
+        let nextID = try await h.send(.start, with: client)
+        h.runner.emitPreview("oude poging", index: 0)
+        h.runner.emitPreview("nieuwe poging", index: 1)
+        for _ in 0..<100 { if h.state?.partialText == "nieuwe poging" { break }; await Task.yield() }
+        #expect(h.state?.partialText == "nieuwe poging")
+        #expect(h.state?.previewRequestID == nextID)
+        let stopID = try await h.send(.stop, with: client)
+        #expect(h.state?.partialText == nil)
+        #expect(h.state?.previewRequestID == nil)
+        #expect(h.result?.id == stopID)
+        #expect(h.result?.text == "hallo daar")
+        h.session.stop()
+        h.runner.emitPreview("late callback", index: 1)
+        await Task.yield()
+        #expect(h.state?.partialText == nil)
+        #expect(h.state?.phase == .off)
+    }
+
     @Test func start_stop_writes_result_with_command_id() async throws {
         let h = Harness()
         #expect(await h.session.start())

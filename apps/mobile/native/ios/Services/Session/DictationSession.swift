@@ -51,6 +51,8 @@ final class DictationSession {
     /// Bumped on every stop, so a dictation that finishes after the session ended cannot revive it.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var processingRunner: DictationRunning?
+    @ObservationIgnored private var previewRequestID: UUID?
+    @ObservationIgnored private var partialText: String?
     @ObservationIgnored private var pendingStart: UUID?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
@@ -164,6 +166,8 @@ final class DictationSession {
         guard phase != .off else { return }
         processingRunner?.cancel()
         processingRunner = nil
+        previewRequestID = nil
+        partialText = nil
         _ = gate.close()
         endMeetingDictation()
         cancelLevel?()
@@ -210,14 +214,27 @@ final class DictationSession {
         switch command.action {
         case .start:
             guard phase == .ready else { return }
-            processingRunner = runner()
+            let processing = runner()
+            processingRunner = processing
+            previewRequestID = command.id
+            partialText = nil
             // The meeting hears the same microphone: it goes silent before the dictation starts keeping samples.
             if let meeting = meeting(), meeting.isActive {
                 meeting.setDictating(true)
                 meetingDictationStartMs = meeting.elapsedMs
             }
-            gate.open()
             phase = .listening
+            let requestID = command.id
+            let generation = generation
+            processing.startPreview { [weak self] text in
+                Task { @MainActor in
+                    guard let self, self.phase == .listening,
+                          self.previewRequestID == requestID, self.generation == generation else { return }
+                    self.partialText = String(text.suffix(240))
+                    self.publish(at: self.now())
+                }
+            }
+            gate.open { processing.feed(samples: $0) }
             extendClock()
             cancelLevel = timers(0.1) { [weak self] in self?.publishLevel() }
         case .cancel:
@@ -227,6 +244,8 @@ final class DictationSession {
             }
             processingRunner?.cancel()
             processingRunner = nil
+            previewRequestID = nil
+            partialText = nil
             _ = gate.close()
             endMeetingDictation()
             stopLevel()
@@ -247,6 +266,8 @@ final class DictationSession {
     private func finish(_ command: HandoffCommand) async {
         guard let processing = processingRunner else {
             _ = gate.close()
+            previewRequestID = nil
+            partialText = nil
             endMeetingDictation()
             stopLevel()
             phase = .ready
@@ -257,6 +278,9 @@ final class DictationSession {
             return
         }
         let samples = gate.close()
+        processing.stopPreview()
+        previewRequestID = nil
+        partialText = nil
         endMeetingDictation()
         stopLevel()
         phase = .processing
@@ -319,7 +343,9 @@ final class DictationSession {
         expiresAt = clock?.expiresAt
         server.publish(SessionState(
             phase: phase, expiresAt: clock?.expiresAt, heartbeatAt: now,
-            level: phase == .listening ? gate.level : 0))
+            level: phase == .listening ? gate.level : 0,
+            partialText: phase == .listening ? partialText : nil,
+            previewRequestID: phase == .listening ? previewRequestID : nil))
     }
 
     private var activityState: SessionActivityState {
@@ -366,20 +392,24 @@ private final class SampleGate: @unchecked Sendable {
     private let buffer = DictationBuffer()
     private var phase = SessionPhase.ready
     private var currentLevel: Float = 0
+    private var onPreviewSamples: (@Sendable ([Float]) -> Void)?
 
     func feed(_ samples: [Float]) {
-        lock.withLock {
-            guard phase == .listening else { return }
+        let preview = lock.withLock { () -> (@Sendable ([Float]) -> Void)? in
+            guard phase == .listening else { return nil }
             buffer.append(samples, phase: phase)
             currentLevel = Self.level(of: samples)
+            return onPreviewSamples
         }
+        preview?(samples)
     }
 
-    func open() {
+    func open(onPreviewSamples: @escaping @Sendable ([Float]) -> Void) {
         lock.withLock {
             _ = buffer.take()
             currentLevel = 0
             phase = .listening
+            self.onPreviewSamples = onPreviewSamples
         }
     }
 
@@ -387,6 +417,7 @@ private final class SampleGate: @unchecked Sendable {
         lock.withLock {
             phase = .ready
             currentLevel = 0
+            onPreviewSamples = nil
             return buffer.take()
         }
     }

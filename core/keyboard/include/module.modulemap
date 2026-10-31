@@ -1,0 +1,4 @@
+module PennelTypingFFI {
+    header "PennelTypingFFI.h"
+    export *
+}

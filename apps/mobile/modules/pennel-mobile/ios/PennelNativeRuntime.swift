@@ -36,6 +36,9 @@ public final class PennelNativeRuntime {
     private lazy var inferenceRequests = NativeInferenceRequests(engine: model.engine)
     private var inferenceKeyRevisions: [String: UInt64] = [:]
     private var lastPublishedLanguage: String?
+    private var keyboardWriting: KeyboardWritingServer?
+    private var feedbackPreview: KeyboardFeedbackPreview?
+    private weak var feedbackPreviewView: UIView?
     private static let automaticConsent = "pennel.mobile.cloudSpeakerAutomaticConsent"
 
     private init() {}
@@ -56,6 +59,12 @@ public final class PennelNativeRuntime {
             dictation.changed = { [weak self] in self?.publish() }
             observeLifecycle()
             publishKeyboardPreferences()
+            keyboardWriting = KeyboardWritingServer(engine: model.engine, authorization: { [weak self] in
+                guard let self else { return "" }
+                let keys = self.inferenceKeyRevisions.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ";")
+                return self.accountEpoch() + "|" + keys
+            })
+            keyboardWriting?.start()
             CloudSyncRunner.shared.enterForeground()
         }
         return try snapshot()
@@ -152,6 +161,38 @@ public final class PennelNativeRuntime {
             guard let event = FeedbackEvent(rawValue: try input.required("event")), event != .keyPress else { throw PennelBridgeError("invalid_request", "Unknown feedback event.") }
             HapticFeedback.play(event)
             return "null"
+        case "keyboard.feedbackPreview":
+            guard let profile = KeyboardFeedbackPreviewProfile(rawValue: try input.required("profile")) else { throw PennelBridgeError("invalid_request", "Unknown feedback sample.") }
+            guard let view = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .filter({ $0.activationState == .foregroundActive }).flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController?.view else {
+                throw PennelBridgeError("unavailable", "Open Pennel to preview keyboard feedback.")
+            }
+            if feedbackPreviewView !== view {
+                feedbackPreview?.stop()
+                feedbackPreview = KeyboardFeedbackPreview(view: view)
+                feedbackPreviewView = view
+            }
+            if input.flag("prepare_only") { feedbackPreview?.prepare(profile: profile) }
+            else { feedbackPreview?.play(profile: profile) }
+            return "null"
+        case "keyboard.feedbackTrial":
+            let profile: KeyboardFeedbackTrialProfile?
+            if let value = input.values["profile"] as? String {
+                guard let parsed = KeyboardFeedbackTrialProfile(rawValue: value), KeyboardPreferences.typingFeedbackEnabled(in: KeyboardLayout.groupDefaults) else {
+                    throw PennelBridgeError("invalid_request", "Enable typing feedback before trying a sample.")
+                }
+                profile = parsed
+            } else if input.values["profile"] is NSNull { profile = nil }
+            else { throw PennelBridgeError("invalid_request", "Choose a feedback sample or end the trial.") }
+            KeyboardPreferences.setFeedbackTrialProfile(profile, in: KeyboardLayout.groupDefaults)
+            KeyboardPreferences.mirrorKeyboardFeedback(from: KeyboardLayout.groupDefaults, to: UserDefaults.standard)
+            return try BridgeJSON.encode(keyboardSettings())
+        case "keyboard.learning.remove":
+            let word = try input.required("word").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !word.isEmpty, word.count <= 64 else { throw PennelBridgeError("invalid_request", "Enter a word of up to 64 characters.") }
+            let defaults = KeyboardLayout.groupDefaults
+            KeyboardPreferences.forgetLearnedWord(word, in: defaults)
+            return try BridgeJSON.encode(keyboardSettings())
         case "dictation.start": try await startDictation(practice: input.flag("practice"), navigate: false); return try snapshot()
         case "dictation.stop":
             if let id = input.values["session_id"] as? String { try await dictation.stopPractice(sessionID: id) }
@@ -881,6 +922,7 @@ extension PennelNativeRuntime {
             throw PennelBridgeError("invalid_request", "Missing settings object.")
         }
         requested.removeValue(forKey: "cloud_speaker_automatic_consent")
+        let typingPatch = try NativeKeyboardSettingsPatch(removingFrom: &requested)
         let current = try BridgeJSON.object(model.engine.mobileSettingsJson())
         let keyboard = KeyboardLayout.groupDefaults
         var nextLayout: KeyboardLayout?
@@ -932,7 +974,8 @@ extension PennelNativeRuntime {
                 KeyboardPreferences.setTypingFeedbackEnabled(nextTypingFeedback, in: keyboard)
                 KeyboardPreferences.setTypingFeedbackEnabled(nextTypingFeedback, in: UserDefaults.standard)
             }
-            KeyboardPreferences.mirrorFeedback(from: keyboard, to: UserDefaults.standard)
+            typingPatch.apply(in: keyboard)
+            KeyboardPreferences.mirrorKeyboardFeedback(from: keyboard, to: UserDefaults.standard)
             nextDuration?.store()
             self.model.reloadSettings()
             self.publishKeyboardPreferences()
@@ -945,9 +988,11 @@ extension PennelNativeRuntime {
     }
 
     private func keyboardSettings() -> [String: Any] {
-        ["layout": KeyboardLayout.stored(in: KeyboardLayout.groupDefaults).rawValue,
+        var value: [String: Any] = ["layout": KeyboardLayout.stored(in: KeyboardLayout.groupDefaults).rawValue,
          "suggestions": KeyboardPreferences.suggestionsEnabled(in: KeyboardLayout.groupDefaults),
          "duration": SessionClock.Duration.stored().rawValue]
+        value.merge(NativeKeyboardSettingsPatch.projection(in: KeyboardLayout.groupDefaults)) { _, new in new }
+        return value
     }
 
     private func publishKeyboardPreferences() {
@@ -1096,6 +1141,10 @@ extension PennelNativeRuntime {
         settings["keyboard_suggestions"] = KeyboardPreferences.suggestionsEnabled(in: KeyboardLayout.groupDefaults)
         settings["haptic_feedback"] = KeyboardPreferences.feedbackEnabled(in: KeyboardLayout.groupDefaults)
         settings["keyboard_haptics"] = KeyboardPreferences.typingFeedbackEnabled(in: KeyboardLayout.groupDefaults)
+        for (key, value) in NativeKeyboardSettingsPatch.projection(in: KeyboardLayout.groupDefaults)
+            where key.hasPrefix("keyboard_") && key != "keyboard_learned_count" {
+            settings[key] = value
+        }
         settings["session_duration_seconds"] = SessionClock.Duration.stored().rawValue
         return settings
     }

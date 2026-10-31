@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { afterExistingMod, patchPodfile, variantInfo, patchAppDelegateSwift } = require('../plugins/with-pennel.cjs')._test;
+const { afterExistingMod, patchPodfile, variantInfo, patchAppDelegateSwift, keyboardFeasibilityEnabled } = require('../plugins/with-pennel.cjs')._test;
 
 test('Pennel mods finish after the already-registered Expo generators', async () => {
   const calls = [];
@@ -29,8 +29,15 @@ test('pod composition is idempotent and keyboard targets own only lightweight he
   for (const name of ['PennelKeyboard', 'PennelKeyboardTests']) {
     const block = once.match(new RegExp(`target '${name}' do\\n([\\s\\S]*?)\\nend`))[1];
     assert.match(block, /pod 'PennelMobileKit'/);
+    assert.match(block, /pod 'PennelTyping'/);
     assert.doesNotMatch(block, /use_expo|use_react_native|PennelMobile'/);
   }
+});
+
+test('keyboard routing probe is explicitly opt-in and cannot enter production', () => {
+  assert.equal(keyboardFeasibilityEnabled({ production: false }, {}), false);
+  assert.equal(keyboardFeasibilityEnabled({ production: false }, { PENNEL_KEYBOARD_FEASIBILITY: '1' }), true);
+  assert.throws(() => keyboardFeasibilityEnabled({ production: true }, { PENNEL_KEYBOARD_FEASIBILITY: '1' }), /restricted to Pennel Preview/);
 });
 
 test('pod composition replaces legacy helper package paths during non-clean generation', () => {

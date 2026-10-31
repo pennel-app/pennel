@@ -44,6 +44,47 @@ final class Harness {
 struct KeyboardModelTests {
     let h = Harness()
 
+    @Test func provisional_text_belongs_to_this_live_start_and_is_never_inserted() throws {
+        try h.session(.ready)
+        let model = h.model()
+        model.refresh()
+        model.tapPill()
+        let start = try #require(h.lastCommand)
+        try h.store.write(SessionState(phase: .listening, expiresAt: h.now.addingTimeInterval(300),
+            heartbeatAt: h.now, level: 0, partialText: "Hallo world", previewRequestID: start.id), as: .session)
+        model.refresh()
+        #expect(model.partialText == "Hallo world")
+        #expect(h.inserted.isEmpty)
+        let recreated = h.model()
+        recreated.refresh()
+        #expect(recreated.partialText == nil)
+        try h.store.write(SessionState(phase: .listening, expiresAt: h.now.addingTimeInterval(300),
+            heartbeatAt: h.now, level: 0, partialText: "Foreign preview", previewRequestID: UUID()), as: .session)
+        model.refresh()
+        #expect(model.partialText == nil)
+        #expect(h.inserted.isEmpty)
+    }
+
+    @Test func stop_context_change_and_stale_heartbeat_clear_provisional_text() throws {
+        try h.session(.ready)
+        let model = h.model()
+        model.refresh()
+        model.tapPill()
+        let start = try #require(h.lastCommand)
+        try h.store.write(SessionState(phase: .listening, expiresAt: h.now.addingTimeInterval(300),
+            heartbeatAt: h.now, level: 0, partialText: "Preview", previewRequestID: start.id), as: .session)
+        model.refresh()
+        #expect(model.partialText == "Preview")
+        model.contextDidChange()
+        #expect(model.partialText == nil)
+        model.refresh()
+        #expect(model.partialText == nil)
+        h.now = h.now.addingTimeInterval(6)
+        model.refresh()
+        #expect(model.partialText == nil)
+        #expect(h.inserted.isEmpty)
+    }
+
     @Test func no_full_access_shows_settings_hint_and_letters_still_work() throws {
         try h.session(.ready)
         let model = h.model(fullAccess: false)

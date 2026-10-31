@@ -9,6 +9,7 @@ on:
       - "assets/brand/**"
       - "assets/locales/**"
       - "scripts/build-mobile-*.sh"
+      - "scripts/build-keyboard-core-ios.sh"
       - "scripts/tests/test_mobile_core_build.py"
       - "scripts/prepare-mobile-assets.sh"
       - "scripts/mobile-device-hub*.mjs"

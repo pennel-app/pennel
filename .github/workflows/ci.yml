@@ -46,6 +46,11 @@ jobs:
         run: cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings
       - name: Rust tests
         run: cargo test --manifest-path core/Cargo.toml --lib
+      - name: Local keyboard policy
+        run: |
+          cargo fmt --manifest-path core/keyboard/Cargo.toml -- --check
+          cargo clippy --manifest-path core/keyboard/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path core/keyboard/Cargo.toml
       - name: Rust lint without local models
         run: cargo clippy --manifest-path core/Cargo.toml --lib --tests --no-default-features -- -D warnings
       - name: Rust tests without local models

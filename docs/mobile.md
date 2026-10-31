@@ -421,3 +421,67 @@ On the connected **iPhone 16 Pro / iOS 27.0.1**, actual Pennel key taps and dele
 Switching away and selecting Pennel again works. The recorded Spotlight picker flow passed three repeated reselections with Full Access off and three with it on; Pennel remained selected with suggestions enabled. A device process snapshot confirms that only the keyboard extension, not the containing Pennel process, was running during the final Spotlight checks. The baseline and final crash listings both contain 26 reports, with no new or modified report. Full Access and local suggestions were restored to their original enabled values; synthetic search text was deleted. No microphone capture or provider inference was started.
 
 Argent was updated to 0.31.0 at the user's request. Its live server and Codex configuration explicitly select the personal team for the automation runner. Hosted CI, review and merge remain tracked in PR #80. This device receipt accepts the reported keyboard-selection crash fix; keyboard-only dictation cold start, other supported devices/OS versions, resource/accessibility qualification and App Review remain separate gates.
+
+## Keyboard experience candidate — 31 October 2026
+
+[PR #82](https://github.com/pennel-app/pennel/pull/82), branch `codex/iphone-keyboard-experience`, implements the expanded plan under [#39](https://github.com/pennel-app/pennel/issues/39). The [implementation contract](mobile-keyboard-experience.md) describes the subsystem limits; the [machine-readable receipt](evidence/keyboard-experience-2026-10-31.json) separates automated, simulator, signed-device and unmeasured evidence. This candidate retains the launch-crash regression fix above. #39 stays open while review and its required device/release gates remain.
+
+The keyboard now uses native Dutch/English spelling candidates and a bounded Rust policy library for local ranking, narrow authored typo corrections, guarded Undo, optional word-pair learning and experimental swipe. The extension links the narrow typing facade rather than Pennel's engine, database, provider clients or Expo runtime. Native keys add gap-aware touch handling, accents, cursor movement and word deletion; local emoji search and manageable snippets share a tools surface with explicit selected-text writing previews. Interface language, typing languages, speech language and layout are independent. Existing preferences are retained; learning, swipe and typing feedback start off for new users.
+
+Keyboard-owned feedback generators prepare before likely commitment and release with the visible keyboard. Settings expose Off/Gentle/Crisp, immediate samples, unsaved practice and anonymously labelled temporary profile comparisons. The candidate preserves recording suppression; software checks and phone key taps do not determine the best tactile profile. Apple speech receives bounded personal vocabulary and installed-assets-only provisional text, while the chosen provider's final result remains authoritative. Explicit writing actions freeze their chosen provider configuration, preview changes and guard application/restoration against changed document context. They do not add selection content to History or give credentials to the extension.
+
+The following local commands ran from the repository root; large native/non-Rust builds used `/Users/landerparren/.local/bin/worktree-storage run --`, and Rust used its existing managed compiler-intermediate guard:
+
+```sh
+make core && make test
+scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check
+scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings
+scripts/with-toolchain.sh cargo test --manifest-path core/keyboard/Cargo.toml
+scripts/with-toolchain.sh cargo fmt --manifest-path core/keyboard/Cargo.toml -- --check
+scripts/with-toolchain.sh cargo clippy --manifest-path core/keyboard/Cargo.toml --all-targets -- -D warnings
+(cd apps/desktop && npm ci && npm run build && npm test)
+scripts/with-toolchain.sh cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+swift test --package-path apps/macos-platform
+env PENNEL_VARIANT=preview make mobile-test
+swift test --package-path apps/mobile/native/ios/MobileKit
+env CI=1 PENNEL_VARIANT=preview make mobile-prebuild
+env CI=1 PENNEL_VARIANT=preview make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=<verified-test-simulator>'
+env CI=1 PENNEL_VARIANT=preview npm --prefix apps/mobile run build:ios
+env CI=1 PENNEL_VARIANT=preview PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios
+python3 -B -m unittest discover -s scripts/tests
+python3 scripts/keyboard-benchmark.py validate
+```
+
+| Evidence | Observed result |
+| --- | --- |
+| Core and isolated typing policy | 713 core tests pass with seven existing ignored; 17 isolated typing tests pass; formatting and Clippy pass with warnings denied |
+| Desktop and affected macOS service adapters | Frontend build/231 tests, backend 224 tests and macOS platform 123 tests pass |
+| Mobile UI, helper and tooling checks | Typecheck, 11 plugin, seven widget, 100 UI, 115 latest portable helper and 121 Python tests pass; the Python suite includes 16 benchmark tests |
+| Final generation | Clean/repeated non-clean generation and six actual pod/source/linker ownership checks pass; the normal project has no diagnostic flag |
+| Final hosted native tests | 36 keyboard and 111 hosted runtime/service tests pass on iOS 26.5, including interrupted prefix edits and bounded-context refill |
+| Prior native products | Unsigned ARM64 Release simulator/device builds and the isolated signed diagnostic build pass with Xcode 27.0 / SDK 27.0 |
+| Final normal candidate `a089c94` | 36 keyboard + 111 hosted app/service tests and both ARM64 Release builds pass; personal signing, extracted-package verification, in-place installation and final device checks pass |
+
+The final personally signed Preview at [`a089c94`](https://github.com/pennel-app/pennel/commit/a089c946741ab1e9cb4119deee99f9d7e13ca22a) is retained under ignored `build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31/`. The IPA is **20,200,880 bytes**, SHA-256 `117ebb824f5d70cb14bd8d4f5e0a8cff328db0438b60200faa1a7b2cf03b8885`; keyboard UUID `3A3BCCBB-A1FD-3489-8984-5999B2490489`. App, keyboard and widget use the personal **Lander Parren** team `B538Q2K76C`, retaining Preview IDs and `group.app.pennel.preview`. Nested/deep/strict signatures, independent package extraction and matched core-source/binding hashes pass. The normal generated graph has no diagnostic flag, and the installed keyboard has no probe button. The final controller-only fix reuses the already-verified generated source graph; native preparation, hosted tests and both Release builds were repeated afterward.
+
+The verified extracted app was installed in place, without uninstalling or resetting data. All **45 Documents entries** retain baseline sizes and modification times after the final device tests; this is metadata evidence, not full content hashing. Feedback, layout, interface language, suggestions, learning/swipe and trial preferences match the baseline. Earlier artifacts, symbols, build trees, reports and QA remain retained. Signing and packaging used:
+
+```sh
+python3 build/mobile/ux-2026-10-30/sign-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31
+python3 build/mobile/ux-2026-10-30/package-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31
+xcrun devicectl device install app --device <physical-iPhone-UDID> build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31/PackagedPreview/Payload/Pennel.app
+```
+
+On **iPhone 16 Pro / iOS 27.0.1 over USB**, the final build passes actual-key correction (`A teh ` → `A the `), immediate Delete/undo and no immediate reapplication, held-delete release, and local Dutch emoji query isolation (`kat` finds cat while the host field stays empty). The custom globe switches on tap and opens the system picker on hold. **Three reselections with Full Access on, three with it off, and three Settings/app reappearances** all pass with actual typing/deletion. Full Access was verified in OS Settings and restored on. Suggestions remain on, the existing typing-feedback opt-in remains Gentle, and synthetic practice/query text was cleared. No microphone capture or provider inference was started.
+
+Crash-report inspection exposed a separate host-reappearance failure in the earlier normal build `bf69657`: an Objective-C exception in UIKit’s `needsInputModeSwitchKey` getter, reached by `install()` from `viewWillAppear`. The final fix avoids that transitional host query and keeps the existing public globe control available. This can show both Pennel’s and the system’s globe, reducing spacebar width. [Apple documents the switch-key contract](https://developer.apple.com/documentation/uikit/uiinputviewcontroller/needsinputmodeswitchkey); the observed crash and workaround are device evidence, not an Apple-documented readiness guarantee. The final test window has **no new or modified keyboard reports**, comparing paths, modification timestamps and sizes. Counts alone were insufficient: iOS rotated an older report when recording the superseded build’s crash.
+
+![Final feedback controls on iPhone](evidence/keyboard-experience-2026-10-31/feedback-phone.png)
+
+![Final correction and recovery on iPhone](evidence/keyboard-experience-2026-10-31/correction-phone.png)
+
+The diagnostic keyboard also invoked the actual public SwiftUI intent button. Its harmless action ran in the keyboard extension in the app's own practice field and in Settings search after targeted termination of the containing app. The latter left the main app absent and Settings visible; both receipts report `recordingStarted: false`. This establishes only execution placement for that route, not a supported containing-app recording path, user force-quit behavior or a general platform impossibility. [The feasibility record](mobile-keyboard-feasibility.md#signed-process-routing-result--31-october-2026) keeps cold/expired/repeated keyboard-only dictation open.
+
+Simulator UI checks established rendering and actual typing/deletion in React Native practice and UIKit Settings, plus isolated local emoji query results. Three repeated globe round trips were not qualified: Apple's first-use QuickPath overlay and keyboard visibility changes interrupted that sequence. No root-layout defect was established, so no speculative sizing patch was made. Simulator feedback preferences and the original launch environment were restored.
+
+A single physical profiling attempt could not attach Instruments to the verified keyboard process and created no trace. No CPU, resident-memory, energy, battery or physical touch/haptic-onset measurement was obtained. Binary/archive sizes do not establish memory use. The 90 authored synthetic benchmark tasks have **zero measured human trials**; the 20% faster-completion and 30% fewer-harmful-correction ambitions are targets, not achieved results. Human haptic comparison, real speech/writing quality, broader host/device/accessibility/gesture coverage, cold/expired/repeated recording, review/merge and App Review remain required acceptance work. Current-head hosted CI is tracked on PR #82; the machine receipt records its observed code-head snapshot. Android remains gated on iPhone acceptance.

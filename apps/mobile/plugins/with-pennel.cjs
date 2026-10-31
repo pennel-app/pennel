@@ -42,7 +42,8 @@ function patchPodfile(content) {
   if (!content.includes(helpers)) content = `${helpers}\n${content}`;
   if (!content.includes('pennel_post_install(installer)')) content = content.replace(/(post_install do \|installer\|\n)/, '$1    pennel_post_install(installer)\n');
   content = content.replace(/\n# BEGIN PENNEL KEYBOARD PODS[\s\S]*?# END PENNEL KEYBOARD PODS\n?/g, '\n');
-  content += `\n# BEGIN PENNEL KEYBOARD PODS\ntarget '${keyboardName}' do\n${declaration}\nend\ntarget '${keyboardTestsName}' do\n${declaration}\nend\n# END PENNEL KEYBOARD PODS\n`;
+  const typing = "  pod 'PennelTyping', :path => '../native/ios/Typing'";
+  content += `\n# BEGIN PENNEL KEYBOARD PODS\ntarget '${keyboardName}' do\n${declaration}\n${typing}\nend\ntarget '${keyboardTestsName}' do\n${declaration}\n${typing}\nend\n# END PENNEL KEYBOARD PODS\n`;
   const lines = content.split('\n');
   return `${lines.filter((line, index) => line !== declaration || lines[index - 1] !== declaration).join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
 }
@@ -228,6 +229,7 @@ function swiftFiles(directory) {
 }
 
 function configureProject(config, options) {
+  const intentProbe = keyboardFeasibilityEnabled(options);
   const project = config.modResults;
   removeLegacyKeyboardSources(project);
   const ios = config.modRequest.platformProjectRoot;
@@ -263,11 +265,15 @@ function configureProject(config, options) {
   for (const target of [app, widget]) {
     addFileToPhase(project, target[0], relative(intent), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   }
+  const probe = path.join(workspace, 'native/ios/Keyboard/Feasibility/KeyboardRecordingIntentProbe.swift');
+  for (const target of [app, keyboard]) addFileToPhase(project, target[0], relative(probe), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   const appIntents = path.join(workspace, 'native/ios/App');
   for (const file of swiftFiles(appIntents)) addFileToPhase(project, app[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   const keyboardFiles = [...swiftFiles(path.join(workspace, 'native/ios/Keyboard/Sources')), ...swiftFiles(path.join(workspace, 'native/ios/Keyboard/Model'))];
   for (const file of keyboardFiles) addFileToPhase(project, keyboard[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
-  for (const file of [...swiftFiles(path.join(workspace, 'native/ios/Keyboard/Model')), ...swiftFiles(path.join(workspace, 'native/ios/KeyboardTests'))]) addFileToPhase(project, test[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
+  const testedKeyboardSources = ['KeyboardTypingModel.swift', 'KeyboardLetterGrid.swift', 'KeyboardSystemKeys.swift']
+    .map((name) => path.join(workspace, 'native/ios/Keyboard/Sources', name)).filter((file) => fs.existsSync(file));
+  for (const file of [...swiftFiles(path.join(workspace, 'native/ios/Keyboard/Model')), ...testedKeyboardSources, ...swiftFiles(path.join(workspace, 'native/ios/KeyboardTests'))]) addFileToPhase(project, test[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   for (const file of swiftFiles(path.join(workspace, 'native/ios/Tests'))) addFileToPhase(project, runtimeTest[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   for (const file of swiftFiles(path.join(workspace, 'native/ios/Widgets'))) addFileToPhase(project, widget[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   for (const target of [keyboard, widget]) {
@@ -278,6 +284,10 @@ function configureProject(config, options) {
       const settings = configuration.buildSettings;
       settings.IPHONEOS_DEPLOYMENT_TARGET = '26.0';
       settings.SWIFT_VERSION = '6.0';
+      const probeFlags = unquote(settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS || '$(inherited)')
+        .split(/\s+/).filter((flag) => flag !== 'PENNEL_KEYBOARD_FEASIBILITY');
+      if (intentProbe && (id === app[0] || id === keyboard[0])) probeFlags.push('PENNEL_KEYBOARD_FEASIBILITY');
+      settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS = quote(probeFlags.join(' '));
       if (id === app[0]) {
         const flags = unquote(settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS || '$(inherited)').split(/\s+/);
         if (!flags.includes('PENNEL_APP')) flags.push('PENNEL_APP');
@@ -309,6 +319,12 @@ function configureProject(config, options) {
   fs.writeFileSync(widgetIndex, source);
   configureScheme(ios, [[keyboardTestsName, test[0]], [runtimeTestsName, runtimeTest[0]]], new Set(realEntries(project.pbxNativeTargetSection()).map(([id]) => id)));
   return config;
+}
+
+function keyboardFeasibilityEnabled(options, environment = process.env) {
+  const enabled = environment.PENNEL_KEYBOARD_FEASIBILITY === '1';
+  if (enabled && options.production) throw new Error('Keyboard process-routing probes are restricted to Pennel Preview');
+  return enabled;
 }
 
 function configureScheme(ios, testTargets, targetIds) {
@@ -350,4 +366,4 @@ function withPennel(config, options) {
 }
 
 module.exports = withPennel;
-module.exports._test = { afterExistingMod, patchPodfile, variantInfo, patchAppDelegateSwift, removeLegacyKeyboardSources, removeTargets, targetsNamed, configureProject, configurations };
+module.exports._test = { afterExistingMod, patchPodfile, variantInfo, patchAppDelegateSwift, removeLegacyKeyboardSources, removeTargets, targetsNamed, configureProject, configurations, keyboardFeasibilityEnabled };

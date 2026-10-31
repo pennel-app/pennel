@@ -65,6 +65,7 @@ function compileSources(objects, name) {
 test('keyboard actual pod graph links only lightweight Pennel helpers', () => {
   const names = dependencies(graph(), 'Pods-PennelKeyboard');
   assert(names.has('PennelMobileKit'));
+  assert(names.has('PennelTyping'));
   for (const name of names) assert.doesNotMatch(name, /PennelMobile(?!Kit)|PennelCore|Expo|React|hermes|^RN|Yoga/);
   assert.equal(provider('Pods-PennelKeyboard'), '');
 });

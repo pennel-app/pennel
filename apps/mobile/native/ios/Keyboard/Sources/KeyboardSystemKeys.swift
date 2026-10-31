@@ -30,12 +30,16 @@ struct KeyboardDeleteKey: UIViewRepresentable {
     let label: String
     let action: () -> Void
     var feedback: () -> Void = {}
+    var prepareFeedback: () -> Void = {}
+    var deleteWord: () -> Void = {}
 
     func makeUIView(context: Context) -> RepeatingDeleteButton { RepeatingDeleteButton() }
 
     func updateUIView(_ button: RepeatingDeleteButton, context: Context) {
         button.action = action
         button.feedback = feedback
+        button.prepareFeedback = prepareFeedback
+        button.deleteWord = deleteWord
         button.accessibilityLabel = label
         button.tintColor = UIColor(Brand.foreground.color)
         button.backgroundColor = UIColor(Brand.subtle.color)
@@ -48,13 +52,19 @@ struct KeyboardDeleteKey: UIViewRepresentable {
 final class RepeatingDeleteButton: UIButton {
     var action: (() -> Void)?
     var feedback: (() -> Void)?
+    var prepareFeedback: (() -> Void)?
+    var deleteWord: (() -> Void)?
     private var repeatTimer: Timer?
+    private var deletedWordSteps = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         setImage(UIImage(systemName: "delete.left"), for: .normal)
         addTarget(self, action: #selector(pressed), for: .touchDown)
         addTarget(self, action: #selector(released), for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
+        pan.cancelsTouchesInView = false
+        addGestureRecognizer(pan)
     }
 
     required init?(coder: NSCoder) { nil }
@@ -65,6 +75,7 @@ final class RepeatingDeleteButton: UIButton {
     }
 
     override func accessibilityActivate() -> Bool {
+        prepareFeedback?()
         action?()
         feedback?()
         return true
@@ -72,6 +83,8 @@ final class RepeatingDeleteButton: UIButton {
 
     @objc private func pressed() {
         stopRepeating()
+        deletedWordSteps = 0
+        prepareFeedback?()
         action?()
         feedback?()
         repeatTimer = Timer.scheduledTimer(timeInterval: 0.38, target: self, selector: #selector(startRepeating), userInfo: nil, repeats: false)
@@ -85,6 +98,16 @@ final class RepeatingDeleteButton: UIButton {
     @objc private func repeatDelete() { action?() }
     @objc private func released() { stopRepeating() }
 
+    @objc private func dragged(_ recognizer: UIPanGestureRecognizer) {
+        if recognizer.state == .began { stopRepeating() }
+        guard recognizer.state == .began || recognizer.state == .changed else { return }
+        let steps = max(0, KeyboardGestureSteps.offset(translation: Double(-recognizer.translation(in: self).x), step: Double(max(bounds.width, 1))))
+        if steps > deletedWordSteps {
+            for _ in deletedWordSteps..<min(steps, deletedWordSteps + 16) { deleteWord?() }
+            deletedWordSteps = steps
+        }
+    }
+
     func stopRepeating() {
         repeatTimer?.invalidate()
         repeatTimer = nil
@@ -96,6 +119,7 @@ struct KeyboardCharacterKey: UIViewRepresentable {
     let alternatives: [String]
     let insert: (String) -> Void
     let showAlternatives: () -> Void
+    var prepareFeedback: () -> Void = {}
 
     func makeUIView(context: Context) -> CharacterButton { CharacterButton(type: .custom) }
 
@@ -104,6 +128,7 @@ struct KeyboardCharacterKey: UIViewRepresentable {
         button.alternatives = alternatives
         button.insert = insert
         button.showAlternatives = showAlternatives
+        button.prepareFeedback = prepareFeedback
         button.setTitle(text, for: .normal)
         button.setTitleColor(UIColor(Brand.foreground.color), for: .normal)
         button.backgroundColor = UIColor(Brand.field.color)
@@ -133,12 +158,14 @@ final class CharacterButton: UIButton {
     var alternatives: [String] = [] { didSet { holdRecognizer?.isEnabled = !alternatives.isEmpty } }
     var insert: ((String) -> Void)?
     var showAlternatives: (() -> Void)?
+    var prepareFeedback: (() -> Void)?
     private var holdRecognizer: UILongPressGestureRecognizer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
+        addTarget(self, action: #selector(pressed), for: .touchDown)
         let hold = UILongPressGestureRecognizer(target: self, action: #selector(held(_:)))
         hold.minimumPressDuration = 0.35
         hold.isEnabled = false
@@ -158,6 +185,7 @@ final class CharacterButton: UIButton {
     }
 
     @objc private func tapped() { insert?(character) }
+    @objc private func pressed() { prepareFeedback?() }
 
     @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
         guard recognizer.state == .began, !alternatives.isEmpty else { return }
@@ -174,6 +202,7 @@ struct KeyboardDictationGesture: UIViewRepresentable {
     let tap: () -> Void
     let holdBegan: () -> Void
     let holdEnded: () -> Void
+    var prepareFeedback: () -> Void = {}
 
     func makeUIView(context: Context) -> DictationGestureButton { DictationGestureButton(type: .custom) }
 
@@ -186,6 +215,7 @@ struct KeyboardDictationGesture: UIViewRepresentable {
         button.tap = tap
         button.holdBegan = holdBegan
         button.holdEnded = holdEnded
+        button.prepareFeedback = prepareFeedback
     }
 }
 
@@ -193,6 +223,7 @@ final class DictationGestureButton: UIButton {
     var tap: (() -> Void)?
     var holdBegan: (() -> Void)?
     var holdEnded: (() -> Void)?
+    var prepareFeedback: (() -> Void)?
     var holdEnabled = true {
         didSet {
             guard holdRecognizer?.state != .began, holdRecognizer?.state != .changed else { return }
@@ -204,6 +235,7 @@ final class DictationGestureButton: UIButton {
     override init(frame: CGRect) {
         super.init(frame: frame)
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
+        addTarget(self, action: #selector(pressed), for: .touchDown)
         let hold = UILongPressGestureRecognizer(target: self, action: #selector(held(_:)))
         hold.minimumPressDuration = 0.3
         hold.allowableMovement = 60
@@ -220,6 +252,7 @@ final class DictationGestureButton: UIButton {
     }
 
     @objc private func tapped() { tap?() }
+    @objc private func pressed() { prepareFeedback?() }
 
     @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
         switch recognizer.state {

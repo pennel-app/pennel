@@ -64,7 +64,7 @@ final class MeetingFakeTranscriber: SystemTranscriber, @unchecked Sendable {
     private var counts: [Int] = []
     var calls: [Int] { lock.withLock { counts } }
 
-    func transcribe(samples: [Float], sampleRate: UInt32, language: String?) throws -> String {
+    func transcribe(samples: [Float], sampleRate: UInt32, language: String?, vocabulary: [String]) throws -> String {
         lock.withLock { counts.append(samples.count) }
         return "hallo wereld"
     }

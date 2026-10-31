@@ -93,7 +93,26 @@ export type MobileSettings = Settings;
 export type RecognitionSnapshot = SpeakerJob;
 export interface SyncReport { status: string; uploaded: number; downloaded: number; conflicts: number; last_success_ms: number | null; error: string | null }
 
+export interface KeyboardSettings {
+  layout: 'qwerty' | 'azerty';
+  suggestions: boolean;
+  duration: number;
+  keyboard_typing_languages: ('en' | 'nl')[];
+  keyboard_autocorrection: boolean;
+  keyboard_learning: boolean;
+  keyboard_swipe: boolean;
+  keyboard_snippet_expansion: boolean;
+  keyboard_snippets: { id: string; title: string; keyword: string; text: string }[];
+  keyboard_learned_count: number;
+  keyboard_haptic_style: 'off' | 'gentle' | 'crisp';
+  feedback_style: 'off' | 'gentle' | 'crisp';
+  trial_active: boolean;
+}
+
 export interface MobileCommandResults {
+  'keyboard.feedbackPreview': void;
+  'keyboard.feedbackTrial': KeyboardSettings;
+  'keyboard.learning.remove': KeyboardSettings;
   'inference.protocols': InferenceProtocolInfo[];
   'inference.availability': InferenceAvailability;
   'inference.decide': DecisionResult;
@@ -129,7 +148,7 @@ export interface MobileCommandResults {
   'session.stop': RuntimeSnapshot;
   'settings.read': Settings;
   'settings.update': Settings;
-  'settings.keyboard': { layout: 'qwerty' | 'azerty'; suggestions: boolean; duration: number };
+  'settings.keyboard': KeyboardSettings;
   'providers.add': Settings;
   'providers.remove': Settings;
   'providers.setKey': void;

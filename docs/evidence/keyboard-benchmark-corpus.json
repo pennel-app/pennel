@@ -1,0 +1,767 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic_keyboard_benchmark",
+  "synthetic": true,
+  "human_benchmark_required": true,
+  "source": "Authored synthetic scenarios with fictional people and destinations, public technical terms, and reserved example.com/example.org domains. No production or personal user content.",
+  "purpose": "Compare completion time and correction burden on matched synthetic finished-message tasks. This corpus contains tasks, not measured trials or proof of improvement.",
+  "instructions": {
+    "typing": "Type source_text and finish the message exactly as reference_text, including any manual repairs. Measure the complete task, not individual key callbacks.",
+    "dictation": "Read source_text aloud, then finish the intended message as reference_text, including any manual repairs. Explicit self-corrections and spoken punctuation are part of the synthetic task. Include voice activation, processing and repair in elapsed time."
+  },
+  "languages": [
+    "nl",
+    "en",
+    "mixed"
+  ],
+  "tasks_per_language": 30,
+  "results_schema": {
+    "required": [
+      "trial_id",
+      "participant",
+      "keyboard",
+      "device",
+      "os",
+      "task_id",
+      "elapsed_seconds",
+      "corrected_errors",
+      "harmful_corrections"
+    ],
+    "optional": [
+      "final_text",
+      "immediacy",
+      "comfort",
+      "annoyance",
+      "fatigue"
+    ],
+    "participant": "Use a pseudonymous identifier, never an email address or personal name.",
+    "elapsed_seconds": "Finite positive end-to-end task duration in seconds, supplied by the human benchmark.",
+    "errors": "Explicit nonnegative integer counts. Do not substitute zeros for missing observations.",
+    "final_text": "Optional CSV column, only for these synthetic tasks. If the column exists, an empty cell is scored as an empty output. Omit the column entirely to omit text scoring.",
+    "task_modes": "Use --mode typing or --mode dictation to filter observations. All-mode reports include separate by_mode groups and never combine modes into a paired percentage.",
+    "manual_ratings": "Optional user-consented manual ratings from 1 to 7: immediacy, comfort, annoyance and fatigue. Higher means more of that quality. Empty or absent cells are missing observations, never zeros; reports include only medians and observation counts.",
+    "collection": "The harness only reads an explicit offline CSV. It does not collect keyboard events, ordinary input, audio or network data."
+  },
+  "tasks": [
+    {
+      "id": "nl-001",
+      "language": "nl",
+      "theme": "appointment_negation",
+      "mode": "typing",
+      "source_text": "De afspraak is dinsdag om 14:30, niet om 14:00.",
+      "reference_text": "De afspraak is dinsdag om 14:30, niet om 14:00."
+    },
+    {
+      "id": "nl-002",
+      "language": "nl",
+      "theme": "quantity_negation",
+      "mode": "typing",
+      "source_text": "Neem twee rode pennen mee en geen blauwe.",
+      "reference_text": "Neem twee rode pennen mee en geen blauwe."
+    },
+    {
+      "id": "nl-003",
+      "language": "nl",
+      "theme": "compound_bicycle_storage",
+      "mode": "typing",
+      "source_text": "Zet de fiets in de fietsenstalling naast de blauwe ingang.",
+      "reference_text": "Zet de fiets in de fietsenstalling naast de blauwe ingang."
+    },
+    {
+      "id": "nl-004",
+      "language": "nl",
+      "theme": "project_planning",
+      "mode": "typing",
+      "source_text": "Stuur de projectplanning vóór vrijdag naar het proefteam.",
+      "reference_text": "Stuur de projectplanning vóór vrijdag naar het proefteam."
+    },
+    {
+      "id": "nl-005",
+      "language": "nl",
+      "theme": "time_range",
+      "mode": "typing",
+      "source_text": "De proefvergadering begint om 09:15 en eindigt om 10:05.",
+      "reference_text": "De proefvergadering begint om 09:15 en eindigt om 10:05."
+    },
+    {
+      "id": "nl-006",
+      "language": "nl",
+      "theme": "decimal_price",
+      "mode": "typing",
+      "source_text": "De voorbeeldprijs is € 2,75 per stuk, exclusief verzending.",
+      "reference_text": "De voorbeeldprijs is € 2,75 per stuk, exclusief verzending."
+    },
+    {
+      "id": "nl-007",
+      "language": "nl",
+      "theme": "quoted_request",
+      "mode": "typing",
+      "source_text": "Mira schreef: “Graag morgen, niet vandaag.”",
+      "reference_text": "Mira schreef: “Graag morgen, niet vandaag.”"
+    },
+    {
+      "id": "nl-008",
+      "language": "nl",
+      "theme": "punctuation_list",
+      "mode": "typing",
+      "source_text": "Controleer drie dingen: de datum, de naam en de bijlage; daarna is het klaar.",
+      "reference_text": "Controleer drie dingen: de datum, de naam en de bijlage; daarna is het klaar."
+    },
+    {
+      "id": "nl-009",
+      "language": "nl",
+      "theme": "reserved_url",
+      "mode": "typing",
+      "source_text": "Open https://example.org/route?dag=2 en kies de wandelroute.",
+      "reference_text": "Open https://example.org/route?dag=2 en kies de wandelroute."
+    },
+    {
+      "id": "nl-010",
+      "language": "nl",
+      "theme": "fictional_email",
+      "mode": "typing",
+      "source_text": "Stuur het proefbericht naar mira@example.com, niet naar timo@example.com.",
+      "reference_text": "Stuur het proefbericht naar mira@example.com, niet naar timo@example.com."
+    },
+    {
+      "id": "nl-011",
+      "language": "nl",
+      "theme": "filename_version",
+      "mode": "typing",
+      "source_text": "Bewaar het bestand als proefverslag_v2.1.txt in de testmap.",
+      "reference_text": "Bewaar het bestand als proefverslag_v2.1.txt in de testmap."
+    },
+    {
+      "id": "nl-012",
+      "language": "nl",
+      "theme": "literal_setting",
+      "mode": "typing",
+      "source_text": "De testinstelling heet auto_correct=false; verander de onderstreping niet.",
+      "reference_text": "De testinstelling heet auto_correct=false; verander de onderstreping niet."
+    },
+    {
+      "id": "nl-013",
+      "language": "nl",
+      "theme": "fictional_names",
+      "mode": "typing",
+      "source_text": "Mira Zilver en Timo Maan wachten op Faye Duin.",
+      "reference_text": "Mira Zilver en Timo Maan wachten op Faye Duin."
+    },
+    {
+      "id": "nl-014",
+      "language": "nl",
+      "theme": "fictional_destination",
+      "mode": "typing",
+      "source_text": "De fictieve bestemming is Lindeplein 12 in Voorbeeldstad.",
+      "reference_text": "De fictieve bestemming is Lindeplein 12 in Voorbeeldstad."
+    },
+    {
+      "id": "nl-015",
+      "language": "nl",
+      "theme": "accented_words",
+      "mode": "typing",
+      "source_text": "De coöperatie organiseert een caféavond met een ideeënronde.",
+      "reference_text": "De coöperatie organiseert een caféavond met een ideeënronde."
+    },
+    {
+      "id": "nl-016",
+      "language": "nl",
+      "theme": "emoji_graphemes",
+      "mode": "typing",
+      "source_text": "Bedankt 👩🏽‍💻! De proef is klaar ✅ en de fiets staat veilig 🚲.",
+      "reference_text": "Bedankt 👩🏽‍💻! De proef is klaar ✅ en de fiets staat veilig 🚲."
+    },
+    {
+      "id": "nl-017",
+      "language": "nl",
+      "theme": "approval_negation",
+      "mode": "typing",
+      "source_text": "Ik heb het voorstel gelezen, maar ik heb het nog niet goedgekeurd.",
+      "reference_text": "Ik heb het voorstel gelezen, maar ik heb het nog niet goedgekeurd."
+    },
+    {
+      "id": "nl-018",
+      "language": "nl",
+      "theme": "compound_keyboard_settings",
+      "mode": "typing",
+      "source_text": "De toetsenbordinstellingen veranderen het energieverbruik niet automatisch.",
+      "reference_text": "De toetsenbordinstellingen veranderen het energieverbruik niet automatisch."
+    },
+    {
+      "id": "nl-019",
+      "language": "nl",
+      "theme": "directions",
+      "mode": "typing",
+      "source_text": "Sla na de tweede brug linksaf, niet rechtsaf.",
+      "reference_text": "Sla na de tweede brug linksaf, niet rechtsaf."
+    },
+    {
+      "id": "nl-020",
+      "language": "nl",
+      "theme": "units",
+      "mode": "typing",
+      "source_text": "De proefdoos weegt 3,5 kg en is 20 cm breed.",
+      "reference_text": "De proefdoos weegt 3,5 kg en is 20 cm breed."
+    },
+    {
+      "id": "nl-021",
+      "language": "nl",
+      "theme": "uppercase_identifier",
+      "mode": "typing",
+      "source_text": "Gebruik testcode QX-0427 en bestelnummer 00042.",
+      "reference_text": "Gebruik testcode QX-0427 en bestelnummer 00042."
+    },
+    {
+      "id": "nl-022",
+      "language": "nl",
+      "theme": "multiline_note",
+      "mode": "typing",
+      "source_text": "Proefnotitie:\nDe deur is dicht.\nHet licht blijft aan.",
+      "reference_text": "Proefnotitie:\nDe deur is dicht.\nHet licht blijft aan."
+    },
+    {
+      "id": "nl-023",
+      "language": "nl",
+      "theme": "voice_day_correction",
+      "mode": "dictation",
+      "source_text": "Plan de proefafspraak voor maandag, nee, woensdag om tien uur.",
+      "reference_text": "Plan de proefafspraak voor woensdag om tien uur."
+    },
+    {
+      "id": "nl-024",
+      "language": "nl",
+      "theme": "voice_number_correction",
+      "mode": "dictation",
+      "source_text": "Bestel tachtig, sorry, achttien blauwe testmappen.",
+      "reference_text": "Bestel achttien blauwe testmappen."
+    },
+    {
+      "id": "nl-025",
+      "language": "nl",
+      "theme": "voice_name_correction",
+      "mode": "dictation",
+      "source_text": "Stuur het proefverslag naar Nina, sorry, Mira Zilver.",
+      "reference_text": "Stuur het proefverslag naar Mira Zilver."
+    },
+    {
+      "id": "nl-026",
+      "language": "nl",
+      "theme": "voice_negation_correction",
+      "mode": "dictation",
+      "source_text": "Ik ga wel, nee, ik ga niet akkoord met het proefvoorstel.",
+      "reference_text": "Ik ga niet akkoord met het proefvoorstel."
+    },
+    {
+      "id": "nl-027",
+      "language": "nl",
+      "theme": "voice_false_start",
+      "mode": "dictation",
+      "source_text": "De proef, de proefvergadering is morgen om half elf.",
+      "reference_text": "De proefvergadering is morgen om half elf."
+    },
+    {
+      "id": "nl-028",
+      "language": "nl",
+      "theme": "voice_quoted_title",
+      "mode": "dictation",
+      "source_text": "De titel is, open aanhalingstekens, Kleine stappen, komma, groot verschil, sluit aanhalingstekens.",
+      "reference_text": "De titel is “Kleine stappen, groot verschil”."
+    },
+    {
+      "id": "nl-029",
+      "language": "nl",
+      "theme": "voice_compound_repair",
+      "mode": "dictation",
+      "source_text": "Het reserve, de reserveonderdelen zijn morgen om acht uur klaar.",
+      "reference_text": "De reserveonderdelen zijn morgen om acht uur klaar."
+    },
+    {
+      "id": "nl-030",
+      "language": "nl",
+      "theme": "voice_unit_correction",
+      "mode": "dictation",
+      "source_text": "De proefdoos weegt drie kilo, nee, drie komma vijf kilo, en is twintig centimeter breed.",
+      "reference_text": "De proefdoos weegt 3,5 kg en is 20 cm breed."
+    },
+    {
+      "id": "en-001",
+      "language": "en",
+      "theme": "appointment_negation",
+      "mode": "typing",
+      "source_text": "The appointment is Tuesday at 14:30, not 14:00.",
+      "reference_text": "The appointment is Tuesday at 14:30, not 14:00."
+    },
+    {
+      "id": "en-002",
+      "language": "en",
+      "theme": "quantity_negation",
+      "mode": "typing",
+      "source_text": "Bring two red pens and no blue ones.",
+      "reference_text": "Bring two red pens and no blue ones."
+    },
+    {
+      "id": "en-003",
+      "language": "en",
+      "theme": "compound_bicycle_storage",
+      "mode": "typing",
+      "source_text": "Leave the bicycle in the covered bicycle storage beside the blue entrance.",
+      "reference_text": "Leave the bicycle in the covered bicycle storage beside the blue entrance."
+    },
+    {
+      "id": "en-004",
+      "language": "en",
+      "theme": "project_planning",
+      "mode": "typing",
+      "source_text": "Send the project schedule to the sample team before Friday.",
+      "reference_text": "Send the project schedule to the sample team before Friday."
+    },
+    {
+      "id": "en-005",
+      "language": "en",
+      "theme": "time_range",
+      "mode": "typing",
+      "source_text": "The sample meeting starts at 09:15 and ends at 10:05.",
+      "reference_text": "The sample meeting starts at 09:15 and ends at 10:05."
+    },
+    {
+      "id": "en-006",
+      "language": "en",
+      "theme": "decimal_price",
+      "mode": "typing",
+      "source_text": "The example price is €2.75 each, excluding delivery.",
+      "reference_text": "The example price is €2.75 each, excluding delivery."
+    },
+    {
+      "id": "en-007",
+      "language": "en",
+      "theme": "quoted_request",
+      "mode": "typing",
+      "source_text": "Mira wrote: “Tomorrow please, not today.”",
+      "reference_text": "Mira wrote: “Tomorrow please, not today.”"
+    },
+    {
+      "id": "en-008",
+      "language": "en",
+      "theme": "punctuation_list",
+      "mode": "typing",
+      "source_text": "Check three things: the date, the name and the attachment; then it is ready.",
+      "reference_text": "Check three things: the date, the name and the attachment; then it is ready."
+    },
+    {
+      "id": "en-009",
+      "language": "en",
+      "theme": "reserved_url",
+      "mode": "typing",
+      "source_text": "Open https://example.org/route?day=2 and choose the walking route.",
+      "reference_text": "Open https://example.org/route?day=2 and choose the walking route."
+    },
+    {
+      "id": "en-010",
+      "language": "en",
+      "theme": "fictional_email",
+      "mode": "typing",
+      "source_text": "Send the sample message to mira@example.com, not timo@example.com.",
+      "reference_text": "Send the sample message to mira@example.com, not timo@example.com."
+    },
+    {
+      "id": "en-011",
+      "language": "en",
+      "theme": "filename_version",
+      "mode": "typing",
+      "source_text": "Save the file as sample_report_v2.1.txt in the test folder.",
+      "reference_text": "Save the file as sample_report_v2.1.txt in the test folder."
+    },
+    {
+      "id": "en-012",
+      "language": "en",
+      "theme": "literal_setting",
+      "mode": "typing",
+      "source_text": "The test setting is auto_correct=false; keep the underscore unchanged.",
+      "reference_text": "The test setting is auto_correct=false; keep the underscore unchanged."
+    },
+    {
+      "id": "en-013",
+      "language": "en",
+      "theme": "fictional_names",
+      "mode": "typing",
+      "source_text": "Mira Zilver and Timo Maan are waiting for Faye Duin.",
+      "reference_text": "Mira Zilver and Timo Maan are waiting for Faye Duin."
+    },
+    {
+      "id": "en-014",
+      "language": "en",
+      "theme": "fictional_destination",
+      "mode": "typing",
+      "source_text": "The fictional destination is Linde Square 12 in Exampleton.",
+      "reference_text": "The fictional destination is Linde Square 12 in Exampleton."
+    },
+    {
+      "id": "en-015",
+      "language": "en",
+      "theme": "accented_words",
+      "mode": "typing",
+      "source_text": "The cooperative is hosting a café evening with a résumé workshop.",
+      "reference_text": "The cooperative is hosting a café evening with a résumé workshop."
+    },
+    {
+      "id": "en-016",
+      "language": "en",
+      "theme": "emoji_graphemes",
+      "mode": "typing",
+      "source_text": "Thanks 👩🏽‍💻! The sample is ready ✅ and the bicycle is safe 🚲.",
+      "reference_text": "Thanks 👩🏽‍💻! The sample is ready ✅ and the bicycle is safe 🚲."
+    },
+    {
+      "id": "en-017",
+      "language": "en",
+      "theme": "approval_negation",
+      "mode": "typing",
+      "source_text": "I have read the proposal, but I have not approved it yet.",
+      "reference_text": "I have read the proposal, but I have not approved it yet."
+    },
+    {
+      "id": "en-018",
+      "language": "en",
+      "theme": "compound_keyboard_settings",
+      "mode": "typing",
+      "source_text": "The keyboard settings do not change energy use automatically.",
+      "reference_text": "The keyboard settings do not change energy use automatically."
+    },
+    {
+      "id": "en-019",
+      "language": "en",
+      "theme": "directions",
+      "mode": "typing",
+      "source_text": "Turn left after the second bridge, not right.",
+      "reference_text": "Turn left after the second bridge, not right."
+    },
+    {
+      "id": "en-020",
+      "language": "en",
+      "theme": "units",
+      "mode": "typing",
+      "source_text": "The sample box weighs 3.5 kg and is 20 cm wide.",
+      "reference_text": "The sample box weighs 3.5 kg and is 20 cm wide."
+    },
+    {
+      "id": "en-021",
+      "language": "en",
+      "theme": "uppercase_identifier",
+      "mode": "typing",
+      "source_text": "Use test code QX-0427 and order number 00042.",
+      "reference_text": "Use test code QX-0427 and order number 00042."
+    },
+    {
+      "id": "en-022",
+      "language": "en",
+      "theme": "multiline_note",
+      "mode": "typing",
+      "source_text": "Sample note:\nThe door is closed.\nThe light stays on.",
+      "reference_text": "Sample note:\nThe door is closed.\nThe light stays on."
+    },
+    {
+      "id": "en-023",
+      "language": "en",
+      "theme": "voice_day_correction",
+      "mode": "dictation",
+      "source_text": "Plan the sample appointment for Monday, no, Wednesday at ten.",
+      "reference_text": "Plan the sample appointment for Wednesday at ten."
+    },
+    {
+      "id": "en-024",
+      "language": "en",
+      "theme": "voice_number_correction",
+      "mode": "dictation",
+      "source_text": "Order eighty, sorry, eighteen blue sample folders.",
+      "reference_text": "Order eighteen blue sample folders."
+    },
+    {
+      "id": "en-025",
+      "language": "en",
+      "theme": "voice_name_correction",
+      "mode": "dictation",
+      "source_text": "Send the sample report to Nina, sorry, Mira Zilver.",
+      "reference_text": "Send the sample report to Mira Zilver."
+    },
+    {
+      "id": "en-026",
+      "language": "en",
+      "theme": "voice_negation_correction",
+      "mode": "dictation",
+      "source_text": "I do agree, no, I do not agree with the sample proposal.",
+      "reference_text": "I do not agree with the sample proposal."
+    },
+    {
+      "id": "en-027",
+      "language": "en",
+      "theme": "voice_false_start",
+      "mode": "dictation",
+      "source_text": "The sample, the sample meeting is tomorrow at half past ten.",
+      "reference_text": "The sample meeting is tomorrow at half past ten."
+    },
+    {
+      "id": "en-028",
+      "language": "en",
+      "theme": "voice_quoted_title",
+      "mode": "dictation",
+      "source_text": "The title is, open quote, Small steps, comma, big difference, close quote.",
+      "reference_text": "The title is “Small steps, big difference”."
+    },
+    {
+      "id": "en-029",
+      "language": "en",
+      "theme": "voice_compound_repair",
+      "mode": "dictation",
+      "source_text": "The replace, the replacement parts will be ready tomorrow at eight.",
+      "reference_text": "The replacement parts will be ready tomorrow at eight."
+    },
+    {
+      "id": "en-030",
+      "language": "en",
+      "theme": "voice_unit_correction",
+      "mode": "dictation",
+      "source_text": "The sample box weighs three kilos, no, three point five kilos, and is twenty centimetres wide.",
+      "reference_text": "The sample box weighs 3.5 kg and is 20 cm wide."
+    },
+    {
+      "id": "mixed-001",
+      "language": "mixed",
+      "theme": "appointment_negation",
+      "mode": "typing",
+      "source_text": "De appointment is dinsdag om 14:30, not at 14:00.",
+      "reference_text": "De appointment is dinsdag om 14:30, not at 14:00."
+    },
+    {
+      "id": "mixed-002",
+      "language": "mixed",
+      "theme": "quantity_negation",
+      "mode": "typing",
+      "source_text": "Bring twee rode pennen mee, and no blauwe.",
+      "reference_text": "Bring twee rode pennen mee, and no blauwe."
+    },
+    {
+      "id": "mixed-003",
+      "language": "mixed",
+      "theme": "compound_bicycle_storage",
+      "mode": "typing",
+      "source_text": "Zet de fiets in de fietsenstalling, near the blue entrance.",
+      "reference_text": "Zet de fiets in de fietsenstalling, near the blue entrance."
+    },
+    {
+      "id": "mixed-004",
+      "language": "mixed",
+      "theme": "project_planning",
+      "mode": "typing",
+      "source_text": "Stuur de projectplanning vóór vrijdag, then notify the sample team.",
+      "reference_text": "Stuur de projectplanning vóór vrijdag, then notify the sample team."
+    },
+    {
+      "id": "mixed-005",
+      "language": "mixed",
+      "theme": "time_range",
+      "mode": "typing",
+      "source_text": "De proefvergadering starts at 09:15 en eindigt om 10:05.",
+      "reference_text": "De proefvergadering starts at 09:15 en eindigt om 10:05."
+    },
+    {
+      "id": "mixed-006",
+      "language": "mixed",
+      "theme": "decimal_price",
+      "mode": "typing",
+      "source_text": "De sample price is € 2,75 per stuk, excluding delivery.",
+      "reference_text": "De sample price is € 2,75 per stuk, excluding delivery."
+    },
+    {
+      "id": "mixed-007",
+      "language": "mixed",
+      "theme": "quoted_request",
+      "mode": "typing",
+      "source_text": "Mira schreef: “Tomorrow please, niet vandaag.”",
+      "reference_text": "Mira schreef: “Tomorrow please, niet vandaag.”"
+    },
+    {
+      "id": "mixed-008",
+      "language": "mixed",
+      "theme": "punctuation_list",
+      "mode": "typing",
+      "source_text": "Check drie dingen: de datum, de naam en de attachment; then it is ready.",
+      "reference_text": "Check drie dingen: de datum, de naam en de attachment; then it is ready."
+    },
+    {
+      "id": "mixed-009",
+      "language": "mixed",
+      "theme": "reserved_url",
+      "mode": "typing",
+      "source_text": "Open https://example.org/route?day=2 en kies de walking route.",
+      "reference_text": "Open https://example.org/route?day=2 en kies de walking route."
+    },
+    {
+      "id": "mixed-010",
+      "language": "mixed",
+      "theme": "fictional_email",
+      "mode": "typing",
+      "source_text": "Stuur de sample naar mira@example.com, not to timo@example.com.",
+      "reference_text": "Stuur de sample naar mira@example.com, not to timo@example.com."
+    },
+    {
+      "id": "mixed-011",
+      "language": "mixed",
+      "theme": "filename_version",
+      "mode": "typing",
+      "source_text": "Save het bestand als proefverslag_v2.1.txt in de test folder.",
+      "reference_text": "Save het bestand als proefverslag_v2.1.txt in de test folder."
+    },
+    {
+      "id": "mixed-012",
+      "language": "mixed",
+      "theme": "literal_setting",
+      "mode": "typing",
+      "source_text": "De test setting is auto_correct=false; laat de underscore staan.",
+      "reference_text": "De test setting is auto_correct=false; laat de underscore staan."
+    },
+    {
+      "id": "mixed-013",
+      "language": "mixed",
+      "theme": "fictional_names",
+      "mode": "typing",
+      "source_text": "Mira Zilver en Timo Maan are waiting for Faye Duin.",
+      "reference_text": "Mira Zilver en Timo Maan are waiting for Faye Duin."
+    },
+    {
+      "id": "mixed-014",
+      "language": "mixed",
+      "theme": "fictional_destination",
+      "mode": "typing",
+      "source_text": "De fictional destination is Lindeplein 12 in Voorbeeldstad.",
+      "reference_text": "De fictional destination is Lindeplein 12 in Voorbeeldstad."
+    },
+    {
+      "id": "mixed-015",
+      "language": "mixed",
+      "theme": "accented_words",
+      "mode": "typing",
+      "source_text": "De coöperatie organiseert een café meetup with an ideeënronde.",
+      "reference_text": "De coöperatie organiseert een café meetup with an ideeënronde."
+    },
+    {
+      "id": "mixed-016",
+      "language": "mixed",
+      "theme": "emoji_graphemes",
+      "mode": "typing",
+      "source_text": "Bedankt 👩🏽‍💻! The sample is klaar ✅ en de fiets is safe 🚲.",
+      "reference_text": "Bedankt 👩🏽‍💻! The sample is klaar ✅ en de fiets is safe 🚲."
+    },
+    {
+      "id": "mixed-017",
+      "language": "mixed",
+      "theme": "approval_negation",
+      "mode": "typing",
+      "source_text": "Ik heb the proposal gelezen, but ik heb het nog niet approved.",
+      "reference_text": "Ik heb the proposal gelezen, but ik heb het nog niet approved."
+    },
+    {
+      "id": "mixed-018",
+      "language": "mixed",
+      "theme": "compound_keyboard_settings",
+      "mode": "typing",
+      "source_text": "De toetsenbordinstellingen do not change het energieverbruik automatically.",
+      "reference_text": "De toetsenbordinstellingen do not change het energieverbruik automatically."
+    },
+    {
+      "id": "mixed-019",
+      "language": "mixed",
+      "theme": "directions",
+      "mode": "typing",
+      "source_text": "Turn linksaf after de tweede brug, not rechtsaf.",
+      "reference_text": "Turn linksaf after de tweede brug, not rechtsaf."
+    },
+    {
+      "id": "mixed-020",
+      "language": "mixed",
+      "theme": "units",
+      "mode": "typing",
+      "source_text": "De sample box weegt 3,5 kg and is 20 cm breed.",
+      "reference_text": "De sample box weegt 3,5 kg and is 20 cm breed."
+    },
+    {
+      "id": "mixed-021",
+      "language": "mixed",
+      "theme": "uppercase_identifier",
+      "mode": "typing",
+      "source_text": "Gebruik test code QX-0427 en order number 00042.",
+      "reference_text": "Gebruik test code QX-0427 en order number 00042."
+    },
+    {
+      "id": "mixed-022",
+      "language": "mixed",
+      "theme": "multiline_note",
+      "mode": "typing",
+      "source_text": "Sample note:\nDe deur is dicht.\nThe light blijft aan.",
+      "reference_text": "Sample note:\nDe deur is dicht.\nThe light blijft aan."
+    },
+    {
+      "id": "mixed-023",
+      "language": "mixed",
+      "theme": "voice_day_correction",
+      "mode": "dictation",
+      "source_text": "Plan the check-in voor maandag, sorry, woensdag om tien uur.",
+      "reference_text": "Plan the check-in voor woensdag om tien uur."
+    },
+    {
+      "id": "mixed-024",
+      "language": "mixed",
+      "theme": "voice_number_correction",
+      "mode": "dictation",
+      "source_text": "Order tachtig, sorry, achttien blauwe sample folders.",
+      "reference_text": "Order achttien blauwe sample folders."
+    },
+    {
+      "id": "mixed-025",
+      "language": "mixed",
+      "theme": "voice_name_correction",
+      "mode": "dictation",
+      "source_text": "Stuur de draft naar Nina, sorry, Mira Zilver.",
+      "reference_text": "Stuur de draft naar Mira Zilver."
+    },
+    {
+      "id": "mixed-026",
+      "language": "mixed",
+      "theme": "voice_negation_correction",
+      "mode": "dictation",
+      "source_text": "Ik ga wel akkoord, no, ik ga niet akkoord with the sample proposal.",
+      "reference_text": "Ik ga niet akkoord with the sample proposal."
+    },
+    {
+      "id": "mixed-027",
+      "language": "mixed",
+      "theme": "voice_false_start",
+      "mode": "dictation",
+      "source_text": "De sample, de sample meeting is morgen om half elf.",
+      "reference_text": "De sample meeting is morgen om half elf."
+    },
+    {
+      "id": "mixed-028",
+      "language": "mixed",
+      "theme": "voice_quoted_title",
+      "mode": "dictation",
+      "source_text": "De title is, open quote, Kleine stappen, comma, big difference, close quote.",
+      "reference_text": "De title is “Kleine stappen, big difference”."
+    },
+    {
+      "id": "mixed-029",
+      "language": "mixed",
+      "theme": "voice_compound_repair",
+      "mode": "dictation",
+      "source_text": "Het reserve, de reserveonderdelen will be ready morgen om acht uur.",
+      "reference_text": "De reserveonderdelen will be ready morgen om acht uur."
+    },
+    {
+      "id": "mixed-030",
+      "language": "mixed",
+      "theme": "voice_unit_correction",
+      "mode": "dictation",
+      "source_text": "De sample box weegt three kilos, nee, drie komma vijf kilo, and is twintig centimetres breed.",
+      "reference_text": "De sample box weegt 3,5 kg and is 20 cm breed."
+    }
+  ]
+}

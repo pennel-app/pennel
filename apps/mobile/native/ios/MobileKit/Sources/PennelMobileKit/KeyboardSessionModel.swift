@@ -19,6 +19,7 @@ public final class KeyboardSessionModel {
     public private(set) var pad: KeyboardPad
     public private(set) var lastResult: HandoffResult?
     public private(set) var level: Float = 0
+    public private(set) var partialText: String?
 
     private enum Gesture { case none, hold, handsFree }
 
@@ -32,6 +33,7 @@ public final class KeyboardSessionModel {
 
     private var gesture = Gesture.none
     private var startedAt: Date?
+    private var activeStartID: UUID?
     private var stoppedAt: Date?
     private var failure: String?
     public private(set) var recoveryAction: KeyboardFailureRecovery = .recordAgain
@@ -78,6 +80,7 @@ public final class KeyboardSessionModel {
 
     public func refresh() {
         guard hasFullAccess else {
+            partialText = nil
             pad = .needsFullAccess
             return
         }
@@ -96,6 +99,11 @@ public final class KeyboardSessionModel {
             }
         }
         level = session == .listening ? client.level() : 0
+        if session == .listening, stoppedAt == nil, let activeStartID {
+            partialText = client.partialText(for: activeStartID, now: current)
+        } else {
+            partialText = nil
+        }
         lastResult = isIdle ? client.lastUninserted(now: current) : nil
 
         if let failure {
@@ -197,7 +205,8 @@ public final class KeyboardSessionModel {
     private func begin(_ new: Gesture) {
         guard let origin = context() else { return }
         delivery.begin(in: origin)
-        guard send(.start) != nil else { return }
+        guard let startID = send(.start) else { return }
+        activeStartID = startID
         gesture = new
         startedAt = now()
         stoppedAt = nil
@@ -211,6 +220,7 @@ public final class KeyboardSessionModel {
         delivery.awaitResult(id)
         gesture = .none
         stoppedAt = now()
+        partialText = nil
         awaitingStopFeedback = true
         pad = .processing
     }
@@ -259,6 +269,8 @@ public final class KeyboardSessionModel {
     private func reset() {
         gesture = .none
         startedAt = nil
+        activeStartID = nil
+        partialText = nil
         stoppedAt = nil
         delivery.reset()
         awaitingStartFeedback = false

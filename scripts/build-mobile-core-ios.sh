@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 artifacts="$root/apps/mobile/artifacts/ios"
 export IPHONEOS_DEPLOYMENT_TARGET=26.0
+bash "$root/scripts/build-keyboard-core-ios.sh"
 device_target=aarch64-apple-ios
 sim_target=aarch64-apple-ios-sim
 device_dir="$root/core/target/$device_target/release"

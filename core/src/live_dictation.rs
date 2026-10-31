@@ -343,6 +343,10 @@ impl LiveDictationSession {
         self.settings.language.clone()
     }
 
+    pub fn vocabulary(&self) -> Vec<String> {
+        crate::system_stt::bounded_vocabulary(&self.settings.dictionary)
+    }
+
     /// Mono 16 kHz PCM; at most six seconds and one newest pending decode are retained.
     pub fn feed_audio(&self, samples: Vec<f32>) {
         if self.state.accepting.load(Ordering::SeqCst)
@@ -421,6 +425,7 @@ mod tests {
             _: Vec<f32>,
             _: u32,
             language: Option<String>,
+            _: Vec<String>,
         ) -> Result<String, PennelError> {
             self.0.fetch_add(1, Ordering::SeqCst);
             assert_eq!(language.as_deref(), Some("nl"));
@@ -460,6 +465,21 @@ mod tests {
                 by_provider: HashMap::new(),
             },
         }
+    }
+
+    #[test]
+    fn preview_vocabulary_is_bounded_and_frozen_with_the_recording_settings() {
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        settings.dictionary = vec!["  Pennel   Mobile ".into(), "pennel mobile".into()];
+        engine.update_settings(settings.clone()).unwrap();
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        settings.dictionary = vec!["Changed later".into()];
+        engine.update_settings(settings).unwrap();
+        assert_eq!(session.vocabulary(), vec!["Pennel Mobile"]);
+        session.cancel();
     }
 
     #[test]
@@ -688,6 +708,7 @@ mod tests {
             _: Vec<f32>,
             _: u32,
             _: Option<String>,
+            _: Vec<String>,
         ) -> Result<String, PennelError> {
             self.entered.send(()).unwrap();
             self.proceed

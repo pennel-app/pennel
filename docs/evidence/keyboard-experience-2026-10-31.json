@@ -1,0 +1,417 @@
+{
+  "schema": 1,
+  "date": "2026-10-31",
+  "issue": "https://github.com/pennel-app/pennel/issues/39",
+  "pull_request": "https://github.com/pennel-app/pennel/pull/82",
+  "branch": "codex/iphone-keyboard-experience",
+  "source_revision": "a089c946741ab1e9cb4119deee99f9d7e13ca22a",
+  "scope": "Dutch/English local typing, guarded editing, optional prepared feedback, vocabulary-aware speech, explicit writing previews and offline benchmark tooling",
+  "qualification": "Implementation candidate. Human comparative quality, full keyboard-only voice startup and release acceptance are not established.",
+  "toolchain": {
+    "xcode": "27.0 (27A266a)",
+    "ios_sdk": "27.0",
+    "swift_language_mode": "6",
+    "argent": "0.31.0"
+  },
+  "automated": {
+    "core": {
+      "passed": 713,
+      "ignored": 7,
+      "format_clippy": "passed with warnings denied",
+      "log": "core-tests.log"
+    },
+    "isolated_typing": {
+      "passed": 17,
+      "format_clippy": "passed with warnings denied",
+      "log": "typing-tests.log"
+    },
+    "desktop_frontend": {
+      "passed": 231,
+      "build": "passed",
+      "log": "desktop-frontend.log"
+    },
+    "desktop_backend": {
+      "passed": 224,
+      "log": "desktop-backend.log"
+    },
+    "macos_platform": {
+      "passed": 123,
+      "log": "macos-platform.log"
+    },
+    "mobile_types": "passed",
+    "mobile_plugins": 11,
+    "mobile_widgets": 7,
+    "mobile_ui": 100,
+    "portable_helpers": {
+      "passed": 115,
+      "log": "mobilekit-focus-final.log"
+    },
+    "python": {
+      "passed": 121,
+      "log": "python-tests-final.log",
+      "benchmark_subset": 16
+    },
+    "prior_native_candidate": {
+      "hosted_keyboard": 21,
+      "hosted_app_service": 111,
+      "log": "native-tests-candidate.log",
+      "qualification": "Passed before the final native focus-change safeguards; final run below is required."
+    },
+    "prior_generation": {
+      "sequence": "clean / non-clean / non-clean / clean",
+      "pod_source_ownership_checks": 6,
+      "log": "prebuild-final.log"
+    },
+    "final_normal_candidate": {
+      "source_revision": "a089c946741ab1e9cb4119deee99f9d7e13ca22a",
+      "prebuild": "passed at bf69657; same normal generated graph reused for the subsequent single controller-callsite fix",
+      "hosted_keyboard_tests": 36,
+      "hosted_app_service_tests": 111,
+      "release_simulator": "passed; ARM64; release-simulator-switch-safe.log",
+      "release_device": "passed; ARM64; release-device-switch-safe.log",
+      "feasibility_flag_absent": true,
+      "pod_source_ownership_checks": 6,
+      "prebuild_log": "prebuild-normal-final.log",
+      "hosted_log": "native-tests-switch-safe.log",
+      "focused_independent_review": "Both reproduced cursor/focus counterexamples stop; no remaining actionable findings in the focused review.",
+      "native_artifact_prepare": "passed; prepare-switch-safe.log"
+    },
+    "hosted_ci": {
+      "observed_head": "a089c946741ab1e9cb4119deee99f9d7e13ca22a",
+      "observed_at_utc": "2026-10-31T14:28:06.645887+00:00",
+      "observed_states": {
+        "IN_PROGRESS": 1,
+        "SUCCESS": 14,
+        "SKIPPED": 2
+      },
+      "current_status": "See PR #82 checks for the current review head; this snapshot predates the documentation commit."
+    }
+  },
+  "commands": [
+    "make core && make test",
+    "scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check",
+    "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings",
+    "scripts/with-toolchain.sh cargo test --manifest-path core/keyboard/Cargo.toml",
+    "scripts/with-toolchain.sh cargo fmt --manifest-path core/keyboard/Cargo.toml -- --check",
+    "scripts/with-toolchain.sh cargo clippy --manifest-path core/keyboard/Cargo.toml --all-targets -- -D warnings",
+    "(cd apps/desktop && npm ci && npm run build && npm test)",
+    "scripts/with-toolchain.sh cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "swift test --package-path apps/macos-platform",
+    "env PENNEL_VARIANT=preview make mobile-test",
+    "swift test --package-path apps/mobile/native/ios/MobileKit",
+    "env -u PENNEL_KEYBOARD_FEASIBILITY CI=1 PENNEL_VARIANT=preview make mobile-prebuild",
+    "env -u PENNEL_KEYBOARD_FEASIBILITY CI=1 PENNEL_VARIANT=preview make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=<verified-test-simulator>'",
+    "env -u PENNEL_KEYBOARD_FEASIBILITY CI=1 PENNEL_VARIANT=preview npm --prefix apps/mobile run build:ios",
+    "env -u PENNEL_KEYBOARD_FEASIBILITY CI=1 PENNEL_VARIANT=preview PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios",
+    "python3 -B -m unittest discover -s scripts/tests",
+    "python3 scripts/keyboard-benchmark.py validate",
+    "env -u PENNEL_KEYBOARD_FEASIBILITY CI=1 PENNEL_VARIANT=preview npm --prefix apps/mobile run native:prepare",
+    "python3 build/mobile/ux-2026-10-30/sign-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31",
+    "python3 build/mobile/ux-2026-10-30/package-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31",
+    "xcrun devicectl device install app --device <physical-iPhone-UDID> build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31/PackagedPreview/Payload/Pennel.app"
+  ],
+  "command_environment": "Large native/non-Rust builds use /Users/landerparren/.local/bin/worktree-storage run --. Rust uses its existing managed compiler-intermediate guard. Device identifiers and private signing/profile data remain in ignored local receipts.",
+  "diagnostic_artifact": {
+    "source_revision": "3bb2ad32d7e6d752e60883783511f2effb05b89b",
+    "directory": "build/mobile/ux-2026-10-30/keyboard-probe-v2-2026-10-31",
+    "personally_signed_bundles": 3,
+    "signatures_verified": true,
+    "core_source_and_bindings_verified": true,
+    "team": "B538Q2K76C",
+    "app_group": "group.app.pennel.preview",
+    "installed_in_place": true,
+    "not_final_distribution_candidate": true
+  },
+  "final_normal_artifact": {
+    "status": "verified and installed in place",
+    "source_revision": "a089c946741ab1e9cb4119deee99f9d7e13ca22a",
+    "directory": "build/mobile/ux-2026-10-30/keyboard-experience-switch-safe-2026-10-31",
+    "ipa": "Pennel-Preview-mobile-sync-keyboard-ux.ipa",
+    "sha256": "117ebb824f5d70cb14bd8d4f5e0a8cff328db0438b60200faa1a7b2cf03b8885",
+    "bytes": 20200880,
+    "keyboard_uuid": "3A3BCCBB-A1FD-3489-8984-5999B2490489",
+    "keyboard_binary_bytes": 3115904,
+    "keyboard_binary_sha256": "ac5cb4803f01b12eb59d56b9f0392c43a6961675b8a9394aba1a294620892009",
+    "team": "B538Q2K76C",
+    "signing_authority": "Apple Development: Lander Parren (C2PC5BFY7J)",
+    "app_group": "group.app.pennel.preview",
+    "bundle_ids": [
+      "app.pennel.ios.preview",
+      "app.pennel.ios.preview.widgets",
+      "app.pennel.ios.preview.keyboard"
+    ],
+    "nested_signatures_verified": true,
+    "package_extraction_verified": true,
+    "unsigned_products_preserved": true,
+    "installed_in_place": true,
+    "diagnostic_build_replaced": true,
+    "diagnostic_button_string_absent": true,
+    "switch_requirement_selector_absent": true,
+    "typing_ffi_symbol_present": true,
+    "full_core_ffi_symbols_absent": true,
+    "core_source_and_bindings_verified": true,
+    "core_manifest": {
+      "schema": 1,
+      "revision": "a089c946741ab1e9cb4119deee99f9d7e13ca22a",
+      "core_sha256": "5176122d24541214b7d1fb40e479683cfc89e4ebb77181c008b8da022c25c0a6",
+      "bindings_sha256": "cf88ffaa29209297fb74f07556e36f1021f3125f7882c46f613b4b0301fef862",
+      "features": [],
+      "targets": [
+        "aarch64-apple-ios",
+        "aarch64-apple-ios-sim"
+      ]
+    },
+    "typing_libraries": [
+      {
+        "path": "apps/mobile/artifacts/ios/PennelTypingFFI.xcframework/ios-arm64/libpennel_typing.a",
+        "bytes": 20901768,
+        "sha256": "1b61a2a6cafbcdd923257ce52ebcfadee5d4848fb1a7b55ac1433c54aacfd1c5"
+      },
+      {
+        "path": "apps/mobile/artifacts/ios/PennelTypingFFI.xcframework/ios-arm64-simulator/libpennel_typing.a",
+        "bytes": 20894928,
+        "sha256": "06924dd81fd53a9aef5986b8fef18304e8b00f253fa545556b895d30532cc3dc"
+      }
+    ]
+  },
+  "physical": {
+    "device": "iPhone 16 Pro",
+    "os": "iOS 27.0.1 (24A446)",
+    "transport": "USB",
+    "diagnostic_candidate_cases": [
+      {
+        "host": "Pennel haptic practice",
+        "source_revision": "3bb2ad3",
+        "case": "Actual keys: A + space + t + e + h + space",
+        "observed": "A the ",
+        "result": "passed"
+      },
+      {
+        "host": "Pennel haptic practice",
+        "source_revision": "3bb2ad3",
+        "case": "Immediate Delete after correction",
+        "observed": "A teh ",
+        "result": "passed"
+      },
+      {
+        "host": "Pennel haptic practice",
+        "source_revision": "3bb2ad3",
+        "case": "Space after rejecting correction",
+        "observed": "A teh  ",
+        "result": "passed; correction not reapplied"
+      },
+      {
+        "host": "Pennel search",
+        "case": "Full Access off: actual Q/w and deletion",
+        "result": "passed; restored empty field"
+      }
+    ],
+    "final_normal_candidate_cases": [
+      {
+        "case": "A + space + t + e + h + space via actual Pennel keys",
+        "observed": "A the ",
+        "result": "passed"
+      },
+      {
+        "case": "Immediate Delete then Space",
+        "observed": [
+          "A teh ",
+          "A teh  "
+        ],
+        "result": "passed; undo and no immediate reapplication"
+      },
+      {
+        "case": "Held Delete and released; subsequent typing",
+        "result": "passed; cleared practice and later keys remained"
+      },
+      {
+        "case": "Custom globe tap, system picker reselection, actual Q/Delete",
+        "full_access": true,
+        "round_trips": 3,
+        "result": "passed"
+      },
+      {
+        "case": "Custom globe hold",
+        "result": "passed; system picker displayed and Pennel reselected"
+      },
+      {
+        "case": "Settings/app reappearance with actual Q/Delete",
+        "round_trips": 3,
+        "result": "passed"
+      },
+      {
+        "case": "Full Access off; actual Q/w/Delete plus custom globe/reselection and Q/Delete",
+        "round_trips": 3,
+        "result": "passed"
+      },
+      {
+        "case": "Local emoji query kat via actual keys",
+        "result": "passed; cat result shown while host practice stayed empty; query cleared"
+      },
+      {
+        "case": "Restore Full Access and original preferences",
+        "result": "passed; OS settings confirms enabled; original Gentle/action feedback/suggestions/QWERTY/English preserved; practice empty"
+      }
+    ],
+    "preferences_after_diagnostic_checks": {
+      "full_access": true,
+      "suggestions": true,
+      "typing_feedback": "Gentle; existing opt-in retained",
+      "layout": "qwerty",
+      "interface_language": "en"
+    },
+    "data_preservation": {
+      "installation": "in place; no uninstall/reset",
+      "diagnostic_documents_metadata_entries": 45,
+      "diagnostic_documents_metadata_unchanged": true,
+      "content_hashes": "Not collected; metadata evidence does not prove complete content integrity.",
+      "final_normal_install_comparison": "passed; all 45 Documents entries retain baseline metadata after final smoke",
+      "documents_entries_after_superseded_normal_smoke": 45,
+      "documents_metadata_unchanged_after_superseded_normal_smoke": true,
+      "keyboard_preferences_preserved_after_superseded_normal_smoke": true,
+      "final_documents_entries": 45,
+      "final_documents_metadata_unchanged": true,
+      "final_keyboard_preferences_unchanged": true
+    },
+    "intent_routing_probes": [
+      {
+        "host": "Pennel practice field",
+        "containing_app_state": "running",
+        "checked_at_utc": "2026-10-31T13:25:26.439111+00:00",
+        "executing_bundle": "app.pennel.ios.preview.keyboard",
+        "is_extension": true,
+        "recording_started": false
+      },
+      {
+        "host": "Settings search",
+        "containing_app_state": "absent after targeted SIGTERM",
+        "checked_at_utc": "2026-10-31T13:43:45.646251+00:00",
+        "executing_bundle": "app.pennel.ios.preview.keyboard",
+        "is_extension": true,
+        "recording_started": false
+      }
+    ],
+    "intent_routing_conclusion": "The tested public Button/AudioRecordingIntent route executed in the keyboard extension, including while the containing app was absent after targeted SIGTERM; it did not establish app wakeup or microphone eligibility. SIGTERM is not user force-quit evidence or a general impossibility result.",
+    "microphone_recordings_started": 0,
+    "provider_inference_started": 0,
+    "reappearance_crash": {
+      "source_revision": "bf69657",
+      "at": "2026-10-31T15:02:27+01:00",
+      "keyboard_uuid_matched": true,
+      "exception": "EXC_CRASH / SIGABRT / Objective-C doesNotRecognizeSelector",
+      "stack": [
+        "UIInputViewController.needsInputModeSwitchKey",
+        "KeyboardViewController.install()",
+        "KeyboardViewController.viewWillAppear(_:)"
+      ],
+      "fix_commit": "a089c946741ab1e9cb4119deee99f9d7e13ca22a",
+      "fix": "Always retain the existing public globe control and do not query the transitional host interface for its visibility. Some hosts can show both the system and custom globe; the spacebar has less room.",
+      "new_report_count": 1,
+      "aggregate_existing_report_updated": true,
+      "verification": "Replacement at a089c94 passed final native builds/tests and signed-device reappearance/switching/permission checks; no new or modified keyboard reports in the final test window."
+    },
+    "superseded_normal_candidate_cases": [
+      {
+        "case": "Actual A + space + t + e + h + space; immediate Delete; next Space",
+        "result": "passed correction / undo / no immediate reapplication"
+      },
+      {
+        "case": "Held delete then released; type Q afterward",
+        "result": "passed; empty then Q remained"
+      },
+      {
+        "case": "Local emoji query kat",
+        "result": "passed; cat result shown and host field stayed empty"
+      },
+      {
+        "case": "Three switch-away/reselection cycles with Full Access on and three with it off",
+        "result": "Pennel visible after each selection; a later host reappearance produced the recorded crash."
+      },
+      {
+        "case": "Full Access off actual Q/w/deletion",
+        "result": "passed; Full Access restored on"
+      }
+    ],
+    "checked_at_utc": "2026-10-31T14:28:06.645887+00:00",
+    "preferences_after_final_checks": {
+      "full_access": true,
+      "suggestions": true,
+      "typing_feedback": "Gentle; existing opt-in retained",
+      "layout": "qwerty",
+      "interface_language": "en",
+      "verified_from": "Live OS Full Access control, app feedback selection and before/after preference comparison; no reliance on historical Full Access flag."
+    },
+    "final_crash_comparison": {
+      "new_keyboard_reports": 0,
+      "removed_keyboard_reports": 0,
+      "modified_keyboard_reports": 0,
+      "comparison": "relative paths, modification timestamps and sizes, not count alone",
+      "documents_entries": 45,
+      "documents_metadata_identical": true,
+      "keyboard_preferences_identical": true,
+      "keyboard_reports_before": 25,
+      "keyboard_reports_after": 25
+    }
+  },
+  "simulator": {
+    "device": "iPhone 17",
+    "os": "iOS 26.5",
+    "evidence_scope": "UI only",
+    "visible_keyboard_in_rn_practice": "passed",
+    "actual_typing_and_deletion_in_settings": "passed",
+    "local_emoji_query_host_isolation": "passed; kat shows cat and host remains empty",
+    "three_globe_round_trips": "not qualified; first-use Apple QuickPath overlay and keyboard visibility transitions interrupted the sequence; no layout defect established",
+    "preference_and_launch_environment_restored": true
+  },
+  "profiling": {
+    "attempts": 1,
+    "requested_seconds": 15,
+    "completed_capture": false,
+    "xctrace_exit_code": 21,
+    "failure": "Instruments could not find the verified keyboard PID; CoreDevice reported the same process before and after.",
+    "memory_bytes": null,
+    "cpu_percent": null,
+    "energy": null,
+    "physical_touch_or_vibration_latency": null
+  },
+  "benchmark": {
+    "corpus": "docs/evidence/keyboard-benchmark-corpus.json",
+    "authored_synthetic_tasks": 90,
+    "tasks_per_language": 30,
+    "typing_tasks": 66,
+    "dictation_tasks": 24,
+    "measured_human_trials": 0,
+    "provisional_completion_time_improvement_target": 0.2,
+    "provisional_harmful_correction_reduction_target": 0.3,
+    "targets_achieved": false,
+    "haptic_winning_profile": "not established; blinded physical comparison remains required"
+  },
+  "logs_directory": "build/mobile/keyboard-experience-2026-10-31",
+  "remaining": [
+    "Review/merge and current-head hosted CI are tracked in PR #82; issue #39 stays open while required acceptance remains.",
+    "Supported keyboard-only dictation startup after cold/expired/idle sessions, microphone release, interruptions and repeated recordings.",
+    "Actual Dutch/English/mixed speech, selected-provider writing and semantic preservation on consented tasks.",
+    "Human haptic comfort/timing comparison, recording noise, one/two-thumb/case/grip testing and extended writing.",
+    "Broad host/device/OS/VoiceOver/large-text/gesture coverage and reliable repeated keyboard switching.",
+    "Measured keyboard memory, CPU, energy, battery and physical onset; no measurements were obtained by the failed profiling attempt.",
+    "Matched Apple/Raycast comparisons and sufficient measured trials for the provisional speed/error ambitions.",
+    "App Review and store/release acceptance; Android remains gated on iPhone acceptance."
+  ],
+  "superseded_normal_artifact": {
+    "source_revision": "bf696577384fa973d8d5e85bd46609ec8bd6fc0f",
+    "directory": "build/mobile/ux-2026-10-30/keyboard-experience-final-2026-10-31",
+    "sha256": "405e91062436cf51e5b2def7c6f520e93c3b41125c750ab2003fb217547f89e9",
+    "bytes": 20200900,
+    "keyboard_uuid": "FAF434C9-5FF2-390D-AEF4-7C298A842BEB",
+    "signatures_and_in_place_install_verified": true,
+    "superseded_reason": "A signed-device reappearance raised an Objective-C exception while install() read needsInputModeSwitchKey."
+  },
+  "screenshots": {
+    "source_revision": "a089c946741ab1e9cb4119deee99f9d7e13ca22a",
+    "scope": "Own app, synthetic unsaved practice only; UI evidence, not tactile evidence",
+    "files": [
+      "docs/evidence/keyboard-experience-2026-10-31/feedback-phone.png",
+      "docs/evidence/keyboard-experience-2026-10-31/correction-phone.png"
+    ]
+  }
+}

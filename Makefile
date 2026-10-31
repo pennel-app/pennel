@@ -5,6 +5,7 @@ core:
 
 test:
 	scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml
+	scripts/with-toolchain.sh cargo test --manifest-path core/keyboard/Cargo.toml
 
 verify-core: core
 	$(MAKE) test
