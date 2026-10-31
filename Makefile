@@ -30,6 +30,7 @@ theme-check:
 	python3 scripts/generate-theme.py --check
 
 IOS_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
+PENNEL_PODS_VERSION := $(shell sed -nE 's/^COCOAPODS: ([0-9]+\.[0-9]+\.[0-9]+)$$/\1/p' apps/mobile/Podfile.lock)
 
 mobile-core:
 	cd apps/mobile && npm run native:prepare
@@ -37,7 +38,8 @@ mobile-core:
 mobile-prebuild: mobile-core
 	cd apps/mobile && npm run test:prebuild
 	cd apps/mobile && npm run prebuild:clean
-	cd apps/mobile/ios && pod install
+	cp apps/mobile/Podfile.lock apps/mobile/ios/Podfile.lock
+	cd apps/mobile/ios && pod '_$(PENNEL_PODS_VERSION)_' install --deployment
 	cd apps/mobile && npm run test:pods
 
 mobile-test:

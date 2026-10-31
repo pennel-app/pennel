@@ -282,6 +282,7 @@ function configureProject(config, options) {
   for (const [id] of [app, widget, keyboard, test, runtimeTest]) {
     for (const configuration of configurations(project, id)) {
       const settings = configuration.buildSettings;
+      if ([app[0], widget[0], keyboard[0]].includes(id)) configureTestFlightSigning(settings, options);
       settings.IPHONEOS_DEPLOYMENT_TARGET = '26.0';
       settings.SWIFT_VERSION = '6.0';
       const probeFlags = unquote(settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS || '$(inherited)')
@@ -319,6 +320,13 @@ function configureProject(config, options) {
   fs.writeFileSync(widgetIndex, source);
   configureScheme(ios, [[keyboardTestsName, test[0]], [runtimeTestsName, runtimeTest[0]]], new Set(realEntries(project.pbxNativeTargetSection()).map(([id]) => id)));
   return config;
+}
+
+function configureTestFlightSigning(settings, options) {
+  if (!options.testFlight) return;
+  if (options.production) throw new Error('TestFlight distribution is restricted to Pennel Preview');
+  settings.DEVELOPMENT_TEAM = quote('B538Q2K76C');
+  settings.CODE_SIGN_STYLE = 'Automatic';
 }
 
 function keyboardFeasibilityEnabled(options, environment = process.env) {
@@ -366,4 +374,4 @@ function withPennel(config, options) {
 }
 
 module.exports = withPennel;
-module.exports._test = { afterExistingMod, patchPodfile, variantInfo, patchAppDelegateSwift, removeLegacyKeyboardSources, removeTargets, targetsNamed, configureProject, configurations, keyboardFeasibilityEnabled };
+module.exports._test = { afterExistingMod, patchPodfile, variantInfo, patchAppDelegateSwift, removeLegacyKeyboardSources, removeTargets, targetsNamed, configureProject, configurations, keyboardFeasibilityEnabled, configureTestFlightSigning };

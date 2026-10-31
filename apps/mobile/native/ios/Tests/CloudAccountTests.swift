@@ -5,21 +5,58 @@ import Testing
 @testable internal import PennelMobile
 
 private final class MockCloudServer: @unchecked Sendable {
+    enum StartupError: Error, Equatable { case cancelled, deadline, invalidPort }
+
     private let listener: NWListener
     private let lock = NSLock()
     private var bodies: [String: [String: Any]] = [:]
-    private let queue = DispatchQueue(label: "mock-cloud")
+    private let queue: DispatchQueue
+    private var startup: Result<UInt16, any Error>?
+    private(set) var url = ""
 
-    init() throws {
+    init(queue: DispatchQueue = DispatchQueue(label: "mock-cloud"), startupTimeout: Duration = .seconds(5)) async throws {
+        guard startupTimeout > .zero else { throw StartupError.deadline }
+        self.queue = queue
         listener = try NWListener(using: .tcp, on: .any)
-        let ready = DispatchSemaphore(value: 0)
-        listener.stateUpdateHandler = { if case .ready = $0 { ready.signal() } }
-        listener.newConnectionHandler = { [unowned self] in handle($0) }
+        listener.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            let result: Result<UInt16, any Error>
+            switch state {
+            case .ready:
+                if let port = self.listener.port?.rawValue, port > 0 { result = .success(port) }
+                else { result = .failure(StartupError.invalidPort) }
+            case .failed(let error): result = .failure(error)
+            case .cancelled: result = .failure(StartupError.cancelled)
+            default: return
+            }
+            self.lock.withLock { if self.startup == nil { self.startup = result } }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            guard let self else { connection.cancel(); return }
+            self.handle(connection)
+        }
         listener.start(queue: queue)
-        _ = ready.wait(timeout: .now() + 5)
+        let deadline = ContinuousClock.now.advanced(by: startupTimeout)
+        do {
+            while true {
+                try Task.checkCancellation()
+                if let result = lock.withLock({ startup }) {
+                    url = try Self.endpoint(port: result.get())
+                    return
+                }
+                guard ContinuousClock.now < deadline else { throw StartupError.deadline }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        } catch {
+            listener.cancel()
+            throw error
+        }
     }
 
-    var url: String { "http://127.0.0.1:\(listener.port?.rawValue ?? 0)" }
+    static func endpoint(port: UInt16?) throws -> String {
+        guard let port, port > 0 else { throw StartupError.invalidPort }
+        return "http://127.0.0.1:\(port)"
+    }
 
     func body(for path: String) -> [String: Any]? { lock.withLock { bodies[path] } }
 
@@ -120,8 +157,26 @@ private func filesContaining(_ needle: Data, under root: URL) -> [String] {
 
 @MainActor
 struct CloudAccountTests {
+    @Test func mock_listener_becomes_ready_without_blocking_the_main_queue() async throws {
+        let server = try await MockCloudServer(queue: .main)
+        defer { server.stop() }
+        let port = try #require(URL(string: server.url)?.port)
+        #expect(port > 0)
+    }
+
+    @Test func mock_listener_reports_deadline_and_rejects_missing_ports() async throws {
+        await #expect(throws: MockCloudServer.StartupError.deadline) {
+            _ = try await MockCloudServer(queue: .main, startupTimeout: .zero)
+        }
+        let cancelled = Task { try await MockCloudServer(queue: .main) }
+        cancelled.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await cancelled.value }
+        #expect(throws: MockCloudServer.StartupError.invalidPort) { try MockCloudServer.endpoint(port: nil) }
+        #expect(throws: MockCloudServer.StartupError.invalidPort) { try MockCloudServer.endpoint(port: 0) }
+    }
+
     @Test func login_start_sends_ios_platform() async throws {
-        let server = try MockCloudServer()
+        let server = try await MockCloudServer()
         defer { server.stop() }
         setenv("PENNEL_CLOUD_URL", server.url, 1)
         defer { unsetenv("PENNEL_CLOUD_URL") }
@@ -137,10 +192,21 @@ struct CloudAccountTests {
             sleep: { _ in try? await Task.sleep(for: .milliseconds(20)) })
 
         let login = Task { await model.beginLogin() }
-        // Cancelling before the start response arrives would drop it, so wait for the verification page instead.
-        for _ in 0..<500 where opened.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        var waitError: (any Error)?
+        do {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            while opened.isEmpty && model.notice == nil && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        } catch { waitError = error }
+        let openedBeforeCleanup = !opened.isEmpty
+        let cause = model.notice.map { $0 == "Failed: No connection" ? "network" : "explicit model notice" }
+            ?? "verification-page deadline"
         model.cancelLogin()
+        login.cancel()
         await login.value
+        if let waitError { throw waitError }
+        if !openedBeforeCleanup { Issue.record("Login did not open the fixture verification page: \(cause).") }
 
         let body = try #require(server.body(for: "/v1/auth/device"))
         #expect(body["platform"] as? String == "ios")

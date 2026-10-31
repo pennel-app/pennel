@@ -1,5 +1,7 @@
 # Expo mobile implementation
 
+Selected Preview releases use the [Xcode Cloud and internal TestFlight pipeline](mobile-testflight.md). Account configuration, archive validation and real TestFlight delivery are recorded separately there.
+
 Status: Expo is the mobile application UI. The legacy SwiftUI iPhone shell is retired under [cleanup #75](https://github.com/pennel-app/pennel/issues/75); its reusable native services and regression tests now belong to the mobile workspace. Signed-device, upgrade, keyboard, Cloud deployment and store acceptance remain open.
 
 Tracking: [Expo migration #42](https://github.com/pennel-app/pennel/issues/42), [Cloud speaker recognition #38](https://github.com/pennel-app/pennel/issues/38), [keyboard experience #39](https://github.com/pennel-app/pennel/issues/39), [device acceptance #18](https://github.com/pennel-app/pennel/issues/18), and [signing/store readiness #20](https://github.com/pennel-app/pennel/issues/20).

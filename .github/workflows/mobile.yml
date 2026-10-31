@@ -10,7 +10,12 @@ on:
       - "assets/locales/**"
       - "scripts/build-mobile-*.sh"
       - "scripts/build-keyboard-core-ios.sh"
-      - "scripts/tests/test_mobile_core_build.py"
+      - "scripts/tests/test_mobile*.py"
+      - "scripts/mobile-testflight-*.py"
+      - "scripts/mobile-native-cache.py"
+      - "scripts/xcode-cloud-*.sh"
+      - "scripts/tests/test_mobile_testflight*.py"
+      - "scripts/tests/test_mobile_native_cache.py"
       - "scripts/prepare-mobile-assets.sh"
       - "scripts/mobile-device-hub*.mjs"
       - "scripts/with-toolchain.sh"
@@ -19,6 +24,7 @@ on:
       - "scripts/tests/test_ci_xcode_cache.py"
       - "Makefile"
       - ".github/workflows/mobile.yml"
+      - ".github/workflows/mobile-testflight.yml"
   pull_request:
     paths: *paths
   workflow_dispatch:
@@ -76,11 +82,22 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.6'
+      - name: Prepare the locked CocoaPods version
+        run: |
+          pod_version="$(sed -n 's/^COCOAPODS: //p' apps/mobile/Podfile.lock)"
+          if ! pod "_${pod_version}_" --version >/dev/null 2>&1; then
+            gem install --user-install cocoapods --version "$pod_version" --no-document
+          fi
+          gem_bin="$(ruby -r rubygems -e 'puts Gem.user_dir')/bin"
+          echo "$gem_bin" >> "$GITHUB_PATH"
+          export PATH="$gem_bin:$PATH"
+          pod "_${pod_version}_" --version
       - name: Prepare canonical icon converter
         run: command -v rsvg-convert >/dev/null || brew install librsvg
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: '1.99.1'
           targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@v2
         with:
@@ -93,7 +110,7 @@ jobs:
       - name: Typecheck and regression tests
         run: |
           python3 -B -m unittest discover -s scripts/tests -p 'test_ci_xcode_cache.py'
-          python3 -B -m unittest discover -s scripts/tests -p 'test_mobile_core_build.py'
+          python3 -B -m unittest discover -s scripts/tests -p 'test_mobile*.py'
           python3 -B scripts/ci-xcode-cache.py time --phase typecheck-and-tests -- make mobile-test
       - name: Generate and validate the preview workspace
         env:
