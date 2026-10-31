@@ -55,7 +55,7 @@ const aliases: Record<string, string> = {
   recording_microphone_lost: 'recording_microphone_lost', recording_paused: 'recording_paused',
   camera_denied: 'camera_denied', scanner_unavailable: 'scanner_unavailable', recovery_unconfirmed: 'recovery_unconfirmed',
   pairing_code: 'pairing_code', pairing_invalid: 'pairing_invalid', pairing_expired: 'pairing_expired', pairing_restart: 'pairing_restart',
-  pairing_unavailable: 'pairing_unavailable', pairing_storage: 'pairing_storage', pairing_busy: 'overloaded',
+  pairing_unavailable: 'pairing_unavailable', pairing_incompatible: 'pairing_incompatible', pairing_service_access: 'pairing_service_access', pairing_service_retry: 'pairing_service_retry', pairing_storage: 'pairing_storage', pairing_busy: 'overloaded',
   pairing_unknown: 'pairing_used', pairing_claimed: 'pairing_used', pairing_used: 'pairing_used',
   pairing_account: 'pairing_account', pairing_existing: 'pairing_existing', pairing_changed: 'pairing_invalid',
   pairing_transcript: 'pairing_invalid', pairing_message: 'pairing_invalid', pairing_phase: 'pairing_invalid', pairing_approval: 'pairing_invalid',

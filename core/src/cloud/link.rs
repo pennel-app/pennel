@@ -67,6 +67,21 @@ pub enum CloudLinkPhase {
     Failed,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+pub struct CloudLinkAvailability {
+    pub available: bool,
+    pub reason_code: Option<String>,
+}
+
+impl CloudLinkAvailability {
+    fn unavailable(reason: &str) -> Self {
+        Self {
+            available: false,
+            reason_code: Some(reason.into()),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct CloudLinkView {
     pub phase: CloudLinkPhase,
@@ -199,6 +214,21 @@ impl Drop for Transfer {
     fn drop(&mut self) {
         self.grant.zeroize();
         self.vault_key.zeroize();
+    }
+}
+
+impl Transfer {
+    fn valid_for(&self, context: &Context) -> bool {
+        self.version == 1
+            && self.account_id == context.account
+            && self.generation == context.generation
+            && self.provisional_id == context.new_id
+            && self.transcript_hash == context.hash
+            && self.grant.len() == 43
+            && URL_SAFE_NO_PAD
+                .decode(&self.grant)
+                .is_ok_and(|bytes| bytes.len() == 32 && URL_SAFE_NO_PAD.encode(bytes) == self.grant)
+            && VaultKey::from_b64(&self.vault_key).is_some()
     }
 }
 
@@ -449,13 +479,7 @@ impl Keys {
                 .map_err(|_| invalid())?,
         );
         let transfer: Transfer = serde_json::from_slice(&plain).map_err(|_| invalid())?;
-        if transfer.version != 1
-            || transfer.account_id != context.account
-            || transfer.generation != context.generation
-            || transfer.provisional_id != context.new_id
-            || transfer.transcript_hash != context.hash
-            || transfer.grant.len() != 43
-        {
+        if !transfer.valid_for(context) {
             return Err(invalid());
         }
         Ok(transfer)
@@ -473,6 +497,48 @@ impl Client {
             http: agent(10),
         }
     }
+
+    fn availability(&self) -> Result<CloudLinkAvailability, PennelError> {
+        let response = match send_json(
+            &self.http,
+            "GET",
+            &format!("{}/v1/device-links/capabilities", self.session.base_url()),
+            None,
+            None,
+        ) {
+            Err(PennelError::InvalidResponse { .. }) => {
+                return Ok(CloudLinkAvailability::unavailable("pairing_incompatible"));
+            }
+            other => other?,
+        };
+        if matches!(response.0, 404 | 405)
+            && matches!(
+                response.1.get("error").and_then(Value::as_str),
+                None | Some("" | "not_found" | "method_not_allowed")
+            )
+        {
+            return Ok(CloudLinkAvailability::unavailable("pairing_unavailable"));
+        }
+        if !(200..300).contains(&response.0) {
+            return Err(link_http_error(response.0, &response.1));
+        }
+        let supported = response.1.get("supported").and_then(Value::as_bool);
+        if response.0 != 200
+            || supported.is_none()
+            || response.1.get("protocol").and_then(Value::as_str) != Some(PROTOCOL)
+        {
+            return Ok(CloudLinkAvailability::unavailable("pairing_incompatible"));
+        }
+        Ok(if supported == Some(true) {
+            CloudLinkAvailability {
+                available: true,
+                reason_code: None,
+            }
+        } else {
+            CloudLinkAvailability::unavailable("pairing_unavailable")
+        })
+    }
+
     fn call(
         &self,
         action: &str,
@@ -496,7 +562,7 @@ impl Client {
             response = send_json(&self.http, "POST", &url, Some(&token), Some(body))?;
         }
         if !(200..300).contains(&response.0) {
-            return Err(error_from(response.0, &response.1));
+            return Err(link_http_error(response.0, &response.1));
         }
         Ok(response.1)
     }
@@ -524,6 +590,48 @@ impl Client {
             &json!({"participant_token":remote.capability.as_str()}),
             false,
         );
+    }
+}
+
+fn link_http_error(status: u16, body: &Value) -> PennelError {
+    match error_from(status, body) {
+        PennelError::Cloud { code, message } if code == "unknown" || code.is_empty() => {
+            PennelError::Cloud {
+                code: format!("http_{status}"),
+                message,
+            }
+        }
+        error => error,
+    }
+}
+
+fn link_error_code(error: &PennelError) -> String {
+    match error {
+        PennelError::Cloud { code, .. } => code.clone(),
+        PennelError::Cancelled => "cancelled".into(),
+        PennelError::Storage { .. } => "storage".into(),
+        PennelError::Network { .. } => "network".into(),
+        PennelError::Http { status, .. } => format!("http_{status}"),
+        PennelError::NotSignedIn => "not_signed_in".into(),
+        PennelError::VaultLocked => "vault_locked".into(),
+        _ => "error".into(),
+    }
+}
+
+fn retryable_link_error(error: &PennelError) -> bool {
+    match error {
+        PennelError::Network { .. } => true,
+        PennelError::Http { status, .. } => matches!(status, 408 | 429 | 500..=599),
+        PennelError::Cloud { code, .. } => {
+            matches!(
+                code.as_str(),
+                "internal" | "pairing_retry" | "rate_limited" | "too_many" | "slow_down"
+            ) || code
+                .strip_prefix("http_")
+                .and_then(|status| status.parse::<u16>().ok())
+                .is_some_and(|status| matches!(status, 408 | 429 | 500..=599))
+        }
+        _ => false,
     }
 }
 
@@ -799,6 +907,10 @@ impl LinkSession {
 
 #[uniffi::export]
 impl PennelEngine {
+    pub fn cloud_link_availability(&self) -> Result<CloudLinkAvailability, PennelError> {
+        Client::new(self.cloud_session()?).availability()
+    }
+
     pub fn cloud_link_start(
         &self,
         role: CloudLinkRole,
@@ -927,14 +1039,11 @@ impl PennelEngine {
                         CloudLinkPhase::Failed
                     };
                 }
-                view.error_code = Some(
-                    if provisioning_storage(&error) {
-                        "pairing_storage"
-                    } else {
-                        "pairing_retry"
-                    }
-                    .into(),
-                );
+                view.error_code = Some(if provisioning_storage(&error) {
+                    "pairing_storage".into()
+                } else {
+                    link_error_code(&error)
+                });
                 view.error_message = Some(error.to_string());
             }
             _ => {}
@@ -988,6 +1097,8 @@ impl PennelEngine {
             Err(error) => {
                 flow.view = CloudLinkView {
                     phase: CloudLinkPhase::Failed,
+                    role: Some(role),
+                    error_code: Some(link_error_code(&error)),
                     error_message: Some(error.to_string()),
                     ..CloudLinkView::default()
                 };
@@ -1013,6 +1124,31 @@ impl PennelEngine {
         let session = self.cloud_session()?;
         let auth_generation = session.generation();
         let client = Client::new(session.clone());
+        let check_live = || {
+            if self.cloud_link.lock().unwrap().generation != flow_generation
+                || session.generation() != auth_generation
+            {
+                Err(PennelError::Cancelled)
+            } else {
+                Ok(())
+            }
+        };
+        let availability = client.availability()?;
+        check_live()?;
+        if !availability.available {
+            let code = availability
+                .reason_code
+                .as_deref()
+                .unwrap_or("pairing_unavailable");
+            return Err(failure(
+                code,
+                if code == "pairing_incompatible" {
+                    "Update Pennel or use email and your recovery code to connect."
+                } else {
+                    "Device connection is not available on this service. Use email and your recovery code."
+                },
+            ));
+        }
         let identity = uuid::Uuid::now_v7().to_string();
         let capability = Zeroizing::new(random_token());
         let (id, password) = match code {
@@ -1038,6 +1174,7 @@ impl PennelEngine {
             capability: capability.clone(),
             role,
         });
+        check_live()?;
         let response = client.call("join", temporary.as_ref(), &body, session.signed_in())?;
         if field(&response, "protocol")? != PROTOCOL
             || field(&response, "participant_token")? != capability.as_str()
@@ -1139,17 +1276,11 @@ impl PennelEngine {
             active.poll(self, &client)
         };
         let fatal = result.as_ref().err().is_some_and(|e| {
-            !matches!(e, PennelError::Network { .. })
-                && !(has_pending(self) && provisioning_storage(e))
+            !(retryable_link_error(e) || (has_pending(self) && provisioning_storage(e)))
         });
         if let Err(error) = &result {
             active.view.error_message = Some(error.to_string());
-            active.view.error_code = Some(match error {
-                PennelError::Cloud { code, .. } => code.clone(),
-                PennelError::Cancelled => "cancelled".into(),
-                PennelError::Storage { .. } => "storage".into(),
-                _ => "network".into(),
-            });
+            active.view.error_code = Some(link_error_code(error));
             if fatal {
                 active.rollback(self);
                 client.cancel(&active.remote);
@@ -1191,7 +1322,7 @@ impl PennelEngine {
 mod tests {
     use super::*;
 
-    fn context() -> Context {
+    pub(super) fn context() -> Context {
         let snapshot = json!({"request_id":"ABCD-EFGH",
             "new_device":{"device_name":"Phone","platform":"ios","provisional_id":"00000000-0000-4000-8000-000000000001"},
             "trusted_device":{"user_id":"00000000-0000-4000-8000-000000000002","device_id":"00000000-0000-4000-8000-000000000003",
@@ -1335,11 +1466,30 @@ mod tests {
         bytes[last] ^= 1;
         assert!(a.open(&context, &B64.encode(bytes)).is_err());
         assert!(a.open(&context, &"A".repeat(MAX_ENVELOPE + 1)).is_err());
+        for (vault_key, grant) in [
+            ("bad key".into(), random_token()),
+            (key.to_b64(), "!".repeat(43)),
+        ] {
+            let malformed = Transfer {
+                version: 1,
+                grant,
+                vault_key,
+                account_id: context.account.clone(),
+                generation: context.generation,
+                provisional_id: context.new_id.clone(),
+                transcript_hash: context.hash.clone(),
+            };
+            assert!(
+                a.open(&context, &b.seal(&context, &malformed).unwrap())
+                    .is_err()
+            );
+        }
     }
 
     #[test]
     fn cancellation_during_create_cannot_reactivate_the_connection() {
         let mut server = mockito::Server::new();
+        let _capabilities = capabilities(&mut server);
         let (entered, observed) = std::sync::mpsc::channel();
         let (release, blocked) = std::sync::mpsc::channel();
         let blocked = Arc::new(std::sync::Mutex::new(blocked));
@@ -1376,5 +1526,355 @@ mod tests {
         assert_eq!(engine.cloud_link_view().phase, CloudLinkPhase::Cancelled);
         create.assert();
         cancel.assert();
+    }
+
+    pub(super) fn engine_for(
+        server: &mockito::ServerGuard,
+    ) -> (tempfile::TempDir, Arc<PennelEngine>) {
+        let directory = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new(directory.path().to_string_lossy().into_owned()).unwrap();
+        let secrets = Arc::new(crate::cloud::tests::MemorySecrets::default());
+        engine.set_secret_store(secrets.clone()).unwrap();
+        engine.use_cloud_session(Session::new(server.url(), secrets));
+        (directory, engine)
+    }
+
+    fn capabilities(server: &mut mockito::ServerGuard) -> mockito::Mock {
+        server
+            .mock("GET", "/v1/device-links/capabilities")
+            .with_body(json!({"supported":true,"protocol":PROTOCOL,"expires_in":600}).to_string())
+            .create()
+    }
+
+    #[test]
+    fn capabilities_classify_disabled_missing_and_incompatible_services() {
+        for (status, body, reason) in [
+            (
+                200,
+                json!({"supported":true,"protocol":PROTOCOL}).to_string(),
+                None,
+            ),
+            (
+                200,
+                json!({"supported":false,"protocol":PROTOCOL}).to_string(),
+                Some("pairing_unavailable"),
+            ),
+            (404, String::new(), Some("pairing_unavailable")),
+            (
+                404,
+                "<html>Not found</html>".into(),
+                Some("pairing_unavailable"),
+            ),
+            (405, String::new(), Some("pairing_unavailable")),
+            (
+                404,
+                r#"{"error":"not_found"}"#.into(),
+                Some("pairing_unavailable"),
+            ),
+            (
+                200,
+                "<html>Gateway</html>".into(),
+                Some("pairing_incompatible"),
+            ),
+            (200, "{}".into(), Some("pairing_incompatible")),
+            (
+                200,
+                json!({"supported":"yes","protocol":PROTOCOL}).to_string(),
+                Some("pairing_incompatible"),
+            ),
+            (
+                200,
+                json!({"supported":true,"protocol":"future-v2"}).to_string(),
+                Some("pairing_incompatible"),
+            ),
+        ] {
+            let mut server = mockito::Server::new();
+            let request = server
+                .mock("GET", "/v1/device-links/capabilities")
+                .match_header("authorization", mockito::Matcher::Missing)
+                .match_header(
+                    "user-agent",
+                    concat!("pennel-core/", env!("CARGO_PKG_VERSION")),
+                )
+                .with_status(status)
+                .with_body(body)
+                .expect(1)
+                .create();
+            let (_directory, engine) = engine_for(&server);
+            let availability = engine.cloud_link_availability().unwrap();
+            assert_eq!(availability.available, reason.is_none(), "status {status}");
+            assert_eq!(
+                availability.reason_code.as_deref(),
+                reason,
+                "status {status}"
+            );
+            request.assert();
+        }
+    }
+
+    #[test]
+    fn capabilities_preserve_explicit_errors_and_status_for_service_failures() {
+        for (status, body, code) in [
+            (403, "<html>Denied</html>", "http_403"),
+            (503, "<html>Unavailable</html>", "http_503"),
+            (429, r#"{"error":"rate_limited"}"#, "rate_limited"),
+            (404, r#"{"error":"pairing_unknown"}"#, "pairing_unknown"),
+        ] {
+            let mut server = mockito::Server::new();
+            let request = server
+                .mock("GET", "/v1/device-links/capabilities")
+                .with_status(status)
+                .with_body(body)
+                .expect(1)
+                .create();
+            let (_directory, engine) = engine_for(&server);
+            assert!(
+                matches!(engine.cloud_link_availability(), Err(PennelError::Cloud { code: observed, .. }) if observed == code)
+            );
+            request.assert();
+        }
+    }
+
+    #[test]
+    fn unavailable_admission_preserves_role_and_error_without_posting() {
+        for (code, role, reason) in [
+            (None, CloudLinkRole::NewDevice, "pairing_unavailable"),
+            (None, CloudLinkRole::TrustedDevice, "pairing_unavailable"),
+            (
+                Some("ABCD-EFGH-1234-5678"),
+                CloudLinkRole::NewDevice,
+                "pairing_incompatible",
+            ),
+            (
+                Some("ABCD-EFGH-1234-5678"),
+                CloudLinkRole::TrustedDevice,
+                "pairing_incompatible",
+            ),
+        ] {
+            let mut server = mockito::Server::new();
+            let body = if reason == "pairing_unavailable" {
+                json!({"supported":false,"protocol":PROTOCOL})
+            } else {
+                json!({"supported":true,"protocol":"future"})
+            };
+            let probe = server
+                .mock("GET", "/v1/device-links/capabilities")
+                .with_body(body.to_string())
+                .expect(1)
+                .create();
+            let admission = server
+                .mock("POST", mockito::Matcher::Any)
+                .expect(0)
+                .create();
+            let (_directory, engine) = engine_for(&server);
+            let result = match code {
+                Some(code) => {
+                    engine.cloud_link_join(code.into(), role, "Fixture".into(), "ios".into())
+                }
+                None => engine.cloud_link_start(role, "Fixture".into(), "ios".into()),
+            };
+            assert!(matches!(result, Err(PennelError::Cloud { code, .. }) if code == reason));
+            let restored = engine.cloud_link_view();
+            assert_eq!(restored.phase, CloudLinkPhase::Failed);
+            assert_eq!(restored.role, Some(role));
+            assert_eq!(restored.error_code.as_deref(), Some(reason));
+            assert!(restored.connection_code.is_none());
+            probe.assert();
+            admission.assert();
+        }
+    }
+
+    #[test]
+    fn capability_reads_leave_pending_view_and_credentials_unchanged() {
+        let mut server = mockito::Server::new();
+        let probe = capabilities(&mut server);
+        let (_directory, engine) = engine_for(&server);
+        let store = engine.secret_store().unwrap();
+        for key in [
+            super::super::REFRESH_ACCOUNT,
+            VAULT_KEY_ACCOUNT,
+            VAULT_OWNER_ACCOUNT,
+        ] {
+            store.set(key.into(), Some(format!("fixture-{key}")));
+        }
+        let view = CloudLinkView {
+            phase: CloudLinkPhase::WaitingApproval,
+            role: Some(CloudLinkRole::NewDevice),
+            request_id: Some("ABCD-EFGH".into()),
+            ..CloudLinkView::default()
+        };
+        engine.cloud_link.lock().unwrap().view = view.clone();
+        assert!(engine.cloud_link_availability().unwrap().available);
+        assert!(engine.cloud_link_view() == view);
+        for key in [
+            super::super::REFRESH_ACCOUNT,
+            VAULT_KEY_ACCOUNT,
+            VAULT_OWNER_ACCOUNT,
+        ] {
+            assert_eq!(store.get(key.into()), Some(format!("fixture-{key}")));
+        }
+        probe.assert();
+    }
+
+    #[test]
+    fn cancellation_or_account_change_during_capability_check_never_posts() {
+        for change_account in [false, true] {
+            let mut server = mockito::Server::new();
+            let (entered, observed) = std::sync::mpsc::channel();
+            let (release, blocked) = std::sync::mpsc::channel();
+            let blocked = Arc::new(std::sync::Mutex::new(blocked));
+            let probe = server
+                .mock("GET", "/v1/device-links/capabilities")
+                .with_body_from_request(move |_| {
+                    entered.send(()).unwrap();
+                    blocked.lock().unwrap().recv().unwrap();
+                    serde_json::to_vec(&json!({"supported":true,"protocol":PROTOCOL})).unwrap()
+                })
+                .expect(1)
+                .create();
+            let admission = server
+                .mock("POST", mockito::Matcher::Any)
+                .expect(0)
+                .create();
+            let (_directory, engine) = engine_for(&server);
+            let starting = {
+                let engine = engine.clone();
+                std::thread::spawn(move || {
+                    engine.cloud_link_start(
+                        CloudLinkRole::NewDevice,
+                        "Fixture".into(),
+                        "ios".into(),
+                    )
+                })
+            };
+            observed
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            if change_account {
+                engine.cloud_session().unwrap().cancel_login();
+            } else {
+                engine.cloud_link_cancel().unwrap();
+            }
+            release.send(()).unwrap();
+            assert_eq!(starting.join().unwrap(), Err(PennelError::Cancelled));
+            assert_ne!(engine.cloud_link_view().phase, CloudLinkPhase::WaitingPeer);
+            probe.assert();
+            admission.assert();
+        }
+    }
+
+    #[test]
+    fn an_offline_capability_service_is_retryable_instead_of_disabled() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let directory = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new(directory.path().to_string_lossy().into_owned()).unwrap();
+        let secrets = Arc::new(crate::cloud::tests::MemorySecrets::default());
+        engine.set_secret_store(secrets.clone()).unwrap();
+        engine.use_cloud_session(Session::new(format!("http://{address}"), secrets));
+        assert!(matches!(
+            engine.cloud_link_availability(),
+            Err(PennelError::Network { .. })
+        ));
+        assert_eq!(engine.cloud_link_view().phase, CloudLinkPhase::Idle);
+    }
+
+    #[test]
+    fn existing_connections_keep_polling_and_cancelling_when_admission_is_disabled() {
+        let mut server = mockito::Server::new();
+        let initial_probe = capabilities(&mut server);
+        let create = server
+            .mock("POST", "/v1/device-links")
+            .with_body_from_request(|request| {
+                let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+                serde_json::to_vec(&json!({"protocol":PROTOCOL,"request_id":"ABCD-EFGH",
+                "participant_token":body["participant_token"],"expires_at_ms":now_ms()+600_000}))
+                .unwrap()
+            })
+            .expect(1)
+            .create();
+        let (_directory, engine) = engine_for(&server);
+        assert_eq!(
+            engine
+                .cloud_link_start(CloudLinkRole::NewDevice, "Fixture".into(), "ios".into())
+                .unwrap()
+                .phase,
+            CloudLinkPhase::WaitingPeer
+        );
+        initial_probe.assert();
+        initial_probe.remove();
+        let disabled_probe = server
+            .mock("GET", "/v1/device-links/capabilities")
+            .with_body(json!({"supported":false,"protocol":PROTOCOL}).to_string())
+            .expect(1)
+            .create();
+        assert!(!engine.cloud_link_availability().unwrap().available);
+        let poll = server
+            .mock("POST", "/v1/device-links/ABCD-EFGH/poll")
+            .with_body(r#"{"status":"waiting_peer"}"#)
+            .expect(1)
+            .create();
+        let cancel = server
+            .mock("POST", "/v1/device-links/ABCD-EFGH/cancel")
+            .with_body("{}")
+            .expect(1)
+            .create();
+        assert_eq!(
+            engine.cloud_link_poll().unwrap().phase,
+            CloudLinkPhase::WaitingPeer
+        );
+        assert_eq!(
+            engine.cloud_link_cancel().unwrap().phase,
+            CloudLinkPhase::Cancelled
+        );
+        create.assert();
+        poll.assert();
+        cancel.assert();
+        disabled_probe.assert();
+    }
+
+    #[test]
+    fn a_temporary_poll_failure_keeps_the_same_pending_connection_for_retry() {
+        let mut server = mockito::Server::new();
+        let _probe = capabilities(&mut server);
+        let _create = server
+            .mock("POST", "/v1/device-links")
+            .with_body_from_request(|request| {
+                let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+                serde_json::to_vec(&json!({"protocol":PROTOCOL,"request_id":"ABCD-EFGH",
+                "participant_token":body["participant_token"],"expires_at_ms":now_ms()+600_000}))
+                .unwrap()
+            })
+            .create();
+        let (_directory, engine) = engine_for(&server);
+        engine
+            .cloud_link_start(CloudLinkRole::NewDevice, "Fixture".into(), "ios".into())
+            .unwrap();
+        for (status, body, code) in [
+            (503, "<html>Gateway</html>", "http_503"),
+            (500, r#"{"error":"internal"}"#, "internal"),
+        ] {
+            let temporary = server
+                .mock("POST", "/v1/device-links/ABCD-EFGH/poll")
+                .with_status(status)
+                .with_body(body)
+                .expect(1)
+                .create();
+            let view = engine.cloud_link_poll().unwrap();
+            assert_eq!(view.phase, CloudLinkPhase::WaitingPeer);
+            assert_eq!(view.error_code.as_deref(), Some(code));
+            temporary.assert();
+            temporary.remove();
+        }
+        let poll = server
+            .mock("POST", "/v1/device-links/ABCD-EFGH/poll")
+            .with_body(r#"{"status":"waiting_peer"}"#)
+            .expect(1)
+            .create();
+        let view = engine.cloud_link_poll().unwrap();
+        assert_eq!(view.phase, CloudLinkPhase::WaitingPeer);
+        assert!(view.error_code.is_none());
+        poll.assert();
     }
 }

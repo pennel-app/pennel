@@ -48,23 +48,27 @@ public final class PennelNativeRuntime {
         if !bootstrapped {
             bootstrapped = true
             _ = model
-            NativeRecognitionReader.discardStaleSnapshots()
-            SystemSessionActivity.endLeftovers()
-            SystemRecordingActivity.endLeftovers()
-            DictationSession.purgeExpiredResult()
-            SystemFinishScheduler.register()
-            CloudSyncBackground.register()
+            if !AppPaths.isQAProfile {
+                NativeRecognitionReader.discardStaleSnapshots()
+                SystemSessionActivity.endLeftovers()
+                SystemRecordingActivity.endLeftovers()
+                DictationSession.purgeExpiredResult()
+                SystemFinishScheduler.register()
+                CloudSyncBackground.register()
+            }
             CloudSyncRunner.shared.attach(to: MeetingRuntime.shared)
             MeetingRuntime.shared.postprocessHandler = { [weak self] finish in await self?.postprocess(finish) }
             dictation.changed = { [weak self] in self?.publish() }
             observeLifecycle()
             publishKeyboardPreferences()
-            keyboardWriting = KeyboardWritingServer(engine: model.engine, authorization: { [weak self] in
-                guard let self else { return "" }
-                let keys = self.inferenceKeyRevisions.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ";")
-                return self.accountEpoch() + "|" + keys
-            })
-            keyboardWriting?.start()
+            if !AppPaths.isQAProfile {
+                keyboardWriting = KeyboardWritingServer(engine: model.engine, authorization: { [weak self] in
+                    guard let self else { return "" }
+                    let keys = self.inferenceKeyRevisions.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ";")
+                    return self.accountEpoch() + "|" + keys
+                })
+                keyboardWriting?.start()
+            }
             CloudSyncRunner.shared.enterForeground()
         }
         return try snapshot()
@@ -159,7 +163,7 @@ public final class PennelNativeRuntime {
             return "null"
         case "ui.feedback":
             guard let event = FeedbackEvent(rawValue: try input.required("event")), event != .keyPress else { throw PennelBridgeError("invalid_request", "Unknown feedback event.") }
-            HapticFeedback.play(event)
+            HapticFeedback.play(event, in: AppPaths.keyboardDefaults)
             return "null"
         case "keyboard.feedbackPreview":
             guard let profile = KeyboardFeedbackPreviewProfile(rawValue: try input.required("profile")) else { throw PennelBridgeError("invalid_request", "Unknown feedback sample.") }
@@ -178,19 +182,19 @@ public final class PennelNativeRuntime {
         case "keyboard.feedbackTrial":
             let profile: KeyboardFeedbackTrialProfile?
             if let value = input.values["profile"] as? String {
-                guard let parsed = KeyboardFeedbackTrialProfile(rawValue: value), KeyboardPreferences.typingFeedbackEnabled(in: KeyboardLayout.groupDefaults) else {
+                guard let parsed = KeyboardFeedbackTrialProfile(rawValue: value), KeyboardPreferences.typingFeedbackEnabled(in: AppPaths.keyboardDefaults) else {
                     throw PennelBridgeError("invalid_request", "Enable typing feedback before trying a sample.")
                 }
                 profile = parsed
             } else if input.values["profile"] is NSNull { profile = nil }
             else { throw PennelBridgeError("invalid_request", "Choose a feedback sample or end the trial.") }
-            KeyboardPreferences.setFeedbackTrialProfile(profile, in: KeyboardLayout.groupDefaults)
-            KeyboardPreferences.mirrorKeyboardFeedback(from: KeyboardLayout.groupDefaults, to: UserDefaults.standard)
+            KeyboardPreferences.setFeedbackTrialProfile(profile, in: AppPaths.keyboardDefaults)
+            KeyboardPreferences.mirrorKeyboardFeedback(from: AppPaths.keyboardDefaults, to: AppPaths.defaults)
             return try BridgeJSON.encode(keyboardSettings())
         case "keyboard.learning.remove":
             let word = try input.required("word").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !word.isEmpty, word.count <= 64 else { throw PennelBridgeError("invalid_request", "Enter a word of up to 64 characters.") }
-            let defaults = KeyboardLayout.groupDefaults
+            let defaults = AppPaths.keyboardDefaults
             KeyboardPreferences.forgetLearnedWord(word, in: defaults)
             return try BridgeJSON.encode(keyboardSettings())
         case "dictation.start": try await startDictation(practice: input.flag("practice"), navigate: false); return try snapshot()
@@ -592,7 +596,7 @@ extension PennelNativeRuntime {
             model.reloadSettings()
             return try BridgeJSON.encode(display)
         case "cloud.activateSync", "cloud.resumeSync":
-            guard UserDefaults.standard.object(forKey: CloudAccountModel.confirmedKey) as? Bool != false else {
+            guard AppPaths.defaults.object(forKey: CloudAccountModel.confirmedKey) as? Bool != false else {
                 throw PennelBridgeError("recovery_unconfirmed", "Save your recovery code before starting sync.")
             }
             try await Task.detached {
@@ -615,10 +619,12 @@ extension PennelNativeRuntime {
                 return try BridgeJSON.encode(NativeRecoveryDisplay.empty(epoch: accountEpoch()))
             }
             return try BridgeJSON.encode(pending.payload(epoch: accountEpoch()))
+        case "cloud.linkAvailability":
+            return try await background { try BridgeJSON.encode(NativeCloudViews.availability($0.cloudLinkAvailability())) }
         case "cloud.linkView": return try BridgeJSON.encode(NativeCloudViews.link(engine.cloudLinkView()))
         case "cloud.linkStart", "cloud.linkJoin", "cloud.linkPoll", "cloud.linkApprove", "cloud.linkCancel":
             let role = try NativeCloudViews.role(input.text("role", default: "new_device"))
-            let name = input.text("device_name", default: UserDefaults.standard.string(forKey: "pennel.mobile.deviceName") ?? "iPhone")
+            let name = input.text("device_name", default: AppPaths.defaults.string(forKey: "pennel.mobile.deviceName") ?? "iPhone")
             let code = method == "cloud.linkJoin" ? try input.required("code") : ""
             let value = try await Task.detached {
                 switch method {
@@ -636,7 +642,7 @@ extension PennelNativeRuntime {
                 let account = try? await Task.detached { try engine.cloudAccount() }.value
                 guard loginGeneration.isCurrent(identity) else { throw PennelError.Cancelled }
                 cachedAccount = account
-                UserDefaults.standard.set(true, forKey: CloudAccountModel.confirmedKey)
+                AppPaths.defaults.set(true, forKey: CloudAccountModel.confirmedKey)
                 CloudSyncRunner.shared.poke()
             }
             return try BridgeJSON.encode(NativeCloudViews.link(value))
@@ -649,7 +655,7 @@ extension PennelNativeRuntime {
             loginExpiry = nil
             cachedAccount = nil
             pendingRecovery = nil
-            let name = input.text("device_name", default: UserDefaults.standard.string(forKey: "pennel.mobile.deviceName") ?? "iPhone")
+            let name = input.text("device_name", default: AppPaths.defaults.string(forKey: "pennel.mobile.deviceName") ?? "iPhone")
             let locale = uiLanguage()
             engine.cloudLoginCancel()
             let start = try await loginStarts.run(generation: generation, owner: loginGeneration) {
@@ -658,7 +664,7 @@ extension PennelNativeRuntime {
             guard loginGeneration.isCurrent(generation) else { throw PennelError.Cancelled }
             pendingLogin = start
             loginExpiry = Date().addingTimeInterval(15 * 60)
-            UserDefaults.standard.set(name, forKey: "pennel.mobile.deviceName")
+            AppPaths.defaults.set(name, forKey: "pennel.mobile.deviceName")
             if let url = URL(string: start.verificationUri), url.scheme == "https" { await UIApplication.shared.open(url) }
             guard loginGeneration.isCurrent(generation) else { throw PennelError.Cancelled }
             return try BridgeJSON.encode(loginJSON(start))
@@ -698,8 +704,8 @@ extension PennelNativeRuntime {
             cachedAccount = nil
             pendingLogin = nil
             pendingRecovery = nil
-            UserDefaults.standard.removeObject(forKey: CloudAccountModel.confirmedKey)
-            UserDefaults.standard.removeObject(forKey: Self.automaticConsent)
+            AppPaths.defaults.removeObject(forKey: CloudAccountModel.confirmedKey)
+            AppPaths.defaults.removeObject(forKey: Self.automaticConsent)
             model.reloadSettings()
             return value
         case "cloud.sync":
@@ -745,7 +751,7 @@ extension PennelNativeRuntime {
             let result = try await background { try $0.cloudSyncUnlock(code: code); return "null" }
             guard loginGeneration.isCurrent(identity) else { throw PennelError.Cancelled }
             pendingRecovery = nil
-            UserDefaults.standard.set(true, forKey: CloudAccountModel.confirmedKey)
+            AppPaths.defaults.set(true, forKey: CloudAccountModel.confirmedKey)
             model.reloadSettings()
             CloudSyncRunner.shared.poke()
             return result
@@ -758,7 +764,7 @@ extension PennelNativeRuntime {
                 throw error
             }
             guard loginGeneration.isCurrent(identity), pendingRecovery?.token == token else { throw PennelError.Cancelled }
-            UserDefaults.standard.set(true, forKey: CloudAccountModel.confirmedKey)
+            AppPaths.defaults.set(true, forKey: CloudAccountModel.confirmedKey)
             pendingRecovery = nil
             model.reloadSettings()
             CloudSyncRunner.shared.poke()
@@ -788,8 +794,8 @@ extension PennelNativeRuntime {
             pendingLogin = nil
             pendingRecovery = nil
             model.reloadSettings()
-            UserDefaults.standard.removeObject(forKey: CloudAccountModel.confirmedKey)
-            UserDefaults.standard.removeObject(forKey: Self.automaticConsent)
+            AppPaths.defaults.removeObject(forKey: CloudAccountModel.confirmedKey)
+            AppPaths.defaults.removeObject(forKey: Self.automaticConsent)
             return result
         default: throw PennelBridgeError("unsupported_operation", "This Cloud operation is unavailable.")
         }
@@ -898,7 +904,7 @@ extension PennelNativeRuntime {
     private func postprocess(_ finish: MeetingFinish) async {
         guard finish.error == nil, finish.stoppedEarly == nil else { return }
         let settings = model.engine.settings()
-        if Self.automaticRecognitionAllowed(settings, consent: UserDefaults.standard.bool(forKey: Self.automaticConsent)) {
+        if Self.automaticRecognitionAllowed(settings, consent: AppPaths.defaults.bool(forKey: Self.automaticConsent)) {
             do {
                 let job = try await startRecognition(id: finish.id, ownsBudget: false)
                 defer { recognitionJobs[job.id()] = nil }
@@ -924,7 +930,7 @@ extension PennelNativeRuntime {
         requested.removeValue(forKey: "cloud_speaker_automatic_consent")
         let typingPatch = try NativeKeyboardSettingsPatch(removingFrom: &requested)
         let current = try BridgeJSON.object(model.engine.mobileSettingsJson())
-        let keyboard = KeyboardLayout.groupDefaults
+        let keyboard = AppPaths.keyboardDefaults
         var nextLayout: KeyboardLayout?
         if let layout = requested.removeValue(forKey: "keyboard_layout") {
             guard let text = layout as? String, let value = KeyboardLayout(rawValue: text) else { throw PennelBridgeError("invalid_request", "Unknown keyboard layout.") }
@@ -957,7 +963,7 @@ extension PennelNativeRuntime {
         }
         let enabled = (changed["diarization"] as? Bool ?? model.settings.diarization)
         let mode = changed["speaker_recognition"] as? String ?? (model.settings.speakerRecognition == .cloud ? "cloud" : "local")
-        let hadConsent = UserDefaults.standard.bool(forKey: Self.automaticConsent)
+        let hadConsent = AppPaths.defaults.bool(forKey: Self.automaticConsent)
         let requestsAutomatic = changed["diarization"] as? Bool == true || (changed["speaker_recognition"] as? String == "cloud" && enabled)
         if requestsAutomatic && mode == "cloud", !hadConsent {
             guard input.flag("cloud_audio_consent") else { throw PennelBridgeError("consent_required", "Confirm automatic audio uploads before enabling Cloud speaker recognition.") }
@@ -965,17 +971,17 @@ extension PennelNativeRuntime {
         let patch = try BridgeJSON.encode(changed)
         let apply: @MainActor () async throws -> String = {
             _ = try await self.background { try $0.patchMobileSettings(json: patch) }
-            if enabled && mode == "cloud", hadConsent || input.flag("cloud_audio_consent") { UserDefaults.standard.set(true, forKey: Self.automaticConsent) }
-            else { UserDefaults.standard.removeObject(forKey: Self.automaticConsent) }
+            if enabled && mode == "cloud", hadConsent || input.flag("cloud_audio_consent") { AppPaths.defaults.set(true, forKey: Self.automaticConsent) }
+            else { AppPaths.defaults.removeObject(forKey: Self.automaticConsent) }
             nextLayout?.store(in: keyboard)
             if let nextSuggestions { KeyboardPreferences.setSuggestionsEnabled(nextSuggestions, in: keyboard) }
             if let nextFeedback { KeyboardPreferences.setFeedbackEnabled(nextFeedback, in: keyboard) }
             if let nextTypingFeedback {
                 KeyboardPreferences.setTypingFeedbackEnabled(nextTypingFeedback, in: keyboard)
-                KeyboardPreferences.setTypingFeedbackEnabled(nextTypingFeedback, in: UserDefaults.standard)
+                KeyboardPreferences.setTypingFeedbackEnabled(nextTypingFeedback, in: AppPaths.defaults)
             }
             typingPatch.apply(in: keyboard)
-            KeyboardPreferences.mirrorKeyboardFeedback(from: keyboard, to: UserDefaults.standard)
+            KeyboardPreferences.mirrorKeyboardFeedback(from: keyboard, to: AppPaths.defaults)
             nextDuration?.store()
             self.model.reloadSettings()
             self.publishKeyboardPreferences()
@@ -988,16 +994,17 @@ extension PennelNativeRuntime {
     }
 
     private func keyboardSettings() -> [String: Any] {
-        var value: [String: Any] = ["layout": KeyboardLayout.stored(in: KeyboardLayout.groupDefaults).rawValue,
-         "suggestions": KeyboardPreferences.suggestionsEnabled(in: KeyboardLayout.groupDefaults),
+        var value: [String: Any] = ["layout": KeyboardLayout.stored(in: AppPaths.keyboardDefaults).rawValue,
+         "suggestions": KeyboardPreferences.suggestionsEnabled(in: AppPaths.keyboardDefaults),
          "duration": SessionClock.Duration.stored().rawValue]
-        value.merge(NativeKeyboardSettingsPatch.projection(in: KeyboardLayout.groupDefaults)) { _, new in new }
+        value.merge(NativeKeyboardSettingsPatch.projection(in: AppPaths.keyboardDefaults)) { _, new in new }
         return value
     }
 
     private func publishKeyboardPreferences() {
+        guard !AppPaths.isQAProfile else { return }
         let language = uiLanguage()
-        KeyboardPreferences.publish(dictionary: model.settings.dictionary, interfaceLanguage: language, in: KeyboardLayout.groupDefaults)
+        KeyboardPreferences.publish(dictionary: model.settings.dictionary, interfaceLanguage: language, in: AppPaths.keyboardDefaults)
         if let previous = lastPublishedLanguage, previous != language {
             WidgetCenter.shared.reloadAllTimelines()
             ControlCenter.shared.reloadAllControls()
@@ -1029,9 +1036,9 @@ extension PennelNativeRuntime {
             "account_epoch": accountEpoch(), "recovery_display_token": signedIn ? BridgeJSON.optional(pendingRecovery?.token) : NSNull(),
             "syncing": CloudSyncRunner.shared.isRunning, "sync_enabled": model.settings.cloudSync,
             "status": report["status"] ?? "off", "report": report,
-            "recovery_confirmed": UserDefaults.standard.object(forKey: CloudAccountModel.confirmedKey) as? Bool != false,
+            "recovery_confirmed": AppPaths.defaults.object(forKey: CloudAccountModel.confirmedKey) as? Bool != false,
             "brake": CloudAccountModel.isMassDelete(report["error"] as? String),
-            "device_name": UserDefaults.standard.string(forKey: "pennel.mobile.deviceName") ?? "iPhone",
+            "device_name": AppPaths.defaults.string(forKey: "pennel.mobile.deviceName") ?? "iPhone",
             "notice": report["error"] ?? NSNull(),
         ]
         if let pendingLogin { state["login"] = ["phase": "code", "start": loginJSON(pendingLogin)] }
@@ -1112,7 +1119,7 @@ extension PennelNativeRuntime {
             "keys": Dictionary(uniqueKeysWithValues: model.settings.providers.map { ($0.id, Keychain.hasKey(for: $0.id)) }),
             "dictation": ["phase": dictation.phase.rawValue, "text": dictation.text, "level": dictation.level, "session_id": BridgeJSON.optional(dictation.sessionID), "practice": dictation.isPractice, "result_session_id": BridgeJSON.optional(dictation.resultSessionID), "error": BridgeJSON.optional(dictation.error), "error_code": BridgeJSON.optional(dictation.errorCode), "cleanup_verification": BridgeJSON.optional(dictation.cleanupVerification.map(BridgeJSON.cleanupVerification))] as [String: Any],
             "session": ["phase": session.phase.rawValue, "expires_at_ms": BridgeJSON.optional(session.expiresAt.map { $0.timeIntervalSince1970 * 1_000 }),
-                        "full_access_seen": KeyboardFullAccess.seen(in: KeyboardLayout.groupDefaults), "error": BridgeJSON.optional(session.startError), "error_code": BridgeJSON.optional(session.startErrorCode), "cleanup_verification": BridgeJSON.optional(session.cleanupVerificationAvailability.map(BridgeJSON.cleanupVerification))] as [String: Any],
+                        "full_access_seen": KeyboardFullAccess.seen(in: AppPaths.keyboardDefaults), "error": BridgeJSON.optional(session.startError), "error_code": BridgeJSON.optional(session.startErrorCode), "cleanup_verification": BridgeJSON.optional(session.cleanupVerificationAvailability.map(BridgeJSON.cleanupVerification))] as [String: Any],
             "meeting": ["phase": phase(runtime.phase), "id": BridgeJSON.optional(runtime.activeMeetingId), "title": runtime.title,
                         "retained_id": BridgeJSON.optional(runtime.retainedId), "last_finished_id": BridgeJSON.optional(runtime.lastFinish?.id),
                         "elapsed_secs": Double(runtime.elapsedMs) / 1_000, "notes": runtime.notes,
@@ -1134,14 +1141,14 @@ extension PennelNativeRuntime {
 
     private func settingsProjection() throws -> [String: Any] {
         var settings = try BridgeJSON.object(model.engine.mobileSettingsJson())
-        let consent = UserDefaults.standard.bool(forKey: Self.automaticConsent)
+        let consent = AppPaths.defaults.bool(forKey: Self.automaticConsent)
         settings["diarization"] = Self.automaticRecognitionAllowed(model.settings, consent: consent)
         settings["cloud_speaker_automatic_consent"] = consent
-        settings["keyboard_layout"] = KeyboardLayout.stored(in: KeyboardLayout.groupDefaults).rawValue
-        settings["keyboard_suggestions"] = KeyboardPreferences.suggestionsEnabled(in: KeyboardLayout.groupDefaults)
-        settings["haptic_feedback"] = KeyboardPreferences.feedbackEnabled(in: KeyboardLayout.groupDefaults)
-        settings["keyboard_haptics"] = KeyboardPreferences.typingFeedbackEnabled(in: KeyboardLayout.groupDefaults)
-        for (key, value) in NativeKeyboardSettingsPatch.projection(in: KeyboardLayout.groupDefaults)
+        settings["keyboard_layout"] = KeyboardLayout.stored(in: AppPaths.keyboardDefaults).rawValue
+        settings["keyboard_suggestions"] = KeyboardPreferences.suggestionsEnabled(in: AppPaths.keyboardDefaults)
+        settings["haptic_feedback"] = KeyboardPreferences.feedbackEnabled(in: AppPaths.keyboardDefaults)
+        settings["keyboard_haptics"] = KeyboardPreferences.typingFeedbackEnabled(in: AppPaths.keyboardDefaults)
+        for (key, value) in NativeKeyboardSettingsPatch.projection(in: AppPaths.keyboardDefaults)
             where key.hasPrefix("keyboard_") && key != "keyboard_learned_count" {
             settings[key] = value
         }
@@ -1209,7 +1216,7 @@ extension PennelNativeRuntime {
         guard loginGeneration.isCurrent(identity), engine.cloudSignedIn() else { throw PennelError.Cancelled }
         let display = NativeRecoveryDisplay(code: code, context: context, identity: identity)
         pendingRecovery = display
-        UserDefaults.standard.set(false, forKey: CloudAccountModel.confirmedKey)
+        AppPaths.defaults.set(false, forKey: CloudAccountModel.confirmedKey)
         return display.payload(epoch: accountEpoch())
     }
 

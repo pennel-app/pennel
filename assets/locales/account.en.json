@@ -144,5 +144,9 @@
   "account.error.recovery": "This recovery code is no longer current. Save the newest code before continuing.",
   "account.error.pending": "Finish or cancel the current device connection before changing recovery access.",
   "account.error.cancelled": "Connection cancelled. You can start again when you are ready.",
-  "account.error.generic": "Pennel could not complete this account action. Check your connection and try again."
+  "account.error.generic": "Pennel could not complete this account action. Check your connection and try again.",
+  "account.link.checking": "Checking device connection availability…",
+  "account.link.check_again": "Check again",
+  "account.error.incompatible": "Update Pennel on both devices to connect. You can also use email and your recovery code.",
+  "account.error.service_access": "Pennel cannot access the device connection service. Try again later, or use email and your recovery code."
 }

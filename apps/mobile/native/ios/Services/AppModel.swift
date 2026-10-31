@@ -74,10 +74,10 @@ final class AppModel {
 
     /// Runs once: afterwards the user's own choices, including Fast mode, are never reset.
     private func applyFirstRunDefaults(availability: Bool = FoundationLanguageModel.isAvailable) {
-        guard !UserDefaults.standard.bool(forKey: Self.defaultsAppliedKey) else { return }
+        guard !AppPaths.defaults.bool(forKey: Self.defaultsAppliedKey) else { return }
         do {
             try FirstRunDefaults.apply(to: engine, appleIntelligenceAvailable: availability)
-            UserDefaults.standard.set(true, forKey: Self.defaultsAppliedKey)
+            AppPaths.defaults.set(true, forKey: Self.defaultsAppliedKey)
             settings = engine.settings()
         } catch {
             Self.log.error("first run defaults: \(ErrorText.code(error), privacy: .public)")

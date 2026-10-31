@@ -108,7 +108,7 @@ final class CloudAccountModel {
     init(
         service: CloudService,
         runner: CloudSyncRunner,
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = AppPaths.defaults,
         settings: @escaping @MainActor () -> Settings,
         settingsChanged: @escaping @MainActor () -> Void = {},
         openURL: @escaping @MainActor (URL) -> Void,

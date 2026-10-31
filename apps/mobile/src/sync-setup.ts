@@ -31,8 +31,10 @@ export function linkIsPending(phase: CloudLinkPhase): boolean {
   return !['idle', 'complete', 'cancelled', 'expired', 'failed'].includes(phase);
 }
 
-export function restorableLink(view: CloudLinkView, role: CloudLinkRole): CloudLinkView | null {
-  return view.role === role && linkIsPending(view.phase) ? view : null;
+export function restorableLink(view: CloudLinkView, role: CloudLinkRole, cloud: Pick<CloudState, 'signed_in' | 'account'> | null | undefined, ownedRequest: string | null = null): CloudLinkView | null {
+  if (!cloud || (!cloud.signed_in && view.role === 'trusted_device')
+    || (cloud.signed_in && view.account_email && view.account_email !== cloud.account?.email)) return null;
+  return view.role === role && (linkIsPending(view.phase) || (view.phase === 'complete' && view.request_id !== null && view.request_id === ownedRequest)) ? view : null;
 }
 
 export type RecoveryDisplay = CloudRecoveryDisplay & { recovery_code: string; confirmation_token: string };

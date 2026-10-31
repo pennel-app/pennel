@@ -500,6 +500,8 @@ mod tests {
         fs::remove_file(source.join("history.sqlite-wal")).unwrap();
         let mut settings = pennel_core::default_settings();
         settings.providers.clear();
+        // An imported test engine must never claim the running user's default library.
+        settings.meetings_dir = home.join("Musli").to_string_lossy().into_owned();
         fs::write(
             source.join("settings.json"),
             serde_json::to_vec(&settings).unwrap(),

@@ -7,6 +7,16 @@ import Testing
 
 @Suite("Expo sync setup")
 struct SyncSetupTests {
+    @Test func deviceAdmissionAvailabilityRetainsItsMachineReadableReason() throws {
+        let supported = NativeCloudViews.availability(CloudLinkAvailability(available: true, reasonCode: nil))
+        let disabled = NativeCloudViews.availability(CloudLinkAvailability(available: false, reasonCode: "pairing_unavailable"))
+        #expect(supported["available"] as? Bool == true)
+        #expect(supported["reason_code"] is NSNull)
+        #expect(disabled["available"] as? Bool == false)
+        #expect(disabled["reason_code"] as? String == "pairing_unavailable")
+        #expect(JSONSerialization.isValidJSONObject(disabled))
+    }
+
     @Test func browserReturnIsBoundToTheInstalledVariantAndCarriesNoCredentials() throws {
         #expect(PennelNativeRuntime.acceptsSyncReturn(try #require(URL(string: "pennel://sync")), scheme: "pennel"))
         #expect(PennelNativeRuntime.acceptsSyncReturn(try #require(URL(string: "pennel-preview://sync")), scheme: "pennel-preview"))

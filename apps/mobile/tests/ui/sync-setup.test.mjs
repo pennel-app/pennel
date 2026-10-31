@@ -40,12 +40,16 @@ test('pairing polling and navigation guards finish at every terminal phase', () 
 });
 
 test('a new Add device visit ignores historical terminal sessions and other roles', () => {
+  const account = { signed_in: true, account: { email: 'fixture@example.test' } };
   const old = { phase: 'complete', role: 'new_device', request_id: 'old' };
-  assert.equal(restorableLink(old, 'trusted_device'), null);
-  assert.equal(restorableLink(old, 'new_device'), null);
-  assert.equal(restorableLink({ ...old, phase: 'waiting_approval' }, 'trusted_device'), null);
+  assert.equal(restorableLink(old, 'trusted_device', account), null);
+  assert.equal(restorableLink(old, 'new_device', account), null);
+  assert.equal(restorableLink({ ...old, phase: 'waiting_approval' }, 'trusted_device', account), null);
   const pending = { ...old, phase: 'awaiting_approval', role: 'trusted_device' };
-  assert.equal(restorableLink(pending, 'trusted_device'), pending);
+  assert.equal(restorableLink(pending, 'trusted_device', account), pending);
+  assert.equal(restorableLink(old, 'new_device', account, 'old'), old);
+  assert.equal(restorableLink(old, 'new_device', account, 'other'), null);
+  assert.equal(restorableLink(old, 'trusted_device', account, 'old'), null);
 });
 
 test('recovery display and confirmation are hidden after signout, account change or rotation', () => {
@@ -58,6 +62,25 @@ test('recovery display and confirmation are hidden after signout, account change
   assert.equal(recoveryDisplayFor({ ...account, recovery_display_token: null }, display), null);
   assert.equal(recoveryDisplayFor(account, { ...display, recovery_code: null, confirmation_token: null }), null);
   assert.equal(recoveryDisplayFor(account, null), null);
+});
+
+test('a fresh connection visit never restores a different account or signed-out trusted request', () => {
+  const accountA = { signed_in: true, account: { email: 'account-a@example.test' } };
+  const accountB = { signed_in: true, account: { email: 'account-b@example.test' } };
+  const signedOut = { signed_in: false, account: null };
+  const trusted = { phase: 'awaiting_approval', role: 'trusted_device', request_id: 'old-a', account_email: 'account-a@example.test' };
+  assert.equal(restorableLink(trusted, 'trusted_device', accountA), trusted);
+  assert.equal(restorableLink(trusted, 'trusted_device', accountB), null);
+  assert.equal(restorableLink(trusted, 'trusted_device', { signed_in: true, account: null }), null);
+  assert.equal(restorableLink(trusted, 'trusted_device', signedOut), null);
+  assert.equal(restorableLink({ ...trusted, account_email: null }, 'trusted_device', signedOut), null);
+  const requesting = { ...trusted, role: 'new_device', phase: 'waiting_approval' };
+  assert.equal(restorableLink(requesting, 'new_device', accountA), requesting);
+  assert.equal(restorableLink(requesting, 'new_device', accountB), null);
+  assert.equal(restorableLink(requesting, 'new_device', signedOut), requesting);
+  const completed = { ...requesting, phase: 'complete' };
+  assert.equal(restorableLink(completed, 'new_device', accountA, 'old-a'), completed);
+  assert.equal(restorableLink(completed, 'new_device', accountB, 'old-a'), null);
 });
 
 test('sync setup copy is complete in both languages and errors describe the recovery path', () => {

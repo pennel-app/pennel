@@ -55,7 +55,11 @@ fn dispatch(
     let mut request = ureq::http::Request::builder()
         .method(method)
         .uri(url)
-        .header("Accept", "application/json");
+        .header("Accept", "application/json")
+        .header(
+            "User-Agent",
+            concat!("pennel-core/", env!("CARGO_PKG_VERSION")),
+        );
     if let Some(token) = token {
         request = request.header("Authorization", format!("Bearer {token}"));
     }

@@ -4,11 +4,11 @@ import PennelMobileKit
 extension SessionClock.Duration {
     static let storageKey = "sessionDurationSeconds"
 
-    static func stored(in defaults: UserDefaults = .standard) -> SessionClock.Duration {
+    static func stored(in defaults: UserDefaults = AppPaths.defaults) -> SessionClock.Duration {
         SessionClock.Duration(rawValue: defaults.double(forKey: storageKey)) ?? .fiveMinutes
     }
 
-    func store(in defaults: UserDefaults = .standard) {
+    func store(in defaults: UserDefaults = AppPaths.defaults) {
         defaults.set(rawValue, forKey: Self.storageKey)
     }
 

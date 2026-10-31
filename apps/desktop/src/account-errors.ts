@@ -2,6 +2,8 @@ import { t, type TranslationKey } from "./i18n.ts";
 
 const messages: Readonly<Record<string, TranslationKey>> = {
   pairing_unavailable: "account.error.unavailable",
+  pairing_incompatible: "account.error.incompatible",
+  http_403: "account.error.service_access",
   pairing_busy: "account.error.fresh_code",
   pairing_claimed: "account.error.fresh_code",
   pairing_used: "account.error.fresh_code",
@@ -19,6 +21,7 @@ const messages: Readonly<Record<string, TranslationKey>> = {
   storage: "account.error.storage",
   pairing_retry: "account.error.network",
   network: "account.error.network",
+  internal: "account.error.network",
   http_408: "account.error.network",
   http_502: "account.error.network",
   http_503: "account.error.network",
@@ -47,5 +50,5 @@ const messages: Readonly<Record<string, TranslationKey>> = {
 /** Account failures are owned status, never provider text or user content to echo back. */
 export function accountFailureText(error: unknown): string {
   const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : null;
-  return t(typeof code === "string" ? messages[code] ?? "account.error.generic" : "account.error.generic");
+  return t(typeof code === "string" ? messages[code] ?? (/^http_5\d\d$/.test(code) ? "account.error.network" : "account.error.generic") : "account.error.generic");
 }

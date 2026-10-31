@@ -80,4 +80,32 @@ struct NativeKeyboardSettingsTests {
         #expect(KeyboardPreferences.learnedWords(in: defaults).isEmpty)
         #expect(KeyboardPreferences.learnedPairs(in: defaults).isEmpty)
     }
+
+    @Test func qa_typing_patch_and_feedback_mirror_do_not_change_normal_keyboard_preferences() throws {
+        let profile = "keyboard-\(UUID().uuidString)"
+        let qaSuite = try #require(AppPaths.defaultsSuite(profile: profile))
+        let normalSuite = "pennel-keyboard-normal-tests-\(UUID().uuidString)"
+        let qa = try #require(UserDefaults(suiteName: qaSuite))
+        let normal = try #require(UserDefaults(suiteName: normalSuite))
+        defer {
+            qa.removePersistentDomain(forName: qaSuite)
+            normal.removePersistentDomain(forName: normalSuite)
+        }
+        KeyboardPreferences.setTypingLanguages(["nl"], in: normal)
+        KeyboardPreferences.setLearningEnabled(true, in: normal)
+        KeyboardPreferences.learn("NormalWord", previous: "hello", in: normal)
+        KeyboardPreferences.setTypingFeedbackStyle(.crisp, in: normal)
+        let before = try JSONSerialization.data(withJSONObject: NativeKeyboardSettingsPatch.projection(in: normal), options: .sortedKeys)
+        var values: [String: Any] = [
+            "keyboard_typing_languages": ["en"], "keyboard_learning": true,
+            "keyboard_learning_reset": true, "keyboard_haptic_style": "gentle"
+        ]
+        try NativeKeyboardSettingsPatch(removingFrom: &values).apply(in: qa)
+        KeyboardPreferences.mirrorKeyboardFeedback(from: qa, to: qa)
+        #expect(KeyboardPreferences.typingLanguages(in: qa) == ["en"])
+        #expect(KeyboardPreferences.learnedWords(in: qa).isEmpty)
+        #expect(KeyboardPreferences.typingFeedbackStyle(in: qa) == .gentle)
+        #expect(try JSONSerialization.data(withJSONObject: NativeKeyboardSettingsPatch.projection(in: normal), options: .sortedKeys) == before)
+        #expect(KeyboardPreferences.learnedWords(in: normal).count == 1)
+    }
 }

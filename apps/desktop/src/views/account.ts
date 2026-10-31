@@ -1,10 +1,10 @@
-import { api, type ClaudeAccessView, type ClaudeStatus, type CloudAccount, type CloudDevice, type CloudLinkRole, type CloudLinkView, type CloudSyncSetup, type Settings, type SyncReport } from "../api";
+import { api, type ClaudeAccessView, type ClaudeStatus, type CloudAccount, type CloudDevice, type CloudLinkAvailability, type CloudLinkRole, type CloudLinkView, type CloudSyncSetup, type Settings, type SyncReport } from "../api";
 import { claudeInstructions, claudeStatusText } from "../claude-access";
 import { accountScreenFor, afterSignOut, copyStatusText, formatUsage, initialAccountUi, planSyncRedraw, pollLogin, recoveryNeedsConfirmation, relativeTime, type LoginPoll } from "../cloud-login";
 import { controlButton, textField, confirmDialog, errorCode, errorText, h, section, toggle } from "../dom";
 import type { Context } from "../main";
 import { bindLocalization, liveText, l, localizeBackendText, t, uiLocale, type UiText } from "../i18n";
-import { connectionRole, linkIsPending, qrImageSource, syncRequiresBackup, syncSetupAction } from "../device-link";
+import { connectionFeedback, connectionRole, linkIsPending, qrImageSource, syncRequiresBackup, syncSetupAction } from "../device-link";
 import { AccountActionEpoch } from "../account-actions";
 import { accountFailureText } from "../account-errors";
 import "../sync.css";
@@ -48,6 +48,12 @@ let linkBusy = false;
 let linkManual = false;
 let linkDraft = "";
 let linkFailure: unknown | null = null;
+let linkAvailability: CloudLinkAvailability | null = null;
+let linkAvailabilityFailure: unknown | null = null;
+let linkAvailabilityBusy = false;
+let linkAvailabilityRun = 0;
+let linkAvailabilityRequest: Promise<void> | null = null;
+let accountSignedIn = false;
 const accountActions = new AccountActionEpoch();
 let recoveryContext: string | null = null;
 let allowCachedLink = true;
@@ -104,6 +110,9 @@ function listenForClaude() {
 
 async function beginLogin(ctx: Context) {
   accountActions.invalidate();
+  linkAvailabilityRun++;
+  linkAvailabilityBusy = false;
+  linkAvailabilityRequest = null;
   const run = ++loginRun;
   clearNotice();
   try {
@@ -148,6 +157,11 @@ function resetLocalState() {
   accountActions.invalidate();
   loginRun++;
   linkRun++;
+  linkAvailabilityRun++;
+  linkAvailability = null;
+  linkAvailabilityFailure = null;
+  linkAvailabilityBusy = false;
+  linkAvailabilityRequest = null;
   window.clearTimeout(linkTimer);
   window.clearTimeout(syncingTimer);
   linkView = null;
@@ -163,10 +177,60 @@ function resetLocalState() {
 }
 
 function observeAccountIdentity(identity: string | null): boolean {
+  accountSignedIn = identity !== null;
   if (!accountActions.observe(identity)) return false;
   resetLocalState();
   return true;
 }
+
+function checkConnectionAvailability(refresh = false): Promise<void> {
+  if (linkAvailabilityRequest) return linkAvailabilityRequest;
+  if (!refresh && (linkAvailability || linkAvailabilityFailure)) return Promise.resolve();
+  const run = ++linkAvailabilityRun;
+  const current = accountActions.captureIdentity();
+  linkAvailabilityBusy = true;
+  if (refresh) {
+    linkAvailability = null;
+    linkAvailabilityFailure = null;
+    linkFailure = null;
+    if (linkView?.phase === "failed") { linkView = null; allowCachedLink = false; }
+  }
+  const request = (async () => {
+    try {
+      const availability = await api.cloudLinkAvailability();
+      if (run === linkAvailabilityRun && current()) linkAvailability = availability;
+    } catch (error) {
+      if (run === linkAvailabilityRun && current()) linkAvailabilityFailure = error;
+    } finally {
+      if (run === linkAvailabilityRun) {
+        linkAvailabilityBusy = false;
+        linkAvailabilityRequest = null;
+        if (current()) update();
+      }
+    }
+  })();
+  linkAvailabilityRequest = request;
+  if (refresh) update();
+  return request;
+}
+
+function connectionAvailabilityIssue(): unknown | null {
+  return linkAvailabilityFailure ?? (linkAvailability && !linkAvailability.available ? { code: linkAvailability.reason_code ?? "pairing_unavailable" } : null);
+}
+
+function connectionAdmissionDisabled(): boolean { return linkBusy || linkAvailabilityBusy || linkAvailability?.available !== true; }
+
+function connectionAvailabilityNotice(): HTMLElement | null {
+  if (linkAvailabilityBusy) return h("p", { role: "status", class: "help" }, l("account.link.checking"));
+  const failure = connectionAvailabilityIssue();
+  return failure ? h("p", { role: linkAvailabilityFailure ? "alert" : "status", class: linkAvailabilityFailure ? "error" : "help" }, liveText(() => accountFailureText(failure))) : null;
+}
+
+function checkAvailabilityAction(): HTMLElement | null {
+  return connectionAvailabilityIssue() ? controlButton({ class: "btn", disabled: linkAvailabilityBusy, onclick: () => void checkConnectionAvailability(true) }, l("account.link.check_again")) : null;
+}
+
+function connectionVisible(): boolean { return Boolean(linkView || linkManual || linkBusy || linkFailure); }
 
 async function restoreConnection(identity: string | null, ownsView: () => boolean) {
   if (!allowCachedLink || linkView || linkBusy || linkManual) return;
@@ -198,6 +262,7 @@ export async function accountView(ctx: Context): Promise<HTMLElement> {
       observeAccountIdentity(null);
       await restoreConnection(null, ownsView);
       if (!ownsView()) return h("div");
+      if (!linkView || !linkIsPending(linkView.phase)) void checkConnectionAvailability();
       scheduleLinkPoll(ctx);
       return signedOut(ctx);
     }
@@ -205,6 +270,7 @@ export async function accountView(ctx: Context): Promise<HTMLElement> {
   }
   await restoreConnection(account?.email ?? null, ownsView);
   if (!ownsView()) return h("div");
+  if (!linkView || !linkIsPending(linkView.phase)) void checkConnectionAvailability();
   scheduleLinkPoll(ctx);
   const current = accountActions.captureIdentity();
   const [report, devices, warning, claude, setup] = await Promise.all([
@@ -226,7 +292,7 @@ export async function accountView(ctx: Context): Promise<HTMLElement> {
     syncElement,
     ui.shownCode ? recoverySheet(ctx, ui.shownCode) : null,
     unlockSection(ctx, report, enabled),
-    linkView || linkManual || linkBusy || linkFailure ? connectionSection(ctx, setup ? connectionRole(setup) : linkView?.role ?? "new_device") : null,
+    connectionVisible() ? connectionSection(ctx, setup ? connectionRole(setup) : linkView?.role ?? "new_device") : null,
     !ui.shownCode ? h("details", { class: "account-management" },
       h("summary", {}, l("account.setup.admin")),
       accountSection(ctx, account, accountError),
@@ -243,7 +309,7 @@ function needsVault(report: SyncReport): boolean {
 }
 
 function signedOut(ctx: Context): HTMLElement {
-  if (linkView || linkManual || linkBusy || linkFailure) return h("div", {}, heading(), connectionSection(ctx, "new_device"));
+  if (connectionVisible()) return h("div", {}, heading(), connectionSection(ctx, "new_device"));
   if (ui.login.kind === "code") {
     const { start } = ui.login;
     return h("div", {}, heading(), plainSection(
@@ -260,8 +326,10 @@ function signedOut(ctx: Context): HTMLElement {
       : [h("p", {}, l("account.setup.intro")),
          ui.notice ? h("p", { class: "error", role: "alert" }, liveText(noticeText)) : null,
          h("div", { class: "row" },
-           controlButton({ class: "btn primary", onclick: () => void beginConnection(ctx, "new_device") }, l("account.setup.connect")),
-           controlButton({ class: "btn", onclick: () => { linkManual = true; update(); } }, l("account.link.manual"))),
+           controlButton({ class: "btn primary", disabled: connectionAdmissionDisabled(), onclick: () => void beginConnection(ctx, "new_device") }, l("account.setup.connect")),
+           controlButton({ class: "btn", disabled: connectionAdmissionDisabled(), onclick: () => { linkView = null; linkFailure = null; allowCachedLink = false; linkManual = true; update(); } }, l("account.link.manual"))),
+         connectionAvailabilityNotice(),
+         checkAvailabilityAction(),
          h("p", { class: "help" }, l("account.setup.first_device")),
          controlButton({ class: "btn", onclick: () => void beginLogin(ctx) }, l("account.setup.email"))])));
 }
@@ -295,13 +363,14 @@ async function refreshConnection(ctx: Context, run = linkRun) {
 }
 
 async function beginConnection(ctx: Context, role: CloudLinkRole, code?: string) {
-  if (linkBusy) return;
+  if (connectionAdmissionDisabled()) return;
   const run = ++linkRun;
   window.clearTimeout(linkTimer);
   linkBusy = true;
   linkFailure = null;
+  linkView = null;
   linkManual = false;
-  allowCachedLink = true;
+  allowCachedLink = false;
   clearNotice();
   update();
   try {
@@ -309,22 +378,34 @@ async function beginConnection(ctx: Context, role: CloudLinkRole, code?: string)
     if (run !== linkRun) return;
     linkView = view;
     linkDraft = "";
+    allowCachedLink = true;
   } catch (error) {
     if (run !== linkRun) return;
     linkFailure = error;
     linkManual = code !== undefined;
+    const reason = errorCode(error);
+    if (reason === "pairing_unavailable" || reason === "pairing_incompatible") {
+      linkAvailability = { available: false, reason_code: reason };
+      linkAvailabilityFailure = null;
+    }
+    allowCachedLink = true;
   } finally {
     if (run === linkRun) { linkBusy = false; update(); scheduleLinkPoll(ctx); }
   }
 }
 
 async function cancelConnection() {
-  linkRun++;
+  const run = ++linkRun;
+  const current = accountActions.captureIdentity();
+  linkAvailabilityRun++;
+  linkAvailabilityBusy = false;
+  linkAvailabilityRequest = null;
   window.clearTimeout(linkTimer);
   linkBusy = true;
   update();
   try { await api.cloudLinkCancel(); }
   catch { /* The native flow is cancelled locally; an unreachable relay expires its request. */ }
+  if (run !== linkRun || !current()) return;
   linkView = null;
   linkManual = false;
   linkDraft = "";
@@ -337,6 +418,7 @@ async function cancelConnection() {
 function connectionSection(ctx: Context, role: CloudLinkRole): HTMLElement {
   const view = linkView;
   const pending = Boolean(view && linkIsPending(view.phase));
+  const feedback = connectionFeedback(view, linkFailure ?? (pending ? null : connectionAvailabilityIssue()));
   const startLabel = role === "trusted_device" ? "account.link.start_trusted" : "account.link.start_new";
   const source = qrImageSource(view?.qr_svg ?? null);
   const input = textField({ type: "text", class: "device-link-entry", value: linkDraft, autocomplete: "off", spellcheck: "false", autocapitalize: "characters", "aria-label": l("account.link.code") });
@@ -344,24 +426,28 @@ function connectionSection(ctx: Context, role: CloudLinkRole): HTMLElement {
   const manual = linkManual ? h("form", { class: "row", onsubmit: (event: Event) => {
     event.preventDefault();
     if (input.value.trim()) void beginConnection(ctx, role, input.value.trim());
-  } }, input, controlButton({ class: "btn primary", type: "submit", disabled: linkBusy }, l("account.link.join"))) : null;
+  } }, input, controlButton({ class: "btn primary", type: "submit", disabled: connectionAdmissionDisabled() }, l("account.link.join"))) : null;
   const manualAction = async () => {
+    const current = accountActions.captureIdentity();
     if (pending) await cancelConnection();
+    if (!current()) return;
     linkManual = true;
+    linkView = null;
     linkFailure = null;
+    allowCachedLink = false;
     update();
   };
   return section(l("account.link.title"), null,
     !view || view.phase === "waiting_peer" ? h("p", {}, l(role === "trusted_device" ? "account.link.intro_trusted" : "account.link.intro_new")) : null,
     view?.phase === "complete" ? h("p", {}, l("account.setup.connected")) : null,
-    linkBusy ? h("p", { role: "status" }, l("account.link.working")) : view ? h("p", { role: "status", class: view.phase === "failed" ? "error" : "muted", "aria-live": "polite" }, l(`account.link.phase.${view.phase}`)) : null,
+    linkBusy ? h("p", { role: "status" }, l("account.link.working")) : feedback.status ? h("p", { role: "status", class: "muted", "aria-live": "polite" }, l(`account.link.phase.${feedback.status}`)) : null,
+    !pending && linkAvailabilityBusy ? h("p", { role: "status", class: "help" }, l("account.link.checking")) : null,
     view?.account_email ? h("p", {}, l("account.link.account", () => ({ email: view.account_email! }))) : null,
     view?.peer_name ? h("p", {}, l("account.link.peer", () => ({ name: view.peer_name!, platform: view.peer_platform ?? "Pennel" }))) : null,
     source && pending ? h("img", { class: "device-link-qr", src: source, alt: l("account.link.qr") }) : null,
     view?.connection_code && pending ? [h("p", { class: "device-link-code" }, view.connection_code), h("p", { class: "help" }, l("account.link.scan"))] : null,
     view?.verification_code && pending ? [h("p", { class: "device-link-code" }, view.verification_code), role === "trusted_device" ? h("p", { class: "help" }, l("account.link.confirm")) : null] : null,
-    view?.error_message ? h("p", { role: "alert", class: "error" }, liveText(() => accountFailureText({ code: view.error_code, message: view.error_message }))) : null,
-    linkFailure ? h("p", { role: "alert", class: "error" }, liveText(() => accountFailureText(linkFailure))) : null,
+    feedback.error ? h("p", { role: "alert", class: "error" }, liveText(() => accountFailureText(feedback.error))) : null,
     manual,
     h("div", { class: "row" },
       view?.phase === "awaiting_approval" && role === "trusted_device" ? controlButton({ class: "btn primary", disabled: linkBusy, onclick: async () => {
@@ -372,8 +458,16 @@ function connectionSection(ctx: Context, role: CloudLinkRole): HTMLElement {
         finally { if (run === linkRun) { linkBusy = false; update(); scheduleLinkPoll(ctx); } }
       } }, l("account.link.approve")) : null,
       linkFailure && pending ? controlButton({ class: "btn", onclick: () => { linkFailure = null; void refreshConnection(ctx); } }, l("account.link.retry_poll")) : null,
-      !pending && view?.phase !== "complete" && !linkManual ? controlButton({ class: "btn primary", disabled: linkBusy, onclick: () => void beginConnection(ctx, role) }, l(view ? "account.link.retry" : startLabel)) : null,
-      !linkManual && view?.phase !== "complete" ? controlButton({ class: "btn", disabled: linkBusy, onclick: () => void manualAction() }, l("account.link.manual")) : null,
+      !pending && view?.phase !== "complete" && !linkManual ? controlButton({ class: "btn primary", disabled: connectionAdmissionDisabled(), onclick: () => void beginConnection(ctx, role) }, l(view ? "account.link.retry" : startLabel)) : null,
+      !linkManual && view?.phase !== "complete" ? controlButton({ class: "btn", disabled: pending ? linkBusy : connectionAdmissionDisabled(), onclick: () => void manualAction() }, l("account.link.manual")) : null,
+      !pending ? checkAvailabilityAction() : null,
+      view?.phase !== "complete" && role === "new_device" ? controlButton({ class: "btn", disabled: linkBusy, onclick: async () => {
+        const current = accountActions.captureIdentity();
+        await cancelConnection();
+        if (!current()) return;
+        if (accountSignedIn) { ui.askCode = true; update(); }
+        else await beginLogin(ctx);
+      } }, l(accountSignedIn ? "account.link.use_recovery" : "account.setup.email")) : null,
       controlButton({ class: "btn", disabled: linkBusy, onclick: () => void cancelConnection() }, l(view?.phase === "complete" ? "account.link.done" : "common.cancel"))));
 }
 
@@ -507,6 +601,8 @@ function syncSection(ctx: Context, report: SyncReport, enabled: boolean, warning
   return section(l("account.setup.title"), null,
     h("p", { class: "help" }, l("account.setup.intro")),
     h("p", { class: "help" }, l("account.sync.privacy")),
+    !connectionVisible() ? connectionAvailabilityNotice() : null,
+    !connectionVisible() ? checkAvailabilityAction() : null,
     ui.shownCode ? h("p", {}, l("account.setup.backup_help")) : null,
     !ui.shownCode && state === "create" ? [
       h("p", {}, l("account.setup.new_library")),
@@ -514,7 +610,7 @@ function syncSection(ctx: Context, report: SyncReport, enabled: boolean, warning
     ] : null,
     !ui.shownCode && state === "unlock" ? [
       h("p", {}, l("account.setup.locked")),
-      controlButton({ class: "btn primary", disabled: linkBusy, onclick: () => void beginConnection(ctx, "new_device") }, l("account.setup.connect")),
+      controlButton({ class: "btn primary", disabled: connectionAdmissionDisabled(), onclick: () => void beginConnection(ctx, "new_device") }, l("account.setup.connect")),
     ] : null,
     !ui.shownCode && needsBackup ? [
       h("p", { role: "status" }, l("account.setup.backup_missing")),
@@ -533,7 +629,7 @@ function syncSection(ctx: Context, report: SyncReport, enabled: boolean, warning
       const ok = await confirmDialog(l("account.sync.confirm_deletes_title"), l("account.sync.confirm_deletes_detail"), l("account.sync.confirm_deletes"));
       if (ok) await action(ctx, () => api.cloudSyncConfirmDeletes());
     } }, l("account.sync.confirm_deletes")) : null,
-    !ui.shownCode && setup?.can_approve_devices && !needsBackup ? controlButton({ class: "btn", disabled: linkBusy, onclick: () => void beginConnection(ctx, "trusted_device") }, l("account.link.start_trusted")) : null,
+    !ui.shownCode && setup?.can_approve_devices && !needsBackup ? controlButton({ class: "btn", disabled: connectionAdmissionDisabled(), onclick: () => void beginConnection(ctx, "trusted_device") }, l("account.link.start_trusted")) : null,
     enabled ? h("div", { class: "row" },
       controlButton({ class: "btn", onclick: () => void action(ctx, () => api.cloudSyncDisable()) }, l("account.setup.pause")),
       !needsVault(report) ? controlButton({ class: "btn", disabled: ui.syncing, onclick: () => {

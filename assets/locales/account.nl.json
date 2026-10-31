@@ -144,5 +144,9 @@
   "account.error.recovery": "Deze herstelcode is niet meer actueel. Bewaar de nieuwste code voor je verdergaat.",
   "account.error.pending": "Rond de huidige toestelverbinding af of annuleer ze voor je de hersteltoegang verandert.",
   "account.error.cancelled": "Verbinding geannuleerd. Je kan opnieuw beginnen wanneer je klaar bent.",
-  "account.error.generic": "Pennel kon deze accountactie niet afronden. Controleer je verbinding en probeer opnieuw."
+  "account.error.generic": "Pennel kon deze accountactie niet afronden. Controleer je verbinding en probeer opnieuw.",
+  "account.link.checking": "Beschikbaarheid van toestelverbinding controleren…",
+  "account.link.check_again": "Opnieuw controleren",
+  "account.error.incompatible": "Werk Pennel op beide toestellen bij om te verbinden. Je kan ook e-mail en je herstelcode gebruiken.",
+  "account.error.service_access": "Pennel heeft geen toegang tot de dienst voor toestelverbinding. Probeer later opnieuw of gebruik e-mail en je herstelcode."
 }

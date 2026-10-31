@@ -179,6 +179,7 @@
   const fixtureLink = (phase, role = options.link_role || (syncSetup().can_approve_devices ? "trusted_device" : "new_device")) => ({ ...emptyLink(), phase, role, request_id: "qa-connection-request", connection_code: phase === "waiting_peer" ? "QAFIXTURE-12345678" : null, verification_code: ["awaiting_approval", "waiting_approval", "provisioning"].includes(phase) ? "481 926" : null, peer_name: "Noor’s iPhone", peer_platform: "ios", account_email: "noor@example.com", expires_at_ms: now + 600000, error_code: phase === "failed" ? "connection_failed" : null, error_message: phase === "failed" ? "Synthetic connection rejected." : null });
   let deviceLink = options.link_phase ? fixtureLink(options.link_phase) : emptyLink();
   let linkPolls = 0;
+  let linkStartFailures = 0;
   let recoveryCode = "QAFI-XTUR-E000-0000-0000-0000";
   const completeLink = () => { signedIn = true; settings.cloud_sync = true; syncSetupPhase = "active"; deviceLink = fixtureLink("complete", deviceLink.role); emit("settings-changed", null); emit("sync-changed", syncReport()); return clone(deviceLink); };
   const fixture = {
@@ -407,7 +408,9 @@
       case "cloud_account": if (!signedIn) throw notSignedIn(); return clone(cloudAccount);
       case "cloud_devices": if (!signedIn) throw notSignedIn(); return clone(cloudDevices);
       case "claude_access": case "set_claude_access": return { enabled: Boolean(options.claude), status: options.claude ? { kind: "connected", last_request_ms: now - 2 * 60_000 } : { kind: "off" }, mcp_url: "https://api.pennel.app/mcp" };
-      case "cloud_sync_setup": return syncSetup();
+      case "cloud_sync_setup":
+        if (options.cloud_sync_setup_delay_ms) await new Promise(resolve => setTimeout(resolve, options.cloud_sync_setup_delay_ms));
+        return syncSetup();
       case "cloud_sync_prepare":
         if (!signedIn) throw notSignedIn();
         if (syncSetupPhase === "locked") throw { code: "vault_locked", message: "Enter your recovery code." };
@@ -426,8 +429,17 @@
         settings.cloud_sync = true; syncSetupPhase = "active"; emit("sync-changed", syncReport()); return null;
       case "cloud_sync_new_recovery_code": recoveryCode = "QAFI-XTUR-E111-1111-1111-1111"; return recoveryCode;
       case "cloud_sync_reset": signedIn = true; settings.cloud_sync = true; syncSetupPhase = "active"; recoveryCode = "QAFI-XTUR-E222-2222-2222-2222"; return recoveryCode;
+      case "cloud_link_availability":
+        if (options.link_availability_delay_ms) await new Promise(resolve => setTimeout(resolve, options.link_availability_delay_ms));
+        if (options.link_availability_error) throw { code: options.link_availability_error, message: "Synthetic service access failure." };
+        return { available: options.link_available !== false, reason_code: options.link_available === false ? options.link_reason || "pairing_unavailable" : null };
       case "cloud_link_view": return clone(deviceLink);
-      case "cloud_link_start": linkPolls = 0; deviceLink = fixtureLink("waiting_peer", args.role); return clone(deviceLink);
+      case "cloud_link_start":
+        if (options.link_start_error && (!options.link_start_fail_once || linkStartFailures++ === 0)) {
+          deviceLink = { ...emptyLink(), phase: "failed", role: args.role, error_code: options.link_start_error, error_message: "Synthetic connection admission failure." };
+          throw { code: deviceLink.error_code, message: deviceLink.error_message };
+        }
+        linkPolls = 0; deviceLink = fixtureLink("waiting_peer", args.role); return clone(deviceLink);
       case "cloud_link_join": linkPolls = 0; deviceLink = fixtureLink(args.role === "trusted_device" ? "awaiting_approval" : "waiting_approval", args.role); return clone(deviceLink);
       case "cloud_link_poll":
         if (options.link_auto_complete && ++linkPolls > 0) return completeLink();

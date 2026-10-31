@@ -1220,6 +1220,7 @@ fn main() {
             cloud::cloud_recovery_confirm,
             cloud::cloud_sync_activate,
             cloud::cloud_sync_resume,
+            cloud::cloud_link_availability,
             cloud::cloud_link_start,
             cloud::cloud_link_join,
             cloud::cloud_link_poll,

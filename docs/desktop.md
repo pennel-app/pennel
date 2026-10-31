@@ -1,5 +1,7 @@
 # Shared Pennel desktop app
 
+Device connection availability, recovery boundaries and current verification: [device connection](device-connection.md).
+
 `apps/desktop/` hosts one Tauri 2 application for Mac, Windows and Linux. Its TypeScript/Vite interface links through Rust commands to one `PennelEngine`. The legacy SwiftUI Mac shell is retired under [cleanup #75](https://github.com/pennel-app/pennel/issues/75). The embedded macOS platform library remains the owner of Apple integrations; packaged-device and signed-upgrade acceptance remain separate.
 
 The main window **Pennel** hosts the meeting library and Settings. Its compact toolbar keeps **New recording**, sidebar visibility and Find available. The library sidebar keeps Dictation, Meetings, History and Settings beside search, meeting questions and meetings grouped by date. An active or unfinished recording replaces the new-recording action with a route back to that exact session; it does not start another capture. Settings opens inside the same main window from the tray/menu, in-app links or `Cmd/Ctrl+,`. Its back action returns to the previous meeting or recording, preserving drafts, the selected view and reading position. History and Dictation use the same workspace window. The recording prompt and nonactivating dictation pill remain separate. Platform-specific features stay visible with capability/permission explanations.

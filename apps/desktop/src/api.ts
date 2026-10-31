@@ -509,6 +509,7 @@ export interface CloudSyncSetup {
 }
 
 export type CloudLinkRole = "new_device" | "trusted_device";
+export interface CloudLinkAvailability { available: boolean; reason_code: string | null }
 export type CloudLinkPhase = "idle" | "waiting_peer" | "confirming" | "awaiting_approval" | "waiting_approval" | "provisioning" | "complete" | "cancelled" | "expired" | "failed";
 export interface CloudLinkView {
   phase: CloudLinkPhase;
@@ -727,6 +728,7 @@ export const api = {
   cloudRecoveryConfirm: (code: string, context: string) => invoke<void>("cloud_recovery_confirm", { code, context }),
   cloudSyncActivate: () => invoke<void>("cloud_sync_activate"),
   cloudSyncResume: () => invoke<void>("cloud_sync_resume"),
+  cloudLinkAvailability: () => invoke<CloudLinkAvailability>("cloud_link_availability"),
   cloudLinkStart: (role: CloudLinkRole) => invoke<CloudLinkView>("cloud_link_start", { role }),
   cloudLinkJoin: (code: string, role: CloudLinkRole) => invoke<CloudLinkView>("cloud_link_join", { code, role }),
   cloudLinkPoll: () => invoke<CloudLinkView>("cloud_link_poll"),

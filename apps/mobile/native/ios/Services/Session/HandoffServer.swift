@@ -47,7 +47,7 @@ final class HandoffServer {
         } catch {
             Self.log.error("session.json not written: \(ErrorText.code(error), privacy: .public)")
         }
-        HandoffSignal.session.post()
+        if !AppPaths.isQAProfile { HandoffSignal.session.post() }
     }
 
     /// Spec §5.2: dictated text leaves the App Group once inserted or after `HandoffClient.resultLifetime`.
@@ -61,6 +61,6 @@ final class HandoffServer {
         } catch {
             Self.log.error("result.json not written: \(ErrorText.code(error), privacy: .public)")
         }
-        HandoffSignal.result.post()
+        if !AppPaths.isQAProfile { HandoffSignal.result.post() }
     }
 }

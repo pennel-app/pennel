@@ -64,7 +64,7 @@ pub use cleanup_verification::CleanupVerificationAvailability;
 pub use cli_agent::{DetectedAgent, check_cli_agent, detect_cli_agents};
 pub use cloud::SecretStore;
 pub use cloud::account::{CloudAccount, CloudDevice, CloudLoginPoll, CloudLoginStart};
-pub use cloud::link::{CloudLinkPhase, CloudLinkRole, CloudLinkView};
+pub use cloud::link::{CloudLinkAvailability, CloudLinkPhase, CloudLinkRole, CloudLinkView};
 pub use cloud::relay::{RelayAnswer, RelayRequest};
 pub use cloud::setup::{CloudSyncSetup, CloudSyncSetupPhase};
 pub use cloud::sync::{MASS_DELETE, MeetingSyncState, SyncItemState, SyncReport, SyncStatus};

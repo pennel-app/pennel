@@ -5,7 +5,8 @@ import Security
 /// while a recording runs with the screen locked.
 enum Keychain {
     static var service: String {
-        Bundle.main.object(forInfoDictionaryKey: "PennelKeychainService") as? String ?? "app.pennel.ios"
+        _ = AppPaths.qaProfile
+        return Bundle.main.object(forInfoDictionaryKey: "PennelKeychainService") as? String ?? "app.pennel.ios"
     }
     private static let apiKeyPrefix = "api-key."
 

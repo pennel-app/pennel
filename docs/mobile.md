@@ -8,6 +8,8 @@ Tracking: [Expo migration #42](https://github.com/pennel-app/pennel/issues/42), 
 
 Current cleanup verification: [legacy shell retirement — 30 October 2026](#legacy-shell-retirement--30-october-2026).
 
+Device connection availability, recovery boundaries and current verification: [device connection](device-connection.md).
+
 ## Confirmed decisions
 
 - Expo SDK 58, compatible React Native, TypeScript, Expo Router and development builds. iPhone first; Android follows iPhone acceptance.

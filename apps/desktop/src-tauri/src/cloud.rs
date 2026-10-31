@@ -5,8 +5,9 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use pennel_core::{
-    CloudAccount, CloudDevice, CloudLinkRole, CloudLinkView, CloudLoginPoll, CloudLoginStart,
-    CloudSyncSetup, MeetingSyncState, PennelError, Settings, SyncItemState, SyncReport, SyncStatus,
+    CloudAccount, CloudDevice, CloudLinkAvailability, CloudLinkRole, CloudLinkView, CloudLoginPoll,
+    CloudLoginStart, CloudSyncSetup, MeetingSyncState, PennelError, Settings, SyncItemState,
+    SyncReport, SyncStatus,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -564,6 +565,14 @@ fn link_changed(app: &AppHandle, view: &CloudLinkView) {
         settings_changed(app);
         poke(app);
     }
+}
+
+#[tauri::command]
+pub async fn cloud_link_availability(
+    shared: State<'_, Arc<Shared>>,
+) -> Result<CloudLinkAvailability> {
+    let shared = shared.inner().clone();
+    blocking(move || shared.engine.cloud_link_availability().map_err(err)).await
 }
 
 #[tauri::command]

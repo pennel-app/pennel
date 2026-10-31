@@ -148,12 +148,14 @@ enum CloudSyncBackground {
 
     /// Must run before the app finishes launching.
     static func register() {
+        guard !AppPaths.isQAProfile else { return }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { task in
             MainActor.assumeIsolated { run(task) }
         }
     }
 
     static func schedule() {
+        guard !AppPaths.isQAProfile else { return }
         let request = BGAppRefreshTaskRequest(identifier: identifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: earliest)
         do {

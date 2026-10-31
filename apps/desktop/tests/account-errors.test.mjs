@@ -8,11 +8,13 @@ test("connection and setup failures have actionable copy in both interface langu
     setInterfaceLanguage(language);
     for (const [codes, key] of [
       [["pairing_unavailable"], "account.error.unavailable"],
+      [["pairing_incompatible"], "account.error.incompatible"],
+      [["http_403"], "account.error.service_access"],
       [["pairing_storage", "storage"], "account.error.storage"],
       [["pairing_claimed", "pairing_used", "pairing_busy"], "account.error.fresh_code"],
       [["pairing_account", "pairing_existing"], "account.error.account"],
       [["pairing_invalid", "pairing_changed", "pairing_transcript", "pairing_message", "pairing_phase", "pairing_approval"], "account.error.verify"],
-      [["network", "pairing_retry"], "account.error.network"],
+      [["network", "internal", "pairing_retry", "http_408", "http_500", "http_504", "http_599"], "account.error.network"],
       [["rate_limited", "http_429"], "account.error.rate"],
       [["device_limit"], "account.error.device_limit"],
       [["generation", "pairing_library_changed"], "account.error.library_changed"],

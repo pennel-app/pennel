@@ -65,6 +65,7 @@ export interface CloudState { signed_in: boolean; account: CloudAccount | null; 
 export interface CloudRecoveryDisplay { recovery_code: string | null; confirmation_token: string | null; account_epoch: string }
 export interface CloudSyncSetup { phase: 'signed_out' | 'new_library' | 'locked' | 'ready' | 'paused' | 'active'; sync_enabled: boolean; generation: number | null; can_approve_devices: boolean; uploaded: number; downloaded: number; conflicts: number; last_success_ms: number | null }
 export type CloudLinkRole = 'new_device' | 'trusted_device';
+export interface CloudLinkAvailability { available: boolean; reason_code: string | null }
 export type CloudLinkPhase = 'idle' | 'waiting_peer' | 'confirming' | 'awaiting_approval' | 'waiting_approval' | 'provisioning' | 'complete' | 'cancelled' | 'expired' | 'failed';
 export interface CloudLinkView { phase: CloudLinkPhase; role: CloudLinkRole | null; request_id: string | null; connection_code: string | null; qr_payload: string | null; qr_svg: string | null; qr_image?: string | null; verification_code: string | null; peer_name: string | null; peer_platform: string | null; account_email: string | null; expires_at_ms: number | null; error_code: string | null; error_message: string | null }
 export type RecognitionStage = 'preparing' | 'uploading' | 'recognizing' | 'response_unknown' | 'interrupted' | 'applying' | 'completed' | 'cancelled' | 'failed';
@@ -169,6 +170,7 @@ export interface MobileCommandResults {
   'cloud.resumeSync': void;
   'cloud.pendingRecovery': CloudRecoveryDisplay;
   'cloud.linkStart': CloudLinkView;
+  'cloud.linkAvailability': CloudLinkAvailability;
   'cloud.linkView': CloudLinkView;
   'cloud.linkJoin': CloudLinkView;
   'cloud.linkPoll': CloudLinkView;

@@ -31,7 +31,7 @@ final class MeetingInterruptionLog: @unchecked Sendable {
     private let defaults: UserDefaults
     private let lock = NSLock()
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = AppPaths.defaults) {
         self.defaults = defaults
     }
 
@@ -750,6 +750,7 @@ final class SystemFinishScheduler: FinishTaskScheduling {
 
     /// Must run before the app finishes launching.
     static func register() {
+        guard !AppPaths.isQAProfile else { return }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { task in
             guard let task = task as? BGContinuedProcessingTask else {
                 task.setTaskCompleted(success: false)
@@ -766,6 +767,7 @@ final class SystemFinishScheduler: FinishTaskScheduling {
     }
 
     func begin() -> FinishTask? {
+        guard !AppPaths.isQAProfile else { return nil }
         let request = BGContinuedProcessingTaskRequest(
             identifier: Self.identifier, title: ActivityCopy.current.text(.finishingRecording), subtitle: MeetingRuntime.Message.defaultTitle)
         request.strategy = .fail

@@ -3,6 +3,10 @@ import Foundation
 import UIKit
 
 enum NativeCloudViews {
+    static func availability(_ value: CloudLinkAvailability) -> [String: Any] {
+        ["available": value.available, "reason_code": BridgeJSON.optional(value.reasonCode)]
+    }
+
     static func setup(_ value: CloudSyncSetup) -> [String: Any] {
         let phase: String = switch value.phase {
         case .signedOut: "signed_out"

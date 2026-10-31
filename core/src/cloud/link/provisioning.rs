@@ -159,6 +159,9 @@ pub(super) fn create(
     transfer: &Transfer,
     expires: i64,
 ) -> Result<Receipt, PennelError> {
+    if !transfer.valid_for(context) {
+        return Err(invalid());
+    }
     if let Some(receipt) = load(engine)? {
         if receipt.request_id != remote.id {
             return Err(failure(
@@ -313,11 +316,7 @@ fn commit(
     clear(engine, receipt)
 }
 
-fn prove_acknowledged(
-    engine: &PennelEngine,
-    client: &Client,
-    receipt: &mut Receipt,
-) -> Result<bool, PennelError> {
+fn prove_acknowledged(client: &Client, receipt: &Receipt) -> Result<bool, PennelError> {
     if client.session.signed_in() {
         let (account, device) = client.session.identity()?;
         let expected_device = receipt.existing_device.as_deref().or_else(|| {
@@ -350,47 +349,16 @@ fn prove_acknowledged(
         Some(&credentials.access_token),
         None,
     )?;
-    let body = if status == 401 {
-        save(engine, receipt)?;
-        let credentials = receipt.credentials.as_ref().ok_or_else(invalid)?;
-        let (status, body) = send_json(
-            &client.http,
-            "POST",
-            &format!("{}/v1/auth/refresh", client.session.base_url()),
-            None,
-            Some(&json!({"refresh_token":credentials.refresh_token})),
-        )?;
-        if status != 200 {
-            return Ok(false);
-        }
-        let credentials = receipt.credentials.as_mut().ok_or_else(invalid)?;
-        credentials.access_token = field(&body, "access_token")?.to_string();
-        credentials.refresh_token = field(&body, "refresh_token")?.to_string();
-        credentials.expires_in = body["expires_in"]
-            .as_u64()
-            .filter(|n| (1..=86_400).contains(n))
-            .ok_or_else(invalid)?;
-        save(engine, receipt)?;
-        let credentials = receipt.credentials.as_ref().ok_or_else(invalid)?;
-        let (status, body) = send_json(
-            &client.http,
-            "GET",
-            &url,
-            Some(&credentials.access_token),
-            None,
-        )?;
-        if status != 200 {
-            return Ok(false);
-        }
-        body
-    } else if status == 200 {
-        body
-    } else {
+    if status == 401 {
+        // A proof-only request must not spend the receipt's refresh token: losing
+        // that response could make recovery replay it and revoke this device.
         return Ok(false);
-    };
-    let credentials = receipt.credentials.as_ref().ok_or_else(invalid)?;
-    Ok(body["user_id"].as_str() == Some(receipt.account.as_str())
-        && body["device_id"].as_str() == Some(credentials.device_id.as_str()))
+    }
+    if status != 200 {
+        return Err(link_http_error(status, &body));
+    }
+    Ok(field(&body, "user_id")? == receipt.account
+        && field(&body, "device_id")? == credentials.device_id)
 }
 
 pub(super) fn advance(
@@ -417,7 +385,7 @@ pub(super) fn advance(
             loaded = match client.poll(&remote) {
                 Ok(value) => value,
                 Err(PennelError::Cloud { code, .. }) if code == "pairing_unknown" => {
-                    if prove_acknowledged(engine, client, receipt)? {
+                    if prove_acknowledged(client, receipt)? {
                         receipt.acknowledged = true;
                         live()?;
                         commit(engine, client, receipt, expected_auth, &live)?;
@@ -759,6 +727,140 @@ mod tests {
         assert!(!has_pending(&engine));
         poll.assert();
         identity.assert();
+    }
+
+    #[test]
+    fn expired_staged_access_does_not_rotate_a_refresh_token_for_acknowledgment_proof() {
+        let mut server = mockito::Server::new();
+        let (_directory, engine, store, _api, mut receipt) = fixture(&server.url());
+        receipt.expires_at_ms = now_ms() - 90_000_000;
+        save(&engine, &receipt).unwrap();
+        let poll = server
+            .mock("POST", "/v1/device-links/ABCD-EFGH/poll")
+            .with_status(404)
+            .with_body(r#"{"error":"pairing_unknown"}"#)
+            .expect(1)
+            .create();
+        let identity = server
+            .mock("GET", "/v1/whoami")
+            .match_header("authorization", "Bearer fixture-access")
+            .with_status(401)
+            .expect(1)
+            .create();
+        let refresh = server
+            .mock("POST", "/v1/auth/refresh")
+            .with_status(503)
+            .expect(0)
+            .create();
+        let view = engine.cloud_link_poll().unwrap();
+        assert_eq!(view.phase, CloudLinkPhase::Failed);
+        assert_eq!(view.error_code.as_deref(), Some("pairing_expired"));
+        assert!(!has_pending(&engine));
+        assert!(!engine.cloud_signed_in());
+        assert!(!engine.settings().cloud_sync);
+        assert!(store.get(VAULT_KEY_ACCOUNT.into()).is_none());
+        poll.assert();
+        identity.assert();
+        refresh.assert();
+    }
+
+    #[test]
+    fn transient_acknowledgment_proof_failures_preserve_the_durable_receipt() {
+        for status in [403, 429, 502, 503] {
+            let mut server = mockito::Server::new();
+            let (_directory, engine, store, _api, receipt) = fixture(&server.url());
+            let original = store.get(entry(&receipt.account)).unwrap();
+            let poll = server
+                .mock("POST", "/v1/device-links/ABCD-EFGH/poll")
+                .with_status(404)
+                .with_body(r#"{"error":"pairing_unknown"}"#)
+                .expect(1)
+                .create();
+            let identity = server
+                .mock("GET", "/v1/whoami")
+                .with_status(status)
+                .with_body("<html>Service unavailable</html>")
+                .expect(1)
+                .create();
+            let refresh = server.mock("POST", "/v1/auth/refresh").expect(0).create();
+            let view = engine.cloud_link_poll().unwrap();
+            assert_eq!(view.phase, CloudLinkPhase::Provisioning);
+            assert_eq!(
+                view.error_code.as_deref(),
+                Some(format!("http_{status}").as_str())
+            );
+            assert!(has_pending(&engine));
+            assert_eq!(
+                store.get(entry(&receipt.account)).as_deref(),
+                Some(original.as_str())
+            );
+            assert_eq!(
+                load(&engine)
+                    .unwrap()
+                    .unwrap()
+                    .credentials
+                    .as_ref()
+                    .unwrap()
+                    .refresh_token,
+                "fixture-refresh"
+            );
+            assert!(!engine.cloud_signed_in());
+            poll.assert();
+            identity.assert();
+            refresh.assert();
+        }
+    }
+
+    #[test]
+    fn malformed_transfer_never_creates_a_receipt_or_changes_active_access() {
+        let server = mockito::Server::new();
+        let (_directory, engine) = super::super::tests::engine_for(&server);
+        let client = Client::new(engine.cloud_session().unwrap());
+        let context = super::super::tests::context();
+        let remote = Remote {
+            id: "ABCD-EFGH".into(),
+            capability: Zeroizing::new(random_token()),
+            role: CloudLinkRole::NewDevice,
+        };
+        let store = engine.secret_store().unwrap();
+        let prior_key = VaultKey::generate().to_b64();
+        store.set(VAULT_KEY_ACCOUNT.into(), Some(prior_key.clone()));
+        store.set(VAULT_OWNER_ACCOUNT.into(), Some("prior-owner".into()));
+        for (key, grant) in [
+            ("bad key".into(), random_token()),
+            (VaultKey::generate().to_b64(), "!".repeat(43)),
+        ] {
+            let transfer = Transfer {
+                version: 1,
+                grant,
+                vault_key: key,
+                account_id: context.account.clone(),
+                generation: context.generation,
+                provisional_id: context.new_id.clone(),
+                transcript_hash: context.hash.clone(),
+            };
+            assert!(
+                create(
+                    &engine,
+                    &client,
+                    &remote,
+                    &context,
+                    &transfer,
+                    now_ms() + 600_000
+                )
+                .is_err()
+            );
+            assert!(!has_pending(&engine));
+            assert_eq!(
+                store.get(VAULT_KEY_ACCOUNT.into()).as_deref(),
+                Some(prior_key.as_str())
+            );
+            assert_eq!(
+                store.get(VAULT_OWNER_ACCOUNT.into()).as_deref(),
+                Some("prior-owner")
+            );
+            assert!(!engine.settings().cloud_sync);
+        }
     }
 
     #[test]
