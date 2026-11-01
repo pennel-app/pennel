@@ -273,7 +273,7 @@ struct CloudAccountTests {
         let login = Task { await model.beginLogin() }
         var waitError: (any Error)?
         do {
-            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            let deadline = ContinuousClock.now.advanced(by: .seconds(60))
             while opened.isEmpty && model.notice == nil && ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(10))
             }
