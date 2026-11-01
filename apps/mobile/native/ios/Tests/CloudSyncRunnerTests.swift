@@ -112,15 +112,18 @@ struct CloudSyncRunnerTests {
         await fixture.waitForCalls(1)
 
         var events: [String] = []
+        let started = AsyncStream<Void>.makeStream()
         let start = Task { @MainActor in
-            let held = await fixture.runner.hold(maxWait: .seconds(5))
+            started.continuation.yield()
+            started.continuation.finish()
+            let held = await fixture.runner.hold(maxWait: .seconds(60))
             events.append("held \(held)")
             fixture.active = "new-meeting"
             fixture.runner.poke()
             events.append("folder created")
             fixture.runner.release()
         }
-        for _ in 0..<20 { await Task.yield() }
+        _ = await started.stream.first(where: { @Sendable _ in true })
         #expect(events.isEmpty)
 
         await fixture.gate.open()

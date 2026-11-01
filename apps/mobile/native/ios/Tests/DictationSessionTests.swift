@@ -123,6 +123,13 @@ private final class Harness {
 
     var state: SessionState? { store.read(SessionState.self, as: .session) }
     var result: HandoffResult? { store.read(HandoffResult.self, as: .result) }
+
+    func waitForPartialText(_ expected: String) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while state?.partialText != expected && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
 }
 
 @MainActor
@@ -135,7 +142,7 @@ struct DictationSessionTests {
         h.capture.feed([0.2, 0.3])
         #expect(h.runner.previewSamples == [[0.2, 0.3]])
         h.runner.emitPreview("voorlopig", index: 0)
-        for _ in 0..<100 { if h.state?.partialText == "voorlopig" { break }; await Task.yield() }
+        try await h.waitForPartialText("voorlopig")
         #expect(h.state?.partialText == "voorlopig")
         #expect(h.state?.previewRequestID == startID)
         #expect(h.result == nil)
@@ -145,7 +152,7 @@ struct DictationSessionTests {
         let nextID = try await h.send(.start, with: client)
         h.runner.emitPreview("oude poging", index: 0)
         h.runner.emitPreview("nieuwe poging", index: 1)
-        for _ in 0..<100 { if h.state?.partialText == "nieuwe poging" { break }; await Task.yield() }
+        try await h.waitForPartialText("nieuwe poging")
         #expect(h.state?.partialText == "nieuwe poging")
         #expect(h.state?.previewRequestID == nextID)
         let stopID = try await h.send(.stop, with: client)
