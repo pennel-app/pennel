@@ -108,7 +108,7 @@ pub use provider::{
     ProviderAccount, ProviderKind, ProviderTask, default_base_url, default_model, new_account,
     requires_key, supports,
 };
-pub use provider_test::{ProviderTaskTestResult, test_provider_task};
+pub use provider_test::{ProviderTaskTestResult, test_provider_task, test_provider_task_choice};
 pub use recording::{RecordingLifecycle, RecordingPhase, RecordingState};
 pub use remote_models::{RemoteModel, provider_models};
 pub use retranscription::{

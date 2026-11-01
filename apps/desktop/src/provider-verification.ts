@@ -1,4 +1,4 @@
-import type { AppInfo, ProviderAccount } from "./api";
+import type { AppInfo, ModelChoice, ProviderAccount } from "./api";
 
 export type ProviderSlot = "dictation_stt" | "meeting_stt" | "llm";
 export interface TaskVerification { verified: boolean; message: string }
@@ -9,7 +9,10 @@ export function providerFingerprint(info: VerificationInfo, account: ProviderAcc
 }
 
 export function taskFingerprint(info: VerificationInfo, slot: ProviderSlot): string {
-  const choice = info.settings[slot];
+  return choiceFingerprint(info, info.settings[slot]);
+}
+
+export function choiceFingerprint(info: VerificationInfo, choice: ModelChoice): string {
   const account = info.settings.providers.find((provider) => provider.id === choice.provider_id);
   return JSON.stringify([account ? providerFingerprint(info, account) : null, choice.model, info.settings.language]);
 }

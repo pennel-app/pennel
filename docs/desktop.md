@@ -6,9 +6,9 @@ Device connection availability, recovery boundaries and current verification: [d
 
 The main window **Pennel** hosts the meeting library and Settings. Its compact toolbar keeps **New recording**, sidebar visibility and Find available. The library sidebar keeps Dictation, Meetings, History and Settings beside search, meeting questions and meetings grouped by date. An active or unfinished recording replaces the new-recording action with a route back to that exact session; it does not start another capture. Settings opens inside the same main window from the tray/menu, in-app links or `Cmd/Ctrl+,`. Its back action returns to the previous meeting or recording, preserving drafts, the selected view and reading position. History and Dictation use the same workspace window. The recording prompt and nonactivating dictation pill remain separate. Platform-specific features stay visible with capability/permission explanations.
 
-Settings starts at **Overview / Overzicht**, showing readiness for **Dictation**, **Meeting transcription**, and **Summaries and questions**, each with **Change** or **Finish setup**, and remembers the selected category when reopened. Its vertical category navigation replaces the library sidebar while Settings is open and groups ordinary work settings, Appearance/Account, and advanced Providers/Models. Active recording state and a return action remain visible there without starting or stopping capture. Existing detailed links remain supported and route into the main window. **Ready to try / Klaar om te proberen** reports configuration and queryable access, not proof that a real provider or microphone test has succeeded.
+Settings starts at **Overview / Overzicht**, showing readiness for **Dictation**, **Meeting transcription**, and **Text processing**, each with **Change** or **Finish setup**, and remembers the selected category when reopened. Text processing shares one model for dictation cleanup, meeting summaries and questions. Its vertical category navigation replaces the library sidebar while Settings is open and groups ordinary work settings, Appearance/Account, and advanced Providers/Models. Active recording state and a return action remain visible there without starting or stopping capture. Existing detailed links remain supported and route into the main window. **Ready to try / Klaar om te proberen** reports configuration and queryable access, not proof that a real provider or microphone test has succeeded.
 
-Task-local setup is a dialog over the initiating view, with connection details kept in that flow. Preferences save as made; API keys have an explicit Save action. Back or Escape returns to the same document without committing a typed, unsaved key. Done saves a typed key through that same explicit action and waits for persistence; a failed save keeps the input and dialog available. Returning does not undo already-saved configuration. Meetings keep personal notes, selected views, source navigation and reading position through processing and setup. Missing summary configuration has a visible **Set up summaries** action even if an earlier summary already exists; questions provide their own setup route.
+Overview, Models and task recovery open the same guided setup dialog over the initiating view. Model choices remain drafts until **Use this setup** succeeds; **Cancel** or Escape returns without changing the active task assignment. Connection details, keys, downloads and sign-in have separate explicit actions and can remain after cancellation, as explained in the chooser. A failed save keeps the dialog and error available. Meetings keep personal notes, selected views, source navigation and reading position through processing and setup. Missing summary configuration has a visible **Set up summaries** action even if an earlier summary already exists; questions provide their own setup route.
 
 ## Appearance and first use
 
@@ -133,7 +133,7 @@ The [Expo iPhone app](mobile.md) uses the same Rust core and exposes the corresp
 
 ### Built-in Apple models
 
-In **Providers → Provider toevoegen**, add **Apple-dicteren** for dictation/meeting transcription and **Apple Intelligence** for cleanup, commands, summaries and meeting questions. Neither account has an API key or server URL. The provider actions assign the relevant model slots; the **Modellen** tab shows macOS-managed models without an editable model name. Speech permission is requested explicitly from the Apple-dicteren card. macOS manages speech-language assets and may install them on first use.
+In the task chooser, **On this computer** offers **Apple dictation** for dictation/meeting transcription and **Apple Intelligence** for text processing where supported. Neither account has an API key or server URL, and their model names are managed by macOS. Choose **Use this setup** to assign the selected task. The existing provider-management actions remain available under **Providers**. Speech permission is requested explicitly. macOS manages speech-language assets and may install them on first use.
 
 Apple Intelligence uses `FoundationModels.SystemLanguageModel.default` on the device, with a fresh session and no tools. Device eligibility, Apple Intelligence being disabled and models still preparing use English diagnostic sources and localized presentation; **Check availability** rechecks that status. Pennel does not switch to a cloud provider when the model is unavailable. Windows and Linux keep the Apple choices visible but disabled with their macOS requirement. Foundation Models is weak-linked so the app retains its macOS 14.4 minimum; the model itself requires macOS 26 or newer.
 
@@ -141,7 +141,17 @@ The shared core applies a smaller prompt budget for Apple Intelligence. Long tra
 
 ### Model setup and verification
 
-Models and recording surfaces distinguish the destination for audio from optional text processing. **Ingesteld** means the selected configuration is present; it does not claim that a provider request succeeded. **Test spraakherkenning** and **Test tekstverwerking** are explicit actions using bundled synthetic audio or fixed sample text, never a user's dictation, meeting, dictionary or pad. The destination is shown before the request. A result is marked **Test geslaagd** only for the configuration tested, and is invalidated after model, endpoint, language or credential changes. Catalog connection testing remains separate and failed catalog requests can be retried.
+**Models** shows three task summaries with the selected service, readable model name, processing destination, readiness and a setup action. The shared chooser offers **On this computer**, **Pennel Cloud** and **My own provider**, retaining unavailable options with a reason. Local model downloads, provider connection details and Cloud sign-in remain in that flow. Remote models are searchable by name or ID; a failed catalog request offers retry and manual model-ID entry under Advanced. Existing configured IDs remain available even when absent from the catalog. The desktop flow preserves existing settings and does not change the iPhone setup UI.
+
+Choosing or testing another model does not save its task assignment. **Use this setup** applies only the selected task; **Cancel** discards the choice. Adding a provider creates a reusable connection without selecting it for the active task. Explicit connection/key saves, downloads and sign-in can remain after cancellation. Editing a connection names the tasks already using it, since endpoint or credential changes can affect them independently of a model assignment.
+
+Models and recording surfaces distinguish the destination for audio from optional text processing. **Configured / Ingesteld** means the selected configuration is present; it does not claim that a provider request succeeded. **Test with sample** in the chooser tests its draft choice through an isolated core settings snapshot; the existing saved-configuration test API remains available. Both use bundled synthetic audio or fixed sample text, never a user's dictation, meeting, dictionary or pad. The destination is shown before the request. Success applies only to the configuration tested and is invalidated after model, endpoint, language or credential changes; late results cannot verify a changed or cancelled draft. Catalog connection testing remains separate.
+
+The [1 November 2026 verification receipt](evidence/model-setup-2026-11-01.json) records the affected build, unit, lint and 104 owned synthetic browser checks, including cancellation after a failed Apply, pending prerequisites, Cloud sign-in isolation, small windows and 200% zoom. These checks do not establish packaged/device, live-provider, VoiceOver or human usability acceptance; those remain open under [#32](https://github.com/pennel-app/pennel/issues/32).
+
+![Model task overview, English/light](evidence/model-setup-2026-11-01/models-en-light.png)
+
+![Guided chooser at a small window size, Dutch/dark](evidence/model-setup-2026-11-01/chooser-nl-dark.png)
 
 Model downloads have one owner per model. Onboarding and Settings can attach to the same worker and replay its latest progress. Attaching is atomic and never starts a new download when the old snapshot is stale; only an explicit download action can do that. Cancelling keeps partial bytes, and changing the selected speech engine does not implicitly cancel another window's download.
 
@@ -153,8 +163,11 @@ Cleaned-up dictation uses conservative ordered-content safeguards before accepti
 
 Dictation settings expose **Verify cleanup meaning**, independently from the optional Decision processing connection. It starts off and remains unavailable until the exact pipeline and content-language policy are qualified. No production model is qualified in this version; a connection sample does not enable verification. The settings explain saved enablement and the configured destination, while active sessions retain their original destination. Requested but unavailable verification keeps raw text, with no retry or alternate provider.
 
-Advanced Models settings expose **Decision processing** and **Passage ranking**. Both
-start disabled, including on existing profiles. They reuse explicitly selected OpenRouter
+Models keeps **Decision processing** and **Passage ranking** inside the initially collapsed
+**Experimental connections — setup and testing only** disclosure. These connections do not
+currently drive ordinary dictation, meeting processing or search. A missing compatible
+provider shows an explanation and **Add connection**, rather than a blank dropdown. Both
+connections start disabled, including on existing profiles. They reuse explicitly selected OpenRouter
 or Custom server accounts and their OS-stored keys. Custom accounts can have an optional
 key; a keyless local service remains supported. Removing an account disables its optional
 connections without selecting a replacement.
@@ -165,7 +178,7 @@ The API format determines the request path; the existing account URL remains aut
 Remote connections require HTTPS; HTTP is accepted only for a literal loopback address or
 localhost. On iPhone, loopback refers to the phone itself, not a Mac on the same network.
 
-Save the model and, for OpenRouter, an exact upstream route. Advanced fields can pin an
+Save the model and, for OpenRouter, an exact upstream route shown outside Advanced because it is required. Advanced fields can pin an
 expected returned model, set a conservative serialized-input byte budget and bound the
 timeout. These byte limits are not a tokenizer estimate. Oversized inputs fail before
 transmission instead of being truncated. OpenRouter requests deny data collection, require

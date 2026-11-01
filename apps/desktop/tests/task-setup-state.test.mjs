@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TaskSetupScope, taskConfiguration } from "../src/task-setup-state.ts";
+import { TaskModelDraft, TaskSetupScope, processingLocation, taskConfiguration } from "../src/task-setup-state.ts";
 
 function info() {
   return {
@@ -37,6 +37,48 @@ test("a selected local model must actually be downloaded, and an unsupported tas
   assert.equal(taskConfiguration(current, "meeting_stt", ["speech"]).reason, "Unavailable here");
 });
 
+test("draft choices preserve saved assignments and remember each provider's model", () => {
+  const current = info();
+  const before = structuredClone(current.settings);
+  const draft = new TaskModelDraft(current.settings.dictation_stt);
+  draft.setModel("another-speech-model");
+  draft.chooseProvider("text", "default-text-model");
+  draft.setModel("custom-text-model");
+  draft.chooseProvider("local", "default-speech-model");
+  assert.deepEqual(draft.choice, { provider_id: "local", model: "another-speech-model" });
+  draft.chooseProvider("text", "ignored-default");
+  assert.equal(draft.choice.model, "custom-text-model");
+  assert.deepEqual(current.settings, before);
+  const copy = draft.choice;
+  copy.model = "mutated-copy";
+  assert.equal(draft.choice.model, "custom-text-model");
+});
+
+test("draft readiness checks the proposed provider and model without saving them", () => {
+  const current = info();
+  assert.equal(taskConfiguration(current, "dictation_stt", ["speech"], { provider_id: "text", model: "new-model" }).state, "key");
+  assert.equal(taskConfiguration(current, "dictation_stt", ["speech"], { provider_id: "local", model: "not-downloaded" }).state, "download");
+  assert.equal(taskConfiguration(current, "dictation_stt", ["speech"], { provider_id: "missing", model: "speech" }).state, "provider");
+  assert.equal(current.settings.dictation_stt.provider_id, "local");
+});
+
+test("an unfinished server address cannot become a ready draft", () => {
+  const current = info();
+  current.keys.text = true;
+  current.settings.providers[1].base_url = "";
+  assert.equal(taskConfiguration(current, "llm", []).state, "address");
+  current.settings.providers[1].base_url = "not-a-server";
+  assert.equal(taskConfiguration(current, "llm", []).state, "address");
+  current.settings.providers[1].base_url = "http://localhost:1234/v1";
+  assert.equal(taskConfiguration(current, "llm", []).state, "ready");
+});
+
+test("processing location groups device integrations separately from Cloud and own services", () => {
+  for (const kind of ["local", "apple_speech", "apple_intelligence", "ollama", "lm_studio", "codex", "claude_code"]) assert.equal(processingLocation(kind), "device");
+  assert.equal(processingLocation("pennel_cloud"), "cloud");
+  for (const kind of ["open_ai", "open_router", "groq", "custom"]) assert.equal(processingLocation(kind), "own");
+});
+
 test("setup scope ignores stale async views and keeps saves pending until settled", async () => {
   const scope = new TaskSetupScope();
   const first = scope.next();
@@ -46,12 +88,14 @@ test("setup scope ignores stale async views and keeps saves pending until settle
   assert.equal(scope.current(second), true);
   let finish;
   const saving = scope.track(new Promise(resolve => { finish = resolve; }));
+  assert.equal(scope.busy, true);
   let settled = false;
   void scope.settle().then(() => { settled = true; });
   await Promise.resolve();
   assert.equal(settled, false);
   finish();
   await saving;
+  assert.equal(scope.busy, false);
   await scope.settle();
   assert.equal(settled, true);
   scope.dispose();

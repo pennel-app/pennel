@@ -1,0 +1,117 @@
+{
+  "date": "2026-11-01",
+  "branch": "codex/32-guided-model-setup",
+  "issue": "https://github.com/pennel-app/pennel/issues/32",
+  "scope": "Desktop model setup and isolated core draft sample API; no mobile UI or production inference activation",
+  "checks": [
+    {
+      "command": "make core",
+      "result": "pass: release library"
+    },
+    {
+      "command": "make test",
+      "result": "pass: 729 core tests, 7 ignored; 17 keyboard core tests"
+    },
+    {
+      "command": "(cd apps/desktop && npm ci && npm run build && npm test)",
+      "result": "pass: frontend build and 237 tests"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+      "result": "pass: 224 tests"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check",
+      "result": "pass"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
+      "result": "pass"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "command": "/Users/landerparren/.local/bin/worktree-storage run -- swift test --package-path apps/macos-platform",
+      "result": "pass: 123 tests"
+    },
+    {
+      "command": "node --test scripts/fixtures/desktop-platform.test.mjs",
+      "result": "pass: 23 tests"
+    },
+    {
+      "command": "make theme-check",
+      "result": "pass"
+    },
+    {
+      "command": "make packaging-test",
+      "result": "pass: 61 tests"
+    },
+    {
+      "command": "node /Users/landerparren/.agents/skills/impeccable/scripts/detect.mjs --json apps/desktop/src/views/setup.ts apps/desktop/src/views/model-picker.ts apps/desktop/src/views/models.ts apps/desktop/src/views/inference.ts apps/desktop/src/views/providers.ts apps/desktop/src/styles.css",
+      "result": "pass: no deterministic findings"
+    },
+    {
+      "command": "node scripts/capture-desktop-reference.mjs --case meeting-flow-interaction --case provider-history-interaction --case settings-overview --case settings-overview-small --case settings-overview-zoom --case settings-task-setup-zoom --case settings-task-setup --case settings-flow-interaction --case settings-models --case settings-models-mixed --case experimental-connections-interaction --case guided-setup-draft-interaction --case guided-setup-late-sample-interaction --case guided-setup-catalog-recovery --case guided-setup-missing-key-interaction --case guided-setup-unavailable-interaction --case guided-setup-speech-small --case guided-setup-text-small --case guided-setup-custom-model --case guided-setup-sample-failure --case guided-setup-permission-recovery --case guided-setup-interrupted-download --case guided-setup-cloud-sign-in --case guided-setup-pending-connection --case guided-setup-failed-apply-cancel --case guided-setup-login-isolation --locale both --appearance both --output build/visual-parity/guided-model-setup-final",
+      "result": "pass: 104/104 owned synthetic browser captures/interactions"
+    }
+  ],
+  "visual": {
+    "method": "Owned Chromium headless page via CDP; no user screen/profile",
+    "fixture_clock": "2026-10-25T09:00:00Z",
+    "cases": [
+      "meeting-flow-interaction",
+      "provider-history-interaction",
+      "settings-overview",
+      "settings-overview-small",
+      "settings-overview-zoom",
+      "settings-task-setup-zoom",
+      "settings-task-setup",
+      "settings-flow-interaction",
+      "settings-models",
+      "settings-models-mixed",
+      "experimental-connections-interaction",
+      "guided-setup-draft-interaction",
+      "guided-setup-late-sample-interaction",
+      "guided-setup-catalog-recovery",
+      "guided-setup-missing-key-interaction",
+      "guided-setup-unavailable-interaction",
+      "guided-setup-speech-small",
+      "guided-setup-text-small",
+      "guided-setup-custom-model",
+      "guided-setup-sample-failure",
+      "guided-setup-permission-recovery",
+      "guided-setup-interrupted-download",
+      "guided-setup-cloud-sign-in",
+      "guided-setup-pending-connection",
+      "guided-setup-failed-apply-cancel",
+      "guided-setup-login-isolation"
+    ],
+    "captures": 104,
+    "locales": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "overflow": false,
+    "runtime_errors": false,
+    "user_screen_or_private_content_used": false
+  },
+  "screenshots": [
+    "model-setup-2026-11-01/models-en-light.png",
+    "model-setup-2026-11-01/chooser-nl-dark.png"
+  ],
+  "remaining": [
+    "Hosted cross-platform CI is recorded on the PR.",
+    "Packaged/device, live provider and VoiceOver/human usability acceptance remains open under #32 and its linked gates.",
+    "This change is not a production deployment or installed-app acceptance."
+  ]
+}

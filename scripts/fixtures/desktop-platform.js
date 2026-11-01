@@ -63,7 +63,7 @@
   ];
   const kinds = providerDefinitions.map(([kind, label, requires_key, default_base_url, stt, llm, default_stt_model, default_llm_model]) => ({
     kind, label, requires_key, default_base_url, stt, llm, default_stt_model, default_llm_model,
-    is_cli_agent: false, availability: available(),
+    is_cli_agent: false, availability: clone(options.provider_availability?.[kind] || available()),
   }));
   const selectedProvider = options.engine === "apple" ? "apple-speech" : options.engine === "custom" ? "openai" : "local";
   const model = selectedProvider === "apple-speech" ? "dictation" : selectedProvider === "openai" ? "gpt-4o-mini-transcribe" : "whisper-large-v3-turbo";
@@ -82,6 +82,7 @@
     settings.decision = { provider_id: "qa-verifier", protocol: "perplexity", model: "synthetic-unqualified", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 3 };
   }
   if (persistedSettings && typeof persistedSettings === "object") settings = { ...settings, ...persistedSettings };
+  for (const slot of ["dictation_stt", "meeting_stt", "llm"]) if (options.model_choices?.[slot]) settings[slot] = clone(options.model_choices[slot]);
   const interfaceLanguage = () => settings.ui_language === "nl" || settings.ui_language === "en" ? settings.ui_language : systemInterfaceLanguage;
   const capabilities = Object.fromEntries(["pad_external_paste", "global_hotkey", "record_shortcut", "microphone", "system_audio", "echo_cancellation", "call_detection", "calendar", "apple_speech", "apple_intelligence", "selection", "rich_clipboard", "audio_playback", "diarization", "local_models"].map(name => [name, available()]));
   capabilities.local_acceleration = "metal";
@@ -119,6 +120,8 @@
   const listeners = new Map();
   const calls = [];
   const unknown = [];
+  const setupTrace = { samples: [], savedChoices: [], catalogRequests: [] };
+  const catalogAttempts = new Map();
   const emit = (name, payload) => {
     for (const handler of listeners.get(name) || []) handler({ payload: clone(payload) });
   };
@@ -226,7 +229,9 @@
       case "set_desktop_command_state": globalThis.__PENNEL_DESKTOP_COMMAND_STATE__ = clone(args.state); return null;
       case "app_info": if (options.app_info_fail) throw new Error("Synthetic startup failure"); if (options.app_info_delay_ms) await new Promise(resolve => setTimeout(resolve, options.app_info_delay_ms)); return info();
       case "save_settings": {
+        if (options.settings_save_error) throw new Error(options.settings_save_error);
         settings = clone(args.settings);
+        setupTrace.savedChoices.push(Object.fromEntries(["dictation_stt", "meeting_stt", "llm"].map(slot => [slot, clone(settings[slot])])));
         settings.ui_language = ["en", "nl", "system"].includes(settings.ui_language) ? settings.ui_language : "system";
         if (profileKey) { try { globalThis.localStorage?.setItem(profileKey, JSON.stringify(settings)); } catch {} }
         emit("settings-changed", null);
@@ -324,7 +329,14 @@
         if (activeDownloads.has(args.id)) throw new Error("Dit model wordt nog gedownload.");
         const model = modelFor(args.id); if (model) model.state = { kind: "not_downloaded" }; return info();
       }
-      case "add_provider": { const definition = kinds.find(kind => kind.kind === args.kind); settings.providers.push({ id: `qa-${args.kind}`, kind: args.kind, name: definition?.label || args.kind, base_url: definition?.default_base_url || "" }); return info(); }
+      case "add_provider": {
+        const definition = kinds.find(kind => kind.kind === args.kind);
+        const prefix = `qa-${args.kind}`;
+        let id = prefix;
+        for (let suffix = 2; settings.providers.some(provider => provider.id === id); suffix++) id = `${prefix}-${suffix}`;
+        settings.providers.push({ id, kind: args.kind, name: definition?.label || args.kind, base_url: definition?.default_base_url || "" });
+        return info();
+      }
       case "remove_provider": settings.providers = settings.providers.filter(provider => provider.id !== args.id); return info();
       case "set_key": keys[args.account] = Boolean(args.key); providerRevisions[args.account] = (providerRevisions[args.account] || 0) + 1; return info();
       case "inference_protocols": return [
@@ -338,13 +350,30 @@
       ].map(([protocol, name, default_base_url]) => ({ protocol, name, default_base_url, decision: protocol !== "tei", reranking: protocol === "tei", extraction: protocol === "mercury", requires_key: !["tei", "local_decider"].includes(protocol) }));
       case "inference_availability": return { capability: args.capability, configured: false, available: false, reason: "Configure this optional connection first.", provider_id: null, model: null, protocol: null, endpoint: null };
       case "cleanup_verification_availability": return cleanupVerification();
-      case "provider_models": return [{ id: "gpt-4o-mini-transcribe", name: "GPT-4o mini Transcribe", audio_input: true, is_router: false }, { id: "llama-3.3-70b-versatile", name: "Llama 3.3", audio_input: false, is_router: false }];
-      case "test_provider_task": {
+      case "provider_models": {
+        setupTrace.catalogRequests.push(args.id);
+        const attempt = (catalogAttempts.get(args.id) || 0) + 1;
+        catalogAttempts.set(args.id, attempt);
+        if (options.provider_catalog_delay_ms) await new Promise(resolve => setTimeout(resolve, options.provider_catalog_delay_ms));
+        const failures = options.provider_catalog_fail_count ?? (options.provider_catalog_fail_once ? 1 : Infinity);
+        if (options.provider_catalog_error && attempt <= failures) throw new Error(options.provider_catalog_error);
+        return clone(options.remote_models || [
+          { id: "gpt-4o-mini-transcribe", name: "GPT-4o mini Transcribe", audio_input: true, is_router: false },
+          { id: "llama-3.3-70b-versatile", name: "Llama 3.3", audio_input: false, is_router: false },
+          { id: "gpt-4.1-mini", name: "GPT-4.1 mini", audio_input: false, is_router: false },
+        ]);
+      }
+      case "test_provider_task": case "test_provider_task_choice": {
         if (!["dictation_stt", "meeting_stt", "llm"].includes(args.slot)) throw new Error("Onbekende QA-taak");
-        const choice = settings[args.slot];
+        const choice = command === "test_provider_task_choice" ? clone(args.choice) : clone(settings[args.slot]);
+        if (!choice || typeof choice.provider_id !== "string" || typeof choice.model !== "string") throw new Error("Ongeldige QA-modelkeuze");
+        setupTrace.samples.push({ slot: args.slot, choice: clone(choice), draft: command === "test_provider_task_choice" });
+        if (options.sample_delay_ms) await new Promise(resolve => setTimeout(resolve, options.sample_delay_ms));
+        if (options.sample_error) return { verified: false, message: options.sample_error };
         const provider = settings.providers.find(provider => provider.id === choice.provider_id);
         const kind = kinds.find(kind => kind.kind === provider?.kind);
-        const configured = Boolean(provider && kind && (args.slot === "llm" ? kind.llm : kind.stt) && choice.model && (!kind.requires_key || keys[provider.id])
+        const configured = Boolean(provider && kind && kind.availability.status === "available" && (args.slot === "llm" ? kind.llm : kind.stt) && choice.model && (!kind.requires_key || keys[provider.id])
+          && (provider.kind !== "pennel_cloud" || signedIn)
           && (provider.kind !== "local" || modelFor(choice.model)?.state.kind === "downloaded"));
         return { verified: configured, message: configured ? "Test geslaagd met uitsluitend synthetische voorbeelddata." : "Stel eerst het gekozen model en de provider in." };
       }
@@ -450,8 +479,11 @@
       case "cloud_folder_warning": return null;
       case "meeting_sync_states": return signedIn && !options.empty ? [{ id: meetingId, state: options.cloud === "conflict" ? "conflict" : "synced" }] : [];
       case "meeting_conflict_files": return options.cloud === "conflict" ? ["Notities (conflict MacBook van Noor).md"] : [];
-      case "cloud_login_start": return { user_code: "QAFX-2026", verification_uri: "https://example.com/qa-login", device_code: "qa-device-code", interval_secs: 5 };
-      case "cloud_login_poll": return { kind: "pending" };
+      case "cloud_login_start": return { user_code: "QAFX-2026", verification_uri: "https://example.com/qa-login", device_code: "qa-device-code", interval_secs: options.login_auto_complete ? 1 : 5 };
+      case "cloud_login_poll":
+        if (!options.login_auto_complete) return { kind: "pending" };
+        signedIn = true; syncSetupPhase = "paused";
+        return { kind: "done", email: cloudAccount.email };
       case "cloud_sync_now": return syncReport();
       case "cloud_logout": signedIn = false; settings.cloud_sync = false; syncSetupPhase = "signed_out"; deviceLink = emptyLink(); emit("sync-changed", syncReport()); emit("settings-changed", null); return null;
       case "cloud_sync_disable": settings.cloud_sync = false; syncSetupPhase = "paused"; emit("sync-changed", syncReport()); return null;
@@ -477,5 +509,5 @@
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
-  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload };
+  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace };
 })();

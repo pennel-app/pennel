@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::llm::{ChatMessage, Reasoning};
 use crate::provider::{requires_key, supports};
-use crate::{ApiKeys, PennelEngine, PennelError, ProviderTask};
+use crate::{ApiKeys, ModelChoice, PennelEngine, PennelError, ProviderTask, Settings};
 
 const SPEECH_SAMPLE: &[u8] = include_bytes!("../tests/fixtures/hello.wav");
 const TEST_TIMEOUT_SECS: u64 = 30;
@@ -19,12 +19,32 @@ pub fn test_provider_task(
     task: ProviderTask,
     keys: ApiKeys,
 ) -> Result<ProviderTaskTestResult, PennelError> {
-    let mut settings = engine.settings();
+    let settings = engine.settings();
     let choice = match task {
         ProviderTask::DictationStt => settings.dictation_stt.clone(),
         ProviderTask::MeetingStt => settings.meeting_stt.clone(),
         ProviderTask::Llm => settings.llm.clone(),
     };
+    test_provider_task_snapshot(&engine, task, choice, settings, keys)
+}
+
+pub fn test_provider_task_choice(
+    engine: Arc<PennelEngine>,
+    task: ProviderTask,
+    choice: ModelChoice,
+    keys: ApiKeys,
+) -> Result<ProviderTaskTestResult, PennelError> {
+    let settings = engine.settings();
+    test_provider_task_snapshot(&engine, task, choice, settings, keys)
+}
+
+fn test_provider_task_snapshot(
+    engine: &PennelEngine,
+    task: ProviderTask,
+    choice: ModelChoice,
+    mut settings: Settings,
+    keys: ApiKeys,
+) -> Result<ProviderTaskTestResult, PennelError> {
     let (account, model) = settings.resolve(&choice).ok_or(PennelError::NotFound)?;
     if !supports(account.kind, task) {
         return Err(PennelError::InvalidResponse {
@@ -262,6 +282,189 @@ mod tests {
         assert_eq!(engine.settings(), settings);
         assert_eq!(engine.dictation_pad_text(), PRIVATE_DRAFT);
         assert!(engine.history(10).unwrap().is_empty());
+        response.assert();
+    }
+
+    #[test]
+    fn draft_speech_test_uses_the_supplied_choice_without_saving_it() {
+        for task in [ProviderTask::DictationStt, ProviderTask::MeetingStt] {
+            let mut server = mockito::Server::new();
+            let (_dir, engine, keys) = configured(&server);
+            let settings = engine.settings();
+            let response = server
+                .mock("POST", "/text/audio/transcriptions")
+                .match_header("authorization", "Bearer synthetic-text-key")
+                .with_body_from_request(|request| {
+                    let body = request.body().unwrap();
+                    assert!(body.windows(SAMPLE.len()).any(|window| window == SAMPLE));
+                    let text = String::from_utf8_lossy(body);
+                    assert!(text.contains("name=\"model\"\r\n\r\ndraft-speech-model\r\n"));
+                    assert!(!text.contains("name=\"prompt\""));
+                    assert!(!text.contains(PRIVATE_TERM));
+                    assert!(!text.contains(PRIVATE_DRAFT));
+                    br#"{"text":"Synthetic draft transcription"}"#.to_vec()
+                })
+                .create();
+            let saved = server
+                .mock(
+                    "POST",
+                    mockito::Matcher::Regex("^/(dictation|meeting)/".into()),
+                )
+                .expect(0)
+                .create();
+            let result = test_provider_task_choice(
+                engine.clone(),
+                task,
+                ModelChoice {
+                    provider_id: "text-test".into(),
+                    model: "draft-speech-model".into(),
+                },
+                keys,
+            )
+            .unwrap();
+            assert!(result.verified);
+            assert_eq!(engine.settings(), settings);
+            assert_eq!(engine.dictation_pad_text(), PRIVATE_DRAFT);
+            assert!(engine.history(10).unwrap().is_empty());
+            response.assert();
+            saved.assert();
+        }
+    }
+
+    #[test]
+    fn draft_text_test_uses_the_supplied_choice_on_success_and_failure() {
+        for status in [200, 401] {
+            let mut server = mockito::Server::new();
+            let (_dir, engine, keys) = configured(&server);
+            let settings = engine.settings();
+            let response = server
+                .mock("POST", "/dictation/chat/completions")
+                .match_header("authorization", "Bearer synthetic-dictation-key")
+                .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                    "model": "draft-text-model",
+                    "messages": [
+                        {"role":"system", "content":"This is a synthetic Pennel connection test. Reply with only the word OK."},
+                        {"role":"user", "content":"Pennel example: the meeting starts at ten."}
+                    ]
+                })))
+                .with_status(status)
+                .with_body(if status == 200 {
+                    r#"{"choices":[{"message":{"content":"OK"}}]}"#.to_owned()
+                } else {
+                    serde_json::json!({"error":{"message": format!("{PRIVATE_TERM} {PRIVATE_DRAFT}")}}).to_string()
+                })
+                .create();
+            let saved = server
+                .mock("POST", "/text/chat/completions")
+                .expect(0)
+                .create();
+            let result = test_provider_task_choice(
+                engine.clone(),
+                ProviderTask::Llm,
+                ModelChoice {
+                    provider_id: "dictation-test".into(),
+                    model: "draft-text-model".into(),
+                },
+                keys,
+            )
+            .unwrap();
+            assert_eq!(result.verified, status == 200);
+            assert!(!result.message.contains(PRIVATE_TERM));
+            assert!(!result.message.contains(PRIVATE_DRAFT));
+            assert_eq!(engine.settings(), settings);
+            assert_eq!(engine.dictation_pad_text(), PRIVATE_DRAFT);
+            assert!(engine.history(10).unwrap().is_empty());
+            response.assert();
+            saved.assert();
+        }
+    }
+
+    #[test]
+    fn draft_test_rejects_missing_accounts_and_empty_models_without_fallback() {
+        let mut server = mockito::Server::new();
+        let (_dir, engine, keys) = configured(&server);
+        let settings = engine.settings();
+        let remote = server
+            .mock("POST", mockito::Matcher::Any)
+            .expect(0)
+            .create();
+        let missing = test_provider_task_choice(
+            engine.clone(),
+            ProviderTask::Llm,
+            ModelChoice {
+                provider_id: "removed-account".into(),
+                model: "draft-model".into(),
+            },
+            keys.clone(),
+        );
+        assert!(matches!(missing, Err(PennelError::NotFound)));
+        let empty = test_provider_task_choice(
+            engine.clone(),
+            ProviderTask::DictationStt,
+            ModelChoice {
+                provider_id: "dictation-test".into(),
+                model: "  ".into(),
+            },
+            keys,
+        );
+        assert!(matches!(empty, Err(PennelError::InvalidResponse { .. })));
+        assert_eq!(engine.settings(), settings);
+        remote.assert();
+    }
+
+    #[test]
+    fn draft_test_rejects_a_provider_that_does_not_support_the_task() {
+        let mut server = mockito::Server::new();
+        let (_dir, engine, keys) = configured(&server);
+        let mut settings = engine.settings();
+        settings.providers[0].kind = ProviderKind::AppleSpeech;
+        engine.update_settings(settings.clone()).unwrap();
+        let remote = server
+            .mock("POST", mockito::Matcher::Any)
+            .expect(0)
+            .create();
+        let result = test_provider_task_choice(
+            engine.clone(),
+            ProviderTask::Llm,
+            settings.dictation_stt.clone(),
+            keys,
+        );
+        assert!(matches!(result, Err(PennelError::InvalidResponse { .. })));
+        assert_eq!(engine.settings(), settings);
+        remote.assert();
+    }
+
+    #[test]
+    fn draft_test_never_exposes_its_choice_or_replaces_concurrent_settings() {
+        let mut server = mockito::Server::new();
+        let (_dir, engine, keys) = configured(&server);
+        let settings = engine.settings();
+        let observed_engine = engine.clone();
+        let observed_settings = settings.clone();
+        let response = server
+            .mock("POST", "/dictation/chat/completions")
+            .with_body_from_request(move |_| {
+                assert_eq!(observed_engine.settings(), observed_settings);
+                let mut changed = observed_settings.clone();
+                changed.llm.model = "changed-in-another-window".into();
+                observed_engine.update_settings(changed).unwrap();
+                br#"{"choices":[{"message":{"content":"OK"}}]}"#.to_vec()
+            })
+            .create();
+        let result = test_provider_task_choice(
+            engine.clone(),
+            ProviderTask::Llm,
+            ModelChoice {
+                provider_id: "dictation-test".into(),
+                model: "draft-text-model".into(),
+            },
+            keys,
+        )
+        .unwrap();
+        assert!(result.verified);
+        let mut expected = settings;
+        expected.llm.model = "changed-in-another-window".into();
+        assert_eq!(engine.settings(), expected);
         response.assert();
     }
 

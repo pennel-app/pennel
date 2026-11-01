@@ -465,9 +465,9 @@ async function settingsView(ctx: Context): Promise<HTMLElement> {
       catch (error) { report(error); }
     } }),
     tabButton(tabs[0]),
-    ...group("navigation.your_work", ["dictation", "meeting-settings", "recording", "dictionary", "styles"]),
+    ...group("navigation.your_work", ["models", "dictation", "meeting-settings", "recording", "dictionary", "styles"]),
     ...group("navigation.app", ["appearance", "account"]),
-    ...group("navigation.advanced", ["providers", "models"]));
+    ...group("navigation.advanced", ["providers"]));
   nav.addEventListener("keydown", (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
     const target = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-settings-category]");

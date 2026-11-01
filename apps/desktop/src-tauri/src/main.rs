@@ -1130,6 +1130,7 @@ fn main() {
             commands::save_history,
             commands::copy_history,
             commands::test_provider_task,
+            commands::test_provider_task_choice,
             inference::inference_protocols,
             inference::inference_availability,
             inference::cleanup_verification_availability,

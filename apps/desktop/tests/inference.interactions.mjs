@@ -13,6 +13,7 @@ export async function checkInferenceUI() {
   const operations = [];
   const protocols = [
     { protocol: "type_safe", name: "TypeSafe System One", default_base_url: "https://api.typesafe.ai/v1", decision: true, reranking: false, extraction: false, requires_key: true },
+    { protocol: "open_router_decisions", name: "OpenRouter Decisions", default_base_url: "https://openrouter.ai/api/v1", decision: true, reranking: false, extraction: false, requires_key: true },
     { protocol: "tei", name: "TEI", default_base_url: "http://127.0.0.1:8080", decision: false, reranking: true, extraction: false, requires_key: false },
   ];
   const identity = { protocol: "type_safe", endpoint: "https://decision.example/v1/systemone", requested_model: "fixture-model", requested_upstream: null, actual_model: "fixture-model-v1", actual_provider: "Fixture", actual_revision: "revision-1", request_id: "fixture-request" };
@@ -31,7 +32,7 @@ export async function checkInferenceUI() {
   const previous = [...target.childNodes];
   const previousLanguage = getInterfaceLanguage();
   let cleanup = [], listeners = [], pendingMount = Promise.resolve();
-  const errors = [];
+  const errors = [], navigations = [];
   let saveFailure = null;
   const context = {
     get info() { return info; },
@@ -39,7 +40,7 @@ export async function checkInferenceUI() {
     onDispose(action) { cleanup.push(action); },
     onInfoChange(listener) { listeners.push(listener); },
     rerender() { pendingMount = pendingMount.then(mount); },
-    navigate() {}, report(error) { errors.push(String(error)); },
+    navigate(route) { navigations.push(route); }, report(error) { errors.push(String(error)); },
   };
   async function mount() {
     cleanup.forEach(action => action()); cleanup = []; listeners = [];
@@ -48,13 +49,27 @@ export async function checkInferenceUI() {
   const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); await pendingMount; await new Promise(resolve => setTimeout(resolve, 0)); };
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const decision = () => target.querySelector('[data-inference-capability="decision"]');
+  const experimental = () => target.querySelector("details[data-inference-experimental]");
   const button = name => [...decision().querySelectorAll("button")].find(item => item.textContent.trim() === name);
   const results = [];
   try {
-    setInterfaceLanguage("en"); await mount();
+    setInterfaceLanguage("en");
+    const configuredProviders = info.settings.providers;
+    info.settings.providers = configuredProviders.filter(account => !["custom", "open_router"].includes(account.kind));
+    await mount();
+    assert(experimental() && !experimental().open && experimental().querySelector("summary").textContent === "Experimental connections — setup and testing only", "Experimental setup is not collapsed and clearly labelled by default.");
+    assert(experimental().textContent.includes("does not currently use them"), "Experimental connections imply active product processing.");
+    experimental().open = true;
+    assert(!decision().querySelector("input,.choice") && button("Add connection"), "Missing provider shows a blank form instead of an actionable empty state.");
+    button("Add connection").click();
+    assert(navigations.at(-1) === "providers" && operations.length === 0, "Adding a connection did not open setup, or started inference.");
+    results.push("Experimental connections start collapsed and empty setup offers a labelled action without blank controls.");
+    info.settings.providers = configuredProviders;
+    await settle(); await mount(); experimental().open = true; await settle();
     assert(operations.length === 0 && decision().textContent.includes("Not configured"), "Mounting enabled or tested an optional connection.");
     const model = decision().querySelector('[data-inference-field="model"]'); model.value = "fixture-model"; model.dispatchEvent(new Event("input", { bubbles: true }));
     button("Save configuration").click(); await settle();
+    assert(experimental().open, "Saving collapses the experimental setup the user is working in.");
     assert(info.settings.decision?.model === "fixture-model", "Explicit configuration was not saved.");
     assert(JSON.stringify([info.settings.dictation_stt, info.settings.meeting_stt, info.settings.llm]) === originalChoices, "Existing STT/LLM selections changed.");
     assert(operations.length === 0, "Saving configuration ran inference automatically.");
@@ -88,6 +103,18 @@ export async function checkInferenceUI() {
     assert(info.settings.decision === null && JSON.stringify([info.settings.dictation_stt, info.settings.meeting_stt, info.settings.llm]) === originalChoices, "Disabling changed another task or selected a fallback.");
     assert(errors.length === 0, errors.join("\n"));
     results.push("Unsaved changes, live EN/NL labels and disabling preserve task ownership.");
+    info.settings.providers.push({ id: "router-fixture", name: "Synthetic OpenRouter connection", kind: "open_router", base_url: "https://openrouter.example/api/v1" });
+    info.keys["router-fixture"] = true;
+    info.settings.decision = { provider_id: "router-fixture", protocol: "open_router_decisions", model: "fixture-model", upstream: null, expected_model: null, max_input_bytes: 16000, timeout_secs: 30 };
+    await mount();
+    const upstream = decision().querySelector('[data-inference-field="upstream"]');
+    assert(upstream?.required && !upstream.closest(".field").hidden && upstream.closest("details") === experimental(), "Required OpenRouter route is hidden in Advanced.");
+    button("Save configuration").click(); await settle();
+    assert(decision().textContent.includes("OpenRouter also requires an upstream provider."), "Missing required OpenRouter route has no useful validation.");
+    upstream.value = "Fixture upstream"; upstream.dispatchEvent(new Event("input", { bubbles: true }));
+    button("Save configuration").click(); await settle();
+    assert(info.settings.decision?.upstream === "Fixture upstream" && JSON.stringify([info.settings.dictation_stt, info.settings.meeting_stt, info.settings.llm]) === originalChoices, "Saving an explicit route changed ordinary processing.");
+    results.push("Required OpenRouter upstream is visible outside Advanced and validated before saving.");
     return { passed: results.length, results, externalServicesUsed: false, userDataUsed: false };
   } finally {
     cleanup.forEach(action => action()); client.invoke = original; setInterfaceLanguage(previousLanguage); target.replaceChildren(...previous);

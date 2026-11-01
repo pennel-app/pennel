@@ -1,13 +1,14 @@
-import { api, type AppInfo, type PermissionInfo, type SetupReadiness } from "../api";
-import { controlButton, errorText, h, menuButton } from "../dom";
+import { api, type AppInfo, type LocalModel, type PermissionInfo, type ProviderAccount, type ProviderTaskTestResult, type SetupReadiness } from "../api";
+import { controlButton, errorText, field, h, menuButton, select } from "../dom";
 import { bindLocalization, l, localizeBackendText, refreshLocalization, t, type TranslationKey } from "../i18n.ts";
 import type { Context } from "../main";
 import { providerDestination } from "../processing-state";
-import { taskFingerprint } from "../provider-verification";
-import { TaskSetupScope, taskConfiguration, type SetupTask, type TaskConfiguration } from "../task-setup-state";
+import { choiceFingerprint, providerVerification, taskFingerprint } from "../provider-verification";
+import { TaskModelDraft, TaskSetupScope, processingLocation, taskConfiguration, type ProcessingLocation, type SetupTask, type TaskConfiguration } from "../task-setup-state";
 import { accountView } from "./account";
-import { taskModelView } from "./models";
+import { modelPicker, providerModelCatalog, type ModelPickerState } from "./model-picker";
 import { providerDetails } from "./providers";
+import { localModelDisplayName } from "../settings-presentation";
 
 const tasks: SetupTask[] = ["dictation_stt", "meeting_stt", "llm"];
 const titleKeys: Record<SetupTask, TranslationKey> = {
@@ -22,25 +23,35 @@ function configurationLabel(configuration: TaskConfiguration): string {
 }
 
 async function taskState(info: AppInfo, task: SetupTask): Promise<{ configuration: TaskConfiguration; speech: SetupReadiness | null }> {
-  const local = info.settings.providers.find((provider) => provider.id === info.settings[task].provider_id)?.kind === "local";
+  const account = info.settings.providers.find((provider) => provider.id === info.settings[task].provider_id);
+  const local = account?.kind === "local";
   const downloaded = local ? (await api.localModels(null, false)).filter((model) => model.state.kind === "downloaded").map((model) => model.id) : [];
-  const configuration = taskConfiguration(info, task, downloaded);
+  let configuration = taskConfiguration(info, task, downloaded);
+  if (account?.kind === "pennel_cloud" && configuration.state === "ready") {
+    try { await api.cloudAccount(); } catch { configuration = { state: "account", reason: null }; }
+  }
   const speech = task === "llm" ? null : await api.onboardingReadiness(task === "meeting_stt" ? "meeting" : "dictation_pad");
   return { configuration, speech };
 }
 
 export function settingsOverview(ctx: Context): HTMLElement {
+  return settingsTaskOverview(ctx);
+}
+
+export function settingsTaskOverview(ctx: Context, models = false): HTMLElement {
   let disposed = false;
   let revision = 0;
-  const rows = new Map<SetupTask, { status: HTMLElement; action: HTMLButtonElement }>();
+  const rows = new Map<SetupTask, { status: HTMLElement; selected: HTMLElement; destination: HTMLElement; action: HTMLButtonElement }>();
   const root = h("div", { class: "settings-overview" },
-    h("h2", {}, l("settings.setup.overview_title")), h("p", { class: "help" }, l("settings.setup.overview_help")),
+    models ? null : h("h2", {}, l("settings.setup.overview_title")), h("p", { class: "help" }, l(models ? "settings.setup.models_help" : "settings.setup.overview_help")),
     ...tasks.map((task) => {
       const status = h("p", { class: "settings-task-status help", role: "status" }, l("common.loading"));
+      const selected = h("p", { class: "settings-task-selection", "data-task-selection": task });
+      const destination = h("p", { class: "settings-task-status help" });
       const action = controlButton({ class: "btn", "data-setup-task": task, onclick: () => ctx.openSetup(task) }, l("settings.setup.finish"));
-      rows.set(task, { status, action });
+      rows.set(task, { status, selected, destination, action });
       return h("section", { class: "settings-task-row" },
-        h("div", { class: "settings-task-copy" }, h("h3", {}, l(titleKeys[task])), h("p", { class: "help" }, l(helpKeys[task])), status), action);
+        h("div", { class: "settings-task-copy" }, h("h3", {}, l(titleKeys[task])), h("p", { class: "help" }, l(helpKeys[task])), selected, destination, status), action);
     }));
   const refresh = async () => {
     const mine = ++revision;
@@ -50,9 +61,27 @@ export function settingsOverview(ctx: Context): HTMLElement {
         const { configuration, speech } = await taskState(ctx.info, task);
         if (disposed || mine !== revision) return;
         const ready = configuration.state === "ready" && (!speech || speech.can_record);
-        row.status.textContent = ready ? t("settings.setup.ready") : speech?.reason ? localizeBackendText(speech.reason) : configurationLabel(configuration);
+        const verified = providerVerification.get(task, taskFingerprint(ctx.info, task));
+        row.status.textContent = ready ? t(verified?.verified ? "providers.test_passed" : "settings.setup.ready") : configuration.state !== "ready" ? configurationLabel(configuration) : speech?.reason ? localizeBackendText(speech.reason) : configurationLabel(configuration);
         row.status.dataset.ready = String(ready);
         row.action.textContent = t(ready ? "settings.setup.change" : "settings.setup.finish");
+        const choice = ctx.info.settings[task];
+        const account = ctx.info.settings.providers.find((provider) => provider.id === choice.provider_id);
+        let model = choice.model;
+        if (account?.kind === "local") {
+          const local = (await api.localModels(null, false)).find((item) => item.id === model);
+          if (local) model = String(localModelDisplayName(local));
+        } else if (account?.kind === "pennel_cloud") model = t("settings.setup.cloud_model");
+        else if (account?.kind === "apple_speech" || account?.kind === "apple_intelligence") model = t("settings.setup.system_model");
+        else if (account) {
+          const kind = ctx.info.kinds.find((item) => item.kind === account.kind);
+          if (kind && !kind.is_cli_agent && kind.availability.status === "available" && (!kind.requires_key || ctx.info.keys[account.id])) {
+            try { model = (await providerModelCatalog(ctx.info, account)).find((item) => item.id === choice.model)?.name || model; } catch { /* A missing catalog must not hide the saved model. */ }
+          }
+        }
+        if (disposed || mine !== revision) return;
+        row.selected.textContent = account ? [account.name, model || t("providers.cli_default_model")].join(" · ") : t("providers.not_configured");
+        row.destination.textContent = providerDestination(account);
       } catch (error) {
         if (!disposed && mine === revision) row.status.textContent = errorText(error);
       }
@@ -90,12 +119,18 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   const id = `task-setup-${++dialogId}`;
   const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const state = new TaskSetupScope();
+  const draft = new TaskModelDraft(base.info.settings[task]);
+  const currentAccount = base.info.settings.providers.find((account) => account.id === draft.choice.provider_id);
+  let location: ProcessingLocation = currentAccount ? processingLocation(currentAccount.kind) : "device";
+  const pickerUi: ModelPickerState = { search: "", manual: false };
   const dialog = h("dialog", { class: "task-setup-dialog", "aria-modal": "true", "aria-labelledby": `${id}-title`, "aria-describedby": `${id}-help`, "data-setup-task": task });
   const body = h("div", { class: "task-setup-body" });
   const message = h("p", { class: "task-setup-message help", role: "status", "aria-live": "polite" });
   const status = h("p", { class: "settings-task-status help", role: "status" });
-  const back = controlButton({ class: "btn", onclick: () => { void close(false); } }, l("common.back"));
-  const done = controlButton({ class: "btn primary", onclick: () => { void close(true); } }, l("common.done"));
+  const back = controlButton({ class: "btn", "data-setup-cancel": true, onclick: () => { void close(false); } }, l("common.cancel"));
+  const done = controlButton({ class: "btn primary", "data-setup-apply": true, disabled: true, onclick: () => { void close(true); } }, l("settings.setup.apply"));
+  const test = controlButton({ "data-setup-test": true, disabled: true, onclick: () => { void runSample(); } }, l("settings.setup.test"));
+  const testResult = h("p", { class: "help", role: "status", "aria-live": "polite" });
   let closed = false;
   let closing = false;
   let accountPage = false;
@@ -105,6 +140,12 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   let pointerGeneration = 0;
   let signature = "";
   let statusText = () => "";
+  let localModels: LocalModel[] = [];
+  let permissions: PermissionInfo[] = [];
+  let cloudReady: boolean | null = null;
+  let sampleEpoch = 0;
+  let sampleRunning = false;
+  let sample: { fingerprint: string; result: ProviderTaskTestResult } | null = null;
   let currentView = viewScope();
   const report = (error: unknown) => { if (!closed) { message.textContent = errorText(error); message.className = "task-setup-message error"; } };
   const saved = () => {
@@ -116,7 +157,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   const typing = () => body.contains(document.activeElement) && !!document.activeElement?.matches("input,textarea,[contenteditable=true]");
   const enteredKey = () => [...body.querySelectorAll<HTMLInputElement>('input[type="password"]')].some((input) => !!input.value);
   const preservingInput = () => typing() || enteredKey() || pointerInFlight;
-  const currentSignature = (info: AppInfo) => JSON.stringify([taskFingerprint(info, task), info.interface_language, info.active_model_downloads ?? [], info.kinds.map((kind) => [kind.kind, kind.availability])]);
+  const currentSignature = (info: AppInfo) => JSON.stringify([choiceFingerprint(info, draft.choice), info.settings.providers, info.keys, info.provider_revisions, info.interface_language, info.active_model_downloads ?? [], info.kinds.map((kind) => [kind.kind, kind.availability])]);
   const disposeView = (view: SetupViewScope) => { view.cleanup.splice(0).forEach((action) => action()); };
 
   const child = (view: SetupViewScope): Context => ({
@@ -124,9 +165,17 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     get info() { return base.info; },
     get visible() { return base.visible; },
     param: undefined, jumpMs: undefined, sourceTarget: undefined,
-    save: (change) => state.track(base.save(change), "settings").then(saved).catch((error: unknown) => { report(error); throw error; }),
-    mutate: (work) => state.track(base.mutate(work)).then(saved).catch((error: unknown) => { report(error); throw error; }),
-    refresh: () => base.refresh().then(() => { requestRender(); }),
+    save: (change) => {
+      const pending = state.track(base.save(change), "settings");
+      drawActions();
+      return pending.then(saved).catch((error: unknown) => { report(error); drawActions(); throw error; });
+    },
+    mutate: (work) => {
+      const pending = state.track(base.mutate(work));
+      drawActions();
+      return pending.then(saved).catch((error: unknown) => { report(error); drawActions(); throw error; });
+    },
+    refresh: () => base.refresh().then(() => { cloudReady = null; requestRender(); }),
     update: (info) => { base.update(info); requestRender(); },
     rerender: () => requestRender(),
     navigate: (tab) => {
@@ -156,6 +205,66 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     void render().catch(report);
   }
 
+  function invalidateSample() {
+    sampleEpoch++; sampleRunning = false; sample = null;
+  }
+
+  function changed(renderView = true) {
+    invalidateSample();
+    if (renderView) requestRender();
+    drawActions();
+  }
+
+  function chooseAccount(account: ProviderAccount | undefined) {
+    const kind = base.info.kinds.find((item) => item.kind === account?.kind);
+    draft.chooseProvider(account?.id ?? "", (task === "llm" ? kind?.default_llm_model : kind?.default_stt_model) ?? "");
+    pickerUi.search = ""; pickerUi.manual = false; providerOpen = false;
+    changed();
+  }
+
+  function missingAccess(): PermissionInfo | undefined {
+    if (task === "llm") return;
+    const account = base.info.settings.providers.find((item) => item.id === draft.choice.provider_id);
+    return permissions.find((permission) => (permission.kind === "microphone" || (account?.kind === "apple_speech" && permission.kind === "speech"))
+      && !["granted", "not_required"].includes(permission.status));
+  }
+
+  function drawActions() {
+    if (closed) return;
+    const choice = draft.choice;
+    const configuration = taskConfiguration(base.info, task, localModels.filter((model) => model.state.kind === "downloaded").map((model) => model.id), choice);
+    const account = base.info.settings.providers.find((item) => item.id === choice.provider_id);
+    const needsCloud = account?.kind === "pennel_cloud" && cloudReady !== true;
+    const connectionPending = !!body.querySelector("button[data-setup-save]:not(:disabled)");
+    const ready = configuration.state === "ready" && !needsCloud;
+    const fingerprint = choiceFingerprint(base.info, draft.choice);
+    if (sample?.fingerprint !== fingerprint) sample = null;
+    statusText = () => needsCloud ? t("settings.setup.cloud_sign_in") : configuration.state !== "ready" ? configurationLabel(configuration)
+      : missingAccess() ? t("settings.setup.state.permission") : t("settings.setup.draft_ready");
+    status.textContent = statusText();
+    done.disabled = closing || accountPage || state.busy || !ready || !!missingAccess() || connectionPending || sampleRunning;
+    test.disabled = closing || accountPage || state.busy || !ready || connectionPending || sampleRunning;
+    test.textContent = t(sampleRunning ? "providers.testing" : "settings.setup.test");
+    testResult.textContent = sampleRunning ? t("providers.processing_sample") : sample ? localizeBackendText(sample.result.message) : "";
+    testResult.className = sample && !sample.result.verified ? "error" : "help";
+  }
+
+  async function runSample() {
+    if (test.disabled || sampleRunning) return;
+    const epoch = ++sampleEpoch;
+    const choice = { ...draft.choice, model: draft.choice.model.trim() };
+    const fingerprint = choiceFingerprint(base.info, draft.choice);
+    sampleRunning = true; sample = null; drawActions();
+    try {
+      const result = await api.testProviderTaskChoice(task, choice);
+      if (!closed && epoch === sampleEpoch && fingerprint === choiceFingerprint(base.info, draft.choice)) sample = { fingerprint, result };
+    } catch (error) {
+      if (!closed && epoch === sampleEpoch && fingerprint === choiceFingerprint(base.info, draft.choice)) sample = { fingerprint, result: { verified: false, message: errorText(error) } };
+    } finally {
+      if (!closed && epoch === sampleEpoch) { sampleRunning = false; drawActions(); }
+    }
+  }
+
   async function render() {
     const mine = state.next();
     const nextView = viewScope();
@@ -163,51 +272,96 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     try {
       let node: HTMLElement;
       if (accountPage) {
-        node = h("div", {}, h("button", { class: "text-button", onclick: () => { accountPage = false; requestRender(); } }, l("common.back")), await accountView(ctx));
+        node = h("div", {}, h("button", { class: "text-button", onclick: () => { accountPage = false; cloudReady = null; requestRender(); } }, l("settings.setup.back_to_models")), await accountView(ctx, { taskSetup: true }));
       } else {
         const info = ctx.info;
-        const choice = info.settings[task];
+        const choice = draft.choice;
         const account = info.settings.providers.find((provider) => provider.id === choice.provider_id);
-        const { configuration, speech } = await taskState(info, task);
-        const ready = configuration.state === "ready" && (!speech || speech.can_record);
-        if (state.current(mine)) {
-          statusText = () => ready ? t("settings.setup.ready") : speech?.reason ? localizeBackendText(speech.reason) : configurationLabel(configuration);
-          status.textContent = statusText();
+        const kind = info.kinds.find((item) => item.kind === account?.kind);
+        const [nextModels, nextPermissions] = await Promise.all([
+          account?.kind === "local" ? api.localModels(null, false) : Promise.resolve([] as LocalModel[]),
+          task === "llm" ? Promise.resolve([] as PermissionInfo[]) : api.permissions(),
+        ]);
+        if (!state.current(mine)) { disposeView(nextView); return; }
+        localModels = nextModels; permissions = nextPermissions;
+        if (account?.kind === "pennel_cloud" && cloudReady === null) {
+          try { await api.cloudAccount(); if (state.current(mine)) cloudReady = true; }
+          catch { if (state.current(mine)) cloudReady = false; }
         }
-        const details = h("details", { class: "task-setup-provider", open: providerOpen || ["key", "address", "permission"].includes(configuration.state) },
-          h("summary", {}, l("settings.setup.connection_details")),
-          account ? await providerDetails(ctx, account, task) : h("p", { class: "help" }, l("settings.setup.choose_option")));
-        details.addEventListener("toggle", () => { providerOpen = details.open; });
-        const addable = info.kinds.filter((kind) => (task === "llm" ? kind.llm : kind.stt)
-          && !(["local", "apple_speech", "apple_intelligence"].includes(kind.kind) && info.settings.providers.some((provider) => provider.kind === kind.kind)));
-        const add = menuButton(l("settings.setup.add_option"), addable.map((kind) => ({
+        const configuration = taskConfiguration(info, task, localModels.filter((model) => model.state.kind === "downloaded").map((model) => model.id), choice);
+        const compatible = info.kinds.filter((item) => task === "llm" ? item.llm : item.stt);
+        const sources = h("div", { class: "setup-sources", role: "group", "aria-label": l("settings.setup.where") },
+          ...(["device", "cloud", "own"] as const).map((source) => {
+            const options = compatible.filter((item) => processingLocation(item.kind) === source);
+            const supported = options.some((item) => item.availability.status !== "unsupported");
+            const reason = !supported ? options.find((item) => item.availability.reason)?.availability.reason : null;
+            return h("div", { class: "setup-source" },
+              controlButton({ "data-setup-source": source, "aria-pressed": String(location === source), disabled: !supported, onclick: () => {
+                location = source;
+                const candidates = info.settings.providers.filter((item) => options.some((option) => option.kind === item.kind));
+                chooseAccount(candidates.find((item) => compatible.find((option) => option.kind === item.kind)?.availability.status === "available") ?? candidates[0]);
+              } }, l(`settings.setup.source.${source}`)),
+              !supported ? h("p", { class: "help" }, reason ? localizeBackendText(reason) : l("settings.setup.source.unavailable")) : null);
+          }));
+        const accounts = info.settings.providers.filter((item) => processingLocation(item.kind) === location && compatible.some((option) => option.kind === item.kind));
+        const provider = accounts.length ? select(accounts.map((item) => [item.id, item.name]), choice.provider_id, (id) => chooseAccount(accounts.find((item) => item.id === id)), "menu") : null;
+        if (provider) {
+          provider.setAttribute("data-setup-provider", "true");
+          provider.setAttribute("aria-label", t("settings.setup.process_with"));
+          for (const option of provider.options) option.disabled = compatible.find((item) => item.kind === accounts.find((candidate) => candidate.id === option.value)?.kind)?.availability.status === "unsupported";
+        }
+        const addable = compatible.filter((item) => processingLocation(item.kind) === location
+          && !(["local", "apple_speech", "apple_intelligence", "pennel_cloud"].includes(item.kind) && info.settings.providers.some((provider) => provider.kind === item.kind)));
+        const add = addable.length ? menuButton(l("settings.setup.add_connection"), addable.map((kind) => ({
           label: kind.availability.status === "unsupported" && kind.availability.reason ? `${localizeBackendText(kind.label)} — ${localizeBackendText(kind.availability.reason)}` : localizeBackendText(kind.label),
           disabled: kind.availability.status === "unsupported",
           run: async () => {
-            let created: string | undefined;
             try {
+              providerOpen = true;
               await ctx.mutate(async () => {
                 const next = await api.addProvider(kind.kind);
-                created = next.settings.providers.at(-1)?.id;
+                const created = next.settings.providers.at(-1);
+                if (created && !closed) {
+                  draft.chooseProvider(created.id, task === "llm" ? kind.default_llm_model : kind.default_stt_model);
+                  pickerUi.search = ""; pickerUi.manual = false; invalidateSample();
+                }
                 return next;
               });
-              if (created) await ctx.save((settings) => { settings[task] = { provider_id: created!, model: task === "llm" ? kind.default_llm_model : kind.default_stt_model }; });
             } catch (error) { report(error); }
           },
-        })), "task-setup-add");
-        node = h("div", {}, await taskModelView(ctx, task), details, h("div", { class: "row" }, add));
-        if (speech && configuration.state === "ready" && !speech.can_record) {
-          node.append(controlButton({ class: "btn", onclick: async () => {
+        })), "task-setup-add") : null;
+        node = h("div", { class: "guided-setup" }, h("h3", {}, l("settings.setup.where")), sources,
+          h("p", { class: "help setup-source-help" }, l(`settings.setup.source.${location}_help`)),
+          provider ? field(l("settings.setup.process_with"), h("div", { class: "row" }, provider, add))
+            : h("div", {}, h("p", { class: "help" }, l("settings.setup.no_connection")), add ? h("div", { class: "row setup-add-connection" }, add) : null));
+        if (account && kind) {
+          if (kind.availability.reason) node.append(h("p", { class: "help" }, localizeBackendText(kind.availability.reason)));
+          node.append(h("p", { class: "setup-destination" }, l("settings.setup.processing_at", () => ({ destination: providerDestination(account) }))));
+          if (account.kind === "pennel_cloud") {
+            node.append(h("p", { class: "help" }, l(cloudReady ? "providers.signed_in" : "settings.setup.cloud_sign_in")),
+              controlButton({ onclick: () => { accountPage = true; requestRender(); } }, l(cloudReady ? "navigation.account" : "providers.cloud_sign_in")));
+          } else if (!["local", "apple_speech", "apple_intelligence"].includes(account.kind)) {
+            const affected = tasks.filter((item) => info.settings[item].provider_id === account.id).map((item) => t(titleKeys[item])).join(", ");
+            const details = h("details", { class: "task-setup-provider", open: providerOpen || ["key", "address"].includes(configuration.state) },
+              h("summary", {}, l("settings.setup.connection_details")),
+              h("p", { class: "help" }, affected ? l("settings.setup.shared_connection", { tasks: affected }) : l("settings.setup.connection_saved")),
+              await providerDetails(ctx, account, task));
+            details.addEventListener("toggle", () => { providerOpen = details.open; });
+            node.append(details);
+          }
+          node.append(modelPicker(ctx, choice, localModels, pickerUi, (model) => { draft.setModel(model); changed(account.kind === "local"); }));
+        }
+        if (missingAccess()) {
+          node.append(h("p", { class: "help" }, l("settings.setup.access_help")), controlButton({ "data-setup-access": true, onclick: async () => {
             try {
-              const permissions = await api.permissions();
-              const required = permissions.find((permission: PermissionInfo) => ["microphone", ...(account?.kind === "apple_speech" ? ["speech"] : [])].includes(permission.kind)
-                && !["granted", "not_required", "unknown"].includes(permission.status));
+              const required = missingAccess();
               if (required) await api.requestPermission(required.kind);
               await ctx.refresh();
             } catch (error) { report(error); }
           } }, l("settings.setup.check_access")));
         }
-        node.append(h("p", { class: "help" }, l("settings.setup.destination", () => ({ destination: providerDestination(account) }))));
+        node.append(h("div", { class: "setup-sample" }, h("p", { class: "help" }, l("settings.setup.sample_help")), h("div", { class: "row" }, test), testResult),
+          h("p", { class: "help setup-prerequisites" }, l("settings.setup.prerequisites")));
       }
       if (!state.current(mine)) { disposeView(nextView); return; }
       if (preservingInput()) { disposeView(nextView); deferred = true; return; }
@@ -217,6 +371,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
       signature = currentSignature(base.info);
       deferred = false;
       if (!state.failure) { message.textContent = ""; message.className = "task-setup-message help"; }
+      drawActions();
     } catch (error) {
       disposeView(nextView);
       if (state.current(mine)) throw error;
@@ -229,26 +384,39 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   }
 
   async function close(finish: boolean) {
-    if (closed || closing) return;
+    if (closed || closing || (finish && done.disabled)) return;
+    const candidate = { ...draft.choice, model: draft.choice.model.trim() };
+    const expected = choiceFingerprint(base.info, candidate);
     closing = true; back.disabled = true; done.disabled = true;
+    body.inert = true;
     try {
-      if (finish) {
-        dialog.querySelectorAll<HTMLButtonElement>("button[data-setup-save]:not(:disabled)").forEach((button) => button.click());
-      }
       if (document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)) document.activeElement.blur();
       try { await flush(); } catch (error) { if (finish) throw error; }
       await beforeClose();
       state.settingsSaved();
       if (finish && state.failure) throw state.failure;
+      if (finish) {
+        const tested = sample;
+        await state.track(base.mutate(async () => {
+          const next = await api.info();
+          if (choiceFingerprint(next, candidate) !== expected) throw new Error(t("settings.setup.changed_review"));
+          const configuration = taskConfiguration(next, task, localModels.filter((model) => model.state.kind === "downloaded").map((model) => model.id), candidate);
+          if (configuration.state !== "ready") throw new Error(configurationLabel(configuration));
+          const settings = structuredClone(next.settings);
+          settings[task] = candidate;
+          return api.saveSettings(settings);
+        }), "settings");
+        if (tested?.result.verified && tested.fingerprint === expected) providerVerification.set(task, taskFingerprint(base.info, task), tested.result);
+      }
       dispose();
       onClose();
     } catch (error) { report(error); }
-    finally { closing = false; if (!closed) { back.disabled = false; done.disabled = false; } }
+    finally { closing = false; if (!closed) { body.inert = false; back.disabled = false; drawActions(); } }
   }
 
   function dispose() {
     if (closed) return;
-    closed = true; state.dispose(); disposeView(currentView);
+    closed = true; invalidateSample(); state.dispose(); disposeView(currentView);
     dialog.close(); dialog.remove();
     if (invoker?.isConnected) invoker.focus({ preventScroll: true });
   }
@@ -265,18 +433,22 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   });
   dialog.addEventListener("pointercancel", () => { pointerInFlight = false; if (deferred) requestRender(); });
   dialog.addEventListener("click", () => { pointerInFlight = false; if (deferred) queueMicrotask(requestRender); });
-  bindLocalization(status, () => { status.textContent = statusText(); });
+  body.addEventListener("input", drawActions);
+  bindLocalization(status, drawActions);
   dialog.addEventListener("cancel", (event) => { event.preventDefault(); void close(false); });
   dialog.append(h("header", { class: "task-setup-header" }, h("h2", { id: `${id}-title` }, l(titleKeys[task])), h("p", { id: `${id}-help`, class: "help" }, l(helpKeys[task])), status),
-    body, message, h("footer", { class: "task-setup-footer row" }, back, h("span", { class: "grow" }), h("span", { class: "help" }, l("settings.setup.saved_help")), done));
+    body, message, h("footer", { class: "task-setup-footer row" }, back, h("span", { class: "grow" }), done));
   document.body.append(dialog); dialog.showModal();
   requestRender();
   return {
     notify: (info) => {
       currentView.listeners.forEach((listener) => listener(info));
-      if (currentSignature(info) !== signature) requestRender();
+      if (currentSignature(info) !== signature) { invalidateSample(); drawActions(); requestRender(); }
     },
-    focusChanged: (focused) => { currentView.focus.forEach((listener) => listener(focused)); },
+    focusChanged: (focused) => {
+      currentView.focus.forEach((listener) => listener(focused));
+      if (focused) void base.refresh().then(() => { cloudReady = null; requestRender(); }).catch(report);
+    },
     visibilityChanged: (visible) => { currentView.visibility.forEach((listener) => listener(visible)); },
     flush, dispose, focus: () => { (dialog.querySelector<HTMLElement>("button,input,select") ?? done).focus(); },
   };

@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use pennel_core::{
     ChatTurn, DetectedAgent, HistoryEntry, KnownVoice, LibrarySearch, LocalModel, MeetingAnswer,
-    MeetingExport, MeetingInfo, MeetingTemplate, MeetingVoice, ModelState, ProviderKind,
-    ProviderTask, RemoteModel, Segment, Settings, SpeakerName, SpeakerRecognition, VoiceProfile,
+    MeetingExport, MeetingInfo, MeetingTemplate, MeetingVoice, ModelChoice, ModelState,
+    ProviderKind, ProviderTask, RemoteModel, Segment, Settings, SpeakerName, SpeakerRecognition,
+    VoiceProfile,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -598,12 +599,7 @@ pub async fn test_provider_task(
     slot: String,
     shared: State<'_, Arc<Shared>>,
 ) -> Result<pennel_core::ProviderTaskTestResult> {
-    let task = match slot.as_str() {
-        "dictation_stt" => ProviderTask::DictationStt,
-        "meeting_stt" => ProviderTask::MeetingStt,
-        "llm" => ProviderTask::Llm,
-        _ => return Err("Unknown model task.".into()),
-    };
+    let task = model_task(&slot)?;
     let shared = shared.inner().clone();
     blocking(move || {
         pennel_core::test_provider_task(shared.engine.clone(), task, shared.keys())
@@ -614,6 +610,34 @@ pub async fn test_provider_task(
             .map_err(err)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn test_provider_task_choice(
+    slot: String,
+    choice: ModelChoice,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<pennel_core::ProviderTaskTestResult> {
+    let task = model_task(&slot)?;
+    let shared = shared.inner().clone();
+    blocking(move || {
+        pennel_core::test_provider_task_choice(shared.engine.clone(), task, choice, shared.keys())
+            .map(|mut result| {
+                result.message = crate::ui::message(result.message);
+                result
+            })
+            .map_err(err)
+    })
+    .await
+}
+
+fn model_task(slot: &str) -> Result<ProviderTask> {
+    match slot {
+        "dictation_stt" => Ok(ProviderTask::DictationStt),
+        "meeting_stt" => Ok(ProviderTask::MeetingStt),
+        "llm" => Ok(ProviderTask::Llm),
+        _ => Err("Unknown model task.".into()),
+    }
 }
 
 #[tauri::command]

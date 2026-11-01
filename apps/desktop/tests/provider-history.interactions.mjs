@@ -11,7 +11,6 @@ export async function checkProviderHistoryUI() {
   info.provider_revisions = { groq: 0 };
   let entries = [{ id: "synthetic-unsaved", created_at_ms: 1, app_bundle_id: null, raw: "Voorbeeld", text: "Dit is alleen synthetische hersteltekst.", status: "unsaved", error: "synthetische opslagfout", has_audio: false }];
   let refreshHook = null;
-  let taskResponder = () => Promise.resolve({ verified: true, message: "Synthetische taaktest geslaagd." });
   let joinResponder = () => Promise.resolve(false);
   let modelResponder = null;
   client.invoke = async (command, args = {}) => {
@@ -20,7 +19,6 @@ export async function checkProviderHistoryUI() {
     if (command === "save_history") { entries = entries.map(entry => entry.id === args.id ? { ...entry, status: "done" } : entry); return null; }
     if (command === "delete_history") { entries = entries.filter(entry => entry.id !== args.id); return null; }
     if (command === "copy_text") return null;
-    if (command === "test_provider_task") return taskResponder();
     if (command === "join_model_download") return joinResponder(args.id);
     if (command === "local_models" && modelResponder) return modelResponder();
     return original(command, args);
@@ -63,7 +61,7 @@ export async function checkProviderHistoryUI() {
   const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const button = (label, root = target) => [...root.querySelectorAll("button")].find(node => node.textContent.trim() === label);
-  const textSection = () => [...target.querySelectorAll("section")].find(node => node.querySelector("h2,h3")?.textContent === t("providers.models.text"));
+  const textSection = () => target.querySelector('[data-setup-task="llm"]')?.closest("section");
   const results = [];
   try {
     await mount(historyView);
@@ -87,24 +85,13 @@ export async function checkProviderHistoryUI() {
     results.push("Unsaved History discard requires confirmation; cancellation preserves the entry.");
 
     info.keys.groq = true;
-    await mount(modelsView);
-    assert(textSection().textContent.includes(t("providers.text_destination", { destination: providerDestination(info.settings.providers.find(account => account.id === info.settings.llm.provider_id)) })), "Text processing destination not visible before testing.");
-    assert(operations.filter(operation => operation.command === "test_provider_task").length === 0, "Task test ran automatically.");
-    button(t("providers.test_text"), textSection()).click(); await settle();
-    assert(textSection().textContent.includes(t("providers.test_passed")) && operations.filter(operation => operation.command === "test_provider_task").length === 1, "Explicit task test did not succeed.");
-    info.provider_revisions.groq++;
-    await mount(modelsView);
-    assert(!textSection().textContent.includes(t("providers.test_passed")), "Credential replacement retained a stale verified label.");
-    results.push("Task testing is explicit, shows its destination and invalidates after credential replacement.");
-
-    let resolveOldTask;
-    taskResponder = () => new Promise(resolve => { resolveOldTask = resolve; });
-    button(t("providers.test_text"), textSection()).click(); await settle();
-    info.settings.llm.model = "synthetic-new-model";
-    await mount(modelsView);
-    resolveOldTask({ verified: true, message: "Verouderd testantwoord" }); await settle();
-    assert(!textSection().textContent.includes(t("providers.test_passed")) && !textSection().textContent.includes("Verouderd testantwoord"), "An obsolete task result affected a new configuration.");
-    results.push("A late task response cannot verify a changed model.");
+    const settingsBefore = JSON.stringify(info.settings);
+    await mount(modelsView); await settle();
+    assert(target.querySelectorAll('button[data-setup-task]').length === 3, "Models does not expose all three task-specific setup actions.");
+    assert(textSection().textContent.includes(providerDestination(info.settings.providers.find(account => account.id === info.settings.llm.provider_id))), "The text processing summary omits its selected destination.");
+    assert(!operations.some(operation => ["test_provider_task", "test_provider_task_choice"].includes(operation.command)), "Opening the model overview ran a sample automatically.");
+    assert(JSON.stringify(info.settings) === settingsBefore, "Opening the model overview changed the saved settings.");
+    results.push("Models summarizes all three tasks and their destination without testing or changing settings.");
 
     const models = await original("local_models", {});
     const modelId = models[0].id;

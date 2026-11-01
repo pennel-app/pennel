@@ -146,6 +146,11 @@ export interface ModelChoice {
   model: string;
 }
 
+export interface ProviderTaskTestResult {
+  verified: boolean;
+  message: string;
+}
+
 export type InferenceCapability = "decision" | "reranking";
 export type InferenceProtocol = "open_router_decisions" | "open_router_system_one" | "type_safe" | "perplexity" | "mercury" | "local_decider" | "tei";
 export interface InferenceConfig {
@@ -663,7 +668,9 @@ export const api = {
   saveHistory: (id: string) => invoke<void>("save_history", { id }),
   copyHistory: (id: string) => invoke<void>("copy_history", { id }),
   testProviderTask: (slot: "dictation_stt" | "meeting_stt" | "llm") =>
-    invoke<{ verified: boolean; message: string }>("test_provider_task", { slot }),
+    invoke<ProviderTaskTestResult>("test_provider_task", { slot }),
+  testProviderTaskChoice: (slot: "dictation_stt" | "meeting_stt" | "llm", choice: ModelChoice) =>
+    invoke<ProviderTaskTestResult>("test_provider_task_choice", { slot, choice }),
   inferenceProtocols: () => invoke<InferenceProtocolInfo[]>("inference_protocols"),
   inferenceAvailability: (capability: InferenceCapability) => invoke<InferenceAvailability>("inference_availability", { capability }),
   cleanupVerificationAvailability: () => invoke<CleanupVerificationAvailability>("cleanup_verification_availability"),

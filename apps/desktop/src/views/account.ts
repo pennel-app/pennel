@@ -241,7 +241,7 @@ async function restoreConnection(identity: string | null, ownsView: () => boolea
   linkView = cached;
 }
 
-export async function accountView(ctx: Context): Promise<HTMLElement> {
+export async function accountView(ctx: Context, options: { taskSetup?: boolean } = {}): Promise<HTMLElement> {
   listenForSync();
   listenForClaude();
   const mine = ctx.rerender;
@@ -298,7 +298,7 @@ export async function accountView(ctx: Context): Promise<HTMLElement> {
       accountSection(ctx, account, accountError),
       account ? usageSection(account) : null,
       enabled && !needsVault(report) ? recoverySection(ctx) : null,
-      cloudPrompt(ctx),
+      options.taskSetup ? null : cloudPrompt(ctx),
       claude ? claudeSection(ctx, claude) : null,
       devices ? devicesSection(ctx, devices) : null,
       deleteSection(ctx)) : null);
