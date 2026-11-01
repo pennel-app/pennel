@@ -75,6 +75,58 @@ test("first-use fixtures preserve the chosen task without requiring voice enroll
   assert.equal((await api.invoke("app_info")).settings.onboarding.goal, "meeting");
 });
 
+test("the task-choice fixture IPC updates one slot while preserving current preferences and unfinished choices", async () => {
+  const context = fixture("guided-setup-draft-interaction", {
+    model_choices: {
+      dictation_stt: { provider_id: "local", model: "synthetic-missing-dictation-model" },
+      meeting_stt: { provider_id: "local", model: "synthetic-missing-meeting-model" },
+    },
+  });
+  const api = context.__PENNEL_PLATFORM__;
+  const latest = (await api.invoke("app_info")).settings;
+  latest.language = "en";
+  latest.history_retention_days = 7;
+  await api.invoke("save_settings", { settings: latest });
+  const after = await api.invoke("apply_task_model_choice", { slot: "llm", choice: { provider_id: "groq", model: "  synthetic-draft-model  " } });
+  assert.deepEqual(after.settings.llm, { provider_id: "groq", model: "synthetic-draft-model" });
+  assert.deepEqual(after.settings.dictation_stt, latest.dictation_stt);
+  assert.deepEqual(after.settings.meeting_stt, latest.meeting_stt);
+  assert.equal(after.settings.language, "en");
+  assert.equal(after.settings.history_retention_days, 7);
+  assert.equal(context.__PENNEL_FIXTURE__.setupTrace.appliedTasks.length, 1);
+  assert.equal(context.__PENNEL_FIXTURE__.setupTrace.savedChoices.length, 2);
+  assert.deepEqual(Object.keys(context.__PENNEL_FIXTURE__.setupTrace.appliedTasks[0]).sort(), ["choice", "slot"]);
+});
+
+test("task-choice fixture validation rejects invalid slots, providers, tasks and undownloaded local models without writes", async () => {
+  const context = fixture("guided-setup-draft-interaction");
+  const api = context.__PENNEL_PLATFORM__;
+  const before = JSON.stringify((await api.invoke("app_info")).settings);
+  for (const request of [
+    { slot: "unknown", choice: { provider_id: "groq", model: "synthetic" } },
+    { slot: "llm", choice: { provider_id: "missing", model: "synthetic" } },
+    { slot: "llm", choice: { provider_id: "local", model: "whisper-large-v3-turbo" } },
+    { slot: "llm", choice: { provider_id: "groq", model: "  " } },
+    { slot: "dictation_stt", choice: { provider_id: "local", model: "synthetic-not-downloaded" } },
+    { slot: "meeting_stt", choice: { provider_id: "local", model: "diar_streaming_sortformer_4spk-v2.1" } },
+  ]) {
+    await assert.rejects(api.invoke("apply_task_model_choice", request));
+    assert.equal(JSON.stringify((await api.invoke("app_info")).settings), before);
+  }
+  assert.equal(context.__PENNEL_FIXTURE__.setupTrace.appliedTasks.length, 0);
+  assert.equal(context.__PENNEL_FIXTURE__.setupTrace.savedChoices.length, 0);
+});
+
+test("Windows and Linux fixtures retain native unknown microphone state after an ineffective request", async () => {
+  for (const platform of ["windows", "linux"]) {
+    const api = fixture("settings-models", { platform, permission: "unknown" }).__PENNEL_PLATFORM__;
+    assert.equal((await api.invoke("app_info")).platform, platform);
+    const permissions = await api.invoke("request_permission", { kind: "microphone" });
+    assert.equal(permissions.find(permission => permission.kind === "microphone").status, "unknown");
+    assert.equal((await api.invoke("onboarding_readiness", { target: "meeting" })).can_record, true);
+  }
+});
+
 test("pad/practice sessions emit to the fixture listener and never invoke native transport", async () => {
   const context = fixture("dictation-pad");
   const api = context.__PENNEL_PLATFORM__;

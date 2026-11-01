@@ -1,0 +1,134 @@
+{
+  "date": "2026-11-01",
+  "pr": "https://github.com/pennel-app/pennel/pull/89",
+  "issue": "https://github.com/pennel-app/pennel/issues/32",
+  "reviewed_initial_head": "35f89389e4a6588a184fa2007fc24d03ef959995",
+  "reviewed_product_blobs": {
+    "core/src/settings.rs": "a32cd5e97f348d79ca7854d7d9ca77b9728cf961",
+    "core/src/engine.rs": "2d560dc44b80bb8784a2f70344b2824b7fbe845c",
+    "apps/desktop/src-tauri/src/commands.rs": "f60ad809c61dc3c2fe89127faedb146cf903f743",
+    "apps/desktop/src/task-setup-state.ts": "b19482680116ec2f8119907d268c4b8f18621bb2",
+    "apps/desktop/src/views/setup.ts": "468a5d2af5d6acac7c1826c6f4e7287ad66e387f",
+    "apps/desktop/src/views/model-picker.ts": "6eb086157db7e2b9072504925a5b5f205fb0425a"
+  },
+  "independent_reviews": {
+    "correctness": "APPROVE after reproducible P1 microphone, P2 stale verification and optional selection-state fixes",
+    "architecture": "CLEAR after native normalization/single-task Apply fix and destination disclosure",
+    "final_ci": "Recorded on PR and issue; no approval is inferred from a previous head."
+  },
+  "fixed_findings": [
+    {
+      "severity": "P1",
+      "issue": "Windows/Linux unknown microphone status blocked speech Apply",
+      "fix": "Use the core access policy: unknown microphone does not block setup; denied/restricted and unknown Apple speech still do."
+    },
+    {
+      "severity": "P1",
+      "issue": "Draft downloads and full settings Apply could normalize unrelated local choices",
+      "fix": "Preserve explicit local IDs for existing providers across saves/restarts; download completion makes no settings write; atomic native Apply validates and changes one task only."
+    },
+    {
+      "severity": "P2",
+      "issue": "A connection changed during Apply could inherit the previous endpoint\u2019s successful sample",
+      "fix": "Promote verification only when the applied saved fingerprint exactly matches the tested fingerprint."
+    },
+    {
+      "severity": "LOW",
+      "issue": "Manual ID left an obsolete catalog selection highlighted",
+      "fix": "Synchronize catalog pressed states on manual input."
+    },
+    {
+      "severity": "WATCH",
+      "issue": "Locally installed subscription clients could imply local processing",
+      "fix": "Group subscription clients and remote model-server URLs under My own provider and explicitly disclose possible remote processing."
+    }
+  ],
+  "local_checks": [
+    {
+      "command": "make core && make test",
+      "result": "release build; 735 core passed, 7 ignored; 17 keyboard-core passed"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --lib --no-default-features",
+      "result": "724 passed, 5 ignored"
+    },
+    {
+      "command": "(cd apps/desktop && npm ci && npm run build && npm test)",
+      "result": "build and 239 tests passed"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+      "result": "224 passed"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check; scripts/with-toolchain.sh cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
+      "result": "passed"
+    },
+    {
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings; scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests --no-default-features -- -D warnings; scripts/with-toolchain.sh cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "node --test scripts/fixtures/desktop-platform.test.mjs",
+      "result": "26 passed"
+    },
+    {
+      "command": "make packaging-test && make theme-check",
+      "result": "61 packaging tests and shared tokens passed"
+    }
+  ],
+  "visual": {
+    "method": "Owned Chromium headless page via CDP; no user screen/profile",
+    "cases": [
+      "meeting-flow-interaction",
+      "provider-history-interaction",
+      "settings-overview",
+      "settings-overview-small",
+      "settings-overview-zoom",
+      "settings-task-setup-zoom",
+      "settings-task-setup",
+      "settings-flow-interaction",
+      "settings-models",
+      "settings-models-mixed",
+      "experimental-connections-interaction",
+      "guided-setup-draft-interaction",
+      "guided-setup-late-sample-interaction",
+      "guided-setup-catalog-recovery",
+      "guided-setup-missing-key-interaction",
+      "guided-setup-unavailable-interaction",
+      "guided-setup-speech-small",
+      "guided-setup-text-small",
+      "guided-setup-custom-model",
+      "guided-setup-sample-failure",
+      "guided-setup-permission-recovery",
+      "guided-setup-permission-restricted",
+      "guided-setup-windows-unknown-microphone",
+      "guided-setup-linux-unknown-microphone",
+      "guided-setup-manual-selection-state",
+      "guided-setup-connection-changed-during-apply",
+      "guided-setup-interrupted-download",
+      "guided-setup-cloud-sign-in",
+      "guided-setup-pending-connection",
+      "guided-setup-failed-apply-cancel",
+      "guided-setup-login-isolation"
+    ],
+    "captures": 124,
+    "locales": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "overflow": false,
+    "runtime_errors": false,
+    "private_data_or_live_inference_used": false,
+    "artifact": "build/visual-parity/guided-model-setup-pr89-final/manifest.json"
+  },
+  "acceptance_limits": [
+    "Merge and installation are user-authorized and tracked on #32.",
+    "Hosted checks must be read on the exact final PR head.",
+    "Physical audio/provider, VoiceOver and human usability acceptance remain separate; no production inference qualification is added."
+  ]
+}

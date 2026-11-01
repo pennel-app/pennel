@@ -69,6 +69,21 @@ async function detail(ctx: Context, account: ProviderAccount, task?: SetupTask):
     providerVerification.invalidate();
     return ctx.mutate(() => api.setKey(account.id, value));
   };
+  const connectionField = (label: ReturnType<typeof l>, input: HTMLInputElement) => {
+    if (!task) {
+      input.addEventListener("change", () => { void saveAccount("base_url", input.value.trim()).catch(ctx.report); });
+      return field(label, input);
+    }
+    let saved = account.base_url;
+    const save = controlButton({ "data-setup-save": "connection", disabled: true, onclick: async () => {
+      save.disabled = true;
+      try { await saveAccount("base_url", input.value.trim()); saved = input.value.trim(); ctx.rerender(); }
+      catch (error) { ctx.report(error); }
+      finally { save.disabled = input.value.trim() === saved; }
+    } }, l("settings.setup.save_connection"));
+    input.addEventListener("input", () => { save.disabled = input.value.trim() === saved; });
+    return field(label, h("div", { class: "setup-connection-field" }, input, save));
+  };
   const name = textField({ type: "text", value: account.name, "aria-label": l("common.name") });
   name.addEventListener("change", () => { void saveAccount("name", name.value.trim() || account.name).catch(ctx.report); });
   const body = section(liveText(() => localizeBackendText(kind.label)), null, task ? null : field(l("common.name"), name));
@@ -89,12 +104,9 @@ async function detail(ctx: Context, account: ProviderAccount, task?: SetupTask):
       body.append(controlButton({ class: "btn", onclick: async () => { await api.requestPermission("speech"); await ctx.refresh(); } },
         speech?.status === "denied" ? l("providers.open_settings") : l("providers.grant_access")));
     }
-    body.append(controlButton({ class: "btn", disabled: kind.availability.status !== "available", onclick: () => ctx.save((settings) => {
-      if (task) settings[task] = { provider_id: account.id, model: kind.default_stt_model };
-      else {
-        settings.dictation_stt = { provider_id: account.id, model: kind.default_stt_model };
-        settings.meeting_stt = { provider_id: account.id, model: kind.default_stt_model };
-      }
+    if (!task) body.append(controlButton({ class: "btn", disabled: kind.availability.status !== "available", onclick: () => ctx.save((settings) => {
+      settings.dictation_stt = { provider_id: account.id, model: kind.default_stt_model };
+      settings.meeting_stt = { provider_id: account.id, model: kind.default_stt_model };
     }) }, l("providers.use_speech")));
   } else if (account.kind === "apple_intelligence") {
     body.append(h("p", { class: "help" }, l("providers.apple_text_help")));
@@ -105,7 +117,7 @@ async function detail(ctx: Context, account: ProviderAccount, task?: SetupTask):
       test.disabled = false;
     } }, l("providers.test_model"));
     body.append(h("div", { class: "row" },
-      controlButton({ class: "btn", disabled: kind.availability.status !== "available", onclick: () => ctx.save((settings) => {
+      task ? null : controlButton({ class: "btn", disabled: kind.availability.status !== "available", onclick: () => ctx.save((settings) => {
         settings.llm = { provider_id: account.id, model: kind.default_llm_model };
       }) }, l("providers.use_text")),
       test,
@@ -113,7 +125,6 @@ async function detail(ctx: Context, account: ProviderAccount, task?: SetupTask):
   } else if (kind.is_cli_agent) {
     body.append(h("p", { class: "help" }, l("providers.cli_help")));
     const executable = textField({ type: "text", value: account.base_url, placeholder: l("providers.cli_path"), "aria-label": l("providers.executable") });
-    executable.addEventListener("change", () => { void saveAccount("base_url", executable.value.trim()).catch(ctx.report); });
     const detect = controlButton({ class: "btn", onclick: async () => {
       detect.disabled = true;
       try {
@@ -129,13 +140,12 @@ async function detail(ctx: Context, account: ProviderAccount, task?: SetupTask):
       catch (error) { showStatus(() => t("providers.test_failed", { error: errorText(error) })); }
       check.disabled = false;
     } }, l("providers.test_cli"));
-    body.append(field(l("providers.executable"), executable), h("div", { class: "row" }, detect, check), status);
+    body.append(connectionField(l("providers.executable"), executable), h("div", { class: "row" }, detect, check), status);
   } else if (account.kind === "pennel_cloud") {
     body.append(await cloudCard(ctx, status, showStatus));
   } else if (account.kind !== "local") {
     const baseUrl = textField({ type: "text", value: account.base_url, placeholder: kind.default_base_url || "https://…/v1", "aria-label": l("providers.base_url") });
-    baseUrl.addEventListener("change", () => { void saveAccount("base_url", baseUrl.value.trim()).catch(ctx.report); });
-    body.append(field(l("providers.base_url"), baseUrl));
+    body.append(connectionField(l("providers.base_url"), baseUrl));
     if (kind.requires_key || account.kind === "custom") {
       const key = textField({ type: "password", placeholder: ctx.info.keys[account.id] ? l("providers.saved_key") : l("providers.paste_key"), autocomplete: "off", class: "grow", "aria-label": l("providers.api_key") });
       if (!task) key.addEventListener("change", () => { void saveKey(key.value).catch(ctx.report); });

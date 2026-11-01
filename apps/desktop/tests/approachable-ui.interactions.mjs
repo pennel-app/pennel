@@ -28,9 +28,9 @@ const enter = (node, value) => { assert(node, "Required input is missing."); nod
 const selectedTab = () => document.querySelector('.detail-tabs [aria-selected="true"]')?.dataset.tab;
 const dialog = () => document.querySelector("dialog.task-setup-dialog[open]");
 
-async function chooseModalOption(index = 0, different = false) {
+async function chooseSetupProvider(different = false, selector = "[data-setup-provider]") {
   const owner = dialog();
-  const choice = owner?.querySelectorAll(".task-setup-body .choice")[index];
+  const choice = owner?.querySelector(selector);
   assert(choice, "The task has no reachable provider/model chooser.");
   const before = choice.value;
   click(choice);
@@ -76,7 +76,7 @@ function observeCommands() {
   client.invoke = async (command, args = {}) => {
     operations.push({ command, args: structuredClone(args) });
     if (command === "set_key" && failKey) { failKey = false; throw new Error("Synthetic credential save failed."); }
-    if (command === "save_settings" && failSettings) { failSettings = false; throw new Error("Synthetic settings save failed."); }
+    if (["save_settings", "apply_task_model_choice"].includes(command) && failSettings) { failSettings = false; throw new Error("Synthetic settings save failed."); }
     return original(command, args);
   };
   return {
@@ -149,24 +149,27 @@ export async function checkSettingsFlow() {
     const textAction = document.querySelector('.settings-overview [data-setup-task="llm"]');
     click(textAction);
     await until(() => dialog()?.dataset.setupTask === "llm" && dialog().querySelector('input[type="password"]'), "Task setup did not expose the selected service's missing key in place.");
-    click(button(dialog(), t("common.back")));
+    click(dialog().querySelector("[data-setup-cancel]"));
     await until(() => !dialog(), "Back did not close task setup.");
     assert(textAction.isConnected && document.activeElement === textAction, "Task setup did not restore overview focus.");
 
     const speechAction = document.querySelector('.settings-overview [data-setup-task="dictation_stt"]');
     click(speechAction);
-    await until(() => dialog()?.querySelectorAll(".task-setup-body .choice").length >= 2, "Local dictation setup did not expose its provider and model choices.");
+    await until(() => dialog()?.querySelector("[data-setup-provider]") && dialog().querySelector("[data-setup-local-model]"), "Local dictation setup did not expose its provider and model choices.");
     const speechBefore = structuredClone(fixture.info().settings.dictation_stt);
-    await chooseModalOption(0);
+    await chooseSetupProvider();
     await settle();
-    await chooseModalOption(1);
+    await chooseSetupProvider(false, "[data-setup-local-model]");
     await settle();
     assert(JSON.stringify(fixture.info().settings.dictation_stt) === JSON.stringify(speechBefore), "Selecting current modal options changed the speech configuration.");
+    const changedProvider = await chooseSetupProvider(true);
+    await until(() => dialog()?.querySelector("[data-setup-apply]") && !dialog().querySelector("[data-setup-apply]").disabled, "The available alternative provider did not become ready for explicit application.");
+    assert(JSON.stringify(fixture.info().settings.dictation_stt) === JSON.stringify(speechBefore), "Browsing a different provider changed the active speech configuration.");
     observed.failNextSettings();
-    const changedModel = await chooseModalOption(1, true);
+    click(dialog().querySelector("[data-setup-apply]"));
     await until(() => dialog()?.querySelector(".task-setup-message.error")?.textContent.includes("Synthetic settings save failed."), "A failed model-setting save has no task-local explanation.");
-    click(button(dialog(), t("common.done")));
-    await until(() => !dialog() && fixture.info().settings.dictation_stt.model === changedModel, "Done did not retry the failed settings patch and return after it saved.");
+    click(dialog().querySelector("[data-setup-apply]"));
+    await until(() => !dialog() && fixture.info().settings.dictation_stt.provider_id === changedProvider, "Use this setup did not retry the failed task assignment and return after it saved.");
     assert(document.activeElement === speechAction, "Modal option selection lost the originating Settings action.");
     const restored = await api.info();
     await api.saveSettings({ ...restored.settings, dictation_stt: speechBefore });
@@ -179,12 +182,12 @@ export async function checkSettingsFlow() {
     click(account);
     await until(() => button(document.querySelector(".settings-categories"), t("navigation.account"))?.getAttribute("aria-current") === "page", "Account did not become the selected Settings category.");
     fixture.emit("workspace-navigate", { section: "settings", tab: "models", meeting_id: null, jump_ms: null });
-    await until(() => document.querySelector(".models-settings"), "The existing Models deep link no longer opens its advanced editor.");
+    await until(() => document.querySelector(".models-settings button[data-setup-task]"), "The existing Models deep link no longer opens its task overview.");
     fixture.emit("workspace-navigate", { section: "settings", tab: "providers", meeting_id: null, jump_ms: null });
     await until(() => button(document.querySelector(".settings-categories"), t("navigation.providers"))?.getAttribute("aria-current") === "page", "The existing Providers deep link no longer selects its editor.");
     click(button(document.querySelector(".settings-categories"), t("navigation.overview")));
     await until(() => document.querySelector(".settings-overview"), "Advanced configuration has no path back to task readiness.");
-    assert(!observed.operations.some(operation => ["set_key", "test_provider_task", "start_meeting", "toggle_dictation"].includes(operation.command)), "Browsing settings silently changed credentials, tested a provider or started capture.");
+    assert(!observed.operations.some(operation => ["set_key", "test_provider_task", "test_provider_task_choice", "start_meeting", "toggle_dictation"].includes(operation.command)), "Browsing settings silently changed credentials, tested a provider or started capture.");
     assert(!fixture.unknown.length, "Settings used a non-fixture operation.");
     return { overview: true, taskLocalSetup: true, modalOptionsAccessible: true, settingsSaveRetried: true, focusRestored: true, accountReachable: true, legacyDeepLinks: true, externalServicesUsed: false, userDataUsed: false };
   } finally { observed.restore(); }
@@ -239,7 +242,7 @@ export async function checkMeetingFlow() {
     await refreshWhileTyping(api, fixture, observed, key);
     await pointerClick(button(key.closest(".row"), t("common.save")));
     await until(() => fixture.info().keys[fixture.info().settings.llm.provider_id] && !regenerate.disabled, "The explicit key Save click was lost after background refresh.");
-    click(button(dialog(), t("common.done")));
+    click(dialog().querySelector("[data-setup-apply]"));
     await until(() => !dialog(), "The refreshed setup did not return to its meeting.");
     await api.setKey(fixture.info().settings.llm.provider_id, "");
     fixture.emit("settings-changed", null);
@@ -249,17 +252,19 @@ export async function checkMeetingFlow() {
     observed.failNextKey();
     key = dialog().querySelector('input[type="password"]');
     enter(key, "fixture-only-key");
-    click(button(dialog(), t("common.done")));
+    click(dialog().querySelector('[data-setup-save="key"]'));
     await until(() => dialog()?.querySelector(".task-setup-message.error")?.textContent.includes("Synthetic credential save failed."), "A failed key save has no visible task-local explanation.");
     await settle();
-    assert(dialog() && notes.isConnected && notes.value === synthetic, "Done dismissed failed setup or lost the originating draft.");
+    assert(dialog() && notes.isConnected && notes.value === synthetic, "A failed connection save dismissed setup or lost the originating draft.");
     key = dialog().querySelector('input[type="password"]');
     enter(key, "fixture-only-retry-key");
-    click(button(dialog(), t("common.done")));
-    await until(() => !dialog() && fixture.info().keys[fixture.info().settings.llm.provider_id] && !regenerate.disabled, "Done did not save the typed key and return to the repaired meeting action.");
+    click(dialog().querySelector('[data-setup-save="key"]'));
+    await until(() => fixture.info().keys[fixture.info().settings.llm.provider_id] && !dialog().querySelector("[data-setup-apply]").disabled, "Retry did not save the connection key and enable explicit application.");
+    click(dialog().querySelector("[data-setup-apply]"));
+    await until(() => !dialog() && !regenerate.disabled, "Use this setup did not return to the repaired meeting action.");
     assert(document.querySelector(".meeting-detail") === article && notes.value === synthetic && selectedTab() === "notes", "Successful setup navigated away from the same meeting or lost its notes.");
     assert(!visible(setup) && !regenerate.disabled, "The repaired meeting still presents a blocked summary action.");
-    assert(!observed.operations.some(operation => ["summarize_meeting", "ask_meetings", "start_meeting", "test_provider_task"].includes(operation.command)), "Setup processed meeting content or started a recording without a user action.");
+    assert(!observed.operations.some(operation => ["summarize_meeting", "ask_meetings", "start_meeting", "test_provider_task", "test_provider_task_choice"].includes(operation.command)), "Setup processed meeting content or started a recording without a user action.");
     notes.value = originalNotes; notes.dispatchEvent(new Event("input", { bubbles: true }));
     notes.blur(); await settle();
     const title = article.querySelector("h1").textContent;

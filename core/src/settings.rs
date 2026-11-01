@@ -343,7 +343,7 @@ impl Settings {
         self.normalized_with(&[])
     }
 
-    /// Keeps explicitly unassigned tasks, repairs deleted providers, and selects downloaded local models.
+    /// Keeps explicit choices and selects a fallback only after the chosen provider is removed.
     pub fn normalized_with(mut self, downloaded_local: &[String]) -> Settings {
         // Optional analysis must never select another destination after account removal.
         for slot in [&mut self.decision, &mut self.reranking] {
@@ -365,6 +365,7 @@ impl Settings {
                 continue;
             }
             let current = self.providers.iter().find(|p| p.id == slot.provider_id);
+            let removed_provider = current.is_none();
             let account = match current {
                 Some(account) => account,
                 None => match self.providers.iter().find(|p| supports(p.kind, task)) {
@@ -375,7 +376,8 @@ impl Settings {
                     None => continue,
                 },
             };
-            if account.kind == ProviderKind::Local
+            if removed_provider
+                && account.kind == ProviderKind::Local
                 && !downloaded_local.contains(&slot.model)
                 && let Some(first) = downloaded_local.first()
             {
@@ -719,6 +721,7 @@ mod tests {
     #[test]
     fn removed_provider_falls_back() {
         let mut s = default_settings();
+        s.dictation_stt.provider_id = "groq".into();
         s.providers.retain(|p| p.id != "groq");
         let s = s.normalized();
         assert_eq!(
@@ -734,6 +737,7 @@ mod tests {
     #[test]
     fn fallback_to_local_prefers_downloaded_model() {
         let mut s = default_settings();
+        s.dictation_stt.provider_id = "groq".into();
         s.providers.retain(|p| p.id != "groq");
         let s = s.normalized_with(&["whisper-small-q5_1".to_owned()]);
         assert_eq!(
@@ -746,14 +750,17 @@ mod tests {
     }
 
     #[test]
-    fn local_choice_with_deleted_model_moves_to_downloaded_one() {
+    fn existing_local_choices_stay_selected_when_another_model_is_downloaded() {
         let mut s = default_settings();
         s.dictation_stt = ModelChoice {
             provider_id: "local".into(),
             model: "whisper-large-v3-turbo-q5_0".into(),
         };
+        let before = s.clone();
         let s = s.normalized_with(&["whisper-small-q5_1".to_owned()]);
-        assert_eq!(s.dictation_stt.model, "whisper-small-q5_1");
+        assert_eq!(s.dictation_stt, before.dictation_stt);
+        assert_eq!(s.meeting_stt, before.meeting_stt);
+        assert_eq!(s.llm, before.llm);
     }
 
     #[test]

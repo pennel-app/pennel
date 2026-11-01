@@ -6,9 +6,12 @@ import type { Context } from "../main";
 import { providerDestination } from "../processing-state";
 
 const copy = {
+  experimental: ["Experimental connections — setup and testing only", "Experimentele verbindingen — alleen instellen en testen"],
+  experimental_help: ["These optional connections are for setup and sample testing. Pennel does not currently use them for dictation, meeting processing or search.", "Deze optionele verbindingen zijn bedoeld om in te stellen en met een voorbeeld te testen. Pennel gebruikt ze momenteel niet voor dicteren, het verwerken van vergaderingen of zoeken."],
   title_decision: ["Decision processing", "Beslissingen verwerken"],
   title_reranking: ["Passage ranking", "Passages rangschikken"],
-  help: ["Optional connection for future smart features. Saving this choice does not change dictation or meetings.", "Optionele verbinding voor toekomstige slimme functies. Deze keuze verandert dicteren of vergaderingen niet."],
+  help_decision: ["Configure and test a service for structured choices.", "Stel een dienst voor gestructureerde keuzes in en test deze."],
+  help_reranking: ["Configure and test a service that scores the relevance of text passages.", "Stel een dienst in die de relevantie van tekstpassages beoordeelt en test deze."],
   provider: ["Provider", "Provider"], format: ["API format", "API-indeling"], model: ["Model", "Model"],
   expected: ["Expected returned model", "Verwacht antwoordmodel"], upstream: ["Upstream provider", "Uitvoerende provider"],
   bytes: ["Max input bytes", "Maximale invoerbytes"], timeout: ["Timeout (seconds)", "Time-out (seconden)"],
@@ -16,8 +19,9 @@ const copy = {
   test: ["Test with sample", "Test met voorbeeld"], cancel: ["Cancel", "Annuleren"], testing: ["Processing the sample…", "Voorbeeld verwerken…"],
   passed: ["The sample test passed.", "De voorbeeldtest is geslaagd."], failed: ["The sample test could not be completed.", "De voorbeeldtest kon niet worden uitgevoerd."],
   disabled: ["Not configured", "Niet ingesteld"], configured: ["Configured; run the sample to verify.", "Ingesteld; test met het voorbeeld om te controleren."],
-  unavailable: ["Decision connections are unavailable in this build.", "Beslissingsverbindingen zijn niet beschikbaar in deze versie."],
-  manage: ["Manage providers", "Providers beheren"], need_provider: ["Add an OpenRouter or Custom server connection under Providers first.", "Voeg eerst een OpenRouter- of aangepaste serververbinding toe bij Providers."],
+  unavailable: ["Experimental connections are unavailable in this build.", "Experimentele verbindingen zijn niet beschikbaar in deze versie."],
+  manage: ["Manage providers", "Providers beheren"], add: ["Add connection", "Verbinding toevoegen"],
+  need_provider: ["Add an OpenRouter or Custom server connection to configure decision processing.", "Voeg een OpenRouter- of aangepaste serververbinding toe om het verwerken van beslissingen in te stellen."],
   need_rerank_provider: ["Add a Custom server connection for TEI under Providers first.", "Voeg eerst een aangepaste serververbinding voor TEI toe bij Providers."],
   sample: ["The test sends only synthetic example text to the selected server. It may incur provider charges.", "De test stuurt alleen fictieve voorbeeldtekst naar de gekozen server. De provider kan hiervoor kosten aanrekenen."],
   missing: ["Choose a provider, API format and model. OpenRouter also requires an upstream provider.", "Kies een provider, API-indeling en model. OpenRouter vereist ook een uitvoerende provider."],
@@ -31,10 +35,15 @@ const copy = {
 type CopyKey = keyof typeof copy;
 const text = (key: CopyKey) => copy[key][getInterfaceLanguage() === "nl" ? 1 : 0];
 const label = (key: CopyKey) => liveText(() => text(key));
+let experimentalOpen = false;
 
 export async function inferenceModelsView(ctx: Context): Promise<HTMLElement[]> {
   const protocols = await api.inferenceProtocols().catch(() => []);
-  return Promise.all((["decision", "reranking"] as const).map((capability) => inferenceSection(ctx, capability, Array.isArray(protocols) ? protocols : [])));
+  const sections = await Promise.all((["decision", "reranking"] as const).map((capability) => inferenceSection(ctx, capability, Array.isArray(protocols) ? protocols : [])));
+  const root = h("details", { class: "experimental-connections", "data-inference-experimental": true, open: experimentalOpen },
+    h("summary", {}, label("experimental")), h("p", { class: "help" }, label("experimental_help")), sections);
+  root.addEventListener("toggle", () => { if (root.isConnected) experimentalOpen = root.open; });
+  return [root];
 }
 
 async function inferenceSection(ctx: Context, capability: InferenceCapability, protocols: InferenceProtocolInfo[]): Promise<HTMLElement> {
@@ -66,7 +75,6 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
     if (eligible.find((item) => item.id === id)?.kind === "open_router" && !draft.protocol.startsWith("open_router")) {
       draft.protocol = "open_router_decisions";
       protocol.value = draft.protocol;
-      advanced.open = !draft.upstream;
     }
     updateProtocolOptions(); changed();
   }, "menu");
@@ -84,6 +92,8 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
   const model = input(draft.model, (value) => { draft.model = value; });
   const expected = input(draft.expected_model ?? "", (value) => { draft.expected_model = value.trim() || null; });
   const upstream = input(draft.upstream ?? "", (value) => { draft.upstream = value.trim() || null; });
+  const upstreamField = field(label("upstream"), upstream);
+  model.required = true;
   const bytes = input(String(draft.max_input_bytes), (value) => { draft.max_input_bytes = Number(value); }, true);
   const timeout = input(String(draft.timeout_secs), (value) => { draft.timeout_secs = Number(value); }, true);
   for (const [name, control] of [["model", model], ["expected_model", expected], ["upstream", upstream], ["max_input_bytes", bytes], ["timeout_secs", timeout]] as const) control.dataset.inferenceField = name;
@@ -138,6 +148,10 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
     provider.disabled = saving || !eligible.length || !protocols.length;
     protocol.disabled = saving || !availableProtocols.length;
     for (const control of [model, expected, upstream, bytes, timeout]) control.disabled = saving || !eligible.length || !protocols.length;
+    const needsUpstream = draft.protocol.startsWith("open_router");
+    upstreamField.hidden = !needsUpstream;
+    upstream.required = needsUpstream;
+    upstream.disabled ||= !needsUpstream;
     notice.className = errorMessage || (result && !result.verified) ? "error" : "help";
     if (errorMessage) notice.textContent = errorMessage;
     else if (state.running) notice.textContent = text("testing");
@@ -149,12 +163,15 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
       for (const [key, value] of [["actual_model", result.identity.actual_model], ["actual_provider", result.identity.actual_provider], ["revision", result.identity.actual_revision], ["request", result.identity.request_id]] as const) identity.append(h("p", {}, `${text(key)}: ${value ?? text("unknown")}`));
     }
   }
-  const advanced = h("details", {}, h("summary", {}, label("advanced")), field(label("expected"), expected), field(label("upstream"), upstream), field(label("bytes"), bytes), field(label("timeout"), timeout));
-  advanced.open = draft.protocol.startsWith("open_router") && !draft.upstream;
-  const root = section(label(capability === "decision" ? "title_decision" : "title_reranking"), label("help"), field(label("provider"), provider), field(label("format"), protocol), field(label("model"), model), advanced, destination, status,
-    !eligible.length ? h("p", { class: "help" }, label(capability === "reranking" ? "need_rerank_provider" : "need_provider")) : null,
-    h("button", { class: "text-button", onclick: () => ctx.navigate("providers") }, label("manage")),
-    h("div", { class: "row" }, save, disable), h("p", { class: "help" }, label("sample")), h("div", { class: "row" }, test, cancel), notice, identity);
+  const advanced = h("details", {}, h("summary", {}, label("advanced")), field(label("expected"), expected), field(label("bytes"), bytes), field(label("timeout"), timeout));
+  const body = eligible.length && availableProtocols.length
+    ? [field(label("provider"), provider), field(label("format"), protocol), field(label("model"), model), upstreamField, advanced, destination, status,
+      h("button", { class: "text-button", onclick: () => ctx.navigate("providers") }, label("manage")),
+      h("div", { class: "row" }, save, disable), h("p", { class: "help" }, label("sample")), h("div", { class: "row" }, test, cancel), notice, identity]
+    : [status, !eligible.length ? h("p", { class: "help" }, label(capability === "reranking" ? "need_rerank_provider" : "need_provider")) : null,
+      !eligible.length ? h("button", { class: "btn", onclick: () => ctx.navigate("providers") }, label("add")) : null,
+      saved ? h("div", { class: "row" }, disable) : null, notice];
+  const root = section(label(capability === "decision" ? "title_decision" : "title_reranking"), label(capability === "decision" ? "help_decision" : "help_reranking"), body);
   root.dataset.inferenceCapability = capability;
   ctx.onDispose(() => { disposed = true; cancelRun(); });
   ctx.onInfoChange(() => {
