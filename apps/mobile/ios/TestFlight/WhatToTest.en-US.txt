@@ -1,0 +1,1 @@
+Verify that existing history and settings survive the update. Launch Pennel Preview without Metro or a development server. Test dictation with your chosen provider, keyboard typing and immediate Undo, and widgets. This Preview also includes the latest device-connection and recovery fixes; existing account and connection state should remain available.
