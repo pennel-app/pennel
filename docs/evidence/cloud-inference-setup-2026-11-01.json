@@ -1,6 +1,9 @@
 {
   "date": "2026-11-01",
-  "issues": [32, 54],
+  "issues": [
+    32,
+    54
+  ],
   "base_revision": "fb38075a2174aeb324080f3620ea0f7a1d85da97",
   "scope": "Managed Pennel Cloud for optional decision and passage-ranking setup and synthetic testing",
   "defaults": {
@@ -20,32 +23,98 @@
   ],
   "verified_local": {
     "core_release_build": "passed",
-    "core_tests": { "passed": 753, "ignored": 7 },
-    "keyboard_tests": { "passed": 17 },
+    "core_tests": {
+      "passed": 753,
+      "ignored": 7
+    },
+    "keyboard_tests": {
+      "passed": 17
+    },
     "core_format_and_clippy": "passed",
-    "desktop_backend_tests": { "passed": 225 },
+    "desktop_backend_tests": {
+      "passed": 225
+    },
     "desktop_backend_format_and_clippy": "passed",
-    "macos_platform_tests": { "passed": 123 },
+    "macos_platform_tests": {
+      "passed": 123
+    },
     "desktop_frontend_build": "passed",
-    "desktop_frontend_tests": { "passed": 242 },
-    "desktop_fixture_tests": { "passed": 26 },
-    "mobile_ui_tests": { "passed": 109 },
-    "mobile_plugin_checks": { "passed": 17 },
-    "mobile_widget_checks": { "passed": 7 },
-    "swift_helper_tests": { "passed": 116 },
+    "desktop_frontend_tests": {
+      "passed": 242
+    },
+    "desktop_fixture_tests": {
+      "passed": 26
+    },
+    "mobile_ui_tests": {
+      "passed": 109
+    },
+    "mobile_plugin_checks": {
+      "passed": 17
+    },
+    "mobile_widget_checks": {
+      "passed": 7
+    },
+    "swift_helper_tests": {
+      "passed": 116
+    },
     "mobile_clean_and_repeated_generation": "passed",
-    "native_hosted_runtime_tests": "pending final run",
-    "independent_reviews": "initial findings addressed; final source re-review pending",
-    "cross_platform_ci": "pending"
+    "native_hosted_runtime_tests": {
+      "passed": 159,
+      "runtime": 123,
+      "keyboard": 36,
+      "failed": 0,
+      "skipped": 0,
+      "profile": "isolated QA",
+      "result_bundle": "build/mobile/cloud-inference/native-tests-isolated-final.xcresult"
+    },
+    "independent_reviews": {
+      "product_revision": "a686338e25308c2d6f027673756267a925269013",
+      "correctness": "APPROVE",
+      "architecture": "CLEAR",
+      "final_fixture_rebind": "recorded in PR #91"
+    },
+    "cross_platform_ci": "Read the checks on PR #91 for the exact final head; this local receipt does not attest remote CI.",
+    "mobile_unsigned_release_simulator": "passed",
+    "mobile_unsigned_iphoneos": "passed",
+    "pod_ownership_checks": {
+      "passed": 6
+    },
+    "matched_core_source_sha256": "8afbc81eda1169ddc8fec3ed6582d5c9a271330d2ea69dcc2169e6f8a49457e9"
   },
   "owned_visual_receipts": [
-    { "path": "build/visual-parity/cloud-inference-final/manifest.json", "variants": 24 },
-    { "path": "build/visual-parity/cloud-inference-interaction-final/manifest.json", "variants": 4 },
-    { "path": "build/visual-parity/cloud-setup-token-regressions/manifest.json", "variants": 20 },
-    { "path": "build/visual-parity/cloud-setup-related-regressions/manifest.json", "variants": 12 },
-    { "path": "build/visual-parity/cloud-inference-readable-destination/manifest.json", "variants": 12 }
+    {
+      "path": "build/visual-parity/cloud-inference-final/manifest.json",
+      "variants": 24
+    },
+    {
+      "path": "build/visual-parity/cloud-inference-interaction-final/manifest.json",
+      "variants": 4
+    },
+    {
+      "path": "build/visual-parity/cloud-setup-token-regressions/manifest.json",
+      "variants": 20
+    },
+    {
+      "path": "build/visual-parity/cloud-setup-related-regressions/manifest.json",
+      "variants": 12
+    },
+    {
+      "path": "build/visual-parity/cloud-inference-readable-destination/manifest.json",
+      "variants": 12
+    }
   ],
-  "visual_coverage": ["English/Dutch", "light/dark", "minimum window", "enlarged text", "keyboard focus", "delayed capability checks", "retry", "stale account response", "same-account refresh", "manual-provider draft preservation"],
+  "visual_coverage": [
+    "English/Dutch",
+    "light/dark",
+    "minimum window",
+    "enlarged text",
+    "keyboard focus",
+    "delayed capability checks",
+    "retry",
+    "stale account response",
+    "same-account refresh",
+    "manual-provider draft preservation"
+  ],
   "outstanding_acceptance": [
     "Managed service deployment and synthetic provider acceptance are tracked separately.",
     "No model accuracy, regional processing or contractual retention qualification is established by a sample.",

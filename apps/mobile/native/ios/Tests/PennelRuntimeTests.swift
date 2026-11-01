@@ -66,10 +66,26 @@ private final class PreflightGate {
 }
 
 private final class DelayedAvailability: @unchecked Sendable {
-    let entered = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var entered = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
     let release = DispatchSemaphore(value: 0)
+    func waitUntilEntered() async {
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                if entered { continuation.resume() }
+                else { waiting.append(continuation) }
+            }
+        }
+    }
     func response() throws -> String {
-        entered.signal()
+        let waiting = lock.withLock {
+            entered = true
+            let current = self.waiting
+            self.waiting = []
+            return current
+        }
+        waiting.forEach { $0.resume() }
         guard release.wait(timeout: .now() + 5) == .success else { throw PennelBridgeError("fixture_timeout", "Synthetic availability delay timed out.") }
         return "{\"available\":true}"
     }
@@ -257,7 +273,7 @@ struct PennelRuntimeTests {
             defer { finished = true }
             return try await requests.availability(fingerprint: fingerprint, currentFingerprint: { fingerprint }, work: { try delayed.response() })
         }
-        await Task.detached { delayed.entered.wait() }.value
+        await delayed.waitUntilEntered()
         #expect(Date().timeIntervalSince(start) < 4)
         #expect(!finished)
         fingerprint = "replacement-account"
@@ -275,7 +291,7 @@ struct PennelRuntimeTests {
         let availability = Task { @MainActor in
             try await requests.availability(fingerprint: "unchanged", currentFingerprint: { "unchanged" }, work: { try delayed.response() })
         }
-        await Task.detached { delayed.entered.wait() }.value
+        await delayed.waitUntilEntered()
         let gate = PreflightGate()
         let mutation = Task { @MainActor in await requests.changingConfiguration { _ = await gate.request() } }
         await gate.waitUntilEntered()
