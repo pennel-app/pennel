@@ -1,6 +1,6 @@
 import { api, type AppInfo, type LocalModel, type PermissionInfo, type ProviderAccount, type ProviderTaskTestResult, type SetupReadiness } from "../api";
 import { controlButton, errorText, field, h, menuButton, select } from "../dom";
-import { bindLocalization, l, localizeBackendText, refreshLocalization, t, type TranslationKey } from "../i18n.ts";
+import { bindLocalization, getInterfaceLanguage, l, localizeBackendText, refreshLocalization, t, type TranslationKey } from "../i18n.ts";
 import type { Context } from "../main";
 import { providerDestination } from "../processing-state";
 import { choiceFingerprint, providerVerification, taskFingerprint } from "../provider-verification";
@@ -40,8 +40,7 @@ export function settingsOverview(ctx: Context): HTMLElement {
 
 export function settingsTaskOverview(ctx: Context, models = false): HTMLElement {
   let disposed = false;
-  let revision = 0;
-  const rows = new Map<SetupTask, { status: HTMLElement; selected: HTMLElement; destination: HTMLElement; action: HTMLButtonElement }>();
+  const rows = new Map<SetupTask, { status: HTMLElement; selected: HTMLElement; destination: HTMLElement; action: HTMLButtonElement; revision: number; signature: string; pending: boolean; queued: boolean }>();
   const root = h("div", { class: "settings-overview" },
     models ? null : h("h2", {}, l("settings.setup.overview_title")), h("p", { class: "help" }, l(models ? "settings.setup.models_help" : "settings.setup.overview_help")),
     ...tasks.map((task) => {
@@ -49,45 +48,59 @@ export function settingsTaskOverview(ctx: Context, models = false): HTMLElement 
       const selected = h("p", { class: "settings-task-selection", "data-task-selection": task });
       const destination = h("p", { class: "settings-task-status help" });
       const action = controlButton({ class: "btn", "data-setup-task": task, onclick: () => ctx.openSetup(task) }, l("settings.setup.finish"));
-      rows.set(task, { status, selected, destination, action });
+      rows.set(task, { status, selected, destination, action, revision: 0, signature: "", pending: false, queued: false });
       return h("section", { class: "settings-task-row" },
         h("div", { class: "settings-task-copy" }, h("h3", {}, l(titleKeys[task])), h("p", { class: "help" }, l(helpKeys[task])), selected, destination, status), action);
     }));
-  const refresh = async () => {
-    const mine = ++revision;
-    await Promise.all(tasks.map(async (task) => {
-      const row = rows.get(task)!;
+  const refreshTask = async (task: SetupTask) => {
+    if (disposed) return;
+    const info = ctx.info;
+    const row = rows.get(task)!;
+    const signature = JSON.stringify([taskFingerprint(info, task), getInterfaceLanguage(), info.interface_language, info.kinds, info.capabilities, info.active_model_downloads]);
+    if (row.pending && signature === row.signature) { row.queued = true; return; }
+    const changed = signature !== row.signature;
+    row.signature = signature;
+    row.pending = true;
+    row.queued = false;
+    const mine = ++row.revision;
       try {
-        const { configuration, speech } = await taskState(ctx.info, task);
-        if (disposed || mine !== revision) return;
+        const choice = info.settings[task];
+        const account = info.settings.providers.find((provider) => provider.id === choice.provider_id);
+        let model = account?.kind === "pennel_cloud" ? t("settings.setup.cloud_model")
+          : account?.kind === "apple_speech" || account?.kind === "apple_intelligence" ? t("settings.setup.system_model") : choice.model;
+        const showSelection = () => { row.selected.textContent = account ? [account.name, model || t("providers.cli_default_model")].join(" · ") : t("providers.not_configured"); };
+        if (changed || !row.selected.textContent) showSelection();
+        row.destination.textContent = providerDestination(account);
+        if (changed) { row.status.textContent = t("common.loading"); row.status.dataset.ready = "false"; }
+        const { configuration, speech } = await taskState(info, task);
+        if (disposed || mine !== row.revision) return;
         const ready = configuration.state === "ready" && (!speech || speech.can_record);
-        const verified = providerVerification.get(task, taskFingerprint(ctx.info, task));
+        const verified = providerVerification.get(task, taskFingerprint(info, task));
         row.status.textContent = ready ? t(verified?.verified ? "providers.test_passed" : "settings.setup.ready") : configuration.state !== "ready" ? configurationLabel(configuration) : speech?.reason ? localizeBackendText(speech.reason) : configurationLabel(configuration);
         row.status.dataset.ready = String(ready);
         row.action.textContent = t(ready ? "settings.setup.change" : "settings.setup.finish");
-        const choice = ctx.info.settings[task];
-        const account = ctx.info.settings.providers.find((provider) => provider.id === choice.provider_id);
-        let model = choice.model;
         if (account?.kind === "local") {
           const local = (await api.localModels(null, false)).find((item) => item.id === model);
           if (local) model = String(localModelDisplayName(local));
-        } else if (account?.kind === "pennel_cloud") model = t("settings.setup.cloud_model");
-        else if (account?.kind === "apple_speech" || account?.kind === "apple_intelligence") model = t("settings.setup.system_model");
-        else if (account) {
-          const kind = ctx.info.kinds.find((item) => item.kind === account.kind);
-          if (kind && !kind.is_cli_agent && kind.availability.status === "available" && (!kind.requires_key || ctx.info.keys[account.id])) {
-            try { model = (await providerModelCatalog(ctx.info, account)).find((item) => item.id === choice.model)?.name || model; } catch { /* A missing catalog must not hide the saved model. */ }
+        } else if (account && !["pennel_cloud", "apple_speech", "apple_intelligence"].includes(account.kind)) {
+          const kind = info.kinds.find((item) => item.kind === account.kind);
+          if (kind && !kind.is_cli_agent && kind.availability.status === "available" && (!kind.requires_key || info.keys[account.id])) {
+            try { model = (await providerModelCatalog(info, account)).find((item) => item.id === choice.model)?.name || model; } catch { /* A missing catalog must not hide the saved model. */ }
           }
         }
-        if (disposed || mine !== revision) return;
-        row.selected.textContent = account ? [account.name, model || t("providers.cli_default_model")].join(" · ") : t("providers.not_configured");
-        row.destination.textContent = providerDestination(account);
+        if (disposed || mine !== row.revision) return;
+        showSelection();
       } catch (error) {
-        if (!disposed && mine === revision) row.status.textContent = errorText(error);
+        if (!disposed && mine === row.revision) row.status.textContent = errorText(error);
+      } finally {
+      if (!disposed && mine === row.revision) {
+        row.pending = false;
+        if (row.queued) { row.queued = false; void refreshTask(task); }
       }
-    }));
+    }
   };
-  ctx.onDispose(() => { disposed = true; revision++; });
+  const refresh = () => Promise.all(tasks.map(refreshTask));
+  ctx.onDispose(() => { disposed = true; for (const row of rows.values()) row.revision++; });
   ctx.onInfoChange(() => { void refresh(); });
   ctx.onFocusChange((focused) => { if (focused) void refresh(); });
   bindLocalization(root, () => { void refresh(); });
@@ -124,7 +137,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   let location: ProcessingLocation = currentAccount ? processingLocation(currentAccount.kind, currentAccount.base_url) : "device";
   const pickerUi: ModelPickerState = { search: "", manual: false };
   const dialog = h("dialog", { class: "task-setup-dialog", "aria-modal": "true", "aria-labelledby": `${id}-title`, "aria-describedby": `${id}-help`, "data-setup-task": task });
-  const body = h("div", { class: "task-setup-body" });
+  const body = h("div", { class: "task-setup-body" }, h("p", { class: "help", role: "status" }, l("common.loading")));
   const message = h("p", { class: "task-setup-message help", role: "status", "aria-live": "polite" });
   const status = h("p", { class: "settings-task-status help", role: "status" });
   const back = controlButton({ class: "btn", "data-setup-cancel": true, onclick: () => { void close(false); } }, l("common.cancel"));
@@ -143,6 +156,11 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   let localModels: LocalModel[] = [];
   let permissions: PermissionInfo[] = [];
   let cloudReady: boolean | null = null;
+  let cloudReadinessEpoch = 0;
+  let cloudReadyFingerprint: string | null = null;
+  let cloudCheck: { fingerprint: string; promise: Promise<boolean> } | null = null;
+  let cloudStatus: HTMLElement | null = null;
+  let cloudAccountAction: HTMLButtonElement | null = null;
   let sampleEpoch = 0;
   let sampleRunning = false;
   let sample: { fingerprint: string; result: ProviderTaskTestResult } | null = null;
@@ -175,7 +193,10 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
       drawActions();
       return pending.then(saved).catch((error: unknown) => { report(error); drawActions(); throw error; });
     },
-    refresh: () => base.refresh().then(() => { cloudReady = null; requestRender(); }),
+    refresh: () => {
+      resetCloudReadiness(); drawActions();
+      return base.refresh().then(() => { requestRender(); });
+    },
     update: (info) => { base.update(info); requestRender(); },
     rerender: () => requestRender(),
     navigate: (tab) => {
@@ -209,6 +230,12 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     sampleEpoch++; sampleRunning = false; sample = null;
   }
 
+  function resetCloudReadiness() {
+    cloudReadinessEpoch++;
+    cloudReady = null;
+    cloudCheck = null;
+  }
+
   function changed(renderView = true) {
     invalidateSample();
     if (renderView) requestRender();
@@ -232,12 +259,13 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     const choice = draft.choice;
     const configuration = taskConfiguration(base.info, task, localModels.filter((model) => model.state.kind === "downloaded").map((model) => model.id), choice);
     const account = base.info.settings.providers.find((item) => item.id === choice.provider_id);
+    const fingerprint = choiceFingerprint(base.info, draft.choice);
+    if (account?.kind === "pennel_cloud" && cloudReadyFingerprint !== fingerprint) { resetCloudReadiness(); cloudReadyFingerprint = fingerprint; }
     const needsCloud = account?.kind === "pennel_cloud" && cloudReady !== true;
     const connectionPending = !!body.querySelector("button[data-setup-save]:not(:disabled)");
     const ready = configuration.state === "ready" && !needsCloud;
-    const fingerprint = choiceFingerprint(base.info, draft.choice);
     if (sample?.fingerprint !== fingerprint) sample = null;
-    statusText = () => needsCloud ? t("settings.setup.cloud_sign_in") : configuration.state !== "ready" ? configurationLabel(configuration)
+    statusText = () => needsCloud ? t(cloudReady === null ? "common.loading" : "settings.setup.cloud_sign_in") : configuration.state !== "ready" ? configurationLabel(configuration)
       : missingAccess() ? t("settings.setup.state.permission") : t("settings.setup.draft_ready");
     status.textContent = statusText();
     done.disabled = closing || accountPage || state.busy || !ready || !!missingAccess() || connectionPending || sampleRunning;
@@ -245,6 +273,29 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     test.textContent = t(sampleRunning ? "providers.testing" : "settings.setup.test");
     testResult.textContent = sampleRunning ? t("providers.processing_sample") : sample ? localizeBackendText(sample.result.message) : "";
     testResult.className = sample && !sample.result.verified ? "error" : "help";
+    if (account?.kind === "pennel_cloud") {
+      if (cloudStatus?.isConnected) cloudStatus.textContent = t(cloudReady === null ? "common.loading" : cloudReady ? "providers.signed_in" : "settings.setup.cloud_sign_in");
+      if (cloudAccountAction?.isConnected) cloudAccountAction.textContent = t(cloudReady === false ? "providers.cloud_sign_in" : "navigation.account");
+    }
+  }
+
+  function checkCloudReadiness(mine: number) {
+    const choice = draft.choice;
+    const account = base.info.settings.providers.find((item) => item.id === choice.provider_id);
+    if (accountPage || account?.kind !== "pennel_cloud" || cloudReady !== null) return;
+    const fingerprint = choiceFingerprint(base.info, choice);
+    const epoch = cloudReadinessEpoch;
+    if (cloudCheck?.fingerprint !== fingerprint) {
+      const check = { fingerprint, promise: api.cloudAccount().then(() => true, () => false) };
+      cloudCheck = check;
+      void check.promise.then(() => { if (cloudCheck === check) cloudCheck = null; });
+    }
+    void cloudCheck.promise.then((ready) => {
+      if (closed || epoch !== cloudReadinessEpoch || !state.current(mine) || fingerprint !== choiceFingerprint(base.info, draft.choice)) return;
+      cloudReady = ready;
+      cloudReadyFingerprint = fingerprint;
+      drawActions();
+    });
   }
 
   async function runSample() {
@@ -265,12 +316,13 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
 
   async function render() {
     const mine = state.next();
+    signature = currentSignature(base.info);
     const nextView = viewScope();
     const ctx = child(nextView);
     try {
       let node: HTMLElement;
       if (accountPage) {
-        node = h("div", {}, h("button", { class: "text-button", onclick: () => { accountPage = false; cloudReady = null; requestRender(); } }, l("settings.setup.back_to_models")), await accountView(ctx, { taskSetup: true }));
+        node = h("div", {}, h("button", { class: "text-button", onclick: () => { accountPage = false; resetCloudReadiness(); requestRender(); } }, l("settings.setup.back_to_models")), await accountView(ctx, { taskSetup: true }));
       } else {
         const info = ctx.info;
         const choice = draft.choice;
@@ -283,10 +335,6 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
         ]);
         if (!state.current(mine)) { disposeView(nextView); return; }
         localModels = nextModels; permissions = nextPermissions;
-        if (account?.kind === "pennel_cloud" && cloudReady === null) {
-          try { await api.cloudAccount(); if (state.current(mine)) cloudReady = true; }
-          catch { if (state.current(mine)) cloudReady = false; }
-        }
         const configuration = taskConfiguration(info, task, localModels.filter((model) => model.state.kind === "downloaded").map((model) => model.id), choice);
         const compatible = info.kinds.filter((item) => task === "llm" ? item.llm : item.stt);
         const sources = h("div", { class: "setup-sources", role: "group", "aria-label": l("settings.setup.where") },
@@ -339,8 +387,9 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
           if (kind.is_cli_agent) node.append(h("p", { class: "help" }, l("settings.setup.cli_destination")));
           node.append(h("p", { class: "setup-destination" }, l("settings.setup.processing_at", () => ({ destination: providerDestination(account) }))));
           if (account.kind === "pennel_cloud") {
-            node.append(h("p", { class: "help" }, l(cloudReady ? "providers.signed_in" : "settings.setup.cloud_sign_in")),
-              controlButton({ onclick: () => { accountPage = true; requestRender(); } }, l(cloudReady ? "navigation.account" : "providers.cloud_sign_in")));
+            cloudStatus = h("p", { class: "help" });
+            cloudAccountAction = controlButton({ onclick: () => { accountPage = true; requestRender(); } }, l("navigation.account"));
+            node.append(cloudStatus, cloudAccountAction);
           } else if (!["local", "apple_speech", "apple_intelligence"].includes(account.kind)) {
             const affected = tasks.filter((item) => info.settings[item].provider_id === account.id).map((item) => t(titleKeys[item])).join(", ");
             const details = h("details", { class: "task-setup-provider", open: providerOpen || ["key", "address"].includes(configuration.state) },
@@ -369,13 +418,13 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
       disposeView(currentView); currentView = nextView;
       const scroll = body.scrollTop;
       body.replaceChildren(node); refreshLocalization(node); body.scrollTop = scroll;
-      signature = currentSignature(base.info);
       deferred = false;
       if (!state.failure) { message.textContent = ""; message.className = "task-setup-message help"; }
       drawActions();
+      checkCloudReadiness(mine);
     } catch (error) {
       disposeView(nextView);
-      if (state.current(mine)) throw error;
+      if (state.current(mine)) { signature = ""; throw error; }
     }
   }
 
@@ -447,7 +496,10 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     },
     focusChanged: (focused) => {
       currentView.focus.forEach((listener) => listener(focused));
-      if (focused) void base.refresh().then(() => { cloudReady = null; requestRender(); }).catch(report);
+      if (focused) {
+        resetCloudReadiness(); drawActions();
+        void base.refresh().then(() => { requestRender(); }).catch(report);
+      }
     },
     visibilityChanged: (visible) => { currentView.visibility.forEach((listener) => listener(visible)); },
     flush, dispose, focus: () => { (dialog.querySelector<HTMLElement>("button,input,select") ?? done).focus(); },

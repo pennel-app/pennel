@@ -1,0 +1,113 @@
+{
+  "date": "2026-11-01",
+  "issue": "https://github.com/pennel-app/pennel/issues/32",
+  "original_pr": "https://github.com/pennel-app/pennel/pull/89",
+  "baseline": "592d2dc81d8f73009678b54782bc8582ec901f9b",
+  "reviewed_setup_blob": "50836265788928bff881f2fe777e128112c243c5",
+  "scope": "Desktop presentation and asynchronous readiness only; no core/native/API/schema/locale/dependency changes",
+  "installed_observation": {
+    "version": "0.1.25",
+    "native_local_chooser_and_same_choice_apply": "passed",
+    "settings_and_provider_hashes": "unchanged",
+    "failure": "Cloud summary rows remained Loading while repeated info notifications invalidated completed checks"
+  },
+  "synthetic_reproduction": {
+    "account_delay_ms": 2000,
+    "duplicate_notification_ms": 750,
+    "observation_ms": 6600,
+    "summary_completed_responses_without_publishing": 14,
+    "chooser_completed_responses_without_mounting": 21,
+    "controls_without_duplicate_notifications": "settled normally"
+  },
+  "fixes": [
+    "Paint saved service/model/destination before asynchronous readiness.",
+    "Coalesce same-input pending refreshes per task; queue one recheck while changed input starts a fresh generation immediately.",
+    "Record chooser requested signature before awaiting facts; mount controls before Cloud account readiness.",
+    "Single-flight pending same-context Cloud checks; update status/actions in place.",
+    "Invalidate pending reuse and publication on explicit freshness epochs, even if input preservation defers rendering.",
+    "Clear only the currently failed render signature so unchanged-info retry can recover."
+  ],
+  "independent_reviews": {
+    "correctness": "APPROVE",
+    "architecture": "CLEAR"
+  },
+  "checks": [
+    {
+      "command": "(cd apps/desktop && npm run build && npm test)",
+      "result": "build and 239 unit tests pass"
+    },
+    {
+      "command": "node --test scripts/fixtures/desktop-platform.test.mjs",
+      "result": "26 pass"
+    },
+    {
+      "command": "make theme-check && make packaging-test",
+      "result": "shared tokens and61 packaging tests pass"
+    },
+    {
+      "command": "node /Users/landerparren/.agents/skills/impeccable/scripts/detect.mjs --json apps/desktop/src/views/setup.ts",
+      "result": "no deterministic findings"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass"
+    }
+  ],
+  "visual": {
+    "method": "Owned Chromium headless page via CDP; no user screen/profile",
+    "cases": [
+      "meeting-flow-interaction",
+      "provider-history-interaction",
+      "settings-overview",
+      "settings-overview-small",
+      "settings-overview-zoom",
+      "settings-task-setup-zoom",
+      "settings-task-setup",
+      "settings-flow-interaction",
+      "settings-models",
+      "settings-models-mixed",
+      "experimental-connections-interaction",
+      "guided-setup-draft-interaction",
+      "guided-setup-late-sample-interaction",
+      "guided-setup-catalog-recovery",
+      "guided-setup-missing-key-interaction",
+      "guided-setup-unavailable-interaction",
+      "guided-setup-speech-small",
+      "guided-setup-text-small",
+      "guided-setup-custom-model",
+      "guided-setup-sample-failure",
+      "guided-setup-permission-recovery",
+      "guided-setup-permission-restricted",
+      "guided-setup-windows-unknown-microphone",
+      "guided-setup-linux-unknown-microphone",
+      "guided-setup-manual-selection-state",
+      "guided-setup-connection-changed-during-apply",
+      "guided-setup-slow-cloud-overview",
+      "guided-setup-slow-cloud-chooser",
+      "guided-setup-cloud-force-refresh",
+      "guided-setup-transient-render-retry",
+      "guided-setup-interrupted-download",
+      "guided-setup-cloud-sign-in",
+      "guided-setup-pending-connection",
+      "guided-setup-failed-apply-cancel",
+      "guided-setup-login-isolation"
+    ],
+    "captures": 140,
+    "locales": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "artifact": "build/visual-parity/guided-model-setup-readiness-epoch-final/manifest.json",
+    "overflow": false,
+    "runtime_errors": false,
+    "real_service_or_private_user_data_used": false
+  },
+  "acceptance_limits": [
+    "Exact-head CI and final installation are recorded on the follow-up PR and #32.",
+    "Physical audio/provider, VoiceOver and human usability acceptance remains separate."
+  ]
+}
