@@ -1,5 +1,6 @@
 //! Pennel Cloud: account and vault commands for the webview, and the background sync runner.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -18,6 +19,21 @@ use crate::state::Shared;
 
 const LOG: Log = Log::new("cloud");
 const SYNC_INTERVAL: Duration = Duration::from_secs(180);
+static ACCOUNT_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn account_epoch(shared: &Shared) -> String {
+    format!(
+        "{}:{}",
+        ACCOUNT_EPOCH.load(Ordering::Acquire),
+        shared.engine.cloud_account_epoch()
+    )
+}
+
+fn identity_mutation(shared: &Shared) -> crate::inference::JobMutation {
+    let mutation = crate::inference::mutation(&shared.engine);
+    ACCOUNT_EPOCH.fetch_add(1, Ordering::AcqRel);
+    mutation
+}
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct CloudError {
@@ -385,8 +401,13 @@ fn platform() -> &'static str {
 }
 
 #[tauri::command]
-pub async fn cloud_login_start(shared: State<'_, Arc<Shared>>) -> Result<LoginStartView> {
+pub async fn cloud_login_start(
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<LoginStartView> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
+    settings_changed(&app);
     blocking(move || {
         shared
             .engine
@@ -408,8 +429,10 @@ pub async fn cloud_login_poll(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<LoginPollView> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
     let poll = blocking(move || shared.engine.cloud_login_poll(device_code).map_err(err)).await?;
     if matches!(poll, CloudLoginPoll::Done { .. }) {
+        settings_changed(&app);
         poke(&app);
         crate::claude_access::poke(&app);
     }
@@ -419,6 +442,8 @@ pub async fn cloud_login_poll(
 #[tauri::command]
 pub async fn cloud_logout(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
+    settings_changed(&app);
     blocking(move || {
         shared.engine.cloud_logout().map_err(err)?;
         Ok(())
@@ -466,12 +491,15 @@ pub async fn cloud_rename_device(
 #[tauri::command]
 pub async fn cloud_revoke_device(id: String, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
     blocking(move || shared.engine.cloud_revoke_device(id).map_err(err)).await
 }
 
 #[tauri::command]
 pub async fn cloud_delete_account(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
+    settings_changed(&app);
     blocking(move || shared.engine.cloud_delete_account().map_err(err)).await?;
     let _ = app.emit("sync-changed", SyncReportView::from(current_report(&app)));
     settings_changed(&app);
@@ -582,6 +610,7 @@ pub async fn cloud_link_start(
 ) -> Result<CloudLinkView> {
     let role = link_role(&role)?;
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
     blocking(move || {
         shared
             .engine
@@ -599,6 +628,7 @@ pub async fn cloud_link_join(
 ) -> Result<CloudLinkView> {
     let role = link_role(&role)?;
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
     blocking(move || {
         shared
             .engine
@@ -614,6 +644,7 @@ pub async fn cloud_link_poll(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<CloudLinkView> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
     let view = blocking(move || shared.engine.cloud_link_poll().map_err(err)).await?;
     link_changed(&app, &view);
     Ok(view)
@@ -631,6 +662,7 @@ pub async fn cloud_link_approve(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<CloudLinkView> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
     let view = blocking(move || shared.engine.cloud_link_approve().map_err(err)).await?;
     link_changed(&app, &view);
     Ok(view)
@@ -639,6 +671,7 @@ pub async fn cloud_link_approve(
 #[tauri::command]
 pub async fn cloud_link_cancel(shared: State<'_, Arc<Shared>>) -> Result<CloudLinkView> {
     let shared = shared.inner().clone();
+    let _mutation = identity_mutation(&shared);
     blocking(move || shared.engine.cloud_link_cancel().map_err(err)).await
 }
 
@@ -770,6 +803,22 @@ mod tests {
             conflicts: 0,
             last_success_ms: None,
         }
+    }
+
+    #[test]
+    fn cloud_identity_epoch_invalidates_account_work_but_keeps_refresh_rotation_stable() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        let initial = account_epoch(&shared);
+        let mutation = identity_mutation(&shared);
+        let changing = account_epoch(&shared);
+        assert_ne!(initial, changing);
+        shared
+            .secrets
+            .set("pennel-cloud-refresh", "synthetic-token")
+            .unwrap();
+        assert_eq!(changing, account_epoch(&shared));
+        drop(mutation);
     }
 
     #[test]

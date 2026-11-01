@@ -26,7 +26,11 @@ struct KeychainTests {
             == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
         let configuredService = try #require(Bundle.main.object(forInfoDictionaryKey: "PennelKeychainService") as? String)
         #expect(Keychain.service == configuredService)
-        #expect(configuredService == Bundle.main.bundleIdentifier)
+        if let profile = AppPaths.qaProfile {
+            #expect(configuredService == "app.pennel.ios.preview.qa.\(profile)")
+        } else {
+            #expect(configuredService == Bundle.main.bundleIdentifier)
+        }
 
         #expect(Keychain.set(key: nil, for: provider))
         #expect(Keychain.apiKeys().byProvider[provider] == nil)

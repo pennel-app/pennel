@@ -15,6 +15,14 @@ final class NativeInferenceRequests {
 
     init(engine: PennelEngine? = nil) { self.engine = engine }
 
+    nonisolated static func changesCloudIdentity(_ method: String) -> Bool {
+        switch method {
+        case "cloud.loginStart", "cloud.loginPoll", "cloud.loginCancel", "cloud.logout", "cloud.deleteAccount",
+             "cloud.linkStart", "cloud.linkJoin", "cloud.linkPoll", "cloud.linkApprove", "cloud.linkCancel", "cloud.revoke": true
+        default: false
+        }
+    }
+
     func begin(id: String, fingerprint: String) throws -> Ticket {
         guard !id.isEmpty, id.utf8.count <= 96,
               id.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95].contains($0) }) else {
@@ -26,6 +34,14 @@ final class NativeInferenceRequests {
         let ticket = Ticket(id: id, generation: UUID(), fingerprint: fingerprint, cancellation: InferenceCancellation())
         active[id] = ticket
         return ticket
+    }
+
+    func availability(fingerprint: String, currentFingerprint: @MainActor () throws -> String,
+                      work: @escaping @Sendable () throws -> String) async throws -> String {
+        guard mutationDepth == 0 else { throw PennelBridgeError("operation_busy", "Wait for provider changes to finish.") }
+        let result = try await Task.detached(priority: .userInitiated) { try work() }.value
+        guard mutationDepth == 0, fingerprint == (try currentFingerprint()) else { throw PennelError.Cancelled }
+        return result
     }
 
     func cancel(id: String) -> Bool {

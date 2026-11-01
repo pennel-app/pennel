@@ -668,5 +668,20 @@
   "backend.cleanup_meaning_rejected_available": "Opschonen kon de bewoording en betekenis niet behouden — oorspronkelijke tekst beschikbaar",
   "backend.cleanup_meaning_rejected_pasted": "Opschonen kon de bewoording en betekenis niet behouden — oorspronkelijke tekst geplakt",
   "backend.cleanup_verification_failed_raw_retained": "De opschoning kon niet worden gecontroleerd. Het oorspronkelijke dictaat is behouden.",
-  "backend.cleanup_processing_failed_raw_retained": "Opschonen is mislukt. Het oorspronkelijke dictaat is behouden."
+  "backend.cleanup_processing_failed_raw_retained": "Opschonen is mislukt. Het oorspronkelijke dictaat is behouden.",
+  "backend.managed_inference_routing": "Pennel Cloud beheert het model en de routering voor deze verwerking.",
+  "backend.managed_inference_response": "Pennel Cloud gaf een niet-ondersteund antwoord of een antwoord op een andere aanvraag.",
+  "backend.managed_inference_capabilities": "Pennel Cloud gaf niet-ondersteunde verwerkingsmogelijkheden terug.",
+  "backend.managed_inference_capability_missing": "Pennel Cloud heeft deze verwerkingsmogelijkheid niet vermeld.",
+  "backend.managed_inference_model_missing": "Pennel Cloud heeft het werkelijk gebruikte model niet vermeld.",
+  "backend.managed_inference_connection": "Gebruik de verbinding met het aangemelde Pennel Cloud-account.",
+  "backend.managed_inference_provider": "Kies een ondersteund provideraccount voor dit verwerkingsprotocol.",
+  "backend.managed_inference_supported": "Pennel Cloud ondersteunt deze verbinding. Controleer ze met het vaste testvoorbeeld.",
+  "backend.managed_inference_not_enabled": "Deze verwerkingsmogelijkheid is niet ingeschakeld voor dit Pennel Cloud-account.",
+  "backend.managed_inference_sign_in": "Meld je aan bij Pennel Cloud om deze verbinding te gebruiken.",
+  "backend.managed_inference_account_changed": "Het Pennel Cloud-account of de verbinding is gewijzigd. Controleer de beschikbaarheid opnieuw.",
+  "backend.managed_inference_availability_unknown": "De beschikbaarheid van deze Pennel Cloud-verwerking kon niet worden bevestigd. Controleer de verbinding en probeer opnieuw.",
+  "backend.managed_inference_configured": "Ingesteld. Controleer deze verbinding met het vaste testvoorbeeld.",
+  "backend.managed_inference_unavailable": "Deze verwerkingsmogelijkheid is nog niet beschikbaar bij de gekozen dienst.",
+  "backend.managed_inference_check_failed": "De beschikbaarheid van deze verwerking kon niet worden gecontroleerd."
 }

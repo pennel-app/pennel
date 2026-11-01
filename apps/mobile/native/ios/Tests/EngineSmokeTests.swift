@@ -56,7 +56,8 @@ struct EngineSmokeTests {
         let dataDir = AppPaths.dataDirectory.standardizedFileURL.path
 
         #expect(dataDir.hasPrefix(URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path))
-        #expect(dataDir.hasSuffix("/Library/Application Support/Pennel"))
+        let suffix = AppPaths.qaProfile.map { "/Library/Application Support/QA/\($0)/Pennel" } ?? "/Library/Application Support/Pennel"
+        #expect(dataDir.hasSuffix(suffix))
         #expect(FileManager.default.fileExists(atPath: dataDir))
         #expect(!model.engine.settings().providers.isEmpty)
 
@@ -71,7 +72,8 @@ struct EngineSmokeTests {
 
     @Test func meetings_dir_defaults_to_documents_meetings() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let expected = documents.appendingPathComponent("Meetings").standardizedFileURL.path
+        let root = AppPaths.qaProfile.map { documents.appendingPathComponent("QA").appendingPathComponent($0) } ?? documents
+        let expected = root.appendingPathComponent("Meetings").standardizedFileURL.path
 
         #expect(AppModel.shared.engine.settings().meetingsDir == expected)
         #expect(AppModel.shared.settings.meetingsDir == expected)

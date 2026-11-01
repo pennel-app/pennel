@@ -152,6 +152,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   let pointerInFlight = false;
   let pointerGeneration = 0;
   let signature = "";
+  let verificationFingerprint = choiceFingerprint(base.info, draft.choice);
   let statusText = () => "";
   let localModels: LocalModel[] = [];
   let permissions: PermissionInfo[] = [];
@@ -227,6 +228,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   }
 
   function invalidateSample() {
+    verificationFingerprint = choiceFingerprint(base.info, draft.choice);
     sampleEpoch++; sampleRunning = false; sample = null;
   }
 
@@ -492,7 +494,10 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   return {
     notify: (info) => {
       currentView.listeners.forEach((listener) => listener(info));
-      if (currentSignature(info) !== signature) { invalidateSample(); drawActions(); requestRender(); }
+      if (currentSignature(info) !== signature) {
+        if (choiceFingerprint(info, draft.choice) !== verificationFingerprint) invalidateSample();
+        drawActions(); requestRender();
+      }
     },
     focusChanged: (focused) => {
       currentView.focus.forEach((listener) => listener(focused));

@@ -81,6 +81,13 @@
     settings.providers.push({ id: "qa-verifier", kind: "custom", name: "Synthetic verifier", base_url: "https://verifier.example.invalid/v1" });
     settings.decision = { provider_id: "qa-verifier", protocol: "perplexity", model: "synthetic-unqualified", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 3 };
   }
+  if (options.inference_cloud) {
+    settings.providers.push({ id: "qa-cloud", kind: "pennel_cloud", name: "Pennel Cloud", base_url: "https://api.pennel.app/v1" });
+    if (options.inference_cloud !== "signed_out") {
+      settings.decision = { provider_id: "qa-cloud", protocol: "pennel_cloud", model: "pennel-auto", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 30 };
+      settings.reranking = clone(settings.decision);
+    }
+  }
   if (persistedSettings && typeof persistedSettings === "object") settings = { ...settings, ...persistedSettings };
   for (const slot of ["dictation_stt", "meeting_stt", "llm"]) if (options.model_choices?.[slot]) settings[slot] = clone(options.model_choices[slot]);
   const interfaceLanguage = () => settings.ui_language === "nl" || settings.ui_language === "en" ? settings.ui_language : systemInterfaceLanguage;
@@ -155,7 +162,7 @@
       reason_code: settings.cleanup_verification_enabled && settings.mode === "clean" ? config ? "unqualified" : "unconfigured" : "disabled",
       provider_id: config?.provider_id ?? null, model: config?.model ?? null, endpoint: account ? `${account.base_url}/decisions` : null };
   };
-  const info = () => ({ interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+  const info = () => ({ interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
     unsaved_history_count: history.filter(entry => entry.status === "unsaved").length,
     kinds: clone(kinds), platform: options.platform || "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
     log_path: "/QA/Pennel Preview/pennel.log", data_dir: "/QA/Pennel Preview", capabilities: clone(capabilities), recording_app_ids: options.recording_app_ids || [], diarizer_model_id: diarizer.id, preview: true, migration_warning: null });
@@ -167,7 +174,8 @@
     { id: "qa-dictation-failed", created_at_ms: now - 27 * 60 * 60_000, app_bundle_id: "com.apple.Notes", raw: "", text: "", status: "failed", error: "Geen verbinding met de provider.", has_audio: true },
   ];
   // `cloud` is unset (signed out), "synced" or "conflict"; all accounts, devices and codes are synthetic.
-  let signedIn = Boolean(options.cloud);
+  let signedIn = Boolean(options.cloud) || Boolean(options.inference_cloud && options.inference_cloud !== "signed_out");
+  let cloudAccountEpoch = 0;
   let syncSetupPhase = options.sync_setup || (signedIn ? "active" : "signed_out");
   if (options.sync_setup) settings.cloud_sync = options.sync_setup === "active";
   const notSignedIn = () => ({ code: "not_signed_in", message: "Je bent niet ingelogd bij Pennel Cloud." });
@@ -367,8 +375,13 @@
         ["mercury", "Mercury Decide", "https://api.inceptionlabs.ai/v1"],
         ["local_decider", "Local Decider", "http://127.0.0.1:8080/v1"],
         ["tei", "TEI reranking", "http://127.0.0.1:8080"],
-      ].map(([protocol, name, default_base_url]) => ({ protocol, name, default_base_url, decision: protocol !== "tei", reranking: protocol === "tei", extraction: protocol === "mercury", requires_key: !["tei", "local_decider"].includes(protocol) }));
-      case "inference_availability": return { capability: args.capability, configured: false, available: false, reason: "Configure this optional connection first.", provider_id: null, model: null, protocol: null, endpoint: null };
+        ["pennel_cloud", "Pennel Cloud", "https://api.pennel.app"],
+      ].map(([protocol, name, default_base_url]) => ({ protocol, name, default_base_url, decision: protocol !== "tei", reranking: ["tei", "pennel_cloud"].includes(protocol), extraction: protocol === "mercury", requires_key: !["tei", "local_decider", "pennel_cloud"].includes(protocol), managed: protocol === "pennel_cloud", allowed_provider_kinds: protocol === "pennel_cloud" ? ["pennel_cloud"] : protocol.startsWith("open_router") ? ["open_router", "custom"] : ["custom"] }));
+      case "inference_availability": {
+        const config = settings[args.capability];
+        const enabled = config?.protocol === "pennel_cloud" && signedIn && options.inference_cloud !== "unavailable";
+        return { capability: args.capability, configured: !!config, available: !!enabled, reason: !config ? "Configure this optional connection first." : !signedIn ? "Sign in to Pennel Cloud first." : "Pennel Cloud models are temporarily unavailable.", provider_id: config?.provider_id ?? null, model: config?.model ?? null, protocol: config?.protocol ?? null, endpoint: config?.protocol === "pennel_cloud" ? `https://api.pennel.app/v1/${args.capability === "decision" ? "decisions" : "rerank"}` : null };
+      }
       case "cleanup_verification_availability": return cleanupVerification();
       case "provider_models": {
         setupTrace.catalogRequests.push(args.id);
@@ -499,13 +512,13 @@
       case "cloud_folder_warning": return null;
       case "meeting_sync_states": return signedIn && !options.empty ? [{ id: meetingId, state: options.cloud === "conflict" ? "conflict" : "synced" }] : [];
       case "meeting_conflict_files": return options.cloud === "conflict" ? ["Notities (conflict MacBook van Noor).md"] : [];
-      case "cloud_login_start": return { user_code: "QAFX-2026", verification_uri: "https://example.com/qa-login", device_code: "qa-device-code", interval_secs: options.login_auto_complete ? 1 : 5 };
+      case "cloud_login_start": cloudAccountEpoch++; return { user_code: "QAFX-2026", verification_uri: "https://example.com/qa-login", device_code: "qa-device-code", interval_secs: options.login_auto_complete ? 1 : 5 };
       case "cloud_login_poll":
         if (!options.login_auto_complete) return { kind: "pending" };
-        signedIn = true; syncSetupPhase = "paused";
+        signedIn = true; cloudAccountEpoch++; syncSetupPhase = "paused";
         return { kind: "done", email: cloudAccount.email };
       case "cloud_sync_now": return syncReport();
-      case "cloud_logout": signedIn = false; settings.cloud_sync = false; syncSetupPhase = "signed_out"; deviceLink = emptyLink(); emit("sync-changed", syncReport()); emit("settings-changed", null); return null;
+      case "cloud_logout": signedIn = false; cloudAccountEpoch++; settings.cloud_sync = false; syncSetupPhase = "signed_out"; deviceLink = emptyLink(); emit("sync-changed", syncReport()); emit("settings-changed", null); return null;
       case "cloud_sync_disable": settings.cloud_sync = false; syncSetupPhase = "paused"; emit("sync-changed", syncReport()); return null;
       case "cloud_rename_device": case "cloud_revoke_device": case "cloud_sync_confirm_deletes":
       case "delete_conflict_copy": case "open_url": case "copy_secret_text": return null;

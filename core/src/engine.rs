@@ -1399,6 +1399,10 @@ impl PennelEngine {
         self.secrets.read().unwrap().clone()
     }
 
+    pub(crate) fn current_cloud_session(&self) -> Option<Arc<Session>> {
+        self.cloud_session.lock().unwrap().clone()
+    }
+
     pub(crate) fn cloud_session(&self) -> Result<Arc<Session>, PennelError> {
         let mut slot = self.cloud_session.lock().unwrap();
         if let Some(session) = slot.as_ref() {

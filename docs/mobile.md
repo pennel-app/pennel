@@ -495,3 +495,27 @@ The diagnostic keyboard also invoked the actual public SwiftUI intent button. It
 Simulator UI checks established rendering and actual typing/deletion in React Native practice and UIKit Settings, plus isolated local emoji query results. Three repeated globe round trips were not qualified: Apple's first-use QuickPath overlay and keyboard visibility changes interrupted that sequence. No root-layout defect was established, so no speculative sizing patch was made. Simulator feedback preferences and the original launch environment were restored.
 
 A single physical profiling attempt could not attach Instruments to the verified keyboard process and created no trace. No CPU, resident-memory, energy, battery or physical touch/haptic-onset measurement was obtained. Binary/archive sizes do not establish memory use. The 90 authored synthetic benchmark tasks have **zero measured human trials**; the 20% faster-completion and 30% fewer-harmful-correction ambitions are targets, not achieved results. Human haptic comparison, real speech/writing quality, broader host/device/accessibility/gesture coverage, cold/expired/repeated recording, review/merge and App Review remain required acceptance work. Current-head hosted CI is tracked on PR #82; the machine receipt records its observed code-head snapshot. Android remains gated on iPhone acceptance.
+### Managed Cloud experimental connections — 1 November 2026
+
+The existing experimental decision/ranking panel can use the signed-in Pennel Cloud
+account for both capabilities. Protocol metadata determines eligibility; managed Cloud
+needs no user API key or model ID. The iPhone guided task-setup redesign remains separate.
+Android continues to show its existing unsupported reason.
+
+Cloud availability runs off the main actor and rejects responses after account or
+configuration changes, including suspended mutations. The authoritative core account
+epoch changes with identity, remains stable during routine token refresh, and participates
+in native and JavaScript verification fingerprints. Defaults and ordinary task assignments
+remain intact; this does not activate experimental inference in product features.
+
+Matched Rust/Swift artifacts were regenerated for simulator and iPhoneOS. Typecheck,
+109 UI tests, 17 plugin checks, 7 widget checks, 116 Swift helper tests, clean/repeated
+generation and 6 pod ownership checks passed. Release simulator and unsigned iPhoneOS
+builds passed. An isolated QA host passed 159 native tests (123 runtime and 36 keyboard),
+with zero failures/skips and a valid result bundle. The delayed availability fixture proves
+main-actor progress and rejection of obsolete or mutation-suspended results.
+
+Local receipts: `build/mobile/cloud-inference/summary.json` and
+`build/mobile/cloud-inference/native-tests-isolated-final.xcresult`. Final source review and
+cross-platform checks are recorded on PR #91. Physical-device, live-provider, regional,
+retention and broader accessibility acceptance remain open.
