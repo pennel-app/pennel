@@ -410,3 +410,248 @@ export async function checkGuidedSetupConnectionChangedDuringApply() {
     return { originalEndpointTested: true, concurrentConnectionEditRetained: true, newDestinationNotVerified: true, noAutomaticRetest: true, otherAssignmentsPreserved: true, externalServicesUsed: false, userDataUsed: false };
   } finally { client.invoke = original; }
 }
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function promptly(check, message) {
+  const deadline = performance.now() + 700;
+  while (performance.now() < deadline) {
+    if (check()) return;
+    await sleep(20);
+  }
+  throw new Error(message);
+}
+const taskRow = task => document.querySelector(`button[data-setup-task="${task}"]`)?.closest("section");
+const taskReady = task => taskRow(task)?.querySelector('[role="status"]')?.dataset.ready === "true";
+
+async function slowCloudSetup() {
+  const fixture = ownedFixture();
+  const client = window.__PENNEL_PLATFORM__;
+  const original = client.invoke.bind(client);
+  const next = await original("add_provider", { kind: "pennel_cloud" });
+  const cloud = next.settings.providers.find(provider => provider.kind === "pennel_cloud");
+  const settings = structuredClone(next.settings);
+  settings.meeting_stt = { provider_id: cloud.id, model: "pennel-auto" };
+  settings.llm = { provider_id: cloud.id, model: "pennel-auto" };
+  await original("save_settings", { settings });
+  fixture.emit("workspace-navigate", { section: "settings", tab: "providers", meeting_id: null, jump_ms: null });
+  await until(() => document.querySelector(".providers"), "The synthetic Cloud setup did not leave the old model overview.");
+  const counters = { started: 0, completed: 0, events: 0 };
+  const held = [];
+  let mode = "delay";
+  let localAvailable = true;
+  let heartbeat;
+  client.invoke = async (command, args = {}) => {
+    if (command === "local_models" && !localAvailable) {
+      const models = await original(command, args);
+      return models.map(model => model.id === settings.dictation_stt.model ? { ...model, state: { kind: "not_downloaded" } } : model);
+    }
+    if (command !== "cloud_account") return original(command, args);
+    counters.started++;
+    const selectedMode = mode;
+    if (selectedMode === "hold") return new Promise((resolve, reject) => held.push({ resolve, reject }));
+    if (selectedMode === "delay") await sleep(2000);
+    counters.completed++;
+    return original(command, args);
+  };
+  const releaseOldFailure = () => {
+    for (const request of held.splice(0)) {
+      counters.completed++;
+      request.reject({ code: "not_signed_in", message: "Synthetic previous Cloud session is unavailable." });
+    }
+  };
+  const stop = () => { clearInterval(heartbeat); heartbeat = undefined; };
+  const models = async () => {
+    fixture.emit("workspace-navigate", { section: "settings", tab: "models", meeting_id: null, jump_ms: null });
+    await until(() => document.querySelector(".models-settings"), "The model overview did not mount for delayed readiness.");
+  };
+  const leaveModels = async () => {
+    fixture.emit("workspace-navigate", { section: "settings", tab: "providers", meeting_id: null, jump_ms: null });
+    await until(() => document.querySelector(".providers"), "The previous model readiness view was not disposed.");
+  };
+  return {
+    fixture, original, cloud, settings, counters, held, models, leaveModels,
+    phase: value => { mode = value; },
+    localAssetsAvailable: value => { localAvailable = value; },
+    start: () => { stop(); heartbeat = setInterval(() => { counters.events++; fixture.emit("settings-changed", null); }, 750); },
+    stop, releaseOldFailure,
+    restore: () => { stop(); releaseOldFailure(); client.invoke = original; },
+  };
+}
+
+async function knownCloudRows() {
+  const { t } = await import("/src/i18n.ts");
+  for (const task of ["meeting_stt", "llm"]) {
+    await promptly(() => taskRow(task)?.querySelector('[data-task-selection]')?.textContent.includes("Pennel Cloud")
+      && taskRow(task)?.querySelector('[data-task-selection]')?.textContent.includes(t("settings.setup.cloud_model"))
+      && taskRow(task)?.textContent.includes("api.pennel.app"), "A delayed account check hid the saved provider, model or processing destination.");
+  }
+}
+
+export async function checkGuidedSetupSlowCloudOverview() {
+  const scenario = await slowCloudSetup();
+  const { t } = await import("/src/i18n.ts");
+  try {
+    await scenario.models();
+    await knownCloudRows();
+    assert(scenario.counters.completed === 0, "The early metadata assertion ran after the delayed account response.");
+    await until(() => taskReady("meeting_stt") && taskReady("llm"), "Delay-only Cloud readiness did not settle.");
+    await scenario.leaveModels();
+    const completedBefore = scenario.counters.completed;
+    scenario.start();
+    await scenario.models();
+    await knownCloudRows();
+    await until(() => scenario.counters.completed > completedBefore && taskReady("meeting_stt") && taskReady("llm"), "Repeated identical info notifications starved delayed Cloud readiness.");
+    assert(scenario.counters.events >= 2 && taskReady("dictation_stt"), "The heartbeat did not overlap delayed Cloud work or blocked independent local dictation.");
+    scenario.stop();
+
+    await scenario.leaveModels();
+    scenario.phase("hold");
+    scenario.localAssetsAvailable(false);
+    await scenario.models();
+    await knownCloudRows();
+    await until(() => scenario.held.length > 0, "The old Cloud status request did not reach its controlled responder.");
+    await until(() => taskRow("dictation_stt")?.querySelector('[role="status"]')?.textContent === t("settings.setup.state.download"), "The local row did not report its missing selected model independently of Cloud readiness.");
+    const unchangedInfo = JSON.stringify(scenario.fixture.info());
+    scenario.localAssetsAvailable(true);
+    scenario.fixture.emit("settings-changed", null);
+    await promptly(() => taskReady("dictation_stt"), "An unresolved Cloud row blocked local readiness after its model assets became available.");
+    assert(scenario.held.length > 0 && JSON.stringify(scenario.fixture.info()) === unchangedInfo, "Local readiness recovery required a Cloud completion or a changed app-info snapshot.");
+    const changed = structuredClone(scenario.fixture.info().settings);
+    changed.llm = { provider_id: "groq", model: "gpt-4.1-mini" };
+    scenario.phase("instant");
+    await scenario.original("save_settings", { settings: changed });
+    await promptly(() => taskRow("llm")?.querySelector('[data-task-selection]')?.textContent.includes("Groq")
+      && taskRow("llm")?.querySelector('[data-task-selection]')?.textContent.toLowerCase().includes("gpt-4.1")
+      && taskRow("llm")?.textContent.includes("api.groq.com") && taskReady("llm"), "A changed model remained blocked behind the previous Cloud request.");
+    scenario.releaseOldFailure();
+    await sleep(100); await settle();
+    assert(taskReady("llm") && taskRow("llm").querySelector('[data-task-selection]').textContent.includes("Groq")
+      && taskRow("llm").querySelector('[data-task-selection]').textContent.toLowerCase().includes("gpt-4.1")
+      && taskRow("llm").textContent.includes("api.groq.com"), "An old Cloud authentication result replaced the changed model's readiness or destination.");
+    assert(same(assignments(scenario.fixture.info()), assignments({ settings: changed })) && !scenario.fixture.setupTrace.samples.length && !scenario.fixture.setupTrace.appliedTasks.length, "Reading readiness changed a task or ran inference.");
+    return { delayOnlyControl: true, metadataVisibleBeforeReadiness: true, duplicateEventsCoalesced: true, localTaskIndependent: true, localAssetsRecoverWhileCloudPending: true, changedModelInvalidatesLateAccountResult: true, counters: scenario.counters, externalServicesUsed: false, userDataUsed: false };
+  } finally { scenario.restore(); }
+}
+
+export async function checkGuidedSetupSlowCloudChooser() {
+  const scenario = await slowCloudSetup();
+  const { t } = await import("/src/i18n.ts");
+  try {
+    scenario.start();
+    await scenario.models();
+    await openTask("llm");
+    await promptly(() => dialog()?.querySelector('[data-setup-source="cloud"][aria-pressed="true"]')
+      && dialog()?.querySelector(".setup-destination")?.textContent.includes("api.pennel.app")
+      && dialog()?.querySelector(".setup-model-picker")?.textContent.includes(t("settings.setup.cloud_model")), "A delayed Cloud account check left the chooser body or saved processing metadata blank.");
+    await until(() => !dialog()?.querySelector("[data-setup-apply]")?.disabled, "Identical info notifications repeatedly invalidated the initial Cloud chooser.");
+    assert(scenario.counters.events >= 2 && scenario.counters.completed > 0, "The chooser became ready without overlapping the delayed account request and heartbeat.");
+    scenario.stop();
+    click(dialog().querySelector("[data-setup-cancel]"));
+    await until(() => !dialog(), "The ready Cloud chooser could not return to Models.");
+
+    scenario.phase("hold");
+    await openTask("llm");
+    await promptly(() => dialog()?.querySelector('[data-setup-source="cloud"]'), "A pending Cloud check hid the chooser's controls.");
+    await until(() => scenario.held.length > 0, "The cancelled Cloud request did not reach its controlled responder.");
+    click(dialog().querySelector("[data-setup-cancel]"));
+    await promptly(() => !dialog(), "Cancel waited for a read-only account request before leaving setup.");
+    await openTask("dictation_stt");
+    await promptly(() => dialog()?.querySelector("[data-setup-local-model]") && !dialog().querySelector("[data-setup-apply]").disabled, "A new local task waited for the cancelled Cloud check.");
+    scenario.phase("instant"); scenario.releaseOldFailure();
+    await sleep(100); await settle();
+    assert(dialog()?.dataset.setupTask === "dictation_stt" && !dialog().querySelector("[data-setup-apply]").disabled
+      && dialog().querySelector('[data-setup-source="device"][aria-pressed="true"]') && !dialog().querySelector(".task-setup-message.error")?.textContent.trim(), "A cancelled Cloud readiness response affected the next local task.");
+    click(dialog().querySelector("[data-setup-cancel]"));
+    await until(() => !dialog(), "The local task could not be cancelled after the old Cloud response.");
+    assert(same(assignments(scenario.fixture.info()), assignments({ settings: scenario.settings })) && !scenario.fixture.setupTrace.samples.length && !scenario.fixture.setupTrace.appliedTasks.length, "Read-only Cloud readiness or cancellation changed task assignments or ran inference.");
+    return { metadataVisibleBeforeReadiness: true, initialChooserSettlesDuringHeartbeats: true, cancelWhileAccountPending: true, lateAccountFailureCannotAffectNextTask: true, assignmentsPreserved: true, counters: scenario.counters, externalServicesUsed: false, userDataUsed: false };
+  } finally { scenario.restore(); }
+}
+
+function directSetupContext(fixture, report, refresh = async () => {}) {
+  return {
+    get info() { return fixture.info(); }, visible: true,
+    save: async () => {}, mutate: async work => { await work(); }, refresh,
+    update() {}, rerender() {}, navigate() {}, openSetup() {}, report,
+    onDispose() {}, beforeLeave() {}, onFlush() {}, onInfoChange() {}, onFocusChange() {}, onVisibilityChange() {},
+  };
+}
+
+export async function checkGuidedSetupCloudForceRefresh() {
+  const fixture = ownedFixture();
+  const client = window.__PENNEL_PLATFORM__;
+  const original = client.invoke.bind(client);
+  const { openTaskSetupDialog } = await import("/src/views/setup.ts");
+  const { t } = await import("/src/i18n.ts");
+  const next = await original("add_provider", { kind: "pennel_cloud" });
+  const cloud = next.settings.providers.find(provider => provider.kind === "pennel_cloud");
+  next.settings.llm = { provider_id: cloud.id, model: "pennel-auto" };
+  await original("save_settings", { settings: next.settings });
+  const before = structuredClone(assignments(fixture.info()));
+  const previousAccount = await original("cloud_account");
+  const results = [];
+  for (const holdRefresh of [false, true]) {
+    let calls = 0;
+    let releaseOld;
+    let finishRefresh;
+    let controller;
+    const errors = [];
+    client.invoke = async (command, args = {}) => {
+      if (command === "cloud_account" && ++calls === 1) return new Promise(resolve => { releaseOld = () => resolve(previousAccount); });
+      return original(command, args);
+    };
+    try {
+      const base = directSetupContext(fixture, error => errors.push(String(error)), holdRefresh ? () => new Promise(resolve => { finishRefresh = resolve; }) : async () => {});
+      controller = openTaskSetupDialog(base, "llm", async () => {}, () => {});
+      await until(() => releaseOld && dialog()?.querySelector('[data-setup-source="cloud"]'), "The original Cloud readiness request did not mount its pending chooser.");
+      assert(dialog().querySelector("[data-setup-apply]").disabled, "A pending initial Cloud request enabled Apply.");
+      await original("cloud_logout");
+      controller.focusChanged(true);
+      if (holdRefresh) {
+        await until(() => finishRefresh, "Focus did not begin its explicit info refresh.");
+        releaseOld(); await settle();
+        assert(dialog().querySelector("[data-setup-apply]").disabled && dialog().querySelector("[data-setup-test]").disabled, "An old signed-in response enabled actions before the explicit refresh finished.");
+        finishRefresh();
+      }
+      await until(() => calls >= 2 && dialog()?.querySelector(".settings-task-status")?.textContent === t("settings.setup.cloud_sign_in"), "Focus refresh reused the old in-flight account promise instead of checking current authentication.");
+      releaseOld(); await settle();
+      assert(dialog().querySelector("[data-setup-apply]").disabled && dialog().querySelector("[data-setup-test]").disabled
+        && dialog().querySelector(".settings-task-status").textContent === t("settings.setup.cloud_sign_in"), "A pre-logout success made the currently signed-out Cloud setup ready.");
+      let signedOut = false;
+      try { await original("cloud_account"); } catch { signedOut = true; }
+      assert(signedOut && !errors.length && same(assignments(fixture.info()), before), "The readiness repro did not retain a signed-out account and unchanged model assignments.");
+      results.push({ holdRefresh, freshAccountRequest: true, oldSuccessIgnored: true });
+    } finally { finishRefresh?.(); releaseOld?.(); controller?.dispose(); client.invoke = original; }
+  }
+  return { results, forceRefreshInvalidatesPendingReuse: true, invalidatedBeforeInfoRefreshCompletes: true, assignmentsPreserved: true, externalServicesUsed: false, userDataUsed: false };
+}
+
+export async function checkGuidedSetupTransientRenderRetry() {
+  const fixture = ownedFixture();
+  const client = window.__PENNEL_PLATFORM__;
+  const original = client.invoke.bind(client);
+  const { openTaskSetupDialog } = await import("/src/views/setup.ts");
+  const before = JSON.stringify(fixture.info());
+  const results = [];
+  for (const failedCommand of ["get_permissions", "local_models"]) {
+    const failure = `Synthetic transient ${failedCommand} failure`;
+    let attempts = 0;
+    let controller;
+    const errors = [];
+    client.invoke = async (command, args = {}) => {
+      if (command === failedCommand && ++attempts === 1) throw new Error(failure);
+      return original(command, args);
+    };
+    try {
+      controller = openTaskSetupDialog(directSetupContext(fixture, error => errors.push(String(error))), "dictation_stt", async () => {}, () => {});
+      await until(() => dialog()?.querySelector(".task-setup-message.error")?.textContent.includes(failure), "The controlled initial render failure was not visible in setup.");
+      assert(!dialog().querySelector("[data-setup-local-model]") && JSON.stringify(fixture.info()) === before, "The failed initial render unexpectedly mounted model controls or changed AppInfo.");
+      controller.notify(fixture.info());
+      await until(() => attempts >= 2 && dialog()?.querySelector("[data-setup-local-model]") && !dialog().querySelector("[data-setup-apply]").disabled, "An identical info notification could not retry the current failed chooser render.");
+      assert(!dialog().querySelector(".task-setup-message.error")?.textContent.trim() && !errors.length && JSON.stringify(fixture.info()) === before, "Successful unchanged-info retry retained a stale failure or changed user settings.");
+      results.push({ failedCommand, retriedUnchangedInfo: true, controlsMounted: true });
+    } finally { controller?.dispose(); client.invoke = original; }
+  }
+  assert(!fixture.setupTrace.samples.length && !fixture.setupTrace.appliedTasks.length, "Retrying a read-only render triggered inference or a task assignment.");
+  return { results, currentRenderCanRetry: true, assignmentsPreserved: true, externalServicesUsed: false, userDataUsed: false };
+}
