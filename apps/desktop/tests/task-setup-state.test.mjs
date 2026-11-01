@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TaskModelDraft, TaskSetupScope, processingLocation, taskConfiguration } from "../src/task-setup-state.ts";
+import { TaskModelDraft, TaskSetupScope, missingTaskAccess, processingLocation, taskConfiguration } from "../src/task-setup-state.ts";
 
 function info() {
   return {
@@ -73,10 +73,26 @@ test("an unfinished server address cannot become a ready draft", () => {
   assert.equal(taskConfiguration(current, "llm", []).state, "ready");
 });
 
-test("processing location groups device integrations separately from Cloud and own services", () => {
-  for (const kind of ["local", "apple_speech", "apple_intelligence", "ollama", "lm_studio", "codex", "claude_code"]) assert.equal(processingLocation(kind), "device");
+test("processing location distinguishes local services from remote endpoints and subscriptions", () => {
+  for (const kind of ["local", "apple_speech", "apple_intelligence", "ollama", "lm_studio"]) assert.equal(processingLocation(kind), "device");
+  assert.equal(processingLocation("ollama", "http://127.0.0.1:11434/v1"), "device");
+  assert.equal(processingLocation("lm_studio", "http://[::1]:1234/v1"), "device");
+  assert.equal(processingLocation("ollama", "https://models.example/v1"), "own");
   assert.equal(processingLocation("pennel_cloud"), "cloud");
-  for (const kind of ["open_ai", "open_router", "groq", "custom"]) assert.equal(processingLocation(kind), "own");
+  for (const kind of ["open_ai", "open_router", "groq", "custom", "codex", "claude_code", "gemini_cli"]) assert.equal(processingLocation(kind), "own");
+});
+
+test("unknown microphone access on Windows and Linux does not block applying a speech model", () => {
+  const permissions = [{ kind: "microphone", status: "unknown" }, { kind: "speech", status: "not_required" }];
+  for (const task of ["dictation_stt", "meeting_stt"]) assert.equal(missingTaskAccess(task, "local", permissions), undefined);
+});
+
+test("denied microphone and unknown Apple speech access still require review", () => {
+  const microphone = { kind: "microphone", status: "denied" };
+  assert.equal(missingTaskAccess("dictation_stt", "local", [microphone]), microphone);
+  const speech = { kind: "speech", status: "unknown" };
+  assert.equal(missingTaskAccess("meeting_stt", "apple_speech", [{ kind: "microphone", status: "unknown" }, speech]), speech);
+  assert.equal(missingTaskAccess("llm", "apple_intelligence", [microphone]), undefined);
 });
 
 test("setup scope ignores stale async views and keeps saves pending until settled", async () => {

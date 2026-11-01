@@ -65,7 +65,11 @@ export function modelPicker(ctx: Context, choice: ModelChoice, models: LocalMode
   };
   drawSelected();
   const manual = textField({ value: choice.model, "data-setup-manual": true, "aria-label": l("settings.setup.model_id"), placeholder: kind.is_cli_agent ? l("providers.cli_default_model") : l("providers.model_name"), spellcheck: "false", autocomplete: "off" });
-  manual.addEventListener("input", () => { choice.model = manual.value; drawSelected(); change(manual.value); });
+  manual.addEventListener("input", () => {
+    choice.model = manual.value; drawSelected();
+    for (const option of root.querySelectorAll<HTMLButtonElement>("[data-model-id]")) option.setAttribute("aria-pressed", String(option.dataset.modelId === manual.value.trim()));
+    change(manual.value);
+  });
   const advanced = h("details", { class: "setup-model-advanced", open: ui.manual || kind.is_cli_agent },
     h("summary", {}, l("settings.setup.manual")), field(l("settings.setup.model_id"), manual),
     h("p", { class: "help" }, l("settings.setup.manual_help")));

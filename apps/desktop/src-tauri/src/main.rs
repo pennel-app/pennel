@@ -1116,6 +1116,7 @@ fn main() {
             capture::capture_snapshot,
             commands::app_info,
             commands::save_settings,
+            commands::apply_task_model_choice,
             commands::add_provider,
             commands::remove_provider,
             commands::set_key,

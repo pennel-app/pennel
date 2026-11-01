@@ -1,4 +1,4 @@
-import type { AppInfo, ModelChoice, ProviderKind } from "./api";
+import type { AppInfo, ModelChoice, PermissionInfo, ProviderKind } from "./api";
 import type { ProviderSlot } from "./provider-verification";
 
 export type SetupTask = ProviderSlot;
@@ -6,10 +6,25 @@ export type TaskConfigurationState = "ready" | "provider" | "unsupported" | "per
 export interface TaskConfiguration { state: TaskConfigurationState; reason: string | null }
 
 export type ProcessingLocation = "device" | "cloud" | "own";
-const deviceProviders = new Set<ProviderKind>(["local", "apple_speech", "apple_intelligence", "ollama", "lm_studio", "claude_code", "codex", "open_code", "copilot", "cursor_agent", "gemini_cli"]);
+const deviceProviders = new Set<ProviderKind>(["local", "apple_speech", "apple_intelligence"]);
 
-export function processingLocation(kind: ProviderKind): ProcessingLocation {
+export function processingLocation(kind: ProviderKind, baseUrl?: string): ProcessingLocation {
+  if (kind === "ollama" || kind === "lm_studio") {
+    if (baseUrl === undefined) return "device";
+    try {
+      const host = new URL(baseUrl).hostname.toLowerCase();
+      if (host === "localhost" || host === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(host)) return "device";
+    } catch { /* An unfinished server address must not imply local processing. */ }
+    return "own";
+  }
   return kind === "pennel_cloud" ? "cloud" : deviceProviders.has(kind) ? "device" : "own";
+}
+
+export function missingTaskAccess(task: SetupTask, kind: ProviderKind | undefined, permissions: readonly PermissionInfo[]): PermissionInfo | undefined {
+  if (task === "llm") return;
+  return permissions.find((permission) => permission.kind === "microphone"
+    ? !["granted", "not_required", "unknown"].includes(permission.status)
+    : kind === "apple_speech" && permission.kind === "speech" && !["granted", "not_required"].includes(permission.status));
 }
 
 export class TaskModelDraft {

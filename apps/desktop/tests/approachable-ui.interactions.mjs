@@ -76,7 +76,7 @@ function observeCommands() {
   client.invoke = async (command, args = {}) => {
     operations.push({ command, args: structuredClone(args) });
     if (command === "set_key" && failKey) { failKey = false; throw new Error("Synthetic credential save failed."); }
-    if (command === "save_settings" && failSettings) { failSettings = false; throw new Error("Synthetic settings save failed."); }
+    if (["save_settings", "apply_task_model_choice"].includes(command) && failSettings) { failSettings = false; throw new Error("Synthetic settings save failed."); }
     return original(command, args);
   };
   return {

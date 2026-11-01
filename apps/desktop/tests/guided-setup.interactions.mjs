@@ -69,6 +69,7 @@ export async function checkGuidedSetup() {
   await until(() => !dialog() && fixture.info().settings.llm.model === "gpt-4.1-mini", "Use this setup did not apply the selected draft.");
   const after = assignments(fixture.info());
   assert(same(after.dictation_stt, before.dictation_stt) && same(after.meeting_stt, before.meeting_stt), "Applying text processing changed a speech task.");
+  assert(fixture.setupTrace.appliedTasks.length === 1 && fixture.setupTrace.appliedTasks[0].slot === "llm", "Use this setup did not use the narrow single-task IPC.");
   assert(!fixture.calls.some(command => ["test_provider_task", "start_meeting", "toggle_dictation", "summarize_meeting", "ask_meetings"].includes(command)), "Model setup processed content or capture outside its explicit synthetic sample.");
   assert(!fixture.unknown.length, "Guided setup used a command outside the owned fixture.");
   return { draftSample: true, browsePreservesAssignments: true, cancelPreservesAssignments: true, oneTaskApplied: true, focusRestored: true, externalServicesUsed: false, userDataUsed: false };
@@ -270,7 +271,7 @@ export async function checkGuidedSetupFailedApplyCancel() {
   const before = structuredClone(assignments(fixture.info()));
   let attempts = 0;
   client.invoke = async (command, args = {}) => {
-    if (command === "save_settings" && ++attempts === 1) throw new Error("Synthetic task assignment failed once.");
+    if (["save_settings", "apply_task_model_choice"].includes(command) && ++attempts === 1) throw new Error("Synthetic task assignment failed once.");
     return original(command, args);
   };
   try {
@@ -318,4 +319,94 @@ export async function checkGuidedSetupLoginIsolation() {
   await until(() => !dialog(), "The completed synthetic sign-in could not return to Models.");
   assert(same(assignments(fixture.info()), before), "Cancelling after sign-in applied the Cloud draft.");
   return { syntheticLoginCompleted: true, noGlobalAdoptionPrompt: true, noOtherTaskAssignments: true, cancelledDraftDiscarded: true, externalServicesUsed: false, userDataUsed: false };
+}
+
+export async function checkGuidedSetupUnknownMicrophone() {
+  const fixture = ownedFixture();
+  const client = window.__PENNEL_PLATFORM__;
+  const original = client.invoke.bind(client);
+  assert(["windows", "linux"].includes(fixture.info().platform), "Use the Windows or Linux native-permission fixture.");
+  const before = structuredClone(assignments(fixture.info()));
+  const applied = [];
+  client.invoke = async (command, args = {}) => {
+    if (command === "apply_task_model_choice") applied.push(structuredClone(args));
+    return original(command, args);
+  };
+  try {
+    for (const slot of ["dictation_stt", "meeting_stt"]) {
+      await openTask(slot);
+      await until(() => dialog()?.querySelector("[data-setup-local-model]"), "The downloaded local speech setup did not finish loading.");
+      const permissions = await original("get_permissions");
+      assert(permissions.find(permission => permission.kind === "microphone")?.status === "unknown", "The platform fixture falsely reported a queryable microphone permission.");
+      assert(!dialog().querySelector("[data-setup-apply]").disabled && !dialog().querySelector("[data-setup-access]"), "Unknown microphone status blocked a usable Windows/Linux speech setup.");
+      click(dialog().querySelector("[data-setup-apply]"));
+      await until(() => !dialog(), "Applying a Windows/Linux speech setup did not return to Models.");
+    }
+    assert(applied.length === 2 && applied[0].slot === "dictation_stt" && applied[1].slot === "meeting_stt", "Both speech tasks did not apply through the single-task IPC.");
+    assert(applied.every(request => same(Object.keys(request).sort(), ["choice", "slot"]) && same(request.choice, before[request.slot])), "Speech Apply transmitted unrelated settings instead of the selected choice.");
+    assert(!fixture.calls.includes("request_permission") && same(assignments(fixture.info()), before), "Unknown native permission caused an ineffective permission request or changed another model.");
+    return { platform: fixture.info().platform, unknownMicrophoneAllowed: true, bothSpeechTasksApplied: true, noPermissionRequest: true, narrowIpc: true, externalServicesUsed: false, userDataUsed: false };
+  } finally { client.invoke = original; }
+}
+
+export async function checkGuidedSetupManualSelectionState() {
+  const fixture = ownedFixture();
+  const before = structuredClone(assignments(fixture.info()));
+  await openTask("llm");
+  await until(() => dialog()?.querySelector(`[data-model-id="${CSS.escape(before.llm.model)}"][aria-pressed="true"]`), "The saved catalog model was not visibly selected on entry.");
+  const manual = dialog().querySelector("input[data-setup-manual]");
+  reveal(manual);
+  enter(manual, "synthetic/manual-model-not-in-catalog");
+  await settle();
+  assert(!dialog().querySelector('[data-model-id][aria-pressed="true"]'), "Manual model entry left an obsolete catalog option highlighted or pressed.");
+  assert(dialog().querySelector("[data-setup-selected-model]").textContent === manual.value && manual.value === "synthetic/manual-model-not-in-catalog", "The manual ID and displayed selection disagree.");
+  enter(manual, "gpt-4.1-mini");
+  await settle();
+  assert(dialog().querySelectorAll('[data-model-id][aria-pressed="true"]').length === 1 && dialog().querySelector('[data-model-id="gpt-4.1-mini"]').getAttribute("aria-pressed") === "true", "Entering a catalog model manually did not synchronize its pressed state.");
+  assert(dialog().querySelector("[data-setup-selected-model]").textContent.includes(manual.value), "The selected model summary does not show the manually entered catalog model.");
+  assert(same(assignments(fixture.info()), before), "Editing a manual model changed saved task assignments.");
+  click(dialog().querySelector("[data-setup-cancel]"));
+  await until(() => !dialog(), "Manual model setup could not be cancelled.");
+  return { obsoleteSelectionCleared: true, catalogSelectionSynchronized: true, summaryAgrees: true, assignmentsPreserved: true, externalServicesUsed: false, userDataUsed: false };
+}
+
+export async function checkGuidedSetupConnectionChangedDuringApply() {
+  const fixture = ownedFixture();
+  const client = window.__PENNEL_PLATFORM__;
+  const original = client.invoke.bind(client);
+  const { t } = await import("/src/i18n.ts");
+  const { providerVerification, taskFingerprint } = await import("/src/provider-verification.ts");
+  const before = structuredClone(assignments(fixture.info()));
+  const providerId = before.llm.provider_id;
+  const initialEndpoint = fixture.info().settings.providers.find(provider => provider.id === providerId).base_url;
+  const changedEndpoint = "https://changed-connection.example.invalid/v1";
+  let sampledEndpoint = null;
+  let editedDuringApply = false;
+  client.invoke = async (command, args = {}) => {
+    if (command === "test_provider_task_choice") sampledEndpoint = fixture.info().settings.providers.find(provider => provider.id === args.choice.provider_id)?.base_url;
+    if (command === "apply_task_model_choice") {
+      const settings = structuredClone(fixture.info().settings);
+      settings.providers.find(provider => provider.id === providerId).base_url = changedEndpoint;
+      await original("save_settings", { settings });
+      editedDuringApply = true;
+    }
+    return original(command, args);
+  };
+  try {
+    await openTask("llm");
+    await chooseModel("gpt-4.1-mini");
+    click(dialog().querySelector("[data-setup-test]"));
+    await until(() => fixture.setupTrace.samples.length === 1 && !dialog().querySelector("[data-setup-test]").disabled, "The original endpoint's explicit sample did not complete.");
+    assert(sampledEndpoint === initialEndpoint && fixture.info().settings.providers.find(provider => provider.id === providerId).base_url === initialEndpoint, "The test did not use the original connection before the controlled endpoint edit.");
+    click(dialog().querySelector("[data-setup-apply]"));
+    await until(() => !dialog() && fixture.info().settings.llm.model === "gpt-4.1-mini", "A task Apply could not complete alongside the independent shared-connection edit.");
+    const after = fixture.info();
+    assert(editedDuringApply && after.settings.providers.find(provider => provider.id === providerId).base_url === changedEndpoint, "Apply rolled back the independent connection edit instead of retaining its new destination.");
+    const row = () => document.querySelector('.models-settings button[data-setup-task="llm"]')?.closest("section");
+    await until(() => row()?.textContent.includes("changed-connection.example.invalid"), "The applied task summary did not show the newly saved destination.");
+    assert(providerVerification.get("llm", taskFingerprint(after, "llm")) === null && !row().textContent.includes(t("providers.test_passed")), "A sample from the original endpoint falsely verified the connection saved during Apply.");
+    assert(fixture.setupTrace.samples.length === 1 && fixture.setupTrace.appliedTasks.length === 1, "Changing the shared destination triggered an automatic replacement test or duplicate Apply.");
+    assert(same(after.settings.dictation_stt, before.dictation_stt) && same(after.settings.meeting_stt, before.meeting_stt), "Applying the text task changed another task assignment.");
+    return { originalEndpointTested: true, concurrentConnectionEditRetained: true, newDestinationNotVerified: true, noAutomaticRetest: true, otherAssignmentsPreserved: true, externalServicesUsed: false, userDataUsed: false };
+  } finally { client.invoke = original; }
 }

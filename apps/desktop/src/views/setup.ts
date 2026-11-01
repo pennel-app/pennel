@@ -4,7 +4,7 @@ import { bindLocalization, l, localizeBackendText, refreshLocalization, t, type 
 import type { Context } from "../main";
 import { providerDestination } from "../processing-state";
 import { choiceFingerprint, providerVerification, taskFingerprint } from "../provider-verification";
-import { TaskModelDraft, TaskSetupScope, processingLocation, taskConfiguration, type ProcessingLocation, type SetupTask, type TaskConfiguration } from "../task-setup-state";
+import { TaskModelDraft, TaskSetupScope, missingTaskAccess, processingLocation, taskConfiguration, type ProcessingLocation, type SetupTask, type TaskConfiguration } from "../task-setup-state";
 import { accountView } from "./account";
 import { modelPicker, providerModelCatalog, type ModelPickerState } from "./model-picker";
 import { providerDetails } from "./providers";
@@ -121,7 +121,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   const state = new TaskSetupScope();
   const draft = new TaskModelDraft(base.info.settings[task]);
   const currentAccount = base.info.settings.providers.find((account) => account.id === draft.choice.provider_id);
-  let location: ProcessingLocation = currentAccount ? processingLocation(currentAccount.kind) : "device";
+  let location: ProcessingLocation = currentAccount ? processingLocation(currentAccount.kind, currentAccount.base_url) : "device";
   const pickerUi: ModelPickerState = { search: "", manual: false };
   const dialog = h("dialog", { class: "task-setup-dialog", "aria-modal": "true", "aria-labelledby": `${id}-title`, "aria-describedby": `${id}-help`, "data-setup-task": task });
   const body = h("div", { class: "task-setup-body" });
@@ -223,10 +223,8 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   }
 
   function missingAccess(): PermissionInfo | undefined {
-    if (task === "llm") return;
     const account = base.info.settings.providers.find((item) => item.id === draft.choice.provider_id);
-    return permissions.find((permission) => (permission.kind === "microphone" || (account?.kind === "apple_speech" && permission.kind === "speech"))
-      && !["granted", "not_required"].includes(permission.status));
+    return missingTaskAccess(task, account?.kind, permissions);
   }
 
   function drawActions() {
@@ -277,6 +275,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
         const info = ctx.info;
         const choice = draft.choice;
         const account = info.settings.providers.find((provider) => provider.id === choice.provider_id);
+        if (account) location = processingLocation(account.kind, account.base_url);
         const kind = info.kinds.find((item) => item.kind === account?.kind);
         const [nextModels, nextPermissions] = await Promise.all([
           account?.kind === "local" ? api.localModels(null, false) : Promise.resolve([] as LocalModel[]),
@@ -292,25 +291,26 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
         const compatible = info.kinds.filter((item) => task === "llm" ? item.llm : item.stt);
         const sources = h("div", { class: "setup-sources", role: "group", "aria-label": l("settings.setup.where") },
           ...(["device", "cloud", "own"] as const).map((source) => {
-            const options = compatible.filter((item) => processingLocation(item.kind) === source);
+            const options = compatible.filter((item) => processingLocation(item.kind, item.default_base_url) === source
+              || info.settings.providers.some((account) => account.kind === item.kind && processingLocation(account.kind, account.base_url) === source));
             const supported = options.some((item) => item.availability.status !== "unsupported");
             const reason = !supported ? options.find((item) => item.availability.reason)?.availability.reason : null;
             return h("div", { class: "setup-source" },
               controlButton({ "data-setup-source": source, "aria-pressed": String(location === source), disabled: !supported, onclick: () => {
                 location = source;
-                const candidates = info.settings.providers.filter((item) => options.some((option) => option.kind === item.kind));
+                const candidates = info.settings.providers.filter((item) => processingLocation(item.kind, item.base_url) === source && options.some((option) => option.kind === item.kind));
                 chooseAccount(candidates.find((item) => compatible.find((option) => option.kind === item.kind)?.availability.status === "available") ?? candidates[0]);
               } }, l(`settings.setup.source.${source}`)),
               !supported ? h("p", { class: "help" }, reason ? localizeBackendText(reason) : l("settings.setup.source.unavailable")) : null);
           }));
-        const accounts = info.settings.providers.filter((item) => processingLocation(item.kind) === location && compatible.some((option) => option.kind === item.kind));
+        const accounts = info.settings.providers.filter((item) => processingLocation(item.kind, item.base_url) === location && compatible.some((option) => option.kind === item.kind));
         const provider = accounts.length ? select(accounts.map((item) => [item.id, item.name]), choice.provider_id, (id) => chooseAccount(accounts.find((item) => item.id === id)), "menu") : null;
         if (provider) {
           provider.setAttribute("data-setup-provider", "true");
           provider.setAttribute("aria-label", t("settings.setup.process_with"));
           for (const option of provider.options) option.disabled = compatible.find((item) => item.kind === accounts.find((candidate) => candidate.id === option.value)?.kind)?.availability.status === "unsupported";
         }
-        const addable = compatible.filter((item) => processingLocation(item.kind) === location
+        const addable = compatible.filter((item) => processingLocation(item.kind, item.default_base_url) === location
           && !(["local", "apple_speech", "apple_intelligence", "pennel_cloud"].includes(item.kind) && info.settings.providers.some((provider) => provider.kind === item.kind)));
         const add = addable.length ? menuButton(l("settings.setup.add_connection"), addable.map((kind) => ({
           label: kind.availability.status === "unsupported" && kind.availability.reason ? `${localizeBackendText(kind.label)} — ${localizeBackendText(kind.availability.reason)}` : localizeBackendText(kind.label),
@@ -336,6 +336,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
             : h("div", {}, h("p", { class: "help" }, l("settings.setup.no_connection")), add ? h("div", { class: "row setup-add-connection" }, add) : null));
         if (account && kind) {
           if (kind.availability.reason) node.append(h("p", { class: "help" }, localizeBackendText(kind.availability.reason)));
+          if (kind.is_cli_agent) node.append(h("p", { class: "help" }, l("settings.setup.cli_destination")));
           node.append(h("p", { class: "setup-destination" }, l("settings.setup.processing_at", () => ({ destination: providerDestination(account) }))));
           if (account.kind === "pennel_cloud") {
             node.append(h("p", { class: "help" }, l(cloudReady ? "providers.signed_in" : "settings.setup.cloud_sign_in")),
@@ -402,11 +403,10 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
           if (choiceFingerprint(next, candidate) !== expected) throw new Error(t("settings.setup.changed_review"));
           const configuration = taskConfiguration(next, task, localModels.filter((model) => model.state.kind === "downloaded").map((model) => model.id), candidate);
           if (configuration.state !== "ready") throw new Error(configurationLabel(configuration));
-          const settings = structuredClone(next.settings);
-          settings[task] = candidate;
-          return api.saveSettings(settings);
+          return api.applyTaskModelChoice(task, candidate);
         }), "settings");
-        if (tested?.result.verified && tested.fingerprint === expected) providerVerification.set(task, taskFingerprint(base.info, task), tested.result);
+        const applied = taskFingerprint(base.info, task);
+        if (tested?.result.verified && tested.fingerprint === expected && applied === tested.fingerprint) providerVerification.set(task, applied, tested.result);
       }
       dispose();
       onClose();

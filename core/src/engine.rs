@@ -1359,6 +1359,42 @@ fn open_index(path: &std::path::Path) -> Option<MeetingIndex> {
 }
 
 impl PennelEngine {
+    pub fn apply_task_model_choice(
+        &self,
+        task: ProviderTask,
+        mut choice: ModelChoice,
+    ) -> Result<(), PennelError> {
+        let _gate = self.meeting_gate.lock().unwrap();
+        let mut settings = self.settings();
+        let (account, _) = settings.resolve(&choice).ok_or(PennelError::NotFound)?;
+        if !supports(account.kind, task) {
+            return Err(PennelError::InvalidResponse {
+                message: "This provider does not support the selected task.".into(),
+            });
+        }
+        choice.model = choice.model.trim().to_owned();
+        if choice.model.is_empty() && !account.kind.is_cli_agent() {
+            return Err(PennelError::InvalidResponse {
+                message: "Choose a model to test first.".into(),
+            });
+        }
+        if account.kind == ProviderKind::Local && !self.models.downloaded().contains(&choice.model)
+        {
+            return Err(PennelError::ModelNotDownloaded);
+        }
+        let selected = match task {
+            ProviderTask::DictationStt => &mut settings.dictation_stt,
+            ProviderTask::MeetingStt => &mut settings.meeting_stt,
+            ProviderTask::Llm => &mut settings.llm,
+        };
+        if selected == &choice {
+            return Ok(());
+        }
+        *selected = choice;
+        // This operation owns one assignment; unrelated incomplete choices are not repaired here.
+        self.persist_settings_locked(settings)
+    }
+
     pub(crate) fn secret_store(&self) -> Option<Arc<dyn SecretStore>> {
         self.secrets.read().unwrap().clone()
     }
@@ -1641,7 +1677,11 @@ impl PennelEngine {
         }
     }
 
-    pub(crate) fn update_settings_locked(&self, mut settings: Settings) -> Result<(), PennelError> {
+    pub(crate) fn update_settings_locked(&self, settings: Settings) -> Result<(), PennelError> {
+        self.persist_settings_locked(settings.normalized_with(&self.models.downloaded()))
+    }
+
+    fn persist_settings_locked(&self, mut settings: Settings) -> Result<(), PennelError> {
         if self.preview {
             enforce_preview_library(
                 self.settings_path.parent().expect("data directory"),
@@ -1678,7 +1718,6 @@ impl PennelEngine {
         } else {
             None
         };
-        let settings = settings.normalized_with(&self.models.downloaded());
         let current = self.settings();
         if current.decision != settings.decision
             || current.reranking != settings.reranking
@@ -2486,6 +2525,173 @@ mod tests {
     use super::*;
     use crate::history::HistoryStatus;
     use mockito::Matcher;
+
+    fn incomplete_model_setup() -> (tempfile::TempDir, Arc<PennelEngine>, ModelChoice) {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
+        let mut settings = engine.settings();
+        settings.dictation_stt = ModelChoice {
+            provider_id: "local".into(),
+            model: "whisper-large-v3-turbo".into(),
+        };
+        settings.meeting_stt = ModelChoice {
+            provider_id: "local".into(),
+            model: "whisper-large-v3".into(),
+        };
+        settings.dictionary = vec!["synthetic private vocabulary".into()];
+        engine.update_settings(settings).unwrap();
+        let selected = ModelChoice {
+            provider_id: "local".into(),
+            model: "whisper-small-q5_1".into(),
+        };
+        let model_dir = dir.path().join("models");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        std::fs::write(
+            model_dir.join("whisper-small-q5_1.bin"),
+            b"synthetic model; never inferred",
+        )
+        .unwrap();
+        (dir, engine, selected)
+    }
+
+    #[test]
+    fn downloaded_draft_model_does_not_reassign_tasks_on_save_or_restart() {
+        let (dir, engine, _) = incomplete_model_setup();
+        let mut expected = engine.settings();
+        expected.language = Some("nl".into());
+        engine.update_settings(expected.clone()).unwrap();
+        assert_eq!(engine.settings(), expected);
+        assert_eq!(
+            Settings::load_strict(&dir.path().join("settings.json")).unwrap(),
+            expected
+        );
+        drop(engine);
+        let reopened =
+            PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
+        assert_eq!(reopened.settings(), expected);
+    }
+
+    #[test]
+    fn applying_one_model_choice_preserves_other_incomplete_tasks_and_settings() {
+        let (_dir, engine, selected) = incomplete_model_setup();
+        let mut expected = engine.settings();
+        let text = ModelChoice {
+            provider_id: "groq".into(),
+            model: "synthetic-text-model".into(),
+        };
+        expected.llm = text.clone();
+        engine
+            .apply_task_model_choice(ProviderTask::Llm, text)
+            .unwrap();
+        assert_eq!(engine.settings(), expected);
+        expected.dictation_stt = selected.clone();
+        engine
+            .apply_task_model_choice(ProviderTask::DictationStt, selected)
+            .unwrap();
+        assert_eq!(engine.settings(), expected);
+    }
+
+    #[test]
+    fn applying_a_model_rejects_invalid_choices_without_mutating_settings() {
+        let (_dir, engine, selected) = incomplete_model_setup();
+        let before = engine.settings();
+        for (task, choice) in [
+            (
+                ProviderTask::Llm,
+                ModelChoice {
+                    provider_id: "missing".into(),
+                    model: "text".into(),
+                },
+            ),
+            (ProviderTask::Llm, selected),
+            (
+                ProviderTask::Llm,
+                ModelChoice {
+                    provider_id: "groq".into(),
+                    model: "  ".into(),
+                },
+            ),
+            (ProviderTask::DictationStt, before.dictation_stt.clone()),
+            (
+                ProviderTask::MeetingStt,
+                ModelChoice {
+                    provider_id: "local".into(),
+                    model: "unknown-local".into(),
+                },
+            ),
+        ] {
+            assert!(engine.apply_task_model_choice(task, choice).is_err());
+            assert_eq!(engine.settings(), before);
+        }
+    }
+
+    #[test]
+    fn failed_model_choice_persistence_does_not_change_active_settings() {
+        let (dir, engine, selected) = incomplete_model_setup();
+        let before = engine.settings();
+        let path = dir.path().join("settings.json");
+        let backup = dir.path().join("settings.before.json");
+        std::fs::rename(&path, &backup).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(
+            engine
+                .apply_task_model_choice(ProviderTask::MeetingStt, selected)
+                .is_err()
+        );
+        assert_eq!(engine.settings(), before);
+        assert_eq!(Settings::load_strict(&backup).unwrap(), before);
+    }
+
+    #[test]
+    fn concurrent_model_choices_apply_against_latest_settings() {
+        let (_dir, engine, selected) = incomplete_model_setup();
+        let mut expected = engine.settings();
+        let text = ModelChoice {
+            provider_id: "groq".into(),
+            model: "synthetic-text-model".into(),
+        };
+        expected.dictation_stt = selected.clone();
+        expected.llm = text.clone();
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let workers: Vec<_> = [
+            (ProviderTask::DictationStt, selected),
+            (ProviderTask::Llm, text),
+        ]
+        .into_iter()
+        .map(|(task, choice)| {
+            let engine = engine.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                engine.apply_task_model_choice(task, choice).unwrap();
+            })
+        })
+        .collect();
+        barrier.wait();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(engine.settings(), expected);
+    }
+
+    #[test]
+    fn cli_model_choice_can_leave_model_selection_to_the_cli() {
+        let (_dir, engine, _) = incomplete_model_setup();
+        let mut settings = engine.settings();
+        let account = crate::provider::new_account(ProviderKind::Codex, settings.providers.clone());
+        settings.providers.push(account.clone());
+        engine.update_settings(settings).unwrap();
+        let mut expected = engine.settings();
+        let choice = ModelChoice {
+            provider_id: account.id,
+            model: String::new(),
+        };
+        expected.llm = choice.clone();
+        engine
+            .apply_task_model_choice(ProviderTask::Llm, choice)
+            .unwrap();
+        assert_eq!(engine.settings(), expected);
+    }
 
     fn speech() -> Vec<f32> {
         (0..16000)

@@ -614,6 +614,8 @@ export const api = {
   setDesktopCommandState: (state: DesktopCommandState) => invoke<void>("set_desktop_command_state", { state }),
   info: () => invoke<AppInfo>("app_info"),
   saveSettings: (settings: Settings) => invoke<AppInfo>("save_settings", { settings }),
+  applyTaskModelChoice: (slot: "dictation_stt" | "meeting_stt" | "llm", choice: ModelChoice) =>
+    invoke<AppInfo>("apply_task_model_choice", { slot, choice }),
   addProvider: (kind: ProviderKind) => invoke<AppInfo>("add_provider", { kind }),
   removeProvider: (id: string) => invoke<AppInfo>("remove_provider", { id }),
   setKey: (account: string, key: string) => invoke<AppInfo>("set_key", { account, key }),

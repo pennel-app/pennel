@@ -266,7 +266,7 @@ impl ModelStore {
         models
     }
 
-    /// Recommended models first, so a fallback after deleting the active model stays multilingual.
+    /// Recommended models first, so recovery after removing a provider stays multilingual.
     pub fn downloaded(&self) -> Vec<String> {
         let mut ids: Vec<&ModelEntry> = self
             .catalog

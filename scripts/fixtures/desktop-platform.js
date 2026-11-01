@@ -120,7 +120,7 @@
   const listeners = new Map();
   const calls = [];
   const unknown = [];
-  const setupTrace = { samples: [], savedChoices: [], catalogRequests: [] };
+  const setupTrace = { samples: [], savedChoices: [], appliedTasks: [], catalogRequests: [] };
   const catalogAttempts = new Map();
   const emit = (name, payload) => {
     for (const handler of listeners.get(name) || []) handler({ payload: clone(payload) });
@@ -157,7 +157,7 @@
   };
   const info = () => ({ interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
     unsaved_history_count: history.filter(entry => entry.status === "unsaved").length,
-    kinds: clone(kinds), platform: "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
+    kinds: clone(kinds), platform: options.platform || "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
     log_path: "/QA/Pennel Preview/pennel.log", data_dir: "/QA/Pennel Preview", capabilities: clone(capabilities), recording_app_ids: options.recording_app_ids || [], diarizer_model_id: diarizer.id, preview: true, migration_warning: null });
   const history = [
     ...(options.history_unsaved ? [{ id: "qa-dictation-unsaved", created_at_ms: now - 60_000, app_bundle_id: "com.apple.mail", raw: sentence, text: sentence, status: "unsaved", error: "De dicteergeschiedenis kon niet worden bewaard.", has_audio: false }] : []),
@@ -237,8 +237,28 @@
         emit("settings-changed", null);
         return info();
       }
+      case "apply_task_model_choice": {
+        if (!["dictation_stt", "meeting_stt", "llm"].includes(args.slot)) throw new Error("Unknown model task.");
+        const choice = args.choice;
+        if (!choice || typeof choice.provider_id !== "string" || typeof choice.model !== "string") throw new Error("Choose a valid provider and model.");
+        const account = settings.providers.find(provider => provider.id === choice.provider_id);
+        const definition = kinds.find(kind => kind.kind === account?.kind);
+        if (!account || !definition) throw new Error("The selected provider is unavailable.");
+        if (!(args.slot === "llm" ? definition.llm : definition.stt)) throw new Error("This provider does not support the selected task.");
+        const candidate = { provider_id: choice.provider_id, model: choice.model.trim() };
+        if (!definition.is_cli_agent && !candidate.model) throw new Error("Choose a model for this task.");
+        if (account.kind === "local" && !models.some(model => model.id === candidate.model && model.state.kind === "downloaded")) throw new Error("Download the selected speech model first.");
+        if (options.settings_save_error) throw new Error(options.settings_save_error);
+        settings[args.slot] = candidate;
+        setupTrace.appliedTasks.push({ slot: args.slot, choice: clone(candidate) });
+        setupTrace.savedChoices.push(Object.fromEntries(["dictation_stt", "meeting_stt", "llm"].map(slot => [slot, clone(settings[slot])])));
+        if (profileKey) { try { globalThis.localStorage?.setItem(profileKey, JSON.stringify(settings)); } catch {} }
+        emit("settings-changed", null);
+        return info();
+      }
       case "get_permissions": return clone(permissions);
       case "request_permission": {
+        if (["windows", "linux"].includes(options.platform) && args.kind === "microphone" && permissions.find(permission => permission.kind === args.kind)?.status === "unknown") return clone(permissions);
         permissions = permissions.map(permission => permission.kind === args.kind ? { ...permission, status: "granted" } : permission);
         if (args.kind === "accessibility") for (const capability of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[capability] = available();
         return clone(permissions);

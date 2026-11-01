@@ -500,7 +500,6 @@ pub fn download_model(id: String, app: AppHandle, shared: State<'_, Arc<Shared>>
             LOG.error(format!("download {id}: {e}"));
         } else {
             LOG.info(format!("download {id} complete"));
-            let _ = shared.engine.update_settings(shared.settings());
         }
         let _ = app.emit(
             "download-done",
@@ -592,6 +591,33 @@ pub fn copy_history(id: String, shared: State<'_, Arc<Shared>>) -> Result<()> {
         return Err("This dictation has no text to copy yet.".into());
     }
     crate::platform_clipboard::copy(&entry.text, None)
+}
+
+#[tauri::command]
+pub async fn apply_task_model_choice(
+    slot: String,
+    choice: ModelChoice,
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<AppInfo> {
+    let task = model_task(&slot)?;
+    let shared = shared.inner().clone();
+    off_main("apply_task_model_choice", move || {
+        let mutation = crate::inference::mutation(&shared.engine);
+        // Resolve fallible credential metadata before committing the assignment.
+        let mut next = info(&shared)?;
+        shared
+            .engine
+            .apply_task_model_choice(task, choice)
+            .map_err(err)?;
+        next.settings = shared.settings();
+        let _ = app.emit("settings-changed", ());
+        drop(mutation);
+        refresh_cleanup_verification(&app);
+        next.cleanup_verification = shared.engine.cleanup_verification_availability();
+        Ok(next)
+    })
+    .await
 }
 
 #[tauri::command]
