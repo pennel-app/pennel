@@ -54,6 +54,7 @@ enum BridgeJSON {
         case .mercury: "mercury"
         case .localDecider: "local_decider"
         case .tei: "tei"
+        case .pennelCloud: "pennel_cloud"
         }
     }
     static func inferenceCapability(_ value: String) throws -> InferenceCapability {
@@ -65,7 +66,8 @@ enum BridgeJSON {
     }
     static func inferenceProtocol(_ value: InferenceProtocolInfo) -> [String: Any] {
         ["protocol": inferenceProtocol(value.protocol), "name": value.name, "default_base_url": value.defaultBaseUrl,
-         "decision": value.decision, "reranking": value.reranking, "extraction": value.extraction, "requires_key": value.requiresKey]
+         "decision": value.decision, "reranking": value.reranking, "extraction": value.extraction, "requires_key": value.requiresKey,
+         "allowed_provider_kinds": value.allowedProviderKinds.map(kind), "managed": value.managed]
     }
     static func inferenceIdentity(_ value: InferenceIdentity) -> [String: Any] {
         ["protocol": inferenceProtocol(value.protocol), "endpoint": value.endpoint,

@@ -238,7 +238,11 @@ public final class PennelNativeRuntime {
         case "inference.protocols": return try BridgeJSON.encode(inferenceProtocols().map(BridgeJSON.inferenceProtocol))
         case "inference.availability":
             let capability = try BridgeJSON.inferenceCapability(input.required("capability"))
-            return try BridgeJSON.encode(BridgeJSON.inferenceAvailability(engine.inferenceAvailability(capability: capability)))
+            return try await inferenceRequests.availability(fingerprint: inferenceFingerprint(capability), currentFingerprint: {
+                try self.inferenceFingerprint(capability)
+            }, work: {
+                try BridgeJSON.encode(BridgeJSON.inferenceAvailability(engine.inferenceAvailability(capability: capability)))
+            })
         case "inference.decide", "inference.rerank":
             let capability: InferenceCapability = method == "inference.decide" ? .decision : .reranking
             let id = try input.required("request_id")
@@ -483,7 +487,8 @@ public final class PennelNativeRuntime {
         let selected = settings[field] as? [String: Any]
         let id = selected?["provider_id"] as? String ?? ""
         let account = (settings["providers"] as? [[String: Any]])?.first { $0["id"] as? String == id }
-        return try BridgeJSON.encode(["configuration": selected ?? [:], "provider": account ?? [:], "key_revision": inferenceKeyRevisions[id] ?? 0])
+        return try BridgeJSON.encode(["configuration": selected ?? [:], "provider": account ?? [:], "key_revision": inferenceKeyRevisions[id] ?? 0,
+                                      "cloud_account_epoch": account?["kind"] as? String == "pennel_cloud" ? accountEpoch() : ""])
     }
 
     private func performInference(id: String, capability: InferenceCapability, work: @escaping @Sendable (PennelEngine, InferenceCancellation) throws -> String) async throws -> String {
@@ -577,6 +582,13 @@ public final class PennelNativeRuntime {
 
 extension PennelNativeRuntime {
     private func cloud(_ method: String, _ input: BridgePayload) async throws -> String {
+        if NativeInferenceRequests.changesCloudIdentity(method) {
+            return try await inferenceRequests.changingConfiguration { try await self.cloudOperation(method, input) }
+        }
+        return try await cloudOperation(method, input)
+    }
+
+    private func cloudOperation(_ method: String, _ input: BridgePayload) async throws -> String {
         let engine = model.engine
         let identity = loginGeneration.current
         switch method {
@@ -1207,7 +1219,7 @@ extension PennelNativeRuntime {
         })
     }
 
-    private func accountEpoch() -> String { "\(loginGeneration.current):\(model.engine.cloudSignedIn() ? 1 : 0)" }
+    private func accountEpoch() -> String { "\(loginGeneration.current):\(model.engine.cloudAccountEpoch()):\(model.engine.cloudSignedIn() ? 1 : 0)" }
 
     private func recoveryDisplay(_ code: String?, identity: UInt64) async throws -> [String: Any] {
         guard let code else { return NativeRecoveryDisplay.empty(epoch: accountEpoch()) }

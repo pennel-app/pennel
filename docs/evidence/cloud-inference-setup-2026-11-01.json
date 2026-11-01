@@ -1,0 +1,55 @@
+{
+  "date": "2026-11-01",
+  "issues": [32, 54],
+  "base_revision": "fb38075a2174aeb324080f3620ea0f7a1d85da97",
+  "scope": "Managed Pennel Cloud for optional decision and passage-ranking setup and synthetic testing",
+  "defaults": {
+    "decision_and_reranking_remain_optional": true,
+    "existing_task_assignments_preserved": true,
+    "ordinary_feature_activation": false,
+    "settings_migration": false,
+    "new_dependencies": false
+  },
+  "boundaries": [
+    "Cloud uses the existing signed-in session and its trusted origin, never an editable provider URL or a user-entered API key.",
+    "One deadline covers generation-bound authentication, content dispatch and at most one authentication retry.",
+    "Schema, request identity, actual model, raw distributions and complete raw relevance scores are validated.",
+    "Routine token refresh preserves sample verification; account changes, cancellation and configuration mutations reject late results.",
+    "Capability checks run off native UI threads and do not block mounting the desktop controls.",
+    "Bundled synthetic examples are the only sample content. Live deployment and model qualification require separate evidence."
+  ],
+  "verified_local": {
+    "core_release_build": "passed",
+    "core_tests": { "passed": 753, "ignored": 7 },
+    "keyboard_tests": { "passed": 17 },
+    "core_format_and_clippy": "passed",
+    "desktop_backend_tests": { "passed": 225 },
+    "desktop_backend_format_and_clippy": "passed",
+    "macos_platform_tests": { "passed": 123 },
+    "desktop_frontend_build": "passed",
+    "desktop_frontend_tests": { "passed": 242 },
+    "desktop_fixture_tests": { "passed": 26 },
+    "mobile_ui_tests": { "passed": 109 },
+    "mobile_plugin_checks": { "passed": 17 },
+    "mobile_widget_checks": { "passed": 7 },
+    "swift_helper_tests": { "passed": 116 },
+    "mobile_clean_and_repeated_generation": "passed",
+    "native_hosted_runtime_tests": "pending final run",
+    "independent_reviews": "initial findings addressed; final source re-review pending",
+    "cross_platform_ci": "pending"
+  },
+  "owned_visual_receipts": [
+    { "path": "build/visual-parity/cloud-inference-final/manifest.json", "variants": 24 },
+    { "path": "build/visual-parity/cloud-inference-interaction-final/manifest.json", "variants": 4 },
+    { "path": "build/visual-parity/cloud-setup-token-regressions/manifest.json", "variants": 20 },
+    { "path": "build/visual-parity/cloud-setup-related-regressions/manifest.json", "variants": 12 },
+    { "path": "build/visual-parity/cloud-inference-readable-destination/manifest.json", "variants": 12 }
+  ],
+  "visual_coverage": ["English/Dutch", "light/dark", "minimum window", "enlarged text", "keyboard focus", "delayed capability checks", "retry", "stale account response", "same-account refresh", "manual-provider draft preservation"],
+  "outstanding_acceptance": [
+    "Managed service deployment and synthetic provider acceptance are tracked separately.",
+    "No model accuracy, regional processing or contractual retention qualification is established by a sample.",
+    "Physical iPhone, installed Windows/Linux, VoiceOver and broader human acceptance remain open.",
+    "The iPhone guided task-setup redesign and activation of experimental inference remain follow-up work."
+  ]
+}

@@ -41,12 +41,65 @@ fn settings_helpers_do_not_select_a_model_and_protocol_capabilities_are_distinct
     assert_eq!(configured.model, "");
     assert!(configured.expected_model.is_none());
     let all = inference_protocols();
-    assert_eq!(all.len(), 7);
-    assert!(all.iter().all(|p| p.decision != p.reranking));
+    assert_eq!(all.len(), 8);
+    assert!(
+        all.iter()
+            .filter(|p| !p.managed)
+            .all(|p| p.decision != p.reranking)
+    );
+    let managed = all
+        .iter()
+        .find(|p| p.protocol == InferenceProtocol::PennelCloud)
+        .unwrap();
+    assert!(managed.managed && managed.decision && managed.reranking);
+    assert!(!managed.extraction && !managed.requires_key);
+    assert_eq!(
+        managed.allowed_provider_kinds,
+        vec![crate::ProviderKind::PennelCloud]
+    );
+    assert_eq!(
+        new_inference_config("cloud".into(), InferenceProtocol::PennelCloud).model,
+        "pennel-auto"
+    );
     assert!(
         all.iter()
             .filter(|p| p.extraction)
             .all(|p| p.protocol == InferenceProtocol::Mercury)
+    );
+}
+
+#[test]
+fn managed_configuration_has_fixed_routing_and_safe_endpoints() {
+    let mut configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
+    for (capability, suffix) in [
+        (InferenceCapability::Decision, "decisions"),
+        (InferenceCapability::Reranking, "rerank"),
+    ] {
+        assert_eq!(
+            validate_config(&configured, "https://api.pennel.app", capability).unwrap(),
+            format!("https://api.pennel.app/v1/{suffix}")
+        );
+        assert!(validate_config(&configured, "http://example.com", capability).is_err());
+        assert!(validate_config(&configured, "https://secret@example.com", capability).is_err());
+    }
+    configured.upstream = Some("".into());
+    assert!(
+        validate_config(
+            &configured,
+            "https://api.pennel.app",
+            InferenceCapability::Decision
+        )
+        .is_err()
+    );
+    configured.upstream = None;
+    configured.model = "user-selected-route".into();
+    assert!(
+        validate_config(
+            &configured,
+            "https://api.pennel.app",
+            InferenceCapability::Decision
+        )
+        .is_err()
     );
 }
 
@@ -663,4 +716,303 @@ fn tei_rejects_unknown_duplicate_and_missing_passages() {
         info.assert();
         score.assert();
     }
+}
+
+fn managed_fixture(
+    server: &mockito::Server,
+) -> (ManagedInference, Arc<crate::cloud::tests::MemorySecrets>) {
+    use crate::cloud::SecretStore;
+    let secrets = Arc::new(crate::cloud::tests::MemorySecrets::default());
+    secrets.set(
+        crate::cloud::REFRESH_ACCOUNT.into(),
+        Some("synthetic-refresh".into()),
+    );
+    let session = Arc::new(crate::cloud::account::Session::new(
+        server.url(),
+        secrets.clone(),
+    ));
+    (
+        ManagedInference {
+            generation: session.generation(),
+            session,
+        },
+        secrets,
+    )
+}
+
+fn managed_refresh(server: &mut mockito::Server) -> mockito::Mock {
+    server.mock("POST", "/v1/auth/refresh")
+        .match_body(Matcher::Json(json!({"refresh_token":"synthetic-refresh"})))
+        .with_body(r#"{"access_token":"synthetic-access","refresh_token":"rotated-refresh","expires_in":900}"#)
+        .create()
+}
+
+#[test]
+fn managed_decisions_preserve_raw_results_and_bind_response_to_request() {
+    let mut server = mockito::Server::new();
+    let (managed, _) = managed_fixture(&server);
+    let refresh = managed_refresh(&mut server);
+    let post = server
+        .mock("POST", "/v1/decisions")
+        .match_header("authorization", "Bearer synthetic-access")
+        .with_body_from_request(|request| {
+            let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+            assert_eq!(body["model"], "pennel-auto");
+            assert!(body.get("provider").is_none());
+            let id = body["request_id"].as_str().unwrap();
+            assert!(uuid::Uuid::parse_str(id).is_ok());
+            let mut value = response();
+            value["schema_version"] = json!(1);
+            value["request_id"] = json!(id);
+            value["model_revision"] = json!("synthetic-revision");
+            value.as_object_mut().unwrap().remove("provider");
+            value.to_string().into_bytes()
+        })
+        .create();
+    let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
+    let result = decide_managed(
+        &configured,
+        managed,
+        request(),
+        InferenceCancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(result.answers[0].probabilities[0].probability, 0.3);
+    assert_eq!(result.answers[0].probabilities[1].probability, 0.7);
+    assert_eq!(result.identity.requested_model, "pennel-auto");
+    assert_eq!(
+        result.identity.actual_model.as_deref(),
+        Some("example-model")
+    );
+    assert_eq!(
+        result.identity.actual_revision.as_deref(),
+        Some("synthetic-revision")
+    );
+    assert_eq!(result.identity.actual_provider, None);
+    refresh.assert();
+    post.assert();
+}
+
+#[test]
+fn managed_reranking_preserves_logits_without_inventing_provider_or_usage() {
+    let mut server = mockito::Server::new();
+    let (managed, _) = managed_fixture(&server);
+    let refresh = managed_refresh(&mut server);
+    let info = server.mock("GET", "/info").expect(0).create();
+    let post = server.mock("POST", "/v1/rerank")
+        .match_header("authorization", "Bearer synthetic-access")
+        .with_body_from_request(|request| {
+            let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+            assert_eq!(body["model"], "pennel-auto");
+            assert_eq!(body["documents"], json!(["The task is due Thursday.", "No date is stated here."]));
+            json!({"schema_version":1,"request_id":body["request_id"],"model":"served-reranker","results":[{"index":1,"score":-4.2},{"index":0,"score":8.7}]}).to_string().into_bytes()
+        }).create();
+    let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
+    let result = rerank_managed(
+        &configured,
+        managed,
+        rank_request(),
+        InferenceCancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        result.scores[0],
+        RerankScore {
+            passage_id: "p2".into(),
+            score: -4.2
+        }
+    );
+    assert_eq!(result.scores[1].score, 8.7);
+    assert_eq!(result.identity.actual_provider, None);
+    assert_eq!(result.usage.input_tokens, None);
+    assert_eq!(result.usage.billed_cost_usd, None);
+    refresh.assert();
+    post.assert();
+    info.assert();
+}
+
+#[test]
+fn managed_envelopes_reject_missing_or_changed_identity_and_response_contract() {
+    let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
+    for change in [
+        json!({"schema_version":2}),
+        json!({"request_id":"different"}),
+        json!({"model":null}),
+    ] {
+        let mut server = mockito::Server::new();
+        let (managed, _) = managed_fixture(&server);
+        let _refresh = managed_refresh(&mut server);
+        let post = server
+            .mock("POST", "/v1/decisions")
+            .with_body_from_request(move |request| {
+                let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+                let mut value = response();
+                value["schema_version"] = json!(1);
+                value["request_id"] = body["request_id"].clone();
+                for (key, value_change) in change.as_object().unwrap() {
+                    value[key] = value_change.clone();
+                }
+                value.to_string().into_bytes()
+            })
+            .create();
+        assert!(matches!(
+            decide_managed(
+                &configured,
+                managed,
+                request(),
+                InferenceCancellation::new()
+            ),
+            Err(PennelError::InvalidResponse { .. })
+        ));
+        post.assert();
+    }
+    for scores in [
+        json!([{"index":0,"score":1},{"index":0,"score":2}]),
+        json!([{"index":2,"score":1},{"index":0,"score":2}]),
+        json!([{"index":0,"score":1}]),
+    ] {
+        assert!(rerank_scores(&rank_request(), &scores).is_err());
+    }
+}
+
+#[test]
+fn managed_auth_retries_once_and_preserves_the_request_identifier() {
+    let mut server = mockito::Server::new();
+    let (managed, _) = managed_fixture(&server);
+    let _refresh = managed_refresh(&mut server);
+    let old_request = Arc::new(std::sync::Mutex::new(None));
+    let captured = old_request.clone();
+    let denied = server
+        .mock("POST", "/v1/decisions")
+        .match_header("authorization", "Bearer synthetic-access")
+        .with_status(401)
+        .with_body_from_request(move |request| {
+            *captured.lock().unwrap() = Some(request.body().unwrap().to_vec());
+            b"private-error-must-not-escape".to_vec()
+        })
+        .create();
+    let refresh = server.mock("POST", "/v1/auth/refresh")
+        .match_body(Matcher::Json(json!({"refresh_token":"rotated-refresh"})))
+        .with_body(r#"{"access_token":"replacement-access","refresh_token":"next-refresh","expires_in":900}"#).create();
+    let accepted = server
+        .mock("POST", "/v1/decisions")
+        .match_header("authorization", "Bearer replacement-access")
+        .with_body_from_request(move |request| {
+            assert_eq!(
+                Some(request.body().unwrap().to_vec()),
+                *old_request.lock().unwrap()
+            );
+            let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+            let mut value = response();
+            value["schema_version"] = json!(1);
+            value["request_id"] = body["request_id"].clone();
+            value.to_string().into_bytes()
+        })
+        .create();
+    let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
+    assert!(
+        decide_managed(
+            &configured,
+            managed,
+            request(),
+            InferenceCancellation::new()
+        )
+        .is_ok()
+    );
+    denied.assert();
+    refresh.assert();
+    accepted.assert();
+}
+
+#[test]
+fn cancellation_or_account_change_during_refresh_never_posts_content() {
+    use crate::cloud::SecretStore;
+    for change_account in [false, true] {
+        let mut server = mockito::Server::new();
+        let (managed, secrets) = managed_fixture(&server);
+        let session = managed.session.clone();
+        let cancellation = InferenceCancellation::new();
+        let change = cancellation.clone();
+        let refresh = server.mock("POST", "/v1/auth/refresh").with_body_from_request(move |_| {
+            if change_account { session.cancel_login(); } else { change.cancel(); }
+            br#"{"access_token":"synthetic-access","refresh_token":"rotated-refresh","expires_in":900}"#.to_vec()
+        }).create();
+        let post = server.mock("POST", "/v1/decisions").expect(0).create();
+        let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
+        assert_eq!(
+            decide_managed(&configured, managed, request(), cancellation),
+            Err(PennelError::Cancelled)
+        );
+        if !change_account {
+            assert_eq!(
+                secrets.get(crate::cloud::REFRESH_ACCOUNT.into()).as_deref(),
+                Some("rotated-refresh")
+            );
+        }
+        refresh.assert();
+        post.assert();
+    }
+}
+
+#[test]
+fn managed_auth_and_content_never_follow_redirects_or_echo_error_bodies() {
+    for redirect_auth in [true, false] {
+        let mut server = mockito::Server::new();
+        let (managed, _) = managed_fixture(&server);
+        let _refresh = (!redirect_auth).then(|| managed_refresh(&mut server));
+        let path = if redirect_auth {
+            "/v1/auth/refresh"
+        } else {
+            "/v1/decisions"
+        };
+        let redirected = server
+            .mock("POST", path)
+            .with_status(307)
+            .with_header("location", &format!("{}/must-not-run", server.url()))
+            .with_body("private-content synthetic-refresh synthetic-access")
+            .create();
+        let target = server.mock("POST", "/must-not-run").expect(0).create();
+        let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
+        let error = decide_managed(
+            &configured,
+            managed,
+            request(),
+            InferenceCancellation::new(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, PennelError::Http { status: 307, .. }));
+        assert!(!error.to_string().contains("private"));
+        assert!(!error.to_string().contains("synthetic"));
+        redirected.assert();
+        target.assert();
+    }
+}
+
+#[test]
+fn managed_auth_and_content_share_one_deadline() {
+    let mut server = mockito::Server::new();
+    let (managed, _) = managed_fixture(&server);
+    let refresh = server.mock("POST", "/v1/auth/refresh").with_body_from_request(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        br#"{"access_token":"synthetic-access","refresh_token":"rotated-refresh","expires_in":900}"#.to_vec()
+    }).create();
+    let post = server
+        .mock("POST", "/v1/decisions")
+        .with_body_from_request(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(180));
+            b"{}".to_vec()
+        })
+        .create();
+    let cancellation = InferenceCancellation::new();
+    let start = std::time::Instant::now();
+    let result = managed.send(
+        &format!("{}/v1/decisions", server.url()),
+        Some(b"{}"),
+        &cancellation,
+        start + std::time::Duration::from_millis(220),
+    );
+    assert!(matches!(result, Err(PennelError::Network { .. })));
+    assert!(start.elapsed() < std::time::Duration::from_millis(350));
+    refresh.assert();
+    post.assert();
 }

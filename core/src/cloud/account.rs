@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -11,6 +11,11 @@ use crate::error::PennelError;
 
 const REFRESH_MARGIN: Duration = Duration::from_secs(60);
 const REQUEST_TIMEOUT_SECS: u64 = 30;
+static NEXT_IDENTITY_EPOCH: AtomicU64 = AtomicU64::new(1);
+
+fn next_identity_epoch() -> u64 {
+    NEXT_IDENTITY_EPOCH.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CloudLoginStart {
@@ -120,12 +125,17 @@ impl Session {
             http: agent(REQUEST_TIMEOUT_SECS),
             access: Mutex::new(None),
             login: Mutex::new(LoginFlow::default()),
-            identity_epoch: AtomicU64::new(0),
+            identity_epoch: AtomicU64::new(next_identity_epoch()),
         }
     }
 
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    fn invalidate_identity(&self) {
+        self.identity_epoch
+            .fetch_max(next_identity_epoch(), Ordering::AcqRel);
     }
 
     fn url(&self, path: &str) -> String {
@@ -154,7 +164,7 @@ impl Session {
     fn end_session_locked(&self, access: &mut Option<AccessToken>) {
         self.secrets.set(REFRESH_ACCOUNT.into(), None);
         *access = None;
-        self.identity_epoch.fetch_add(1, Ordering::AcqRel);
+        self.invalidate_identity();
     }
 
     pub fn access_token(&self) -> Result<String, PennelError> {
@@ -164,6 +174,107 @@ impl Session {
     /// For a request that got 401 although its access token looked valid.
     pub fn refreshed_token(&self) -> Result<String, PennelError> {
         self.token(true)
+    }
+
+    pub(crate) fn inference_token(
+        &self,
+        expected_generation: u64,
+        force: bool,
+        cancellation: &crate::InferenceCancellation,
+        deadline: Instant,
+    ) -> Result<String, PennelError> {
+        crate::inference::validate_origin(self.base_url())?;
+        let mut access = loop {
+            self.check_inference(expected_generation, cancellation, deadline)?;
+            match self.access.try_lock() {
+                Ok(access) => break access,
+                Err(TryLockError::Poisoned(_)) => return Err(crate::inference::network()),
+                Err(TryLockError::WouldBlock) => std::thread::sleep(
+                    deadline
+                        .saturating_duration_since(Instant::now())
+                        .min(Duration::from_millis(20)),
+                ),
+            }
+        };
+        self.check_inference(expected_generation, cancellation, deadline)?;
+        if !self.signed_in() {
+            return Err(PennelError::NotSignedIn);
+        }
+        if !force
+            && let Some(current) = access.as_ref()
+            && current.expires_at > Instant::now() + REFRESH_MARGIN
+        {
+            return Ok(current.value.clone());
+        }
+        let refresh = Zeroizing::new(
+            self.secrets
+                .get(REFRESH_ACCOUNT.into())
+                .ok_or(PennelError::NotSignedIn)?,
+        );
+        let payload = Zeroizing::new(
+            serde_json::to_vec(&json!({"refresh_token": *refresh}))
+                .map_err(|_| crate::inference::network())?,
+        );
+        self.check_inference(expected_generation, cancellation, deadline)?;
+        let (status, body) = crate::inference::send_json_status(
+            &self.url("/v1/auth/refresh"),
+            None,
+            Some(&payload),
+            deadline,
+        )?;
+        if status == 401 {
+            self.check_inference(expected_generation, cancellation, deadline)?;
+            self.end_session_locked(&mut access);
+            return Err(PennelError::NotSignedIn);
+        }
+        if status != 200 {
+            self.check_inference(expected_generation, cancellation, deadline)?;
+            return Err(crate::http::map_status(status, ""));
+        }
+        let value = text(&body, "access_token", "refresh")?;
+        let rotated = Zeroizing::new(text(&body, "refresh_token", "refresh")?);
+        let lifetime = body
+            .get("expires_in")
+            .and_then(Value::as_u64)
+            .filter(|n| (1..=86_400).contains(n))
+            .ok_or_else(|| invalid("refresh"))?;
+        if value.is_empty()
+            || rotated.is_empty()
+            || value.len() > 16 * 1024
+            || rotated.len() > 16 * 1024
+            || value.chars().any(char::is_control)
+            || rotated.chars().any(char::is_control)
+        {
+            return Err(invalid("refresh"));
+        }
+        if self.secrets.get(REFRESH_ACCOUNT.into()).as_deref() != Some(refresh.as_str()) {
+            return Err(PennelError::Cancelled);
+        }
+        // Refresh spent this token. The access lock excludes a replacement account commit,
+        // so preserve its rotation before reporting cancellation or a changed generation.
+        self.secrets
+            .set(REFRESH_ACCOUNT.into(), Some((*rotated).clone()));
+        *access = Some(AccessToken {
+            value: value.clone(),
+            expires_at: Instant::now() + Duration::from_secs(lifetime),
+        });
+        self.check_inference(expected_generation, cancellation, deadline)?;
+        Ok(value)
+    }
+
+    pub(crate) fn check_inference(
+        &self,
+        expected_generation: u64,
+        cancellation: &crate::InferenceCancellation,
+        deadline: Instant,
+    ) -> Result<(), PennelError> {
+        if cancellation.is_cancelled() || self.generation() != expected_generation {
+            return Err(PennelError::Cancelled);
+        }
+        if Instant::now() >= deadline {
+            return Err(crate::inference::network());
+        }
+        Ok(())
     }
 
     fn token(&self, force: bool) -> Result<String, PennelError> {
@@ -244,7 +355,7 @@ impl Session {
         locale: Option<&str>,
     ) -> Result<CloudLoginStart, PennelError> {
         let generation = self.login.lock().unwrap().invalidate();
-        self.identity_epoch.fetch_add(1, Ordering::AcqRel);
+        self.invalidate_identity();
         let mut request = json!({ "device_name": device_name, "platform": platform });
         if let Some(locale) = locale {
             let locale = match locale {
@@ -283,7 +394,7 @@ impl Session {
     /// Invalidates queued and in-flight login work without waiting for HTTP or token refresh.
     pub fn cancel_login(&self) {
         self.login.lock().unwrap().invalidate();
-        self.identity_epoch.fetch_add(1, Ordering::AcqRel);
+        self.invalidate_identity();
     }
 
     pub fn login_poll(&self, device_code: &str) -> Result<CloudLoginPoll, PennelError> {
@@ -336,7 +447,7 @@ impl Session {
             let mut login = self.login.lock().unwrap();
             login.check_poll(generation, device_code)?;
             self.secrets.set(REFRESH_ACCOUNT.into(), Some(refresh));
-            self.identity_epoch.fetch_add(1, Ordering::AcqRel);
+            self.invalidate_identity();
             *stored_access = Some(AccessToken {
                 value: access,
                 expires_at: Instant::now() + Duration::from_secs(lifetime),
@@ -888,6 +999,116 @@ mod tests {
         let server = mockito::Server::new();
         let (_, session) = fixture(&server);
         assert_eq!(session.access_token(), Err(PennelError::NotSignedIn));
+    }
+
+    #[test]
+    fn inference_auth_cannot_outlive_its_generation_or_wait_past_deadline() {
+        let mut server = mockito::Server::new();
+        let (secrets, session) = fixture(&server);
+        secrets.set(REFRESH_ACCOUNT.into(), Some("synthetic-refresh".into()));
+        let unused = server.mock("POST", "/v1/auth/refresh").expect(0).create();
+        let cancellation = crate::InferenceCancellation::new();
+        let generation = session.generation();
+        session.cancel_login();
+        assert_eq!(
+            session.inference_token(
+                generation,
+                false,
+                &cancellation,
+                Instant::now() + Duration::from_secs(1)
+            ),
+            Err(PennelError::Cancelled)
+        );
+        let held = session.access.lock().unwrap();
+        let start = Instant::now();
+        assert!(matches!(
+            session.inference_token(
+                session.generation(),
+                false,
+                &cancellation,
+                start + Duration::from_millis(40)
+            ),
+            Err(PennelError::Network { .. })
+        ));
+        assert!(start.elapsed() < Duration::from_millis(200));
+        drop(held);
+        cancellation.cancel();
+        assert_eq!(
+            session.inference_token(
+                session.generation(),
+                false,
+                &cancellation,
+                Instant::now() + Duration::from_secs(1)
+            ),
+            Err(PennelError::Cancelled)
+        );
+        unused.assert();
+    }
+
+    #[test]
+    fn inference_auth_preserves_spent_token_rotation_when_login_generation_changes() {
+        let mut server = mockito::Server::new();
+        let (secrets, session) = fixture(&server);
+        let session = Arc::new(session);
+        secrets.set(REFRESH_ACCOUNT.into(), Some("old-refresh".into()));
+        let change = session.clone();
+        let refresh = server.mock("POST", "/v1/auth/refresh").with_body_from_request(move |_| {
+            change.cancel_login();
+            br#"{"access_token":"same-account-access","refresh_token":"rotated-refresh","expires_in":900}"#.to_vec()
+        }).create();
+        let cancellation = crate::InferenceCancellation::new();
+        assert_eq!(
+            session.inference_token(
+                session.generation(),
+                false,
+                &cancellation,
+                Instant::now() + Duration::from_secs(1)
+            ),
+            Err(PennelError::Cancelled)
+        );
+        assert_eq!(stored(&secrets).as_deref(), Some("rotated-refresh"));
+        assert_eq!(session.access_token().unwrap(), "same-account-access");
+        refresh.assert();
+    }
+
+    #[test]
+    fn identity_epochs_distinguish_sessions_without_changing_on_token_rotation() {
+        let mut server = mockito::Server::new();
+        let (secrets, session) = fixture(&server);
+        let (_, replacement) = fixture(&server);
+        let initial = session.generation();
+        assert_ne!(initial, 0);
+        assert_ne!(initial, replacement.generation());
+        session.cancel_login();
+        let identity = session.generation();
+        assert_ne!(identity, initial);
+        assert_ne!(identity, replacement.generation());
+        secrets.set(REFRESH_ACCOUNT.into(), Some("first-refresh".into()));
+        let refresh = server.mock("POST", "/v1/auth/refresh")
+            .match_body(Matcher::Json(json!({"refresh_token":"first-refresh"})))
+            .with_body(r#"{"access_token":"first-access","refresh_token":"second-refresh","expires_in":900}"#).create();
+        assert_eq!(session.access_token().unwrap(), "first-access");
+        assert_eq!(session.generation(), identity);
+        let rotated = server.mock("POST", "/v1/auth/refresh")
+            .match_body(Matcher::Json(json!({"refresh_token":"second-refresh"})))
+            .with_body(r#"{"access_token":"second-access","refresh_token":"third-refresh","expires_in":900}"#).create();
+        let cancellation = crate::InferenceCancellation::new();
+        assert_eq!(
+            session
+                .inference_token(
+                    identity,
+                    true,
+                    &cancellation,
+                    Instant::now() + Duration::from_secs(1)
+                )
+                .unwrap(),
+            "second-access"
+        );
+        assert_eq!(session.generation(), identity);
+        assert_eq!(session.access_token().unwrap(), "second-access");
+        assert_eq!(session.generation(), identity);
+        refresh.assert();
+        rotated.assert();
     }
 
     #[test]

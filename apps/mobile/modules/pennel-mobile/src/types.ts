@@ -3,10 +3,10 @@ export type Appearance = 'system' | 'light' | 'dark';
 export type ProviderKind = 'open_ai' | 'open_router' | 'groq' | 'mistral' | 'ollama' | 'lm_studio' | 'custom' | 'local' | 'apple_speech' | 'apple_intelligence' | 'claude_code' | 'codex' | 'open_code' | 'copilot' | 'cursor_agent' | 'gemini_cli' | 'pennel_cloud';
 export interface Capability { status: 'available' | 'permission_required' | 'unsupported' | 'unavailable'; reason: string | null }
 export interface ModelChoice { provider_id: string; model: string }
-export type InferenceProtocol = 'open_router_decisions' | 'open_router_system_one' | 'type_safe' | 'perplexity' | 'mercury' | 'local_decider' | 'tei';
+export type InferenceProtocol = 'open_router_decisions' | 'open_router_system_one' | 'type_safe' | 'perplexity' | 'mercury' | 'local_decider' | 'tei' | 'pennel_cloud';
 export type InferenceCapability = 'decision' | 'reranking';
 export interface InferenceConfig { provider_id: string; protocol: InferenceProtocol; model: string; expected_model: string | null; upstream: string | null; max_input_bytes: number; timeout_secs: number }
-export interface InferenceProtocolInfo { protocol: InferenceProtocol; name: string; default_base_url: string; decision: boolean; reranking: boolean; extraction: boolean; requires_key: boolean }
+export interface InferenceProtocolInfo { protocol: InferenceProtocol; name: string; default_base_url: string; decision: boolean; reranking: boolean; extraction: boolean; requires_key: boolean; allowed_provider_kinds: ProviderKind[]; managed: boolean }
 export interface InferenceAvailability { capability: InferenceCapability; configured: boolean; available: boolean; reason: string | null; provider_id: string | null; model: string | null; protocol: InferenceProtocol | null; endpoint: string | null }
 export interface CleanupVerificationAvailability { enabled: boolean; available: boolean; reason_code: string; provider_id: string | null; model: string | null; endpoint: string | null }
 export interface DecisionOption { id: string; description: string }

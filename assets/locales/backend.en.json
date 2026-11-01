@@ -668,5 +668,20 @@
   "backend.cleanup_meaning_rejected_available": "Cleanup could not preserve the wording and meaning — original text available",
   "backend.cleanup_meaning_rejected_pasted": "Cleanup could not preserve the wording and meaning — original text pasted",
   "backend.cleanup_verification_failed_raw_retained": "Cleanup could not be verified. The original dictation was kept.",
-  "backend.cleanup_processing_failed_raw_retained": "Cleanup processing failed. The original dictation was kept."
+  "backend.cleanup_processing_failed_raw_retained": "Cleanup processing failed. The original dictation was kept.",
+  "backend.managed_inference_routing": "Pennel Cloud manages its inference model and routing.",
+  "backend.managed_inference_response": "Pennel Cloud returned an unsupported or mismatched inference response.",
+  "backend.managed_inference_capabilities": "Pennel Cloud returned unsupported inference capabilities.",
+  "backend.managed_inference_capability_missing": "Pennel Cloud omitted this inference capability.",
+  "backend.managed_inference_model_missing": "Pennel Cloud omitted its actual model identity.",
+  "backend.managed_inference_connection": "Use the signed-in Pennel Cloud inference connection.",
+  "backend.managed_inference_provider": "Choose a supported provider account for this inference protocol.",
+  "backend.managed_inference_supported": "Pennel Cloud supports this connection. Test with the synthetic sample to verify it.",
+  "backend.managed_inference_not_enabled": "Pennel Cloud has not enabled this inference capability for this account.",
+  "backend.managed_inference_sign_in": "Sign in to Pennel Cloud to use this connection.",
+  "backend.managed_inference_account_changed": "The Pennel Cloud account or connection changed. Check availability again.",
+  "backend.managed_inference_availability_unknown": "Pennel Cloud inference availability could not be confirmed. Check the connection and try again.",
+  "backend.managed_inference_configured": "Configured. Test with the synthetic sample to verify this connection.",
+  "backend.managed_inference_unavailable": "This inference capability is not available from the selected service yet.",
+  "backend.managed_inference_check_failed": "The inference availability could not be checked."
 }

@@ -145,11 +145,14 @@ pub fn inference_protocols() -> Vec<InferenceProtocolInfo> {
 }
 
 #[tauri::command]
-pub fn inference_availability(
+pub async fn inference_availability(
     shared: State<'_, Arc<Shared>>,
     capability: InferenceCapability,
-) -> InferenceAvailability {
-    shared.engine.inference_availability(capability)
+) -> Result<InferenceAvailability> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || shared.engine.inference_availability(capability))
+        .await
+        .map_err(|_| error("The inference availability could not be checked."))
 }
 
 #[tauri::command]

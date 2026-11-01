@@ -171,14 +171,21 @@ Models keeps **Decision processing** and **Passage ranking** inside the initiall
 **Experimental connections — setup and testing only** disclosure. These connections do not
 currently drive ordinary dictation, meeting processing or search. A missing compatible
 provider shows an explanation and **Add connection**, rather than a blank dropdown. Both
-connections start disabled, including on existing profiles. They reuse explicitly selected OpenRouter
-or Custom server accounts and their OS-stored keys. Custom accounts can have an optional
+connections start disabled, including on existing profiles. Both can use the existing Pennel Cloud
+account with its normal sign-in and a managed model; no API key, server URL or model ID is
+required. Cloud availability is checked without blocking the settings controls, and an unavailable
+service can be retried. A configured connection becomes sample-verified only after a successful
+explicit test for the current account and settings. The connections also reuse explicitly selected
+OpenRouter or Custom server accounts and their OS-stored keys. Custom accounts can have an optional
 key; a keyless local service remains supported. Removing an account disables its optional
 connections without selecting a replacement.
 
 Decision processing supports OpenRouter Decisions/System One, direct TypeSafe,
-Perplexity/Mercury and the official loopback Decider endpoint. Passage ranking uses TEI.
-The API format determines the request path; the existing account URL remains authoritative.
+Perplexity/Mercury and the official loopback Decider endpoint. Passage ranking also supports TEI.
+Cloud supplies dedicated typed decision and ranking endpoints and reports the actual model,
+with unknown provider or usage metadata left explicit. Its authenticated session determines the
+destination; editable provider URLs cannot receive the Cloud token. For other connections,
+the API format determines the request path and the existing account URL remains authoritative.
 Remote connections require HTTPS; HTTP is accepted only for a literal loopback address or
 localhost. On iPhone, loopback refers to the phone itself, not a Mac on the same network.
 
@@ -192,15 +199,17 @@ account logging policies.
 **Test with sample** explicitly sends synthetic text only. Its result records the returned
 model/provider and confirms that the connection processed that sample; it does not
 establish accuracy or approve a model for automatic processing. Edits, account changes and
-cancellation invalidate late verification results. Ordinary dictation, summaries and
+cancellation invalidate late verification results, including during token refresh and account replacement.
+Cloud samples use the account's allowance. Ordinary dictation, summaries and
 meeting answers retain their existing providers and behavior.
 
 The typed Rust/native interface preserves raw distributions and confidence metadata,
 unknown usage/cost and model/provider identity. Confidence is not calibrated correctness.
 TEI scores remain relevance scores. Extraction uses validated Unicode-scalar offsets with
 an exclusive end. An offered choice ID exactly equal to `abstain` denotes explicit
-abstention; `unknown` remains an ordinary domain label. No new model runtime, download,
-automatic feature or hosted Pennel Cloud decision service is included.
+abstention; `unknown` remains an ordinary domain label. No new model runtime, download or
+automatic feature is enabled. Managed Cloud support depends on the deployed service's
+capabilities; setup verification does not establish model quality or regional/retention acceptance.
 
 ### Pennel Cloud
 

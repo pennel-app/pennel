@@ -65,6 +65,16 @@ private final class PreflightGate {
     func resolve() { pending?.resume(returning: true); pending = nil }
 }
 
+private final class DelayedAvailability: @unchecked Sendable {
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    func response() throws -> String {
+        entered.signal()
+        guard release.wait(timeout: .now() + 5) == .success else { throw PennelBridgeError("fixture_timeout", "Synthetic availability delay timed out.") }
+        return "{\"available\":true}"
+    }
+}
+
 @Suite("Expo native runtime", .serialized)
 struct PennelRuntimeTests {
     @MainActor @Test func keyboardPreparesItsRunnerAtRecordingStartAndCancelsBeforeRecognition() async throws {
@@ -236,6 +246,75 @@ struct PennelRuntimeTests {
         }
     }
 
+    @MainActor @Test func delayedAvailabilityKeepsTheMainActorResponsiveAndRejectsOldIdentity() async throws {
+        let requests = NativeInferenceRequests()
+        let delayed = DelayedAvailability()
+        defer { delayed.release.signal() }
+        var fingerprint = "old-account"
+        var finished = false
+        let start = Date()
+        let operation = Task { @MainActor in
+            defer { finished = true }
+            return try await requests.availability(fingerprint: fingerprint, currentFingerprint: { fingerprint }, work: { try delayed.response() })
+        }
+        await Task.detached { delayed.entered.wait() }.value
+        #expect(Date().timeIntervalSince(start) < 4)
+        #expect(!finished)
+        fingerprint = "replacement-account"
+        delayed.release.signal()
+        do { _ = try await operation.value; Issue.record("A delayed old-account capability response was accepted.") }
+        catch let error as PennelError { #expect(error == .Cancelled) }
+        let current = try await requests.availability(fingerprint: fingerprint, currentFingerprint: { fingerprint }, work: { "{\"available\":true}" })
+        #expect(current == "{\"available\":true}")
+    }
+
+    @MainActor @Test func availabilityCannotPublishWhileAnIdentityMutationIsSuspended() async throws {
+        let requests = NativeInferenceRequests()
+        let delayed = DelayedAvailability()
+        defer { delayed.release.signal() }
+        let availability = Task { @MainActor in
+            try await requests.availability(fingerprint: "unchanged", currentFingerprint: { "unchanged" }, work: { try delayed.response() })
+        }
+        await Task.detached { delayed.entered.wait() }.value
+        let gate = PreflightGate()
+        let mutation = Task { @MainActor in await requests.changingConfiguration { _ = await gate.request() } }
+        await gate.waitUntilEntered()
+        delayed.release.signal()
+        do { _ = try await availability.value; Issue.record("Availability was published before the identity mutation completed.") }
+        catch let error as PennelError { #expect(error == .Cancelled) }
+        gate.resolve()
+        await mutation.value
+    }
+
+    @MainActor @Test func managedCloudInferenceRequiresSignInAndPreservesTaskAssignments() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pennel-managed-cloud-\(UUID().uuidString)")
+        let engine = try PennelEngine.newPreview(dataDir: directory.path)
+        let original = engine.settings()
+        #expect(!engine.cloudSignedIn())
+        var fixture = original
+        let cloud = ProviderAccount(id: "managed-cloud", kind: .pennelCloud, name: "Pennel Cloud", baseUrl: "https://untrusted.invalid")
+        fixture.providers.append(cloud)
+        var choice = newInferenceConfig(providerId: cloud.id, protocol: .pennelCloud)
+        choice.model = "pennel-auto"
+        fixture.decision = choice
+        fixture.reranking = choice
+        try engine.updateSettings(settings: fixture)
+        for capability in [InferenceCapability.decision, .reranking] {
+            let availability = engine.inferenceAvailability(capability: capability)
+            #expect(availability.configured)
+            #expect(!availability.available)
+            let result = try engine.verifyInference(capability: capability, cancellation: InferenceCancellation(), keys: ApiKeys(byProvider: [:]))
+            #expect(!result.verified)
+            #expect(result.identity == nil)
+        }
+        let saved = engine.settings()
+        #expect(saved.dictationStt == original.dictationStt)
+        #expect(saved.meetingStt == original.meetingStt)
+        #expect(saved.llm == original.llm)
+        #expect(saved.decision == choice)
+        #expect(saved.reranking == choice)
+    }
+
     @MainActor @Test func inferenceFacadeReportsUnconfiguredCapabilitiesWithoutInference() async throws {
         let runtime = PennelNativeRuntime.shared
         _ = try runtime.bootstrap()
@@ -249,9 +328,15 @@ struct PennelRuntimeTests {
         defer { try? model.engine.updateSettings(settings: original); model.reloadSettings() }
         let metadata = try await runtime.invoke(method: "inference.protocols", payload: "{}")
         let protocols = try #require(try JSONSerialization.jsonObject(with: Data(metadata.utf8)) as? [[String: Any]])
-        #expect(protocols.count == 7)
+        #expect(protocols.count == 8)
         #expect(protocols.contains { $0["protocol"] as? String == "open_router_decisions" && $0["decision"] as? Bool == true })
         #expect(protocols.contains { $0["protocol"] as? String == "tei" && $0["reranking"] as? Bool == true })
+        let cloud = try #require(protocols.first { $0["protocol"] as? String == "pennel_cloud" })
+        #expect(cloud["managed"] as? Bool == true)
+        #expect(cloud["allowed_provider_kinds"] as? [String] == ["pennel_cloud"])
+        #expect(cloud["decision"] as? Bool == true)
+        #expect(cloud["reranking"] as? Bool == true)
+        #expect(cloud["requires_key"] as? Bool == false)
         for capability in ["decision", "reranking"] {
             let availability = try BridgeJSON.object(await runtime.invoke(method: "inference.availability", payload: BridgeJSON.encode(["capability": capability])))
             #expect(availability["configured"] as? Bool == false)

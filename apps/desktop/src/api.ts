@@ -152,7 +152,7 @@ export interface ProviderTaskTestResult {
 }
 
 export type InferenceCapability = "decision" | "reranking";
-export type InferenceProtocol = "open_router_decisions" | "open_router_system_one" | "type_safe" | "perplexity" | "mercury" | "local_decider" | "tei";
+export type InferenceProtocol = "open_router_decisions" | "open_router_system_one" | "type_safe" | "perplexity" | "mercury" | "local_decider" | "tei" | "pennel_cloud";
 export interface InferenceConfig {
   provider_id: string;
   protocol: InferenceProtocol;
@@ -170,6 +170,8 @@ export interface InferenceProtocolInfo {
   reranking: boolean;
   extraction: boolean;
   requires_key: boolean;
+  allowed_provider_kinds: ProviderKind[];
+  managed: boolean;
 }
 export interface InferenceAvailability {
   capability: InferenceCapability;
@@ -276,6 +278,8 @@ export interface AppInfo {
   settings: Settings;
   keys: Record<string, boolean>;
   provider_revisions?: Record<string, number>;
+  cloud_account_epoch?: string;
+  cloud_signed_in?: boolean;
   cleanup_verification?: CleanupVerificationAvailability;
   active_model_downloads?: string[];
   unsaved_history_count?: number;

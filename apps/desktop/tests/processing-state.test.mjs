@@ -3,7 +3,7 @@ setInterfaceLanguage("nl");
 import assert from "node:assert/strict";
 import test from "node:test";
 import { processingSummary, providerDestination } from "../src/processing-state.ts";
-import { ModelCatalogCache, ProviderVerification, taskFingerprint } from "../src/provider-verification.ts";
+import { choiceFingerprint, ModelCatalogCache, ProviderVerification, taskFingerprint } from "../src/provider-verification.ts";
 
 const providers = [
   { id: "speech", kind: "local", name: "Lokaal", base_url: "" },
@@ -59,4 +59,24 @@ test("failed model catalog loads can retry and an obsolete response cannot repla
   assert.deepEqual(await cache.get("provider", "new", async () => assert.fail("current result should be cached")), ["new"]);
   cache.invalidate("provider");
   assert.deepEqual(await cache.get("provider", "new", async () => ["refreshed"]), ["refreshed"]);
+});
+
+test("Cloud task and draft verification follows account identity while preserving routine token refreshes", () => {
+  const cloud = { id: "cloud", kind: "pennel_cloud", name: "Pennel Cloud", base_url: "https://api.pennel.app/v1" };
+  const choice = { provider_id: cloud.id, model: "pennel-auto" };
+  const info = { settings: { ...settings, providers: [...providers, cloud], llm: choice }, keys: {}, provider_revisions: { cloud: 1 }, cloud_account_epoch: "account-1", cloud_signed_in: true };
+  const fingerprint = taskFingerprint(info, "llm");
+  const draftFingerprint = choiceFingerprint(info, choice);
+  const rotated = { ...info, keys: { cloud: true }, provider_revisions: { cloud: 2 } };
+  assert.equal(taskFingerprint(rotated, "llm"), fingerprint);
+  assert.equal(choiceFingerprint(rotated, choice), draftFingerprint);
+  const verification = new ProviderVerification();
+  verification.set("llm", fingerprint, { verified: true, message: "Synthetic Cloud test passed" });
+  assert.equal(verification.get("llm", taskFingerprint(rotated, "llm"))?.verified, true);
+  for (const change of [{ cloud_account_epoch: "account-2" }, { cloud_signed_in: false }]) {
+    const changed = { ...rotated, ...change };
+    assert.notEqual(taskFingerprint(changed, "llm"), fingerprint);
+    assert.notEqual(choiceFingerprint(changed, choice), draftFingerprint);
+  }
+  assert.equal(verification.get("llm", taskFingerprint({ ...rotated, cloud_account_epoch: "account-2" }, "llm")), null);
 });

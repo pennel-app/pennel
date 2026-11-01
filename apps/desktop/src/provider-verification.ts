@@ -2,9 +2,10 @@ import type { AppInfo, ModelChoice, ProviderAccount } from "./api";
 
 export type ProviderSlot = "dictation_stt" | "meeting_stt" | "llm";
 export interface TaskVerification { verified: boolean; message: string }
-type VerificationInfo = Pick<AppInfo, "settings" | "keys"> & { provider_revisions?: Record<string, number> };
+type VerificationInfo = Pick<AppInfo, "settings" | "keys" | "cloud_account_epoch" | "cloud_signed_in"> & { provider_revisions?: Record<string, number> };
 
 export function providerFingerprint(info: VerificationInfo, account: ProviderAccount): string {
+  if (account.kind === "pennel_cloud") return JSON.stringify([account.id, account.kind, account.name, account.base_url, info.cloud_account_epoch ?? null, info.cloud_signed_in === true]);
   return JSON.stringify([account.id, account.kind, account.name, account.base_url, !!info.keys[account.id], info.provider_revisions?.[account.id] ?? 0]);
 }
 

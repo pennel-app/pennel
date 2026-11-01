@@ -22,6 +22,7 @@ pub enum InferenceProtocol {
     Mercury,
     LocalDecider,
     Tei,
+    PennelCloud,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
@@ -62,6 +63,8 @@ pub struct InferenceProtocolInfo {
     pub reranking: bool,
     pub extraction: bool,
     pub requires_key: bool,
+    pub allowed_provider_kinds: Vec<crate::ProviderKind>,
+    pub managed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
@@ -198,7 +201,11 @@ pub fn new_inference_config(provider_id: String, protocol: InferenceProtocol) ->
     InferenceConfig {
         provider_id,
         protocol,
-        model: String::new(),
+        model: if protocol == InferenceProtocol::PennelCloud {
+            "pennel-auto".into()
+        } else {
+            String::new()
+        },
         expected_model: None,
         upstream: None,
         max_input_bytes: default_input_bytes(),
@@ -242,6 +249,7 @@ pub fn inference_protocols() -> Vec<InferenceProtocolInfo> {
             false,
         ),
         (Tei, "TEI reranking", "http://127.0.0.1:8080", false),
+        (PennelCloud, "Pennel Cloud", "https://api.pennel.app", false),
     ]
     .into_iter()
     .map(
@@ -250,9 +258,17 @@ pub fn inference_protocols() -> Vec<InferenceProtocolInfo> {
             name: name.into(),
             default_base_url: base.into(),
             decision: protocol != Tei,
-            reranking: protocol == Tei,
+            reranking: matches!(protocol, Tei | PennelCloud),
             extraction: protocol == Mercury,
             requires_key,
+            allowed_provider_kinds: match protocol {
+                PennelCloud => vec![crate::ProviderKind::PennelCloud],
+                OpenRouterDecisions | OpenRouterSystemOne => {
+                    vec![crate::ProviderKind::OpenRouter, crate::ProviderKind::Custom]
+                }
+                _ => vec![crate::ProviderKind::Custom],
+            },
+            managed: protocol == PennelCloud,
         },
     )
     .collect()
@@ -264,7 +280,7 @@ fn invalid(message: &'static str) -> PennelError {
     }
 }
 
-fn network() -> PennelError {
+pub(crate) fn network() -> PennelError {
     PennelError::Network {
         message: "The inference provider could not complete the request.".into(),
     }
@@ -299,10 +315,23 @@ pub(crate) fn validate_config(
             "Choose a provider, model and valid inference limits first.",
         ));
     }
-    if (capability == InferenceCapability::Reranking) != (config.protocol == InferenceProtocol::Tei)
-    {
+    let protocol = inference_protocols()
+        .into_iter()
+        .find(|info| info.protocol == config.protocol)
+        .expect("every inference protocol has metadata");
+    if !match capability {
+        InferenceCapability::Decision => protocol.decision,
+        InferenceCapability::Reranking => protocol.reranking,
+    } {
         return Err(invalid(
             "This protocol does not support the selected inference capability.",
+        ));
+    }
+    if config.protocol == InferenceProtocol::PennelCloud
+        && (config.model != "pennel-auto" || config.upstream.is_some())
+    {
+        return Err(invalid(
+            "Pennel Cloud manages its inference model and routing.",
         ));
     }
     if router(config.protocol)
@@ -324,33 +353,13 @@ pub(crate) fn validate_config(
     {
         return Err(invalid("Upstream routing is only supported by OpenRouter."));
     }
-    let uri: ureq::http::Uri = base_url
-        .parse()
-        .map_err(|_| invalid("Enter a valid inference server URL."))?;
-    let scheme = uri.scheme_str().unwrap_or("");
-    let host = uri.host().unwrap_or("");
+    let (host, loopback) = validate_origin(base_url)?;
     let canonical_host = host.trim_end_matches('.').to_ascii_lowercase();
     if (canonical_host == "openrouter.ai" || canonical_host.ends_with(".openrouter.ai"))
         && !router(config.protocol)
     {
         return Err(invalid(
             "Choose an OpenRouter protocol for this server so fixed upstream routing and data policies are enforced.",
-        ));
-    }
-    let loopback = host.eq_ignore_ascii_case("localhost")
-        || host
-            .trim_matches(['[', ']'])
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback());
-    if host.is_empty()
-        || base_url.chars().any(char::is_control)
-        || uri.authority().is_some_and(|a| a.as_str().contains('@'))
-        || uri.query().is_some()
-        || base_url.contains('#')
-        || !(scheme == "https" || scheme == "http" && loopback)
-    {
-        return Err(invalid(
-            "Use HTTPS, or an explicitly configured loopback HTTP server, without URL credentials or query parameters.",
         ));
     }
     if config.protocol == InferenceProtocol::LocalDecider && !loopback {
@@ -360,6 +369,14 @@ pub(crate) fn validate_config(
     }
     let base = base_url.trim_end_matches('/');
     let endpoint = match config.protocol {
+        InferenceProtocol::PennelCloud => format!(
+            "{}/v1/{}",
+            base.strip_suffix("/v1").unwrap_or(base),
+            match capability {
+                InferenceCapability::Decision => "decisions",
+                InferenceCapability::Reranking => "rerank",
+            }
+        ),
         InferenceProtocol::OpenRouterDecisions => {
             if base.ends_with("/api/alpha/decisions") {
                 base.into()
@@ -398,6 +415,31 @@ pub(crate) fn validate_config(
         }
     };
     Ok(endpoint)
+}
+
+pub(crate) fn validate_origin(base_url: &str) -> Result<(String, bool), PennelError> {
+    let uri: ureq::http::Uri = base_url
+        .parse()
+        .map_err(|_| invalid("Enter a valid inference server URL."))?;
+    let scheme = uri.scheme_str().unwrap_or("");
+    let host = uri.host().unwrap_or("");
+    let loopback = host.eq_ignore_ascii_case("localhost")
+        || host
+            .trim_matches(['[', ']'])
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    if host.is_empty()
+        || base_url.chars().any(char::is_control)
+        || uri.authority().is_some_and(|a| a.as_str().contains('@'))
+        || uri.query().is_some()
+        || base_url.contains('#')
+        || !(scheme == "https" || scheme == "http" && loopback)
+    {
+        return Err(invalid(
+            "Use HTTPS, or an explicitly configured loopback HTTP server, without URL credentials or query parameters.",
+        ));
+    }
+    Ok((host.to_owned(), loopback))
 }
 
 struct WireOptions<'a>(&'a [DecisionOption]);
@@ -460,11 +502,21 @@ struct WireRequest<'a> {
     questions: WireQuestions<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
     provider: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<&'a str>,
 }
 
 fn decision_body(
     config: &InferenceConfig,
     request: &DecisionRequest,
+) -> Result<Vec<u8>, PennelError> {
+    decision_body_with_id(config, request, None)
+}
+
+fn decision_body_with_id(
+    config: &InferenceConfig,
+    request: &DecisionRequest,
+    request_id: Option<&str>,
 ) -> Result<Vec<u8>, PennelError> {
     if request.questions.is_empty() || request.questions.len() > 128 || request.state.is_empty() {
         return Err(invalid(
@@ -526,6 +578,7 @@ fn decision_body(
         state: &request.state,
         questions: WireQuestions(&request.questions),
         provider,
+        request_id,
     })
     .map_err(|_| invalid("The decision request could not be encoded."))?;
     let protocol_bytes = match config.protocol {
@@ -643,6 +696,19 @@ fn send_json(
     body: Option<&[u8]>,
     deadline: std::time::Instant,
 ) -> Result<Value, PennelError> {
+    let (status, response) = send_json_status(endpoint, key, body, deadline)?;
+    if !(200..300).contains(&status) {
+        return Err(crate::http::map_status(status, ""));
+    }
+    Ok(response)
+}
+
+pub(crate) fn send_json_status(
+    endpoint: &str,
+    key: Option<&str>,
+    body: Option<&[u8]>,
+    deadline: std::time::Instant,
+) -> Result<(u16, Value), PennelError> {
     let remaining = deadline.saturating_duration_since(std::time::Instant::now());
     if remaining.is_zero() {
         return Err(network());
@@ -672,7 +738,7 @@ fn send_json(
     .map_err(|_| network())?;
     let status = response.status().as_u16();
     if !(200..300).contains(&status) {
-        return Err(crate::http::map_status(status, ""));
+        return Ok((status, Value::Null));
     }
     let text = response
         .body_mut()
@@ -680,7 +746,147 @@ fn send_json(
         .limit(MAX_RESPONSE_BYTES)
         .read_to_string()
         .map_err(|_| invalid("The inference response is unreadable or exceeds its size limit."))?;
-    parse_unique_json(&text)
+    Ok((status, parse_unique_json(&text)?))
+}
+
+#[derive(Clone)]
+pub(crate) struct ManagedInference {
+    pub(crate) session: Arc<crate::cloud::account::Session>,
+    pub(crate) generation: u64,
+}
+
+impl ManagedInference {
+    fn send(
+        &self,
+        endpoint: &str,
+        body: Option<&[u8]>,
+        cancellation: &InferenceCancellation,
+        deadline: std::time::Instant,
+    ) -> Result<Value, PennelError> {
+        let token = zeroize::Zeroizing::new(self.session.inference_token(
+            self.generation,
+            false,
+            cancellation,
+            deadline,
+        )?);
+        self.session
+            .check_inference(self.generation, cancellation, deadline)?;
+        let mut response = send_json_status(endpoint, Some(&token), body, deadline)?;
+        self.session
+            .check_inference(self.generation, cancellation, deadline)?;
+        if response.0 == 401 {
+            let token = zeroize::Zeroizing::new(self.session.inference_token(
+                self.generation,
+                true,
+                cancellation,
+                deadline,
+            )?);
+            self.session
+                .check_inference(self.generation, cancellation, deadline)?;
+            response = send_json_status(endpoint, Some(&token), body, deadline)?;
+            self.session
+                .check_inference(self.generation, cancellation, deadline)?;
+        }
+        if !(200..300).contains(&response.0) {
+            return Err(crate::http::map_status(response.0, ""));
+        }
+        Ok(response.1)
+    }
+}
+
+fn managed_response(response: &Value, request_id: &str) -> Result<(), PennelError> {
+    if response["schema_version"].as_u64() != Some(1)
+        || response["request_id"].as_str() != Some(request_id)
+    {
+        return Err(invalid(
+            "Pennel Cloud returned an unsupported or mismatched inference response.",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn managed_capability_available(
+    config: &InferenceConfig,
+    managed: ManagedInference,
+    capability: InferenceCapability,
+    cancellation: Arc<InferenceCancellation>,
+) -> Result<bool, PennelError> {
+    validate_config(config, managed.session.base_url(), capability)?;
+    let base = managed.session.base_url().trim_end_matches('/');
+    let endpoint = format!(
+        "{}/v1/inference/capabilities",
+        base.strip_suffix("/v1").unwrap_or(base)
+    );
+    let worker_cancellation = cancellation.clone();
+    run_cancelled(cancellation, config.timeout_secs, move |deadline| {
+        let response = managed.send(&endpoint, None, &worker_cancellation, deadline)?;
+        if response["schema_version"].as_u64() != Some(1) {
+            return Err(invalid(
+                "Pennel Cloud returned unsupported inference capabilities.",
+            ));
+        }
+        let field = match capability {
+            InferenceCapability::Decision => "decision",
+            InferenceCapability::Reranking => "reranking",
+        };
+        response[field]["available"]
+            .as_bool()
+            .ok_or_else(|| invalid("Pennel Cloud omitted this inference capability."))
+    })
+}
+
+pub(crate) fn decide_managed(
+    config: &InferenceConfig,
+    managed: ManagedInference,
+    request: DecisionRequest,
+    cancellation: Arc<InferenceCancellation>,
+) -> Result<DecisionResult, PennelError> {
+    let endpoint = validate_config(
+        config,
+        managed.session.base_url(),
+        InferenceCapability::Decision,
+    )?;
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let body = decision_body_with_id(config, &request, Some(&request_id))?;
+    let config = config.clone();
+    let worker_cancellation = cancellation.clone();
+    run_cancelled(cancellation, config.timeout_secs, move |deadline| {
+        let response = managed.send(&endpoint, Some(&body), &worker_cancellation, deadline)?;
+        managed_response(&response, &request_id)?;
+        decision_result(&config, endpoint, &request, &response)
+    })
+}
+
+pub(crate) fn rerank_managed(
+    config: &InferenceConfig,
+    managed: ManagedInference,
+    request: RerankRequest,
+    cancellation: Arc<InferenceCancellation>,
+) -> Result<RerankResult, PennelError> {
+    let endpoint = validate_config(
+        config,
+        managed.session.base_url(),
+        InferenceCapability::Reranking,
+    )?;
+    validate_rerank_request(&request)?;
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let body = serde_json::to_vec(&json!({
+        "model": config.model, "request_id": request_id, "query": request.query,
+        "documents": request.passages.iter().map(|p| &p.text).collect::<Vec<_>>()
+    }))
+    .map_err(|_| invalid("The reranking request could not be encoded."))?;
+    validate_size(config, &body)?;
+    let config = config.clone();
+    let worker_cancellation = cancellation.clone();
+    run_cancelled(cancellation, config.timeout_secs, move |deadline| {
+        let response = managed.send(&endpoint, Some(&body), &worker_cancellation, deadline)?;
+        managed_response(&response, &request_id)?;
+        Ok(RerankResult {
+            scores: rerank_scores(&request, &response["results"])?,
+            identity: identity(&config, endpoint, &response)?,
+            usage: usage(&response)?,
+        })
+    })
 }
 
 fn probability(value: &Value) -> Result<f64, PennelError> {
@@ -918,6 +1124,9 @@ fn identity(
             .unwrap_or(&Value::Null),
     )?;
     let actual_provider = optional_string(&response["provider"])?;
+    if config.protocol == InferenceProtocol::PennelCloud && actual_model.is_none() {
+        return Err(invalid("Pennel Cloud omitted its actual model identity."));
+    }
     if config
         .expected_model
         .as_ref()
@@ -1035,6 +1244,11 @@ pub(crate) fn decide_before(
     if cancellation.is_cancelled() {
         return Err(PennelError::Cancelled);
     }
+    if config.protocol == InferenceProtocol::PennelCloud {
+        return Err(invalid(
+            "Use the signed-in Pennel Cloud inference connection.",
+        ));
+    }
     let endpoint = validate_config(config, base_url, InferenceCapability::Decision)?;
     let body = decision_body(config, &request)?;
     if inference_protocols()
@@ -1050,42 +1264,41 @@ pub(crate) fn decide_before(
     let key = key.map(str::to_owned);
     run_cancelled_before(cancellation, deadline, move |deadline| {
         let response = send_json(&endpoint, key.as_deref(), Some(&body), deadline)?;
-        let answers = response["answers"]
-            .as_object()
-            .ok_or_else(|| invalid("The decision response omitted its answers."))?;
-        if answers.len() != request.questions.len()
-            || answers
-                .keys()
-                .any(|id| !request.questions.iter().any(|q| &q.id == id))
-        {
-            return Err(invalid(
-                "The decision response omitted, duplicated or added question IDs.",
-            ));
-        }
-        let parsed = request
-            .questions
-            .iter()
-            .map(|q| parse_answer(q, &answers[&q.id], &request.state))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(DecisionResult {
-            answers: parsed,
-            identity: identity(&config, endpoint, &response)?,
-            usage: usage(&response)?,
-        })
+        decision_result(&config, endpoint, &request, &response)
     })
 }
 
-pub(crate) fn rerank(
+fn decision_result(
     config: &InferenceConfig,
-    base_url: &str,
-    key: Option<&str>,
-    request: RerankRequest,
-    cancellation: Arc<InferenceCancellation>,
-) -> Result<RerankResult, PennelError> {
-    if cancellation.is_cancelled() {
-        return Err(PennelError::Cancelled);
+    endpoint: String,
+    request: &DecisionRequest,
+    response: &Value,
+) -> Result<DecisionResult, PennelError> {
+    let answers = response["answers"]
+        .as_object()
+        .ok_or_else(|| invalid("The decision response omitted its answers."))?;
+    if answers.len() != request.questions.len()
+        || answers
+            .keys()
+            .any(|id| !request.questions.iter().any(|q| &q.id == id))
+    {
+        return Err(invalid(
+            "The decision response omitted, duplicated or added question IDs.",
+        ));
     }
-    let endpoint = validate_config(config, base_url, InferenceCapability::Reranking)?;
+    let parsed = request
+        .questions
+        .iter()
+        .map(|q| parse_answer(q, &answers[&q.id], &request.state))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DecisionResult {
+        answers: parsed,
+        identity: identity(config, endpoint, response)?,
+        usage: usage(response)?,
+    })
+}
+
+fn validate_rerank_request(request: &RerankRequest) -> Result<(), PennelError> {
     let mut ids = std::collections::HashSet::new();
     if request.query.trim().is_empty()
         || request.passages.is_empty()
@@ -1099,6 +1312,60 @@ pub(crate) fn rerank(
             "Provide a query and between one and 128 passages with unique IDs.",
         ));
     }
+    Ok(())
+}
+
+fn rerank_scores(
+    request: &RerankRequest,
+    response: &Value,
+) -> Result<Vec<RerankScore>, PennelError> {
+    let rows = response
+        .as_array()
+        .ok_or_else(|| invalid("The reranking provider returned invalid scores."))?;
+    let mut seen = std::collections::HashSet::new();
+    if rows.len() != request.passages.len() {
+        return Err(invalid("The reranking response omitted passages."));
+    }
+    rows.iter()
+        .map(|row| {
+            let index = row["index"]
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())
+                .filter(|n| *n < request.passages.len() && seen.insert(*n))
+                .ok_or_else(|| {
+                    invalid("The reranking response contains duplicate or unknown passage IDs.")
+                })?;
+            let score = row["score"]
+                .as_f64()
+                .filter(|n| n.is_finite())
+                .ok_or_else(|| {
+                    invalid("The reranking response contains an invalid relevance score.")
+                })?;
+            Ok(RerankScore {
+                passage_id: request.passages[index].id.clone(),
+                score,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn rerank(
+    config: &InferenceConfig,
+    base_url: &str,
+    key: Option<&str>,
+    request: RerankRequest,
+    cancellation: Arc<InferenceCancellation>,
+) -> Result<RerankResult, PennelError> {
+    if cancellation.is_cancelled() {
+        return Err(PennelError::Cancelled);
+    }
+    if config.protocol == InferenceProtocol::PennelCloud {
+        return Err(invalid(
+            "Use the signed-in Pennel Cloud inference connection.",
+        ));
+    }
+    let endpoint = validate_config(config, base_url, InferenceCapability::Reranking)?;
+    validate_rerank_request(&request)?;
     let body = serde_json::to_vec(&json!({"query": request.query, "texts": request.passages.iter().map(|p| &p.text).collect::<Vec<_>>(), "raw_scores": true, "truncate": false}))
         .map_err(|_| invalid("The reranking request could not be encoded."))?;
     validate_size(config, &body)?;
@@ -1122,35 +1389,7 @@ pub(crate) fn rerank(
             return Err(PennelError::Cancelled);
         }
         let response = send_json(&endpoint, key.as_deref(), Some(&body), deadline)?;
-        let rows = response
-            .as_array()
-            .ok_or_else(|| invalid("The reranking provider returned invalid scores."))?;
-        let mut seen = std::collections::HashSet::new();
-        if rows.len() != request.passages.len() {
-            return Err(invalid("The reranking response omitted passages."));
-        }
-        let scores = rows
-            .iter()
-            .map(|row| {
-                let index = row["index"]
-                    .as_u64()
-                    .and_then(|n| usize::try_from(n).ok())
-                    .filter(|n| *n < request.passages.len() && seen.insert(*n))
-                    .ok_or_else(|| {
-                        invalid("The reranking response contains duplicate or unknown passage IDs.")
-                    })?;
-                let score = row["score"]
-                    .as_f64()
-                    .filter(|n| n.is_finite())
-                    .ok_or_else(|| {
-                        invalid("The reranking response contains an invalid relevance score.")
-                    })?;
-                Ok(RerankScore {
-                    passage_id: request.passages[index].id.clone(),
-                    score,
-                })
-            })
-            .collect::<Result<Vec<_>, PennelError>>()?;
+        let scores = rerank_scores(&request, &response)?;
         let metadata = json!({"model": actual_model, "model_sha": info.get("model_sha").cloned().unwrap_or(Value::Null), "provider": "TEI"});
         Ok(RerankResult {
             scores,

@@ -160,6 +160,8 @@ pub struct AppInfo {
     settings: Settings,
     keys: HashMap<String, bool>,
     provider_revisions: HashMap<String, u64>,
+    cloud_account_epoch: String,
+    cloud_signed_in: bool,
     cleanup_verification: pennel_core::CleanupVerificationAvailability,
     active_model_downloads: Vec<String>,
     unsaved_history_count: u32,
@@ -215,6 +217,8 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
             .iter()
             .map(|provider| (provider.id.clone(), shared.secrets.revision()))
             .collect(),
+        cloud_account_epoch: crate::cloud::account_epoch(shared),
+        cloud_signed_in: shared.secrets.has("pennel-cloud-refresh")?,
         cleanup_verification: shared.engine.cleanup_verification_availability(),
         active_model_downloads: shared.engine.active_model_downloads(),
         unsaved_history_count: shared.engine.unsaved_history_count(),

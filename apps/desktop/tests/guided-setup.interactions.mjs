@@ -577,6 +577,48 @@ function directSetupContext(fixture, report, refresh = async () => {}) {
   };
 }
 
+export async function checkGuidedSetupCloudTokenRotation() {
+  const fixture = ownedFixture();
+  const client = window.__PENNEL_PLATFORM__;
+  const original = client.invoke.bind(client);
+  const { openTaskSetupDialog } = await import("/src/views/setup.ts");
+  const { t } = await import("/src/i18n.ts");
+  const next = await original("add_provider", { kind: "pennel_cloud" });
+  const cloud = next.settings.providers.find(provider => provider.kind === "pennel_cloud");
+  next.settings.llm = { provider_id: cloud.id, model: "pennel-auto" };
+  await original("save_settings", { settings: next.settings });
+  const before = structuredClone(assignments(fixture.info()));
+  const controlledInfo = fixture.info();
+  const errors = [];
+  const handle = openTaskSetupDialog(directSetupContext({ info: () => controlledInfo }, error => errors.push(String(error))), "llm", async () => {}, () => {});
+  let finish;
+  client.invoke = async (command, args = {}) => command === "test_provider_task_choice"
+    ? new Promise(resolve => { finish = resolve; }) : original(command, args);
+  try {
+    await until(() => dialog()?.querySelector("[data-setup-test]") && !dialog().querySelector("[data-setup-test]").disabled, "The signed-in synthetic Cloud draft did not become ready.");
+    click(dialog().querySelector("[data-setup-test]"));
+    await until(() => finish, "The Cloud draft sample did not reach its controlled responder.");
+    controlledInfo.provider_revisions[cloud.id] = (controlledInfo.provider_revisions[cloud.id] ?? 0) + 1;
+    controlledInfo.keys[cloud.id] = true;
+    handle.notify(controlledInfo); await settle();
+    assert(dialog().textContent.includes(t("providers.processing_sample")) && dialog().querySelector("[data-setup-test]").disabled, "Routine Cloud credential rotation cancelled its own ordinary task sample.");
+    finish({ verified: true, message: "Synthetic same-account task sample passed" });
+    await until(() => dialog().textContent.includes("Synthetic same-account task sample passed") && !dialog().querySelector("[data-setup-test]").disabled, "A current-account sample result was discarded after routine token rotation.");
+    finish = null;
+    click(dialog().querySelector("[data-setup-test]"));
+    await until(() => finish, "The second Cloud sample did not reach its controlled responder.");
+    controlledInfo.cloud_account_epoch = `${controlledInfo.cloud_account_epoch}:other-account`;
+    handle.notify(controlledInfo); await settle();
+    assert(!dialog().textContent.includes(t("providers.processing_sample")), "Changing Cloud accounts did not immediately invalidate the old task sample.");
+    finish({ verified: true, message: "Obsolete prior-account Cloud task sample" }); await settle();
+    assert(!dialog().textContent.includes("Obsolete prior-account Cloud task sample") && !dialog().textContent.includes("Synthetic same-account task sample passed"), "The prior Cloud account published an obsolete task verification.");
+    click(dialog().querySelector("[data-setup-cancel]"));
+    await until(() => !dialog(), "Cloud draft verification could not be cancelled.");
+    assert(same(assignments(fixture.info()), before) && !fixture.setupTrace.appliedTasks.length && !errors.length, "Cloud token/account changes altered assignments or produced an unexplained failure.");
+    return { routineRefreshAccepted: true, accountChangeDiscarded: true, assignmentsPreserved: true, externalServicesUsed: false, userDataUsed: false };
+  } finally { finish?.({ verified: false, message: "Cancelled synthetic Cloud task sample" }); handle.dispose(); client.invoke = original; }
+}
+
 export async function checkGuidedSetupCloudForceRefresh() {
   const fixture = ownedFixture();
   const client = window.__PENNEL_PLATFORM__;
