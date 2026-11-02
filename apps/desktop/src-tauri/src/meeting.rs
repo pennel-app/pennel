@@ -72,6 +72,7 @@ impl MacCaptureHealth {
 /// status consumers only read the cache and normal capture finalization runs on a worker.
 #[cfg(target_os = "macos")]
 struct MacCaptureMonitor {
+    capture: crate::macos::MeetingCaptureQuiescence,
     health: Arc<Mutex<MacCaptureHealth>>,
     stop: Option<SyncSender<()>>,
     worker: Option<std::thread::JoinHandle<Result<(), String>>>,
@@ -80,6 +81,7 @@ struct MacCaptureMonitor {
 #[cfg(target_os = "macos")]
 impl MacCaptureMonitor {
     fn start(native: crate::macos::MeetingCapture, engine: Arc<PennelEngine>, id: String) -> Self {
+        let capture = native.quiescence();
         let health = Arc::new(Mutex::new(MacCaptureHealth::from_status(native.status())));
         let next_health = health.clone();
         let (stop, receiver) = mpsc::sync_channel(1);
@@ -123,6 +125,7 @@ impl MacCaptureMonitor {
             }
         });
         Self {
+            capture,
             health,
             stop: Some(stop),
             worker: Some(worker),
@@ -131,6 +134,10 @@ impl MacCaptureMonitor {
 
     fn snapshot(&self) -> MacCaptureHealth {
         self.health.lock().unwrap().clone()
+    }
+
+    fn quiesce(&self) {
+        self.capture.quiesce();
     }
 
     fn stop(mut self) -> Result<(), String> {
@@ -167,6 +174,10 @@ pub struct MeetingRecorder {
     engine: Arc<PennelEngine>,
     pub title: String,
     started: Instant,
+    quiescent_ms: Option<u64>,
+    capture_failures: Vec<String>,
+    #[cfg(test)]
+    quiescence_probe: Option<Arc<AtomicBool>>,
     #[cfg(target_os = "macos")]
     native: Option<MacCaptureMonitor>,
     #[cfg(not(target_os = "macos"))]
@@ -176,6 +187,8 @@ pub struct MeetingRecorder {
     has_system: bool,
     #[cfg(not(target_os = "macos"))]
     tracks: [Arc<Mutex<TrackSink>>; 2],
+    #[cfg(not(target_os = "macos"))]
+    track_ingress: Vec<TrackIngress>,
     #[cfg(not(target_os = "macos"))]
     capture_warning: Option<String>,
     #[cfg(windows)]
@@ -193,6 +206,13 @@ enum Microphone {
 
 #[cfg(not(target_os = "macos"))]
 impl Microphone {
+    fn request_stop(&self) {
+        match self {
+            Self::Raw(capture) => capture.request_stop(),
+            #[cfg(windows)]
+            Self::Echo(capture) => capture.request_stop(),
+        }
+    }
     fn error(&self) -> Option<String> {
         match self {
             Self::Raw(capture) => capture.error(),
@@ -208,6 +228,57 @@ impl Microphone {
             Self::Echo(capture) => capture.stop(),
         }
     }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+trait CaptureStop {
+    fn request_shutdown(&self);
+    fn finish_shutdown(self) -> Result<(), String>;
+}
+
+#[cfg(not(target_os = "macos"))]
+impl CaptureStop for Microphone {
+    fn request_shutdown(&self) {
+        self.request_stop();
+    }
+    fn finish_shutdown(self) -> Result<(), String> {
+        self.stop()
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl CaptureStop for Capture {
+    fn request_shutdown(&self) {
+        self.request_stop();
+    }
+    fn finish_shutdown(self) -> Result<(), String> {
+        self.stop_checked()
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn quiesce_sources<M: CaptureStop, S: CaptureStop>(
+    microphone: Option<M>,
+    system: Option<S>,
+) -> Vec<String> {
+    if let Some(source) = &microphone {
+        source.request_shutdown();
+    }
+    if let Some(source) = &system {
+        source.request_shutdown();
+    }
+    let mut failures = Vec::new();
+    if let Some(source) = microphone
+        && let Err(error) = source.finish_shutdown()
+    {
+        failures.push(error);
+    }
+    if let Some(source) = system
+        && let Err(error) = source.finish_shutdown()
+    {
+        failures.push(error);
+    }
+    failures
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -306,7 +377,7 @@ impl TimedTrack {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(not(target_os = "macos"), test))]
 struct TrackSink {
     timing: TimedTrack,
     #[cfg(any(windows, target_os = "linux"))]
@@ -314,8 +385,9 @@ struct TrackSink {
     error: Option<String>,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(not(target_os = "macos"), test))]
 impl TrackSink {
+    #[cfg(not(target_os = "macos"))]
     fn new(
         #[cfg(any(windows, target_os = "linux"))] archive: archive_backend::AudioArchive,
     ) -> Self {
@@ -425,25 +497,75 @@ impl TrackSink {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn batching(
-    session: Arc<MeetingSession>,
-    speaker: Speaker,
-    pending: Arc<Mutex<TrackSink>>,
-    heard: Option<Arc<AtomicBool>>,
-    started: Instant,
-) -> impl FnMut(&[f32], Instant) + Send + 'static {
-    move |chunk, captured_at| {
-        if let Some(heard) = &heard
-            && chunk.iter().any(|sample| *sample != 0.0)
-        {
-            heard.store(true, Ordering::Relaxed);
+#[cfg(any(not(target_os = "macos"), test))]
+struct TrackIngress {
+    sender: Option<std::sync::mpsc::SyncSender<(u64, Vec<f32>)>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    error: Arc<Mutex<Option<String>>>,
+    overloaded: Arc<AtomicBool>,
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+impl TrackIngress {
+    fn start(
+        session: Arc<MeetingSession>,
+        speaker: Speaker,
+        track: Arc<Mutex<TrackSink>>,
+    ) -> Result<Self, String> {
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<(u64, Vec<f32>)>(64);
+        let error = Arc::new(Mutex::new(None));
+        let next_error = error.clone();
+        let worker = std::thread::Builder::new()
+            .name("pennel-track-archive".into())
+            .spawn(move || {
+                while let Ok((start_ms, samples)) = receiver.recv() {
+                    let mut track = track.lock().unwrap();
+                    track.push_at(&session, speaker, start_ms, &samples);
+                    if let Some(failure) = &track.error {
+                        *next_error.lock().unwrap() = Some(failure.clone());
+                    }
+                }
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            sender: Some(sender),
+            worker: Some(worker),
+            error,
+            overloaded: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    fn callback(
+        &self,
+        heard: Option<Arc<AtomicBool>>,
+        started: Instant,
+    ) -> impl FnMut(&[f32], Instant) + Send + 'static {
+        let sender = self.sender.as_ref().unwrap().clone();
+        let overloaded = self.overloaded.clone();
+        move |chunk, captured_at| {
+            if let Some(heard) = &heard
+                && chunk.iter().any(|sample| *sample != 0.0)
+            {
+                heard.store(true, Ordering::Relaxed);
+            }
+            let start_ms = captured_at.saturating_duration_since(started).as_millis() as u64;
+            if sender.try_send((start_ms, chunk.to_vec())).is_err() {
+                overloaded.store(true, Ordering::SeqCst);
+            }
         }
-        let start_ms = captured_at.saturating_duration_since(started).as_millis() as u64;
-        pending
-            .lock()
+    }
+
+    fn finish(mut self) -> Result<(), String> {
+        self.sender.take();
+        self.worker
+            .take()
             .unwrap()
-            .push_at(&session, speaker, start_ms, chunk);
+            .join()
+            .map_err(|_| "Audio processing stopped unexpectedly.".to_owned())?;
+        if self.overloaded.load(Ordering::SeqCst) {
+            return Err("Audio processing could not keep up with recording.".into());
+        }
+        self.error.lock().unwrap().clone().map_or(Ok(()), Err)
     }
 }
 
@@ -509,6 +631,10 @@ impl MeetingRecorder {
                 engine,
                 title,
                 started,
+                quiescent_ms: None,
+                capture_failures: Vec::new(),
+                #[cfg(test)]
+                quiescence_probe: None,
                 native: Some(native),
                 has_system,
                 dictating_since: Mutex::new(None),
@@ -538,28 +664,22 @@ impl MeetingRecorder {
                 ]
             };
             let started = Instant::now();
+            let track_ingress = vec![
+                TrackIngress::start(session.clone(), Speaker::Me, tracks[0].clone())?,
+                TrackIngress::start(session.clone(), Speaker::Others, tracks[1].clone())?,
+            ];
             let heard_system = Arc::new(AtomicBool::new(false));
             #[cfg(windows)]
             let (mic, echo_active, mut capture_warning) = if echo {
-                match crate::windows_meetings::EchoCapture::start_timed(batching(
-                    session.clone(),
-                    Speaker::Me,
-                    tracks[0].clone(),
-                    None,
-                    started,
-                )) {
+                match crate::windows_meetings::EchoCapture::start_timed(
+                    track_ingress[0].callback(None, started),
+                ) {
                     Ok(capture) => (Microphone::Echo(capture), true, None),
                     Err(error) => {
                         LOG.error(format!("echo cancellation inactive: {error}"));
                         let capture = Capture::start_timed(
                             Source::Microphone,
-                            batching(
-                                session.clone(),
-                                Speaker::Me,
-                                tracks[0].clone(),
-                                None,
-                                started,
-                            ),
+                            track_ingress[0].callback(None, started),
                         )
                         .map_err(|error| format!("microphone: {error}"))?;
                         (
@@ -576,13 +696,7 @@ impl MeetingRecorder {
                     Microphone::Raw(
                         Capture::start_timed(
                             Source::Microphone,
-                            batching(
-                                session.clone(),
-                                Speaker::Me,
-                                tracks[0].clone(),
-                                None,
-                                started,
-                            ),
+                            track_ingress[0].callback(None, started),
                         )
                         .map_err(|error| format!("microphone: {error}"))?,
                     ),
@@ -595,13 +709,7 @@ impl MeetingRecorder {
                 Microphone::Raw(
                     Capture::start_timed(
                         Source::Microphone,
-                        batching(
-                            session.clone(),
-                            Speaker::Me,
-                            tracks[0].clone(),
-                            None,
-                            started,
-                        ),
+                        track_ingress[0].callback(None, started),
                     )
                     .map_err(|error| format!("microphone: {error}"))?,
                 ),
@@ -611,13 +719,7 @@ impl MeetingRecorder {
             );
             let system = match Capture::start_timed(
                 Source::SystemOutput,
-                batching(
-                    session.clone(),
-                    Speaker::Others,
-                    tracks[1].clone(),
-                    Some(heard_system.clone()),
-                    started,
-                ),
+                track_ingress[1].callback(Some(heard_system.clone()), started),
             ) {
                 Ok(capture) => Some(capture),
                 Err(error) => {
@@ -670,10 +772,15 @@ impl MeetingRecorder {
                 engine,
                 title,
                 started,
+                quiescent_ms: None,
+                capture_failures: Vec::new(),
+                #[cfg(test)]
+                quiescence_probe: None,
                 mic: Some(mic),
                 system,
                 has_system,
                 tracks,
+                track_ingress,
                 capture_warning,
                 #[cfg(windows)]
                 echo_active,
@@ -684,7 +791,10 @@ impl MeetingRecorder {
     }
 
     pub fn elapsed_secs(&self) -> u64 {
-        self.started.elapsed().as_secs()
+        self.quiescent_ms.map_or_else(
+            || self.started.elapsed().as_secs(),
+            |duration| duration / 1_000,
+        )
     }
 
     pub fn started_at(&self) -> Instant {
@@ -692,6 +802,9 @@ impl MeetingRecorder {
     }
 
     pub fn has_system_audio(&self) -> bool {
+        if self.quiescent_ms.is_some() {
+            return self.has_system;
+        }
         #[cfg(target_os = "macos")]
         if let Some(native) = &self.native {
             return native.snapshot().system_audio_available;
@@ -731,7 +844,10 @@ impl MeetingRecorder {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            None
+            self.track_ingress
+                .iter()
+                .any(|ingress| ingress.overloaded.load(Ordering::SeqCst))
+                .then(|| "Audio processing could not keep up with recording.".into())
         }
     }
 
@@ -752,8 +868,8 @@ impl MeetingRecorder {
             if let Some(error) = self.system.as_ref().and_then(Capture::error) {
                 warnings.push(format!("Systeemgeluid is onderbroken: {error}"));
             }
-            for track in &self.tracks {
-                if let Some(error) = &track.lock().unwrap().error {
+            for ingress in &self.track_ingress {
+                if let Some(error) = &*ingress.error.lock().unwrap() {
                     warnings.push(format!("Audio processing failed: {error}"));
                 }
             }
@@ -777,11 +893,84 @@ impl MeetingRecorder {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn testing(
+        session: Arc<MeetingSession>,
+        engine: Arc<PennelEngine>,
+        probe: Arc<AtomicBool>,
+    ) -> Self {
+        engine
+            .prepare_meeting_recording(
+                session.id(),
+                crate::recording_metadata::environment("test"),
+                false,
+            )
+            .unwrap();
+        Self {
+            session,
+            engine,
+            title: "Originele titel".into(),
+            started: Instant::now(),
+            quiescent_ms: None,
+            capture_failures: Vec::new(),
+            quiescence_probe: Some(probe),
+            #[cfg(target_os = "macos")]
+            native: None,
+            #[cfg(not(target_os = "macos"))]
+            mic: None,
+            #[cfg(not(target_os = "macos"))]
+            system: None,
+            has_system: false,
+            #[cfg(not(target_os = "macos"))]
+            tracks: std::array::from_fn(|_| {
+                Arc::new(Mutex::new(TrackSink {
+                    timing: TimedTrack::default(),
+                    #[cfg(any(windows, target_os = "linux"))]
+                    archive: None,
+                    error: None,
+                }))
+            }),
+            #[cfg(not(target_os = "macos"))]
+            track_ingress: Vec::new(),
+            #[cfg(not(target_os = "macos"))]
+            capture_warning: None,
+            #[cfg(windows)]
+            echo_active: false,
+            dictating_since: Mutex::new(None),
+            heard_system: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Hardware shutdown never waits for notes, diagnostics persistence or transcript drainage.
+    pub fn quiesce(&mut self) -> u64 {
+        if let Some(duration) = self.quiescent_ms {
+            return duration;
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(native) = &self.native {
+            self.has_system = native.snapshot().system_audio_available;
+            native.quiesce();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Signal both sources before joining either source's callback thread.
+            self.capture_failures
+                .extend(quiesce_sources(self.mic.take(), self.system.take()));
+        }
+        let duration = self.started.elapsed().as_millis() as u64;
+        self.quiescent_ms = Some(duration);
+        #[cfg(test)]
+        if let Some(probe) = &self.quiescence_probe {
+            probe.store(true, Ordering::SeqCst);
+        }
+        duration
+    }
+
     /// Capture, archives and transcript are all finalized even if one stage reports an error.
     pub fn stop(mut self) -> (Result<String, String>, RecordingFinish) {
+        let duration_ms = self.quiesce();
         self.set_dictating(false);
-        let duration_ms = self.started.elapsed().as_millis() as u64;
-        let mut failures = Vec::new();
+        let mut failures = std::mem::take(&mut self.capture_failures);
         #[cfg(target_os = "macos")]
         if let Some(native) = self.native.take()
             && let Err(error) = native.stop()
@@ -790,16 +979,11 @@ impl MeetingRecorder {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let end_ms = self.started.elapsed().as_millis() as u64;
-            if let Some(mic) = self.mic.take()
-                && let Err(error) = mic.stop()
-            {
-                failures.push(error);
-            }
-            if let Some(system) = self.system.take()
-                && let Err(error) = system.stop_checked()
-            {
-                failures.push(error);
+            let end_ms = duration_ms;
+            for ingress in self.track_ingress.drain(..) {
+                if let Err(error) = ingress.finish() {
+                    failures.push(error);
+                }
             }
             for (speaker, track) in [Speaker::Me, Speaker::Others].into_iter().zip(&self.tracks) {
                 let mut track = track.lock().unwrap();
@@ -866,6 +1050,95 @@ impl MeetingRecorder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn both_capture_sources_are_signalled_before_joining_and_one_failure_does_not_skip_the_other() {
+        use std::sync::atomic::AtomicU8;
+        struct Source {
+            requested: Arc<AtomicU8>,
+            finished: Arc<AtomicU8>,
+            bit: u8,
+        }
+        impl CaptureStop for Source {
+            fn request_shutdown(&self) {
+                self.requested.fetch_or(self.bit, Ordering::SeqCst);
+            }
+            fn finish_shutdown(self) -> Result<(), String> {
+                assert_eq!(self.requested.load(Ordering::SeqCst), 3);
+                self.finished.fetch_or(self.bit, Ordering::SeqCst);
+                if self.bit == 1 {
+                    Err("microphone shutdown failed".into())
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let requested = Arc::new(AtomicU8::new(0));
+        let finished = Arc::new(AtomicU8::new(0));
+        let source = |bit| Source {
+            requested: requested.clone(),
+            finished: finished.clone(),
+            bit,
+        };
+        assert_eq!(
+            quiesce_sources(Some(source(1)), Some(source(2))),
+            vec!["microphone shutdown failed"]
+        );
+        assert_eq!(finished.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn audio_callback_never_waits_on_a_blocked_archive_and_ingress_is_bounded() {
+        let root = tempfile::tempdir().unwrap();
+        let engine =
+            PennelEngine::new_preview(root.path().join("preview").to_string_lossy().into_owned())
+                .unwrap();
+        let session = engine
+            .clone()
+            .start_meeting(
+                "Synthetic capture".into(),
+                pennel_core::ApiKeys {
+                    by_provider: Default::default(),
+                },
+            )
+            .unwrap();
+        let track = Arc::new(Mutex::new(TrackSink {
+            timing: TimedTrack::default(),
+            #[cfg(any(windows, target_os = "linux"))]
+            archive: None,
+            error: None,
+        }));
+        let blocked_archive = track.lock().unwrap();
+        let ingress = TrackIngress::start(session.clone(), Speaker::Me, track.clone()).unwrap();
+        let mut callback = ingress.callback(None, Instant::now());
+        let (finished, observed) = std::sync::mpsc::channel();
+        let capture = std::thread::spawn(move || {
+            for _ in 0..130 {
+                callback(&[0.1; 1_600], Instant::now());
+            }
+            finished.send(()).unwrap();
+        });
+        let returned_before_archive = observed
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .is_ok();
+        drop(blocked_archive);
+        capture.join().unwrap();
+        assert!(
+            returned_before_archive,
+            "audio callbacks must not acquire the archival lock"
+        );
+        assert!(
+            ingress.overloaded.load(Ordering::SeqCst),
+            "the queue must remain bounded"
+        );
+        assert!(ingress.finish().is_err());
+        track
+            .lock()
+            .unwrap()
+            .finish(&session, Speaker::Me, 1_000)
+            .unwrap();
+        session.stop().unwrap();
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

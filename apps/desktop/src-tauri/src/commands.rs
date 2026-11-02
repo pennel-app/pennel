@@ -778,6 +778,7 @@ pub struct MeetingRuntimeStatus {
     phase: pennel_core::RecordingPhase,
     error: Option<String>,
     session_id: Option<String>,
+    meeting_uid: Option<String>,
     id: Option<String>,
     title: Option<String>,
     elapsed_secs: u64,
@@ -861,11 +862,15 @@ fn runtime_status(
                     context.heard_system_audio,
                     context.audio_warning.clone(),
                     context.consent_copied,
+                    context.uid.clone(),
+                    context.duration_secs.is_some(),
                 )
             });
         (state, details)
     };
-    let recording = state.phase == pennel_core::RecordingPhase::Recording;
+    let recording = state.phase == pennel_core::RecordingPhase::Recording
+        || (state.phase == pennel_core::RecordingPhase::Stopping
+            && details.as_ref().is_some_and(|(.., quiescent)| !quiescent));
     let busy = !matches!(
         state.phase,
         pennel_core::RecordingPhase::Idle | pennel_core::RecordingPhase::Error
@@ -900,6 +905,7 @@ fn runtime_status(
         phase: state.phase,
         error: state.error,
         session_id: state.session_id,
+        meeting_uid: None,
         id: None,
         title: None,
         elapsed_secs: 0,
@@ -924,9 +930,12 @@ fn runtime_status(
         heard_system_audio,
         audio_warning,
         consent_copied,
+        uid,
+        _quiescent,
     )) = details
     {
         let id = session.id();
+        result.meeting_uid = Some(uid);
         result.id = Some(id);
         result.title = Some(title);
         result.elapsed_secs = elapsed_secs;
@@ -979,10 +988,14 @@ pub async fn start_meeting(title: String, shared: State<'_, Arc<Shared>>) -> Res
 }
 
 #[tauri::command]
-pub async fn stop_meeting(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<()> {
+pub async fn stop_meeting(
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+    session_id: Option<String>,
+) -> Result<()> {
     let shared = shared.inner().clone();
     off_main("stop_meeting", move || {
-        meeting_runtime::stop(app, shared, None)
+        meeting_runtime::stop_matching(app, shared, None, session_id.as_deref())
     })
     .await
 }
@@ -1014,27 +1027,9 @@ pub async fn set_meeting_notes(
 }
 
 fn save_live_notes(shared: &Shared, text: String, session_id: &str) -> Result<()> {
-    // Keep the session guard through the durable write, as before moving it off the UI thread.
-    let lifecycle = shared.recording.lock().unwrap();
-    let state = lifecycle.snapshot();
-    if !matches!(
-        state.phase,
-        pennel_core::RecordingPhase::Recording
-            | pennel_core::RecordingPhase::Stopping
-            | pennel_core::RecordingPhase::Error
-    ) || state.session_id.as_deref() != Some(session_id)
-    {
-        return Err("This recording session is no longer available for editing notes.".into());
-    }
-    let session = shared
-        .meeting_context
-        .lock()
-        .unwrap()
-        .as_ref()
-        .filter(|context| context.token == session_id)
-        .map(|context| context.session.clone())
-        .ok_or("no meeting in progress")?;
-    session.set_notes(text).map_err(err)
+    meeting_runtime::with_session_notes(shared, session_id, |session| {
+        session.set_notes(text).map_err(err)
+    })
 }
 
 #[tauri::command]
@@ -1753,7 +1748,9 @@ mod tests {
         shared.recording.lock().unwrap().recording(&token).unwrap();
         *shared.meeting_context.lock().unwrap() = Some(meeting_runtime::MeetingContext {
             token: token.clone(),
+            uid: shared.engine.meeting_uid(session.id()).unwrap(),
             session: session.clone(),
+            notes_gate: Arc::new(std::sync::Mutex::new(true)),
             title: "Fixture".into(),
             started: std::time::Instant::now(),
             duration_secs: None,
@@ -2019,6 +2016,7 @@ mod tests {
             hotkey: std::sync::Mutex::new(None),
             hotkey_error: std::sync::Mutex::new(None),
             meeting: std::sync::Mutex::new(None),
+            live_questions: std::sync::Mutex::new(Default::default()),
             recording: std::sync::Mutex::new(lifecycle),
             recording_cancel: std::sync::atomic::AtomicBool::new(false),
             library_jobs: std::sync::atomic::AtomicUsize::new(0),
@@ -2029,7 +2027,9 @@ mod tests {
             paste_jobs: std::sync::atomic::AtomicUsize::new(0),
             meeting_context: std::sync::Mutex::new(Some(crate::meeting_runtime::MeetingContext {
                 token,
+                uid: "fixture-uid".into(),
                 session: session.clone(),
+                notes_gate: Arc::new(std::sync::Mutex::new(true)),
                 title: "Klantgesprek".into(),
                 started: std::time::Instant::now(),
                 duration_secs: Some(42),

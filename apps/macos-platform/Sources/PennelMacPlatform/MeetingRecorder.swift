@@ -108,10 +108,14 @@ final class TrackWriter: @unchecked Sendable {
         pending.removeAll(keepingCapacity: true)
     }
 
-    func finish() -> String? {
+    func quiesce() {
         // A callback already in flight may retain this writer after the native handle is released.
         // Close admission before draining so it cannot call the released Rust context afterwards.
         enqueueLock.withLock { accepting = false }
+    }
+
+    func finish() -> String? {
+        quiesce()
         return queue.sync {
             flush()
             file = nil
@@ -179,6 +183,7 @@ final class NativeMeetingRecorder {
     private var forceRebuild = false
     private var rebuildGeneration = CaptureGeneration()
     private var recordingGeneration: UInt64 = 0
+    private var quiescent = false
     private var captureWarning: String?
     private var finalArchiveError: String?
     private var finalHeardSystemAudio = false
@@ -209,6 +214,7 @@ final class NativeMeetingRecorder {
     var startDate: Date? { startedAt }
 
     func start(directory: URL, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, tapProcesses: (() -> [AudioObjectID])? = nil, echoCancellation: Bool = true, microphoneURL: URL? = nil, systemURL: URL? = nil) throws {
+        quiescent = false
         self.tapProcesses = tapProcesses
         self.echoCancellation = echoCancellation
         health = MeetingCaptureHealth(echoRequested: echoCancellation)
@@ -233,7 +239,9 @@ final class NativeMeetingRecorder {
         startSystemAudio()
     }
 
-    func stop() -> String? {
+    func quiesce() {
+        guard !quiescent else { return }
+        quiescent = true
         microphoneConfiguration.stop()
         systemRoutes.stop()
         recordingGeneration &+= 1
@@ -247,8 +255,25 @@ final class NativeMeetingRecorder {
         engine.stop()
         disableVoiceProcessing()
         tap.stop()
+        me?.quiesce()
+        others?.quiesce()
+        health.microphoneStarting()
+        health.systemAudioStarting()
+    }
+
+    func stop() -> String? {
+        quiesce()
         let meError = me?.finish()
         let othersError = others?.finish()
+        return completeStop(meError: meError, othersError: othersError)
+    }
+
+    func finishingTracks() -> (TrackWriter?, TrackWriter?) {
+        quiesce()
+        return (me, others)
+    }
+
+    func completeStop(meError: String?, othersError: String?) -> String? {
         finalArchiveError = meError ?? othersError
         finalHeardSystemAudio = others?.heardSound ?? finalHeardSystemAudio
         if let error = meError ?? othersError { captureWarning = error }

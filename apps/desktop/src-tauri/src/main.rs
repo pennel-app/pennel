@@ -29,6 +29,7 @@ mod legacy_migration;
 mod linux_input;
 #[cfg(target_os = "linux")]
 mod linux_meetings;
+mod live_questions;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -921,6 +922,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         meeting: Mutex::new(None),
         recording: Mutex::new(pennel_core::RecordingLifecycle::default()),
         meeting_context: Mutex::new(None),
+        live_questions: Mutex::new(live_questions::LiveQuestions::default()),
         recording_cancel: AtomicBool::new(false),
         library_jobs: std::sync::atomic::AtomicUsize::new(0),
         updating: AtomicBool::new(false),
@@ -1161,6 +1163,8 @@ fn main() {
             commands::delete_conflict_copy,
             commands::search_library,
             commands::ask_meetings,
+            live_questions::begin_live_question,
+            live_questions::cancel_live_question,
             commands::template_source,
             commands::save_template,
             commands::delete_template,
@@ -1284,8 +1288,12 @@ fn main() {
                         let _recording = shared.recording.lock().unwrap();
                         shared.quitting.store(true, Ordering::SeqCst);
                     }
+                    let captured_meeting = meeting_runtime::prepare_shutdown(&shared);
                     let flush = flush_frontends(&app, "prepare-exit");
                     if flush.result.is_err() {
+                        let _ = captured_meeting.and_then(|recording| {
+                            meeting_runtime::finish_shutdown(&app, &shared, recording)
+                        });
                         shared.quitting.store(false, Ordering::SeqCst);
                         app.state::<ExitState>()
                             .requested
@@ -1316,6 +1324,9 @@ fn main() {
                         std::thread::sleep(Duration::from_millis(20));
                     }
                     if shared.engine.retry_unsaved_history().is_err() {
+                        let _ = captured_meeting.and_then(|recording| {
+                            meeting_runtime::finish_shutdown(&app, &shared, recording)
+                        });
                         shared.quitting.store(false, Ordering::SeqCst);
                         app.state::<ExitState>()
                             .requested
@@ -1325,7 +1336,9 @@ fn main() {
                         show_window(&app, "history", None);
                         return;
                     }
-                    match meeting_runtime::stop_and_wait(&shared) {
+                    match captured_meeting.and_then(|recording| {
+                        meeting_runtime::finish_shutdown(&app, &shared, recording)
+                    }) {
                         Ok(_) => {
                             while shared.library_jobs.load(Ordering::SeqCst) != 0 {
                                 std::thread::sleep(Duration::from_millis(20));

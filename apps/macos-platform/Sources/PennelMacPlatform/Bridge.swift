@@ -416,12 +416,22 @@ func meetingStartPaths(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: UnsafePo
     }
 }
 
+@_cdecl("pennel_mac_meeting_quiesce")
+public func meetingQuiesce(_ handle: UnsafeMutableRawPointer?) {
+    guard let handle else { return }
+    onMain { Unmanaged<NativeMeetingRecorder>.fromOpaque(handle).takeUnretainedValue().quiesce() }
+}
+
 @_cdecl("pennel_mac_meeting_stop_status")
 public func meetingStopStatus(_ handle: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<CChar>? {
     guard let handle else { return bridgeString("null") }
+    let capture = onMain { Unmanaged<NativeMeetingRecorder>.fromOpaque(handle).takeRetainedValue() }
+    let tracks = onMain { capture.finishingTracks() }
+    // Capture is already quiescent; archival drainage must not occupy AppKit's event loop.
+    let meError = tracks.0?.finish()
+    let othersError = tracks.1?.finish()
     return onMain {
-        let capture = Unmanaged<NativeMeetingRecorder>.fromOpaque(handle).takeRetainedValue()
-        let error = capture.stop()
+        let error = capture.completeStop(meError: meError, othersError: othersError)
         var snapshot = capture.healthSnapshot
         if let error { snapshot["terminal_error"] = error }
         return bridgeJSON(snapshot)

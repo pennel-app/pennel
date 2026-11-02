@@ -1,7 +1,7 @@
 //! Recording ownership outlives windows and remains busy until audio and transcript writes finish.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use pennel_core::{MeetingSession, RecordingPhase};
@@ -16,7 +16,9 @@ const LOG: Log = Log::new("meeting");
 
 pub struct MeetingContext {
     pub token: String,
+    pub uid: String,
     pub session: Arc<MeetingSession>,
+    pub notes_gate: Arc<Mutex<bool>>,
     pub title: String,
     pub started: Instant,
     pub duration_secs: Option<u64>,
@@ -25,6 +27,82 @@ pub struct MeetingContext {
     pub heard_system_audio: bool,
     pub audio_warning: Option<String>,
     pub consent_copied: bool,
+}
+
+/// Serialize session writes without retaining capture's lifecycle lock during disk I/O.
+pub fn with_session_notes<T>(
+    shared: &Shared,
+    session_id: &str,
+    work: impl FnOnce(&Arc<MeetingSession>) -> Result<T, String>,
+) -> Result<T, String> {
+    with_session_access(shared, session_id, true, work)
+}
+
+/// Read acknowledged evidence during finalization while excluding the final folder rename.
+pub fn with_session_snapshot<T>(
+    shared: &Shared,
+    session_id: &str,
+    work: impl FnOnce(&Arc<MeetingSession>) -> Result<T, String>,
+) -> Result<T, String> {
+    with_session_access(shared, session_id, false, work)
+}
+
+fn with_session_access<T>(
+    shared: &Shared,
+    session_id: &str,
+    writing: bool,
+    work: impl FnOnce(&Arc<MeetingSession>) -> Result<T, String>,
+) -> Result<T, String> {
+    let (session, gate) = {
+        let context = shared.meeting_context.lock().unwrap();
+        let context = context
+            .as_ref()
+            .filter(|context| context.token == session_id)
+            .ok_or("This recording session is no longer available.")?;
+        (context.session.clone(), context.notes_gate.clone())
+    };
+    let accepting = gate.lock().unwrap();
+    if writing && !*accepting {
+        return Err("This recording session is already being finalized.".into());
+    }
+    // A reader may have waited through rename. Never read the old session folder after its
+    // context was cleared; the caller can resolve the completed meeting by stable UID instead.
+    {
+        let lifecycle = shared.recording.lock().unwrap();
+        let state = lifecycle.snapshot();
+        if state.session_id.as_deref() != Some(session_id)
+            || !matches!(
+                state.phase,
+                RecordingPhase::Recording
+                    | RecordingPhase::Stopping
+                    | RecordingPhase::Finalizing
+                    | RecordingPhase::Error
+            )
+            || (writing && state.phase == RecordingPhase::Finalizing)
+            || shared
+                .meeting_context
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_none_or(|context| context.token != session_id)
+        {
+            return Err("This recording session is no longer available for editing notes.".into());
+        }
+    }
+    work(&session)
+}
+
+fn close_session_notes(shared: &Shared, token: &str) {
+    let gate = shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_ref()
+        .filter(|context| context.token == token)
+        .map(|context| context.notes_gate.clone());
+    if let Some(gate) = gate {
+        *gate.lock().unwrap() = false;
+    }
 }
 
 pub struct LibraryJob(Arc<Shared>);
@@ -216,7 +294,12 @@ pub fn start(
     let id = session.id();
     *shared.meeting_context.lock().unwrap() = Some(MeetingContext {
         token: token.clone(),
+        uid: shared
+            .engine
+            .meeting_uid(id.clone())
+            .unwrap_or_else(|| id.clone()),
         session: session.clone(),
+        notes_gate: Arc::new(Mutex::new(true)),
         title: title.clone(),
         started: Instant::now(),
         duration_secs: None,
@@ -364,9 +447,35 @@ fn monitor_health(shared: Arc<Shared>, token: String) {
     });
 }
 
-fn finish(shared: &Shared, token: &str, recorder: MeetingRecorder) -> Result<String, String> {
+fn quiesce(shared: &Shared, token: &str, recorder: &mut MeetingRecorder) {
+    let duration_ms = recorder.quiesce();
+    if let Some(context) = shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_mut()
+        .filter(|context| context.token == token)
+    {
+        context.duration_secs = Some(duration_ms / 1_000);
+    }
+}
+
+fn finish_with_flush<T>(
+    shared: &Shared,
+    token: &str,
+    mut recorder: MeetingRecorder,
+    flush: impl FnOnce() -> T,
+) -> (Result<String, String>, T) {
+    quiesce(shared, token, &mut recorder);
+    let flushed = flush();
+    (finish(shared, token, recorder), flushed)
+}
+
+fn finish(shared: &Shared, token: &str, mut recorder: MeetingRecorder) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     let _tray_update = crate::macos_tray::UpdateOnDrop;
+    quiesce(shared, token, &mut recorder);
+    close_session_notes(shared, token);
     let original_title = recorder.title.clone();
     let system_audio = recorder.has_system_audio();
     let heard_system_audio = recorder.heard_system_audio();
@@ -374,6 +483,12 @@ fn finish(shared: &Shared, token: &str, recorder: MeetingRecorder) -> Result<Str
     let terminal_error = recorder
         .terminal_error()
         .or_else(|| recorder.session.health().terminal_error);
+    shared
+        .recording
+        .lock()
+        .unwrap()
+        .finalizing(token)
+        .map_err(|error| error.to_string())?;
     let mut desired_title = original_title.clone();
     if let Some(context) = shared
         .meeting_context
@@ -385,15 +500,8 @@ fn finish(shared: &Shared, token: &str, recorder: MeetingRecorder) -> Result<Str
         context.system_audio = system_audio;
         context.heard_system_audio = heard_system_audio;
         context.audio_warning = audio_warning.or_else(|| terminal_error.clone());
-        context.duration_secs = Some(context.started.elapsed().as_secs());
         desired_title = context.title.clone();
     }
-    shared
-        .recording
-        .lock()
-        .unwrap()
-        .finalizing(token)
-        .map_err(|error| error.to_string())?;
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
     let (captured, completion) = recorder.stop();
@@ -424,13 +532,35 @@ fn finish_after_capture(
     original_title: &str,
     desired_title: &str,
 ) -> Result<String, String> {
-    let result = captured.and_then(|id| {
-        if let Some(error) = terminal_error {
-            return Err(error);
-        }
-        rename_after_recording(&shared.engine, id, original_title, desired_title)
-    });
-    finish_context(shared, token, result)
+    complete_session(shared, token, || {
+        captured.and_then(|id| {
+            if let Some(error) = terminal_error {
+                return Err(error);
+            }
+            rename_after_recording(&shared.engine, id, original_title, desired_title)
+        })
+    })
+}
+
+fn complete_session(
+    shared: &Shared,
+    token: &str,
+    work: impl FnOnce() -> Result<String, String>,
+) -> Result<String, String> {
+    let gate = shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_ref()
+        .filter(|context| context.token == token)
+        .map(|context| context.notes_gate.clone())
+        .ok_or("This recording session is no longer available.")?;
+    let mut accepting = gate.lock().unwrap();
+    let result = finish_context(shared, token, work());
+    if result.is_err() {
+        *accepting = true;
+    }
+    result
 }
 
 fn finish_context(
@@ -480,6 +610,7 @@ fn retry_saved_session(shared: &Shared, session_id: &str) -> Result<String, Stri
             context.pending_recording_finish,
         )
     };
+    close_session_notes(shared, session_id);
     let id = session.id();
     let original_title = shared
         .engine
@@ -490,18 +621,21 @@ fn retry_saved_session(shared: &Shared, session_id: &str) -> Result<String, Stri
     } else {
         session.retry_persistence()
     };
-    let result = saved
-        .map_err(|error| error.to_string())
-        .and_then(|()| {
-            pending_recording_finish.map_or(Ok(()), |finish| {
-                shared
-                    .engine
-                    .finish_meeting_recording(id.clone(), finish.duration_ms, finish.complete)
-                    .map_err(|error| error.to_string())
+    complete_session(shared, session_id, || {
+        saved
+            .map_err(|error| error.to_string())
+            .and_then(|()| {
+                pending_recording_finish.map_or(Ok(()), |finish| {
+                    shared
+                        .engine
+                        .finish_meeting_recording(id.clone(), finish.duration_ms, finish.complete)
+                        .map_err(|error| error.to_string())
+                })
             })
-        })
-        .and_then(|()| rename_after_recording(&shared.engine, id, &original_title, &desired_title));
-    finish_context(shared, session_id, result)
+            .and_then(|()| {
+                rename_after_recording(&shared.engine, id, &original_title, &desired_title)
+            })
+    })
 }
 
 /// Saves the retained failed session only; successful speech recognition is never repeated here.
@@ -511,11 +645,13 @@ pub fn retry_persistence(
     session_id: &str,
 ) -> Result<(), String> {
     let _job = LibraryJob::new(shared)?;
+    let uid = session_uid(shared, session_id);
     let result = retry_saved_session(shared, session_id);
     let _ = app.emit(
         "meeting-finished",
         MeetingFinished {
             id: result.clone().ok(),
+            meeting_uid: uid,
             session_id: session_id.to_owned(),
             error: result
                 .as_ref()
@@ -535,9 +671,20 @@ pub fn retry_persistence(
 #[derive(Clone, Serialize)]
 struct MeetingFinished {
     id: Option<String>,
+    meeting_uid: Option<String>,
     session_id: String,
     error: Option<String>,
     flush_warning: Option<String>,
+}
+
+fn session_uid(shared: &Shared, token: &str) -> Option<String> {
+    shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_ref()
+        .filter(|context| context.token == token)
+        .map(|context| context.uid.clone())
 }
 
 /// `expected_call` keeps an ended call from stopping a manual or different recording.
@@ -546,26 +693,43 @@ pub fn stop(
     shared: Arc<Shared>,
     expected_call: Option<&str>,
 ) -> Result<(), String> {
-    let Some((token, recorder)) = take_recorder(&shared, expected_call)? else {
+    stop_matching(app, shared, expected_call, None)
+}
+
+pub fn stop_matching(
+    app: AppHandle,
+    shared: Arc<Shared>,
+    expected_call: Option<&str>,
+    expected_session: Option<&str>,
+) -> Result<(), String> {
+    let Some((token, mut recorder)) =
+        take_recorder_matching(&shared, expected_call, expected_session)?
+    else {
         return Ok(());
     };
+    // This command runs off-main. Its IPC receipt acknowledges actual capture shutdown,
+    // while the owned worker below performs all persistence and transcript finalization.
+    quiesce(&shared, &token, &mut recorder);
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
     std::thread::spawn(move || {
         let library_job = LibraryJob::new(&shared).ok();
-        let flush = crate::flush_frontends(&app, "prepare-recording-stop");
+        let uid = session_uid(&shared, &token);
+        let (result, flush) = finish_with_flush(&shared, &token, recorder, || {
+            crate::flush_frontends(&app, "prepare-recording-stop")
+        });
         let flush_warning = flush.result.err().map(|_| {
             "Some draft changes could not be saved. Recording has finished; check your saved draft.".to_owned()
         });
         if flush_warning.is_some() {
             LOG.error("Some draft changes could not be saved before stopping.");
         }
-        let result = finish(&shared, &token, recorder);
         if result.is_err() {
             LOG.error("Meeting finalization failed; the recording remains visible in Pennel.");
         }
         let finished = MeetingFinished {
             id: result.clone().ok(),
+            meeting_uid: uid,
             session_id: token,
             error: result
                 .as_ref()
@@ -671,6 +835,52 @@ fn optional_summary(
 }
 
 /// Worker-only shutdown path. The host keeps its event loop alive while native audio is released.
+pub struct QuiescedRecording {
+    token: String,
+    recorder: MeetingRecorder,
+}
+
+pub fn prepare_shutdown(shared: &Arc<Shared>) -> Result<Option<QuiescedRecording>, String> {
+    loop {
+        if shared.recording.lock().unwrap().snapshot().phase == RecordingPhase::Starting {
+            shared.recording_cancel.store(true, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(20));
+            continue;
+        }
+        let Some((token, mut recorder)) = take_recorder(shared, None)? else {
+            return Ok(None);
+        };
+        quiesce(shared, &token, &mut recorder);
+        return Ok(Some(QuiescedRecording { token, recorder }));
+    }
+}
+
+pub fn finish_shutdown(
+    app: &AppHandle,
+    shared: &Arc<Shared>,
+    recording: Option<QuiescedRecording>,
+) -> Result<Option<String>, String> {
+    let Some(QuiescedRecording { token, recorder }) = recording else {
+        return stop_and_wait(shared);
+    };
+    let uid = session_uid(shared, &token);
+    let result = finish(shared, &token, recorder);
+    let _ = app.emit(
+        "meeting-finished",
+        MeetingFinished {
+            id: result.clone().ok(),
+            meeting_uid: uid,
+            session_id: token,
+            error: result
+                .as_ref()
+                .err()
+                .map(crate::commands::localize_error_message),
+            flush_warning: None,
+        },
+    );
+    result.map(Some)
+}
+
 pub fn stop_and_wait(shared: &Arc<Shared>) -> Result<Option<String>, String> {
     loop {
         let phase = shared.recording.lock().unwrap().snapshot().phase;
@@ -720,6 +930,149 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
+
+    #[test]
+    fn finalizing_snapshot_reads_closed_notes_and_holds_off_folder_rename() {
+        let (_root, shared, session, token) = recording();
+        shared.recording.lock().unwrap().stopping(&token).unwrap();
+        shared.recording.lock().unwrap().finalizing(&token).unwrap();
+        close_session_notes(&shared, &token);
+        session.stop().unwrap();
+        assert!(with_session_notes(&shared, &token, |_| Ok(())).is_err());
+        let (reading, started) = std::sync::mpsc::channel();
+        let (release, waiting) = std::sync::mpsc::channel();
+        let read_shared = shared.clone();
+        let read_token = token.clone();
+        let reader = std::thread::spawn(move || {
+            with_session_snapshot(&read_shared, &read_token, |session| {
+                assert_eq!(
+                    read_shared.engine.meeting_notes(session.id()),
+                    "Een bewaarde afspraak."
+                );
+                reading.send(()).unwrap();
+                waiting.recv().unwrap();
+                Ok(())
+            })
+        });
+        started.recv_timeout(Duration::from_secs(2)).unwrap();
+        let finish_shared = shared.clone();
+        let finish_token = token.clone();
+        let original_id = session.id();
+        let finishing = std::thread::spawn(move || {
+            finish_after_capture(
+                &finish_shared,
+                &finish_token,
+                Ok(original_id),
+                None,
+                "Originele titel",
+                "After snapshot",
+            )
+        });
+        let retained_original = std::path::PathBuf::from(session.dir()).exists();
+        release.send(()).unwrap();
+        reader.join().unwrap().unwrap();
+        let renamed = finishing.join().unwrap().unwrap();
+        assert!(retained_original);
+        assert_ne!(renamed, session.id());
+        assert!(with_session_snapshot(&shared, &token, |_| Ok(())).is_err());
+    }
+
+    #[test]
+    fn capture_stops_before_a_blocked_notes_write_and_rename_waits_for_it() {
+        let (_root, shared, session, token) = recording();
+        let (writing, started) = std::sync::mpsc::channel();
+        let (release, waiting) = std::sync::mpsc::channel();
+        let writer_shared = shared.clone();
+        let writer_token = token.clone();
+        let writer = std::thread::spawn(move || {
+            with_session_notes(&writer_shared, &writer_token, |session| {
+                writing.send(()).unwrap();
+                waiting.recv().unwrap();
+                session
+                    .set_notes("The final acknowledged draft".into())
+                    .map_err(|error| error.to_string())
+            })
+        });
+        started.recv_timeout(Duration::from_secs(2)).unwrap();
+        set_title(&shared, "Renamed after capture".into(), &token).unwrap();
+        let quiescent = Arc::new(AtomicBool::new(false));
+        let recorder =
+            MeetingRecorder::testing(session.clone(), shared.engine.clone(), quiescent.clone());
+        shared.recording.lock().unwrap().stopping(&token).unwrap();
+        let finishing_shared = shared.clone();
+        let finishing_token = token.clone();
+        let finishing =
+            std::thread::spawn(move || finish(&finishing_shared, &finishing_token, recorder));
+        let until = Instant::now() + Duration::from_secs(2);
+        while !quiescent.load(Ordering::SeqCst) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let stopped_before_save = quiescent.load(Ordering::SeqCst);
+        let retained_original = std::path::PathBuf::from(session.dir()).exists();
+        let uid = shared.engine.meeting_uid(session.id()).unwrap();
+        release.send(()).unwrap();
+        writer.join().unwrap().unwrap();
+        let final_id = finishing.join().unwrap().unwrap();
+        assert!(
+            stopped_before_save,
+            "capture must stop while durable notes are still blocked"
+        );
+        assert!(
+            retained_original,
+            "rename must wait for the admitted notes write"
+        );
+        assert_eq!(
+            shared.engine.meeting_notes(final_id.clone()),
+            "The final acknowledged draft"
+        );
+        assert_eq!(shared.engine.meeting_uid(final_id.clone()), Some(uid));
+        assert_ne!(final_id, session.id());
+        assert!(with_session_notes(&shared, &token, |_| Ok(())).is_err());
+    }
+
+    #[test]
+    fn failed_frontend_flush_never_keeps_capture_running_or_skips_finalization() {
+        let (_root, shared, session, token) = recording();
+        let quiescent = Arc::new(AtomicBool::new(false));
+        let recorder =
+            MeetingRecorder::testing(session.clone(), shared.engine.clone(), quiescent.clone());
+        shared.recording.lock().unwrap().stopping(&token).unwrap();
+        let (result, flush) = finish_with_flush(&shared, &token, recorder, || {
+            assert!(quiescent.load(Ordering::SeqCst));
+            Err::<(), _>("notes storage failed")
+        });
+        assert!(flush.is_err());
+        assert!(result.is_ok());
+        assert!(session.is_finalized());
+        assert_eq!(
+            shared.recording.lock().unwrap().snapshot().phase,
+            RecordingPhase::Idle
+        );
+    }
+
+    #[test]
+    fn a_failed_notes_write_during_stop_cannot_keep_capture_running() {
+        let (_root, shared, session, token) = recording();
+        let notes = std::path::PathBuf::from(session.dir()).join("notes.md");
+        std::fs::remove_file(&notes).unwrap();
+        std::fs::create_dir(&notes).unwrap();
+        let quiescent = Arc::new(AtomicBool::new(false));
+        let recorder =
+            MeetingRecorder::testing(session.clone(), shared.engine.clone(), quiescent.clone());
+        shared.recording.lock().unwrap().stopping(&token).unwrap();
+        let (result, saved) = finish_with_flush(&shared, &token, recorder, || {
+            assert!(quiescent.load(Ordering::SeqCst));
+            with_session_notes(&shared, &token, |session| {
+                session
+                    .set_notes("Retained unsaved draft".into())
+                    .map_err(|error| error.to_string())
+            })
+        });
+        assert!(saved.is_err());
+        assert!(result.is_ok());
+        assert!(session.is_finalized());
+        assert!(quiescent.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn an_unsaved_failed_meeting_blocks_a_new_recording_and_keeps_its_context() {
@@ -1096,6 +1449,7 @@ mod tests {
         let token = lifecycle.begin(None).unwrap();
         lifecycle.recording(&token).unwrap();
         let (dictation, _) = std::sync::mpsc::channel();
+        let uid = engine.meeting_uid(session.id()).unwrap();
         let shared = Arc::new(Shared {
             engine,
             system_interface_language: Default::default(),
@@ -1111,6 +1465,7 @@ mod tests {
             recording: Mutex::new(lifecycle),
             recording_cancel: AtomicBool::new(false),
             library_jobs: AtomicUsize::new(0),
+            live_questions: Mutex::new(crate::live_questions::LiveQuestions::default()),
             updating: AtomicBool::new(false),
             quitting: AtomicBool::new(false),
             dictation_active: AtomicBool::new(false),
@@ -1118,7 +1473,9 @@ mod tests {
             paste_jobs: AtomicUsize::new(0),
             meeting_context: Mutex::new(Some(MeetingContext {
                 token: token.clone(),
+                uid,
                 session: session.clone(),
+                notes_gate: Arc::new(Mutex::new(true)),
                 title: "Originele titel".into(),
                 started: Instant::now(),
                 duration_secs: None,

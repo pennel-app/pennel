@@ -683,5 +683,18 @@
   "backend.managed_inference_availability_unknown": "De beschikbaarheid van deze Pennel Cloud-verwerking kon niet worden bevestigd. Controleer de verbinding en probeer opnieuw.",
   "backend.managed_inference_configured": "Ingesteld. Controleer deze verbinding met het vaste testvoorbeeld.",
   "backend.managed_inference_unavailable": "Deze verwerkingsmogelijkheid is nog niet beschikbaar bij de gekozen dienst.",
-  "backend.managed_inference_check_failed": "De beschikbaarheid van deze verwerking kon niet worden gecontroleerd."
+  "backend.managed_inference_check_failed": "De beschikbaarheid van deze verwerking kon niet worden gecontroleerd.",
+  "backend.live_invalid_session": "Deze vraag heeft geen geldige meetingsessie.",
+  "backend.live_expired_request": "Deze vraagaanvraag is niet meer beschikbaar. Probeer opnieuw.",
+  "backend.live_question_running": "Er loopt al een vraag voor deze meeting. Annuleer die of wacht op het antwoord.",
+  "backend.live_notes_changed": "De opgeslagen notities zijn gewijzigd. Je vraag is niet verstuurd. Sla je notities op en probeer opnieuw.",
+  "backend.live_other_session": "Deze vraag hoort bij een andere meetingsessie.",
+  "backend.live_source_missing": "De bron van deze meeting is niet meer beschikbaar.",
+  "backend.live_source_unavailable": "De bron van deze meeting is niet beschikbaar.",
+  "backend.live_source_changed": "De bron van deze meeting is gewijzigd. Je vraag is niet verstuurd.",
+  "backend.live_question_start_failed": "De vraag kon niet starten. Probeer opnieuw.",
+  "backend.live_question_cancelled": "Vraag geannuleerd.",
+  "backend.audio_processing_overloaded": "Audio verwerken kon de opname niet bijhouden.",
+  "backend.audio_processing_stopped": "Audio verwerken is onverwacht gestopt.",
+  "backend.live_source_verify_failed": "De bron voor de vraag kon niet worden gecontroleerd. Je vraag is niet verstuurd."
 }

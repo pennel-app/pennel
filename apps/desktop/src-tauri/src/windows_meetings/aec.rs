@@ -42,6 +42,9 @@ pub struct EchoCapture {
 }
 
 impl EchoCapture {
+    pub fn request_stop(&self) {
+        let _ = self.stop.send(());
+    }
     /// `sink` receives owned-thread, ephemeral 16 kHz mono Float32 slices. No PCM buffers or COM
     /// objects cross the callback lifetime; stop joins the worker before releasing the closure.
     pub fn start_timed(sink: impl FnMut(&[f32], Instant) + Send + 'static) -> Result<Self, String> {
