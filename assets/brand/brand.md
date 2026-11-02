@@ -6,11 +6,25 @@ Pennel (PEN-el, the same in Dutch and English): the little pen that writes down 
 
 Use the checked-in `wordmark.svg`, `mark.svg`, `app-icon.svg` and `menubar.svg`. The wordmark uses Instrument Serif and a true circular orange dot. The listening indicator uses five bars; movement conveys actual audio level or processing state.
 
-The desktop interface follows the warm native-app direction of the original Swift app at `91775c1`: paper and ink, a barely darker sidebar, Figtree UI, Instrument Serif large titles, restrained controls and real system window chrome. Raycast, Things, Granola and Linear inform hierarchy and interaction craft; Pennel retains its own marks, copy and color roles. The shared Tauri app owns product UI; the frozen native app is a reference and recovery path.
+The desktop interface follows the user-approved [Glaze direction #92](https://github.com/pennel-app/pennel/issues/92): neutral surfaces, locally bundled Inter, compact titles, inset rounded panes, capsule controls and real system window chrome. Pennel retains its marks and copy. The mobile app keeps the warm paper/ink palette, Figtree UI and Instrument Serif large titles. The shared Tauri app owns desktop product UI; the retired Swift shell at `91775c1` remains a historical behavior reference.
 
 ## Palette and source of truth
 
-[`tokens.json`](tokens.json) owns semantic colors, spacing, radii and type sizes for both interfaces. Run `python3 scripts/generate-theme.py` from the repository root after editing it. The generated CSS and Swift constants are checked in; `--check` verifies their contents and text contrast, and `--self-test` exercises the generator.
+[`tokens.json`](tokens.json) owns semantic colors, spacing, radii and type sizes. Base colors and typography serve mobile, artwork and the fixed dictation pill. The `desktop-theme` group overrides the main desktop frontend only and generates `apps/desktop/src/desktop-theme.generated.css`; it is not imported by the separate pill entrypoint. Run `python3 scripts/generate-theme.py` from the repository root after editing tokens. Generated CSS, pill metrics and shared SVG icons are checked in; `--check` verifies their contents and text contrast, and `--self-test` exercises the generator. Retired shell Swift outputs are no longer generated.
+
+Desktop palette:
+
+| Role | Light | Dark |
+|---|---|---|
+| Content | `#FFFFFF` | `#101010` |
+| Sidebar | `#EFEFEF` | `#161616` |
+| Foreground | `#171717` | `#F2F2F2` |
+| Primary button | `#006FDF` | `#006FDF` |
+| Primary button text | `#FFFFFF` | `#FFFFFF` |
+
+Navigation selection and ordinary toolbar actions stay neutral. Blue marks primary submission and focus; errors and destructive actions have a separate red role. Native glass has contrast-protecting navigation and toolbar backings. All secondary text must remain readable on its actual surface.
+
+Base mobile palette:
 
 | Role | Light | Dark |
 |---|---|---|
@@ -32,20 +46,21 @@ The artwork's Paper `#FCFBF8`, Ink `#2A2723` and Soft wave `#F2B48E` remain fixe
 Legacy UI names map to semantic roles: `paper` means Surface, `background` means Subtle, `ink` means Foreground and `line` means Border. They adapt with appearance; fixed artwork and pill colors use their dedicated roles.
 
 Rules
-- **One accent per surface.** Orange identifies an active state, focus or an error that needs attention. Success green only confirms a finished step, as text. Buttons use the neutral primary-control pairing.
-- **Orange never sits on ink.** Dark surfaces use Soft wave. Every dark icon and the pill follow this.
+- **One accent per surface.** Desktop uses blue for primary actions/focus and neutral navigation selection; keep error/destructive roles separate. The mobile base palette uses orange for active state, focus or an actionable error and neutral primary buttons. Success green confirms a finished step with text.
+- **Orange never sits on ink.** Fixed dark artwork and the dictation pill use Soft wave. Mobile dark appearance follows the base palette's readable accent.
 - **No gradients, no shadows in marks, no glows.** Icons are flat.
 - The dot is always a true circle, never a font period.
 
 ## Typography and geometry
 
-- **Figtree** carries navigation, body text, buttons, labels and small section headings on every platform. The chrome font role follows the shared interface font. Use Regular for prose, Medium for controls and SemiBold for short headings.
-- **Instrument Serif** Regular carries large product titles, the wordmark and marketing. Use the shared page/display/onboarding tokens; never fake bold or use serif type in controls.
-- Use sentence case. Shared sizes include 11 pt captions, 12 pt labels, 13 pt body, 14 pt reading text, 16 pt section headings, 21 pt compact titles, 26–28 pt onboarding/welcome titles and 28–30 pt large page/display titles. Enlarge text without losing critical content or actions.
-- Use a 4 pt spacing grid. Content controls have 6 pt radii, segmented controls 8 pt, panels and windows 12 pt. The desktop toolbar uses 36 pt circular icon controls and capsule action groups in a 52 pt window band, with 12 pt between groups. Ordinary desktop controls are at least 28 pt high, sidebar search fields 36 pt and source-list rows 32 pt. Search fields leave 12 pt before the icon and 8 pt between icon and text. Rounded pills elsewhere are reserved for the recording overlay and compact indicators.
+- **Inter** carries desktop navigation, body text, controls, labels and compact headings. The chrome font role follows the desktop interface font. Use Regular for prose, Medium for controls and SemiBold for short headings. Desktop UI text is about 13 px, captions start at 11 px and main titles are about 20 px.
+- **Figtree** carries mobile navigation, body text, buttons, labels and small section headings. **Instrument Serif** Regular carries mobile large titles, the unchanged wordmark artwork and marketing. Never fake bold or use serif type in controls. Desktop app headings use Inter.
+- Use sentence case. Base mobile sizes and geometry remain defined by the existing base tokens; desktop overrides must not change them. Enlarge text without losing critical content or actions.
+- Desktop uses 6 px outer insets, 16 px pane corners, 24 px dialogs, capsule controls and compact source lists. The toolbar band is 52 px with 36 px controls. Ordinary controls are 32 px high, compact controls 28 px, sidebar search 30 px and navigation rows at least 34 px. The sidebar defaults to 220 px, preserves saved widths within 200–320 px and remains usable at a 760×520 workspace minimum.
+- Keep one sidebar search field and restore it with Cmd/Ctrl+F when navigation is collapsed. The quiet sidebar toggle sits above its trailing edge, the header context aligns with the reading column, and New recording/Return to recording is vertically centered and aligned with the footer action edge at a 22 px content inset.
 - Keep component state families consistent: default, hover, focus, selected, disabled, loading and error. A disabled primary button keeps a readable label; hover does not replace its background with a pale secondary fill.
 - macOS navigation and toolbar material is system-rendered Liquid Glass on macOS 26+, with legacy visual-effect and opaque accessibility fallbacks. Reading content stays on the semantic opaque surface. Native material availability never changes the shared labels, actions or document hierarchy.
-- Fonts live in `assets/brand/fonts/` and are bundled locally. Outline artwork text so SVG marks render without installed fonts. The native reference keeps its required bundled resource copies.
+- Base fonts live in `assets/brand/fonts/`; desktop Inter and the original Forma styles live in `apps/desktop/src/desktop-ui/`. Bundle fonts locally and retain both font and style licenses. Outline artwork text so SVG marks render without installed fonts.
 
 ## Writing the name
 
@@ -114,9 +129,10 @@ The Dutch lines are written natively, not translated; they don't have to match t
 
 ## Files
 
-- `tokens.json`: canonical UI roles and dimensions.
+- `tokens.json`: canonical base roles/dimensions and the desktop-only `desktop-theme` overrides.
 - `fonts/`: bundled Figtree and Instrument Serif files and licenses.
 - `mark.svg`, `wordmark.svg`, `app-icon.svg`, `menubar.svg`: existing flat identity artwork.
-- `scripts/generate-theme.py`: dependency-free CSS/Swift token generator and checks.
+- `scripts/generate-theme.py`: dependency-free CSS/pill-metric/icon generator and checks.
+- `apps/desktop/src/desktop-ui/`: original Forma CSS, bundled desktop Inter and licenses.
 - `assets/ui/icons/manifest.json`: compact interface glyph source, emitted as local SVGs and native template-image data.
 - `DESIGN.md` at repository root: product composition, interaction and appearance rules.

@@ -112,7 +112,6 @@ const commandQueue = new SerialQueue();
 let sidebar = readSidebarPresentation();
 let sidebarToggle: HTMLButtonElement | null = null;
 let toolbarCaption: HTMLElement | null = null;
-let toolbarFind: HTMLButtonElement | null = null;
 let toolbarRecording: HTMLButtonElement | null = null;
 let publishedCommands = "";
 
@@ -193,8 +192,7 @@ function desktopCommands(): DesktopCommandState {
 function publishDesktopCommands() {
   if (!info || mode !== "workspace") return;
   const state = desktopCommands();
-  if (toolbarFind) { toolbarFind.disabled = !state.find; toolbarFind.title = t(state.find ? "common.search" : "chrome.search_unavailable"); }
-  const buttons = [sidebarToggle, toolbarRecording, toolbarFind].filter((button): button is HTMLButtonElement => !!button);
+  const buttons = [sidebarToggle, toolbarRecording].filter((button): button is HTMLButtonElement => !!button);
   const tabStop = buttons.find((button) => !button.disabled && button.tabIndex === 0) ?? buttons.find((button) => !button.disabled);
   for (const button of buttons) button.tabIndex = button === tabStop ? 0 : -1;
   const key = JSON.stringify(state);
@@ -290,6 +288,7 @@ function applyAppearance() {
   const preference = visibleInfo().settings.appearance ?? "system";
   const root = document.documentElement;
   root.dataset.appearance = preference === "system" ? root.dataset.nativeAppearance ?? "system" : preference;
+  document.body.dataset.theme = root.dataset.appearance;
 }
 
 function notifyInfo() {
@@ -609,14 +608,13 @@ function workspaceShell() {
   const actions = toolbarRecording.parentElement!;
   toolbarRecording.classList.add("btn", "toolbar-recording");
   sidebarToggle = controlButton({ class: "toolbar-sidebar toolbar-icon", "data-command": "toggle_sidebar", onclick: () => { void runDesktopCommand("toggle_sidebar"); } }, icon("sidebar"));
-  toolbarFind = controlButton({ class: "toolbar-find toolbar-icon", "data-command": "find", "aria-label": l("common.search"), onclick: () => { void runDesktopCommand("find"); } }, icon("search"));
   toolbarCaption = h("span", { class: "toolbar-section", "data-tauri-drag-region": true, "aria-hidden": "true" });
   const toolbar = h("div", { class: "workspace-toolbar", role: "toolbar", "aria-label": l("chrome.toolbar") },
     h("div", { class: "toolbar-leading", "data-tauri-drag-region": true }, sidebarToggle), toolbarCaption,
     h("div", { class: "toolbar-drag grow", "data-tauri-drag-region": true, "aria-hidden": "true" }),
-    h("div", { class: "toolbar-actions" }, toolbarRecording, toolbarFind));
+    h("div", { class: "toolbar-actions" }, toolbarRecording));
   const toolbarButtons = () => [...toolbar.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-  toolbarRecording.tabIndex = -1; toolbarFind.tabIndex = -1;
+  toolbarRecording.tabIndex = -1;
   toolbar.addEventListener("focusin", (event) => {
     const button = (event.target as HTMLElement).closest("button");
     if (button) for (const item of toolbar.querySelectorAll<HTMLButtonElement>("button")) item.tabIndex = item === button ? 0 : -1;
@@ -769,6 +767,7 @@ async function boot() {
   bindLocalization(document.documentElement, updateTitle);
   bindLocalization(banner, () => { if (banner.textContent) banner.textContent = localizeBackendText(banner.textContent); });
   document.documentElement.dataset.platform = info.platform;
+  document.body.dataset.platform = info.platform;
   await initializeDesktopChrome();
   windowVisible = !!fixtureClient() || info.platform !== "macos" || mode === "prompt";
   if (mode === "workspace") workspaceShell(); else app.replaceChildren(...(mode === "prompt" ? [] : [titlebarDragRegion(), recoveryBanner]), banner, content);
