@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
+import { webcrypto } from "node:crypto";
 import { visualModels } from "./model-catalog.mjs";
 
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
 function fixture(name, overrides = {}, storage) {
   const item = cases.find(item => item.name === name);
-  const context = vm.createContext({ location: { hostname: "127.0.0.1" }, structuredClone, queueMicrotask, localStorage: storage,
+  const context = vm.createContext({ location: { hostname: "127.0.0.1" }, structuredClone, queueMicrotask, setTimeout, clearTimeout, TextEncoder, crypto: webcrypto, localStorage: storage,
     __PENNEL_FIXTURE_OPTIONS__: { ...item, appearance: "dark", ...overrides } });
   vm.runInContext(script, context);
   return context;
@@ -22,6 +23,41 @@ test("every visual scenario has a unique stable identifier and valid entry", () 
     if (item.window === "pill") assert.ok(["listening", "working"].includes(item.pill_state));
     else assert.ok(item.section || item.step);
   }
+});
+
+test("live fixture freezes admitted notes and transcript through Stop and later appends", async () => {
+  const context = fixture("recording", { configured_text_provider: true, live_question_manual: true });
+  const api = context.__PENNEL_PLATFORM__;
+  const control = context.__PENNEL_FIXTURE__.workspace;
+  const status = await api.invoke("meeting_status");
+  const snapshot = await api.invoke("begin_live_question", { requestId: "owned-question", meetingUid: status.meeting_uid,
+    sessionId: status.session_id, expectedNotesText: status.notes, question: "What was decided?", history: [] });
+  control.append({ start_ms: 22_000, end_ms: 28_000, speaker: "others", text: "Later synthetic statement.", failed: false, voice: 1 });
+  await api.invoke("save_meeting_notes", { id: status.id, text: "Newer synthetic note" });
+  await api.invoke("stop_meeting");
+  let result;
+  await api.listen("live-question-result", event => { result = event.payload; });
+  control.complete(snapshot.request_id);
+  assert.equal(control.recording(), false);
+  assert.equal(snapshot.included_through_ms, 21_000);
+  assert.equal(result.snapshot.request_id, "owned-question");
+  assert.equal(result.snapshot.meeting_uid, status.meeting_uid);
+  assert.ok(result.snapshot.anchors.every(anchor => !anchor.source_text.includes("Later synthetic") && !anchor.source_text.includes("Newer synthetic")));
+});
+
+test("live fixture refuses mismatched acknowledged notes and cancels without delivering late completion", async () => {
+  const context = fixture("recording", { configured_text_provider: true, live_question_manual: true });
+  const api = context.__PENNEL_PLATFORM__;
+  const status = await api.invoke("meeting_status");
+  const args = { requestId: "owned-cancel", meetingUid: status.meeting_uid, sessionId: status.session_id,
+    expectedNotesText: status.notes, question: "Question", history: [] };
+  await assert.rejects(api.invoke("begin_live_question", { ...args, expectedNotesText: "Unacknowledged" }));
+  const snapshot = await api.invoke("begin_live_question", args);
+  let delivered = false;
+  await api.listen("live-question-result", () => { delivered = true; });
+  await api.invoke("cancel_live_question", { requestId: snapshot.request_id, meetingUid: status.meeting_uid, sessionId: status.session_id });
+  context.__PENNEL_FIXTURE__.workspace.complete(snapshot.request_id);
+  assert.equal(delivered, false);
 });
 
 test("saved-audio retranscription reports local progress and marks the summary outdated", async () => {

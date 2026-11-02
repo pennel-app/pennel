@@ -1,0 +1,165 @@
+{
+  "issue": 95,
+  "date": "2026-11-02",
+  "host": {
+    "model": "Mac16,8",
+    "cpu": "Apple M4 Pro",
+    "macos": "27.0.1"
+  },
+  "checks": {
+    "core_tests": 766,
+    "core_ignored": 7,
+    "keyboard_tests": 17,
+    "frontend_tests": 251,
+    "backend_tests": 237,
+    "swift_tests": 124,
+    "packaging_tests": 61,
+    "fixture_tests": 28,
+    "core_release_build": true,
+    "frontend_build": true,
+    "core_fmt_clippy": true,
+    "backend_fmt_clippy": true,
+    "theme_check": true
+  },
+  "frontend": {
+    "scenarios": 187,
+    "renders": 748,
+    "languages": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "errors": 0,
+    "windows_linux_are_fixtures": true,
+    "sixty_minute_measurements": [
+      {
+        "locale": "en",
+        "appearance": "light",
+        "transcript_duration_ms": 3600000,
+        "finalized_rows_added": 240,
+        "finalized_commit_to_render": {
+          "samples": 5,
+          "median_ms": 350,
+          "p95_ms": 350.2000000178814,
+          "max_ms": 350.2000000178814
+        },
+        "input_to_next_frame": {
+          "samples": 50,
+          "median_ms": 16.600000023841858,
+          "p95_ms": 17.700000017881393,
+          "max_ms": 18.599999994039536
+        },
+        "save_acknowledgement_ms": 26.30000001192093,
+        "synthetic_answer_ms": 30.5,
+        "stop_to_fixture_capture_off_ms": 1.5,
+        "actual_audio_capture": false,
+        "actual_provider_generation": false,
+        "accelerated_fixture": true,
+        "syntheticOnly": true
+      },
+      {
+        "locale": "en",
+        "appearance": "dark",
+        "transcript_duration_ms": 3600000,
+        "finalized_rows_added": 240,
+        "finalized_commit_to_render": {
+          "samples": 5,
+          "median_ms": 349.80000001192093,
+          "p95_ms": 350.2999999821186,
+          "max_ms": 350.2999999821186
+        },
+        "input_to_next_frame": {
+          "samples": 50,
+          "median_ms": 16.600000023841858,
+          "p95_ms": 18.5,
+          "max_ms": 18.599999994039536
+        },
+        "save_acknowledgement_ms": 27.400000005960464,
+        "synthetic_answer_ms": 29.099999994039536,
+        "stop_to_fixture_capture_off_ms": 1.4000000059604645,
+        "actual_audio_capture": false,
+        "actual_provider_generation": false,
+        "accelerated_fixture": true,
+        "syntheticOnly": true
+      },
+      {
+        "locale": "nl",
+        "appearance": "light",
+        "transcript_duration_ms": 3600000,
+        "finalized_rows_added": 240,
+        "finalized_commit_to_render": {
+          "samples": 5,
+          "median_ms": 349.7999999821186,
+          "p95_ms": 374.60000002384186,
+          "max_ms": 374.60000002384186
+        },
+        "input_to_next_frame": {
+          "samples": 50,
+          "median_ms": 16.599999994039536,
+          "p95_ms": 18.400000005960464,
+          "max_ms": 18.599999994039536
+        },
+        "save_acknowledgement_ms": 26.5,
+        "synthetic_answer_ms": 30,
+        "stop_to_fixture_capture_off_ms": 1.5,
+        "actual_audio_capture": false,
+        "actual_provider_generation": false,
+        "accelerated_fixture": true,
+        "syntheticOnly": true
+      },
+      {
+        "locale": "nl",
+        "appearance": "dark",
+        "transcript_duration_ms": 3600000,
+        "finalized_rows_added": 240,
+        "finalized_commit_to_render": {
+          "samples": 5,
+          "median_ms": 349,
+          "p95_ms": 351.40000000596046,
+          "max_ms": 351.40000000596046
+        },
+        "input_to_next_frame": {
+          "samples": 50,
+          "median_ms": 16.599999994039536,
+          "p95_ms": 18.100000023841858,
+          "max_ms": 18.399999976158142
+        },
+        "save_acknowledgement_ms": 27.5,
+        "synthetic_answer_ms": 36.400000005960464,
+        "stop_to_fixture_capture_off_ms": 2.9000000059604645,
+        "actual_audio_capture": false,
+        "actual_provider_generation": false,
+        "accelerated_fixture": true,
+        "syntheticOnly": true
+      }
+    ]
+  },
+  "native": {
+    "screenshots": 16,
+    "sessions": 4,
+    "binary_sha256": "2402620ff5be8ffa794473a4fd343d7dd11b1ee6547dbe17ed0192b1377a1e1d",
+    "personal_team": "B538Q2K76C",
+    "real_packaged_frontend": true,
+    "real_isolated_storage": true,
+    "actual_hardware_capture": false,
+    "actual_provider_generation": false,
+    "physical_ime_acceptance": false
+  },
+  "remaining": [
+    "review_and_merge",
+    "real_call_audio_routes",
+    "hardware_capture_stop_latency",
+    "physical_ime_accessibility",
+    "installed_windows_linux",
+    "real_sixty_minute_audio_resources"
+  ],
+  "local_receipts": [
+    "build/issue95/full-sweep-final/manifest.json",
+    "build/issue95/duplicate-review/manifest.json",
+    "build/issue95/platform-parity/manifest.json",
+    "build/issue95/native-route-final/manifest.json"
+  ]
+}
