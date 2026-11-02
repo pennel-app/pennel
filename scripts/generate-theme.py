@@ -16,6 +16,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 TOKENS = ROOT / "assets/brand/tokens.json"
 CSS = ROOT / "apps/desktop/src/theme.generated.css"
+DESKTOP_CSS = ROOT / "apps/desktop/src/desktop-theme.generated.css"
 PILL_METRICS = ROOT / "apps/desktop/src/pill-metrics.generated.ts"
 ICON_DIRECTORY = ROOT / "assets/ui/icons"
 ICON_MANIFEST = ICON_DIRECTORY / "manifest.json"
@@ -120,6 +121,43 @@ def validate(tokens: dict) -> None:
     for name, value in typography["sizes"].items():
         if not TOKEN_NAME.fullmatch(name) or not isinstance(value, (int, float)) or not 11 <= value <= 48:
             raise ValueError(f"invalid typography size: {name}")
+    if "desktop-theme" in tokens:
+        validate_desktop_theme(tokens)
+
+
+def validate_desktop_theme(tokens: dict) -> None:
+    desktop = tokens["desktop-theme"]
+    if not isinstance(desktop, dict) or set(desktop) != {"colors", "aliases", "radii", "typography"}:
+        raise ValueError("invalid desktop theme sections")
+    for section in ("colors", "aliases", "radii", "typography"):
+        if not isinstance(desktop[section], dict):
+            raise ValueError(f"invalid desktop theme {section}")
+    if any(name.startswith(("pill-", "brand-", "voice-")) or name == "wave" for name in desktop["colors"]):
+        raise ValueError("desktop theme must retain fixed brand and pill colors")
+    fixed = {name for name in tokens["colors"] if name.startswith(("pill-", "brand-", "voice-")) or name == "wave"}
+    required = (tokens["colors"].keys() - fixed) | {"border-strong", "control-surface", "surface-raised", "accent-hover", "accent-soft", "success-soft", "danger", "danger-soft"}
+    if missing := required - desktop["colors"].keys():
+        raise ValueError(f"missing desktop semantic colors: {', '.join(sorted(missing))}")
+    if not {"control", "segmented", "panel", "window", "dialog"} <= desktop["radii"].keys():
+        raise ValueError("missing desktop radius roles")
+    if desktop["aliases"] != {"error": "danger"}:
+        raise ValueError("desktop errors must use the danger role")
+    typography = desktop["typography"]
+    if set(typography) != {"ui", "display", "sizes"} or typography["ui"] != "Desktop Inter" or typography["display"] != "Desktop Inter":
+        raise ValueError("the desktop theme must use the bundled Desktop Inter family")
+    if not isinstance(typography["sizes"], dict) or not typography["sizes"].keys() <= tokens["typography"]["sizes"].keys():
+        raise ValueError("invalid desktop typography sizes")
+    merged = copy.deepcopy(tokens)
+    del merged["desktop-theme"]
+    for section in ("colors", "aliases", "radii"):
+        merged[section].update(desktop[section])
+    merged["typography"]["sizes"].update(typography["sizes"])
+    validate(merged)
+    for foreground, background in (("danger", "surface"), ("danger", "subtle"), ("danger", "danger-soft"), ("success", "success-soft"), ("accent", "accent-soft"), ("foreground", "control-surface"), ("muted", "control-surface"), ("foreground", "surface-raised"), ("muted", "surface-raised")):
+        for appearance in ("light", "dark"):
+            ratio = contrast(merged["colors"][foreground][appearance], merged["colors"][background][appearance])
+            if ratio < 4.5:
+                raise ValueError(f"desktop {appearance}: {foreground} on {background} has {ratio:.2f}:1 contrast; expected 4.5:1")
 
 
 def camel_name(name: str) -> str:
@@ -180,6 +218,81 @@ def render_pill_metrics(tokens: dict) -> str:
     return "\n".join(lines)
 
 
+def render_desktop_css(tokens: dict) -> str:
+    desktop = tokens["desktop-theme"]
+    lines = ["/* Generated desktop-only overrides; the pill and mobile retain the base brand theme. */", ":root {", "  color-scheme: light;"]
+    for name, pair in desktop["colors"].items():
+        lines.append(f"  --{name}: {pair['light'].lower()};")
+    for name, target in desktop["aliases"].items():
+        lines.append(f"  --{name}: var(--{target});")
+    for name, value in desktop["radii"].items():
+        lines.append(f"  --radius-{name}: {scalar(value)}px;")
+    lines.extend((
+        f"  --ui: \"{desktop['typography']['ui']}\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, sans-serif;",
+        "  --chrome-ui: var(--ui);",
+        "  --serif: var(--ui);",
+    ))
+    for name, value in desktop["typography"]["sizes"].items():
+        lines.append(f"  --font-{name}: {scalar(value)}px;")
+    lines.extend(("}", "", "@media (prefers-color-scheme: dark) {", "  :root {", "    color-scheme: dark;"))
+    for name, pair in desktop["colors"].items():
+        lines.append(f"    --{name}: {pair['dark'].lower()};")
+    lines.extend(("  }", "}", ""))
+    for appearance in ("light", "dark"):
+        lines.extend((f':root[data-appearance="{appearance}"], :root[data-theme="{appearance}"] {{', f"  color-scheme: {appearance};"))
+        for name, pair in desktop["colors"].items():
+            lines.append(f"  --{name}: {pair[appearance].lower()};")
+        lines.extend(("}", ""))
+    bridge = {
+        "font": "var(--ui)",
+        "bg": "var(--surface)",
+        "sidebar-bg": "var(--sidebar)",
+        "surface": "var(--surface)",
+        "surface-raised": "var(--surface-raised)",
+        "surface-inset": "var(--subtle)",
+        "text": "var(--foreground)",
+        "text-muted": "var(--muted)",
+        "text-faint": "var(--muted)",
+        "border": "var(--border)",
+        "border-strong": "var(--border-strong)",
+        "accent": "var(--button)",
+        "on-accent": "var(--button-text)",
+        "accent-hover": "var(--accent-hover)",
+        "accent-soft": "var(--accent-soft)",
+        "accent-text": "var(--accent)",
+        "hover": "var(--hover)",
+        "selected": "var(--selection)",
+        "danger": "var(--danger)",
+        "danger-soft": "var(--danger-soft)",
+        "success": "var(--success)",
+        "success-soft": "var(--success-soft)",
+        "focus": "var(--focus-ring)",
+        "shadow": "0 1px 2px var(--shadow)",
+        "dialog-shadow": "0 24px 80px var(--shadow)",
+        "radius": "var(--radius-control)",
+        "pane-radius": "var(--radius-panel)",
+        "toolbar-height": "var(--desktop-toolbar-height)",
+        "sidebar-inset": "var(--desktop-shell-inset)",
+        "control-sm": "var(--desktop-compact-control-height)",
+        "control-md": "var(--desktop-control-height)",
+        "control-toolbar": "var(--desktop-toolbar-button-size)",
+        "control-height": "var(--desktop-control-height)",
+        "control-bg": "var(--control-surface)",
+        "control-highlight": "var(--toolbar-control-highlight)",
+        "control-border": "var(--control-edge)",
+        "sidebar-stroke": "var(--control-edge)",
+        "glass-sidebar-tint": "var(--navigation-backing)",
+        "glass-toolbar-tint": "var(--navigation-backing)",
+        "glass-text-secondary": "var(--navigation-muted)",
+        "glass-control-bg": "var(--toolbar-control)",
+        "sidebar-width": "var(--sidebar-width, var(--desktop-sidebar-width))",
+    }
+    lines.extend((":root .da-app, :root .da-app[data-theme],", ':root[data-theme] .da-app:not([data-theme="light"]):not([data-theme="dark"]) {'))
+    lines.extend(f"  --da-{name}: {value};" for name, value in bridge.items())
+    lines.extend(("  color-scheme: inherit;", "}", ""))
+    return "\n".join(lines)
+
+
 def icon_filename(name: str) -> str:
     return re.sub(r"(?<!^)([A-Z])", r"-\1", name).lower()
 
@@ -210,6 +323,7 @@ def render_icon(manifest: dict, name: str) -> str:
 def generated_outputs(tokens: dict, manifest: dict) -> list[tuple[Path, str]]:
     return [
         (CSS, render_css(tokens)),
+        (DESKTOP_CSS, render_desktop_css(tokens)),
         (PILL_METRICS, render_pill_metrics(tokens)),
         *((ICON_DIRECTORY / f"{icon_filename(name)}.svg", render_icon(manifest, name)) for name in manifest["icons"]),
     ]
@@ -229,6 +343,7 @@ class GeneratorTests(unittest.TestCase):
         paths = [path for path, _ in generated_outputs(self.tokens, manifest)]
         self.assertEqual(paths, [
             CSS,
+            DESKTOP_CSS,
             PILL_METRICS,
             *(ICON_DIRECTORY / f"{icon_filename(name)}.svg" for name in manifest["icons"]),
         ])
@@ -283,6 +398,68 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("--surface: #fcfbf8;", css)
         self.assertIn("--surface: #1e1c1a;", css)
         self.assertEqual(css.count("--pill-background: #2a2723;"), 4)
+
+    def test_desktop_theme_does_not_change_mobile_or_pill_branding(self) -> None:
+        base = copy.deepcopy(self.tokens)
+        del base["desktop-theme"]
+        self.assertEqual(render_css(self.tokens), render_css(base))
+        self.assertEqual(render_pill_metrics(self.tokens), render_pill_metrics(base))
+        self.assertEqual(self.tokens["typography"]["ui"], "Figtree")
+        self.assertEqual(self.tokens["typography"]["display"], "Instrument Serif")
+        self.assertEqual(self.tokens["colors"]["surface"], {"light": "#FCFBF8", "dark": "#1E1C1A"})
+        self.assertEqual(self.tokens["radii"]["panel"], 12)
+        desktop = render_desktop_css(self.tokens)
+        self.assertIn('--ui: "Desktop Inter", -apple-system', desktop)
+        self.assertIn('--serif: var(--ui);', desktop)
+        self.assertIn("--surface: #ffffff;", desktop)
+        self.assertIn("--surface: #101010;", desktop)
+        self.assertIn("--error: var(--danger);", desktop)
+        self.assertNotIn("--pill-", desktop)
+        self.assertNotIn("--brand-", desktop)
+        self.assertNotIn("--wave:", desktop)
+
+    def test_desktop_theme_preserves_fixed_brand_and_font_constraints(self) -> None:
+        invalid = copy.deepcopy(self.tokens)
+        invalid["desktop-theme"]["colors"]["pill-background"] = {"light": "#000000", "dark": "#000000"}
+        with self.assertRaisesRegex(ValueError, "fixed brand"):
+            validate(invalid)
+        invalid = copy.deepcopy(self.tokens)
+        invalid["desktop-theme"]["typography"]["ui"] = "External font"
+        with self.assertRaisesRegex(ValueError, "Desktop Inter"):
+            validate(invalid)
+        invalid = copy.deepcopy(self.tokens)
+        invalid["typography"]["ui"] = "Desktop Inter"
+        with self.assertRaisesRegex(ValueError, "bundled Pennel font"):
+            validate(invalid)
+
+    def test_desktop_theme_rejects_unreadable_chrome_and_semantic_states(self) -> None:
+        for role, appearance, value in (("navigation-backing", "light", "#EFEFEF00"), ("muted", "light", "#AAAAAA"), ("danger", "dark", "#333333")):
+            invalid = copy.deepcopy(self.tokens)
+            invalid["desktop-theme"]["colors"][role][appearance] = value
+            with self.subTest(role=role), self.assertRaisesRegex(ValueError, "contrast"):
+                validate(invalid)
+
+    def test_desktop_theme_requires_complete_semantic_roles(self) -> None:
+        invalid = copy.deepcopy(self.tokens)
+        del invalid["desktop-theme"]["colors"]["control-surface"]
+        with self.assertRaisesRegex(ValueError, "missing desktop semantic colors"):
+            validate(invalid)
+        invalid = copy.deepcopy(self.tokens)
+        del invalid["desktop-theme"]["radii"]["dialog"]
+        with self.assertRaisesRegex(ValueError, "missing desktop radius"):
+            validate(invalid)
+
+    def test_desktop_theme_bridge_and_forced_appearance_share_the_semantic_palette(self) -> None:
+        desktop = render_desktop_css(self.tokens)
+        self.assertNotIn("light-dark(", desktop)
+        self.assertIn(':root[data-appearance="light"]', desktop)
+        self.assertIn(':root[data-appearance="dark"]', desktop)
+        self.assertLess(desktop.index("@media (prefers-color-scheme: dark)"), desktop.index(':root[data-appearance="light"]'))
+        self.assertIn("--da-accent: var(--button);", desktop)
+        self.assertIn("--da-danger: var(--danger);", desktop)
+        self.assertIn("--da-glass-sidebar-tint: var(--navigation-backing);", desktop)
+        self.assertIn("--da-sidebar-width: var(--sidebar-width, var(--desktop-sidebar-width));", desktop)
+        self.assertIn("color-scheme: inherit;", desktop)
 
     def test_interface_font_follows_the_original_figtree_and_can_use_the_system_font(self) -> None:
         css = render_css(self.tokens)

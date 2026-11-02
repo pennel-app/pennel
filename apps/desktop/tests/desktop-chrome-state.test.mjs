@@ -17,7 +17,8 @@ test("native transparency requires a complete successful environment and respect
 });
 
 test("sidebar preferences recover from invalid values and remain bounded for pointer and keyboard", () => {
-  assert.deepEqual(sidebarPresentation(null), { width: 230, visible: true });
+  assert.deepEqual(sidebarPresentation(null), { width: 220, visible: true });
+  assert.deepEqual(sidebarPresentation({ width: 230, visible: false }), { width: 230, visible: false });
   assert.deepEqual(sidebarPresentation({ width: -1, visible: false }), { width: 200, visible: false });
   assert.equal(sidebarPresentation({ width: 900 }).width, 320);
   assert.equal(sidebarPresentation({ width: NaN }).width, SIDEBAR.width);

@@ -40,7 +40,9 @@
     "longDescription": "Hold a key to dictate clean text in any app, and record meetings as transcripts and notes.",
     "resources": {
       "resources/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings",
-      "resources/nl.lproj/InfoPlist.strings": "nl.lproj/InfoPlist.strings"
+      "resources/nl.lproj/InfoPlist.strings": "nl.lproj/InfoPlist.strings",
+      "../src/desktop-ui/LICENSE": "licenses/Forma.txt",
+      "../src/desktop-ui/fonts/OFL.txt": "licenses/Inter-OFL.txt"
     },
     "copyright": "Apache-2.0",
     "icon": [

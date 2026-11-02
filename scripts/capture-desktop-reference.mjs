@@ -121,21 +121,24 @@ if (options.serve) {
     if (!port) throw new Error("Chromium did not expose its owned debugging endpoint");
     const version = await fetch(`http://127.0.0.1:${port}/json/version`).then(response => response.json());
     connection = await connectCDP(version.webSocketDebuggerUrl);
-    const { targetId } = await connection.send("Target.createTarget", { url: "about:blank" });
-    const { sessionId } = await connection.send("Target.attachToTarget", { targetId, flatten: true });
-    const send = (method, params = {}) => connection.send(method, params, sessionId);
-    await send("Page.enable");
-    await send("Runtime.enable");
-    await send("Log.enable");
-    await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Brussels" });
     const manifest = captureManifest;
     for (const locale of locales) {
-      await send("Emulation.setLocaleOverride", { locale: locale === "nl" ? "nl-BE" : "en-GB" });
       for (const appearance of appearances) {
       await mkdir(join(options.output, locale, appearance), { recursive: true });
-      await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }] });
       for (const item of selected) {
         currentCase = `${locale}/${appearance}/${item.name}`;
+        // A scenario keeps its own reload state without inheriting another scenario's recovery or layout settings.
+        const { browserContextId } = await connection.send("Target.createBrowserContext", { disposeOnDetach: true });
+        try {
+        const { targetId } = await connection.send("Target.createTarget", { url: "about:blank", browserContextId });
+        const { sessionId } = await connection.send("Target.attachToTarget", { targetId, flatten: true });
+        const send = (method, params = {}) => connection.send(method, params, sessionId);
+        await send("Page.enable");
+        await send("Runtime.enable");
+        await send("Log.enable");
+        await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Brussels" });
+        await send("Emulation.setLocaleOverride", { locale: locale === "nl" ? "nl-BE" : "en-GB" });
+        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }] });
         connection.events.length = 0;
         const [width, height] = item.size ?? (item.window === "pill" ? [pillMetrics["window-width"], pillMetrics["window-height"]] : windowSizes[item.window]);
         await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: item.scale ?? 1, mobile: false });
@@ -167,6 +170,9 @@ if (options.serve) {
         manifest.images.push({ case: item.name, locale, appearance, file, ...metadata.result.value, runtime_errors: [...connection.events] });
         await writeFile(join(options.output, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
         if (metadata.result.value.unknown_commands.length) console.error(`${item.name}: unknown fixture commands ${metadata.result.value.unknown_commands.join(", ")}`);
+        } finally {
+          await connection.send("Target.disposeBrowserContext", { browserContextId });
+        }
       }
     }
     }
