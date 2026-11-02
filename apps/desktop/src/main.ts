@@ -47,6 +47,7 @@ export interface Context {
   jumpMs?: number;
   sourceTarget?: MeetingSourceTarget;
   review?: boolean;
+  meetingRenamed?: (previousId: string, id: string) => void;
 }
 
 type View = (ctx: Context) => HTMLElement | Promise<HTMLElement>;
@@ -440,6 +441,11 @@ function contextFor(target: Mounted, reportError: (error: unknown) => void = rep
     jumpMs: route.jump_ms ?? undefined,
     sourceTarget: route.source_target ?? undefined,
     review: route.section === "meetings" && route.tab === "review",
+    meetingRenamed: (previousId, id) => {
+      navigation.meetingRenamed(previousId, id);
+      if (pendingRoute?.meeting_id === previousId) pendingRoute.meeting_id = id;
+      library?.highlight();
+    },
   };
 }
 

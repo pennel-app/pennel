@@ -316,9 +316,11 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     clearTimeout(titleTimer);
     if (!titleDraft.dirty) return Promise.resolve();
     return titleWrites.run(() => titleDraft.persist(value => finalized ? writes.run(async () => {
+      const previousId = owner.id;
       owner.id = await api.renameMeeting(owner.id, value);
       owner.aliases.add(owner.id);
       status = { ...status, id: owner.id, title: value };
+      ctx.meetingRenamed?.(previousId, owner.id);
     }) : api.setMeetingTitle(value, session)));
   }
   async function flush() {

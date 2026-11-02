@@ -141,4 +141,13 @@ export class WorkspaceNavigation {
     if (this.recordingWasCurrent) { this.remembered.set("meetings", workspaceRoute("meetings", null, id)); this.recordingWasCurrent = false; }
     if (this.settingsOrigin?.section === "recording") this.settingsOrigin = workspaceRoute("meetings", null, id);
   }
+
+  meetingRenamed(previousId: string, id: string): void {
+    const update = (route: WorkspaceRoute | null) => {
+      if (route && (route.section === "meetings" || route.section === "recording") && route.meeting_id === previousId) route.meeting_id = id;
+    };
+    update(this.current);
+    update(this.settingsOrigin);
+    this.remembered.forEach(update);
+  }
 }

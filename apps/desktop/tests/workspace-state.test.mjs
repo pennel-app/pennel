@@ -138,3 +138,20 @@ test("the optional Pad has its own route and is remembered across workspace navi
   assert.deepEqual(nav.select("dictation"), pad);
   assert.equal(samePadRoute(pad, workspaceRoute("dictation")), false);
 });
+
+test("a background meeting rename updates return metadata without changing the user's destination", () => {
+  const nav = new WorkspaceNavigation(workspaceRoute("meetings", null, "Original"));
+  nav.set(workspaceRoute("meetings", null, "Original"));
+  nav.set(workspaceRoute("settings", "models"));
+  const settings = { ...nav.current };
+  nav.meetingRenamed("Original", "Renamed");
+  assert.deepEqual(nav.current, settings);
+  assert.equal(nav.settingsBack().meeting_id, "Renamed");
+  assert.equal(nav.select("meetings").meeting_id, "Renamed");
+  nav.set(workspaceRoute("recording", null, "Another meeting"));
+  nav.meetingRenamed("Renamed", "Renamed again");
+  assert.equal(nav.current.meeting_id, "Another meeting");
+  nav.set(workspaceRoute("meetings", "review", "Renamed again"));
+  nav.meetingRenamed("Renamed again", "Final name");
+  assert.deepEqual(nav.current, workspaceRoute("meetings", "review", "Final name"));
+});
