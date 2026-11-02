@@ -40,6 +40,50 @@ use crate::wav::{decode_wav, encode_wav};
 
 const MAX_PROMPT_CHARS: usize = 800;
 
+/// A source-bound request whose provider and evidence cannot change while it is queued.
+pub struct PreparedMeetingQuestion {
+    provider: ProviderConfig,
+    key: Option<String>,
+    system: Option<Arc<dyn SystemLanguageModel>>,
+    messages: Vec<crate::llm::ChatMessage>,
+    sources: Vec<Passage>,
+}
+
+impl PreparedMeetingQuestion {
+    pub fn sources(&self) -> &[Passage] {
+        &self.sources
+    }
+
+    pub fn complete(
+        self,
+        cancellation: Arc<crate::InferenceCancellation>,
+        physical_work: impl Send + 'static,
+    ) -> Result<MeetingAnswer, PennelError> {
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(crate::meeting_chat::ASK_TIMEOUT_SECS);
+        crate::inference::run_cancelled_before(cancellation, deadline, move |deadline| {
+            let _physical_work = physical_work;
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
+            let text = if self.provider.kind == ProviderKind::AppleIntelligence {
+                system_llm::complete(self.system.as_deref(), &self.messages, seconds)
+            } else {
+                crate::llm::chat_complete_within(
+                    &self.provider,
+                    self.key.as_deref(),
+                    &self.messages,
+                    seconds,
+                    Reasoning::Low,
+                )
+            }?;
+            Ok(MeetingAnswer {
+                citations: crate::meeting_chat::cited(&text, &self.sources),
+                text,
+            })
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ApiKeys {
     pub by_provider: HashMap<String, String>,
@@ -1114,22 +1158,14 @@ impl PennelEngine {
             .ok_or(PennelError::Storage {
                 message: "search index unavailable".into(),
             })?;
-        let (messages, sources) = if account.kind == ProviderKind::AppleIntelligence {
-            apple_chat_messages(&question, &history, &sources)?
-        } else {
-            (chat_messages(&question, &history, &sources), sources)
-        };
-        let answer = self.complete_llm(
-            &self.endpoint(&account, model),
-            key.as_deref(),
-            &messages,
-            ASK_TIMEOUT_SECS,
-            Reasoning::Low,
-        )?;
-        Ok(MeetingAnswer {
-            citations: cited(&answer, &sources),
-            text: answer,
-        })
+        self.prepare_source_question(
+            question,
+            history,
+            sources,
+            self.endpoint(&account, model),
+            key,
+        )?
+        .complete(crate::InferenceCancellation::new(), ())
     }
 
     pub fn export_meeting(
@@ -1650,6 +1686,112 @@ impl PennelEngine {
 }
 
 impl PennelEngine {
+    pub fn meeting_uid(&self, id: String) -> Option<String> {
+        self.meeting_store().uid_of(&id)
+    }
+
+    pub fn meeting_id_for_uid(&self, uid: &str) -> Option<String> {
+        let store = self.meeting_store();
+        store
+            .list()
+            .into_iter()
+            .find(|meeting| store.uid_of(&meeting.id).as_deref() == Some(uid))
+            .map(|meeting| meeting.id)
+    }
+
+    pub fn meeting_notes_checked(&self, id: &str) -> Result<String, PennelError> {
+        match std::fs::read_to_string(self.meeting_store().dir_of(id).join("notes.md")) {
+            Ok(text) => Ok(text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(_) => Err(PennelError::Storage {
+                message: "The saved meeting notes could not be read. Your question was not sent."
+                    .into(),
+            }),
+        }
+    }
+
+    pub fn prepare_meeting_question(
+        &self,
+        question: String,
+        history: Vec<ChatTurn>,
+        sources: Vec<Passage>,
+        keys: ApiKeys,
+    ) -> Result<PreparedMeetingQuestion, PennelError> {
+        let settings = self.settings();
+        let (account, model) = settings
+            .resolve(&settings.llm)
+            .ok_or(PennelError::NotFound)?;
+        let key = self.credential(&account, &keys)?;
+        self.prepare_source_question(
+            question,
+            history,
+            sources,
+            self.endpoint(&account, model),
+            key,
+        )
+    }
+
+    pub fn prepare_meeting_evidence_question(
+        &self,
+        question: String,
+        history: Vec<ChatTurn>,
+        evidence: &crate::MeetingEvidence,
+        keys: ApiKeys,
+    ) -> Result<PreparedMeetingQuestion, PennelError> {
+        let settings = self.settings();
+        let (account, model) = settings
+            .resolve(&settings.llm)
+            .ok_or(PennelError::NotFound)?;
+        let key = self.credential(&account, &keys)?;
+        let sources =
+            evidence.selected_sources(&question, account.kind == ProviderKind::AppleIntelligence);
+        self.prepare_source_question(
+            question,
+            history,
+            sources,
+            self.endpoint(&account, model),
+            key,
+        )
+    }
+
+    fn prepare_source_question(
+        &self,
+        question: String,
+        history: Vec<ChatTurn>,
+        sources: Vec<Passage>,
+        provider: ProviderConfig,
+        key: Option<String>,
+    ) -> Result<PreparedMeetingQuestion, PennelError> {
+        if question.trim().is_empty() {
+            return Err(PennelError::InvalidResponse {
+                message: "Type a question first.".into(),
+            });
+        }
+        if !supports(provider.kind, ProviderTask::Llm) {
+            return Err(PennelError::InvalidResponse {
+                message: "This provider does not support text processing.".into(),
+            });
+        }
+        if requires_key(provider.kind) && key.is_none() {
+            return Err(PennelError::MissingApiKey { task: "llm".into() });
+        }
+        let (messages, sources) = if provider.kind == ProviderKind::AppleIntelligence {
+            crate::meeting_chat::apple_chat_messages(&question, &history, &sources)?
+        } else {
+            (
+                crate::meeting_chat::chat_messages(&question, &history, &sources),
+                sources,
+            )
+        };
+        Ok(PreparedMeetingQuestion {
+            provider,
+            key,
+            system: self.system_llm.read().unwrap().clone(),
+            messages,
+            sources,
+        })
+    }
+
     pub(crate) fn inference_capture_gate(&self) -> std::sync::MutexGuard<'_, ()> {
         self.meeting_gate.lock().unwrap()
     }
@@ -4186,6 +4328,125 @@ mod tests {
         });
         engine.set_system_language_model(model.clone());
         model
+    }
+
+    #[test]
+    fn prepared_meeting_question_freezes_sources_and_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = mockito::Server::new();
+        let engine = engine(&dir, &server, DictationMode::Clean);
+        let first = use_apple_intelligence(&engine, "Frozen answer [1]");
+        let mut sources = vec![Passage {
+            meeting_id: "uid-one".into(),
+            title: "M".into(),
+            start_iso: "2026-11-02".into(),
+            kind: crate::PassageKind::Transcript,
+            start_ms: Some(1_000),
+            text: "Earlier evidence".into(),
+            snippet: String::new(),
+        }];
+        let request = engine
+            .prepare_meeting_question("What happened?".into(), vec![], sources.clone(), keys())
+            .unwrap();
+        sources[0].text = "Later evidence".into();
+        let second = use_apple_intelligence(&engine, "Wrong provider");
+        let answer = request
+            .complete(crate::InferenceCancellation::new(), ())
+            .unwrap();
+        assert_eq!(answer.text, "Frozen answer [1]");
+        assert_eq!(answer.citations[0].passage.text, "Earlier evidence");
+        assert_eq!(first.calls.lock().unwrap().len(), 1);
+        assert!(second.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancelled_prepared_question_never_dispatches_the_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = mockito::Server::new();
+        let engine = engine(&dir, &server, DictationMode::Clean);
+        let model = use_apple_intelligence(&engine, "Unexpected");
+        let request = engine
+            .prepare_meeting_question("Question".into(), vec![], vec![], keys())
+            .unwrap();
+        let cancellation = crate::InferenceCancellation::new();
+        cancellation.cancel();
+        assert!(matches!(
+            request.complete(cancellation, ()),
+            Err(PennelError::Cancelled)
+        ));
+        assert!(model.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancelled_questions_keep_physical_capacity_until_the_provider_exits() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        struct Blocking {
+            started: mpsc::Sender<()>,
+            release: Mutex<mpsc::Receiver<()>>,
+        }
+        impl crate::SystemLanguageModel for Blocking {
+            fn complete(
+                &self,
+                _: Vec<crate::LanguageModelMessage>,
+                _: u64,
+            ) -> Result<String, PennelError> {
+                self.started.send(()).unwrap();
+                self.release.lock().unwrap().recv().unwrap();
+                Ok("Finished".into())
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let server = mockito::Server::new();
+        let engine = engine(&dir, &server, DictationMode::Clean);
+        use_apple_intelligence(&engine, "unused");
+        let prepare = || {
+            let (started, seen) = mpsc::channel();
+            let (release, released) = mpsc::channel();
+            engine.set_system_language_model(Arc::new(Blocking {
+                started,
+                release: Mutex::new(released),
+            }));
+            let request = engine
+                .prepare_meeting_question("Question".into(), vec![], vec![], keys())
+                .unwrap();
+            let cancellation = crate::InferenceCancellation::new();
+            let cancelled = cancellation.clone();
+            let (finished, result) = mpsc::channel();
+            std::thread::spawn(move || {
+                finished.send(request.complete(cancelled, ())).unwrap();
+            });
+            (seen, release, cancellation, result)
+        };
+        let (first_started, first_release, first_cancel, first_result) = prepare();
+        first_started.recv_timeout(Duration::from_secs(5)).unwrap();
+        let (second_started, second_release, second_cancel, second_result) = prepare();
+        second_started.recv_timeout(Duration::from_secs(5)).unwrap();
+        first_cancel.cancel();
+        second_cancel.cancel();
+        assert!(matches!(
+            first_result.recv_timeout(Duration::from_secs(2)).unwrap(),
+            Err(PennelError::Cancelled)
+        ));
+        assert!(matches!(
+            second_result.recv_timeout(Duration::from_secs(2)).unwrap(),
+            Err(PennelError::Cancelled)
+        ));
+        let (third_started, third_release, _, third_result) = prepare();
+        assert!(matches!(
+            third_started.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        first_release.send(()).unwrap();
+        third_started.recv_timeout(Duration::from_secs(5)).unwrap();
+        second_release.send(()).unwrap();
+        third_release.send(()).unwrap();
+        assert!(
+            third_result
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .is_ok()
+        );
     }
 
     #[test]

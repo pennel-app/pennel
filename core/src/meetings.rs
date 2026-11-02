@@ -1067,18 +1067,34 @@ impl MeetingStore {
     }
 
     pub fn rename(&self, id: &str, title: &str) -> Result<String, PennelError> {
-        let (mut front, body) = self.frontmatter(id).ok_or(PennelError::NotFound)?;
+        self.rename_with_write(id, title, |target, metadata| {
+            self.write_file(target, "meeting.md", metadata)
+        })
+    }
+
+    fn rename_with_write(
+        &self,
+        id: &str,
+        title: &str,
+        persist: impl FnOnce(&str, &str) -> Result<(), PennelError>,
+    ) -> Result<String, PennelError> {
+        let original = self.read_file(id, "meeting.md");
+        let (mut front, body) = parse_meeting(&original).ok_or(PennelError::NotFound)?;
         let prefix: String = id.chars().take("YYYY-MM-DD HHmm ".len()).collect();
         let base = format!("{prefix}{}", folder_name(title));
         let new_id = std::iter::once(base.clone())
             .chain((2..).map(|n| format!("{base} ({n})")))
             .find(|candidate| candidate == id || !self.dir.join(candidate).exists())
             .expect("unbounded iterator");
-        if new_id != id {
-            std::fs::rename(self.dir_of(id), self.dir_of(&new_id)).map_err(PennelError::storage)?;
-        }
         front.title = sanitize(title);
-        self.write_file(&new_id, "meeting.md", &render_meeting(&front, &body))?;
+        // A failed metadata write must leave the retained session's original folder usable.
+        persist(id, &render_meeting(&front, &body))?;
+        if new_id != id
+            && let Err(error) = std::fs::rename(self.dir_of(id), self.dir_of(&new_id))
+        {
+            let _ = self.write_file(id, "meeting.md", &original);
+            return Err(PennelError::storage(error));
+        }
         Ok(new_id)
     }
 
@@ -1730,6 +1746,74 @@ mod tests {
         assert_eq!(new_id, "2026-10-23 1400 Kickoff Q8");
         assert_eq!(store.list()[0].title, "Kickoff Q8");
         assert!(!dir.path().join(&id).exists());
+    }
+
+    #[test]
+    fn failed_rename_metadata_write_keeps_the_original_path_uid_and_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(dir.path());
+        let id = store.create("Before", start()).unwrap();
+        store.write_notes(&id, "Saved notes").unwrap();
+        store
+            .write_transcript(&id, &[seg(1_000, Speaker::Me, "Saved speech")])
+            .unwrap();
+        let uid = store.uid_of(&id).unwrap();
+        let original = std::fs::read(store.dir_of(&id).join("meeting.md")).unwrap();
+        let blocked = dir.path().join("blocked-metadata");
+        std::fs::create_dir(&blocked).unwrap();
+        let result = store.rename_with_write(&id, "After", |_, metadata| {
+            durable_write(&blocked, metadata.as_bytes())
+        });
+        assert!(result.is_err());
+        assert!(
+            store.dir_of(&id).is_dir(),
+            "A failed metadata write must not relocate the retained session"
+        );
+        assert!(!store.dir_of("2026-10-23 1400 After").exists());
+        assert_eq!(
+            std::fs::read(store.dir_of(&id).join("meeting.md")).unwrap(),
+            original
+        );
+        assert_eq!(store.uid_of(&id), Some(uid.clone()));
+        assert_eq!(store.read_notes(&id), "Saved notes");
+        assert_eq!(store.read_transcript(&id)[0].text, "Saved speech");
+        store.write_notes(&id, "Retained draft retry").unwrap();
+        let renamed = store.rename(&id, "After").unwrap();
+        assert_eq!(store.uid_of(&renamed), Some(uid));
+        assert_eq!(store.read_notes(&renamed), "Retained draft retry");
+        assert!(!store.dir_of(&id).exists());
+        assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn failed_folder_move_restores_exact_metadata_and_keeps_notes_retryable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(dir.path());
+        let id = store.create("Before", start()).unwrap();
+        store.write_notes(&id, "Saved notes").unwrap();
+        let original = std::fs::read(store.dir_of(&id).join("meeting.md")).unwrap();
+        let uid = store.uid_of(&id).unwrap();
+        let collision = store.dir_of("2026-10-23 1400 After");
+        let result = store.rename_with_write(&id, "After", |target, metadata| {
+            store.write_file(target, "meeting.md", metadata)?;
+            std::fs::create_dir(&collision).map_err(PennelError::storage)?;
+            std::fs::write(collision.join("owned-blocker"), b"occupied")
+                .map_err(PennelError::storage)
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read(store.dir_of(&id).join("meeting.md")).unwrap(),
+            original
+        );
+        assert_eq!(store.uid_of(&id), Some(uid.clone()));
+        assert_eq!(store.read_notes(&id), "Saved notes");
+        store.write_notes(&id, "Retained draft retry").unwrap();
+        std::fs::remove_file(collision.join("owned-blocker")).unwrap();
+        std::fs::remove_dir(&collision).unwrap();
+        let renamed = store.rename(&id, "After").unwrap();
+        assert_eq!(store.uid_of(&renamed), Some(uid));
+        assert_eq!(store.read_notes(&renamed), "Retained draft retry");
+        assert_eq!(store.list().len(), 1);
     }
 
     #[test]

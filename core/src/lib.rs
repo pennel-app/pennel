@@ -30,6 +30,7 @@ mod llm;
 mod local_engine;
 mod localization;
 mod meeting_chat;
+mod meeting_evidence;
 mod meeting_index;
 mod meeting_recording;
 mod meetings;
@@ -71,6 +72,7 @@ pub use cloud::sync::{MASS_DELETE, MeetingSyncState, SyncItemState, SyncReport, 
 pub use cpu_support::{UNSUPPORTED_PROCESSOR, local_models_unavailable_reason};
 pub use engine::{
     ApiKeys, CleanupStatus, DictationRequest, DictationResult, LibrarySearch, PennelEngine,
+    PreparedMeetingQuestion,
 };
 pub use error::PennelError;
 pub use export::MeetingExport;
@@ -93,6 +95,9 @@ pub use localization::{
     ui_text,
 };
 pub use meeting_chat::{ChatTurn, Citation, MeetingAnswer};
+pub use meeting_evidence::{
+    MeetingEvidence, MeetingSourceAnchor, evidence_revision, segment_evidence_revision,
+};
 pub use meeting_index::{Passage, PassageKind};
 pub use meeting_recording::{
     CaptureEventKind, CaptureFormatEpoch, MeetingAudioTrack, MeetingCaptureEvent,
