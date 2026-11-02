@@ -71,3 +71,41 @@ test("queued persistence keeps the old session snapshot when the next meeting st
   assert.equal(draft.value, "Second meeting note");
   assert.equal(draft.dirty, true);
 });
+
+test("confirmed notes remain separate from a newer draft and failed storage", async () => {
+  const draft = new MeetingDraft();
+  draft.sync("session", "stored");
+  draft.edit("sent");
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const pending = draft.persist(async () => blocked);
+  assert.equal(draft.status, "saving");
+  draft.edit("newer input");
+  release();
+  await pending;
+  assert.equal(draft.acknowledgedValue, "sent");
+  assert.equal(draft.value, "newer input");
+  assert.equal(draft.status, "unsaved");
+  await assert.rejects(draft.persist(async () => { throw Error("full"); }));
+  assert.equal(draft.acknowledgedValue, "sent");
+  assert.equal(draft.value, "newer input");
+  assert.equal(draft.status, "unsaved");
+});
+
+test("draft writes are serialized without capturing text typed later", async () => {
+  const draft = new MeetingDraft();
+  draft.sync("session", "stored");
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const writes = [];
+  draft.edit("first");
+  const first = draft.persist(async value => { writes.push(value); await blocked; });
+  draft.edit("second");
+  const second = draft.persist(async value => { writes.push(value); });
+  await Promise.resolve();
+  assert.deepEqual(writes, ["first"]);
+  release(); await Promise.all([first, second]);
+  assert.deepEqual(writes, ["first", "second"]);
+  assert.equal(draft.acknowledgedValue, "second");
+  assert.equal(draft.status, "saved");
+});

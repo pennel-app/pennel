@@ -76,3 +76,12 @@ test("row identity handles simultaneous tracks and duplicate timestamps without 
     assert.equal(sameSegment(segment, { ...segment, ...change }), false);
   }
 });
+
+test("stable UID and session permit a folder rename without replacing the transcript", async () => {
+  const initial = snapshot(1, { meeting_uid: "uid" });
+  const refresh = new RecordingRefresh(initial);
+  const renamed = await refresh.refresh(metadata(1, { meeting_uid: "uid", id: "renamed" }), async () => { throw Error("unexpected read"); });
+  assert.equal(renamed.id, "renamed");
+  assert.equal(renamed.transcript, initial.transcript);
+  assert.equal(await refresh.refresh(metadata(2, { meeting_uid: "other", id: "renamed" }), async () => snapshot(2)), null);
+});

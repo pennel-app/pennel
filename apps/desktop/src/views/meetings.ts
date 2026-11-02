@@ -14,7 +14,8 @@ import { processingSummary } from "../processing-state";
 import { frozenRecognitionLabel, meetingProcessingSummary, processingLabel, retainedMeetingFailure } from "../recording-processing";
 import { retranscriptionControl, retranscriptionPercent } from "../meeting-retranscription";
 import { summaryControl } from "../voice-flow-state";
-import { RecordingRefresh, segmentKeys, sameSegment } from "../recording-refresh";
+import { segmentKeys, sameSegment } from "../recording-refresh";
+import { liveMeetingWorkspace, retainedMeetingWorkspace, getRetainedMeetingWorkspace, acknowledgeRetainedNotes, flushLiveWorkspaces, finishLiveWorkspace, displayedLiveWorkspaceSession } from "../live-workspace";
 
 const notesQueue = new SerialQueue();
 const drafts = new Map<string, MeetingDraft>();
@@ -47,7 +48,7 @@ function draftFor(id: string, notes: string) {
 }
 
 async function saveDraft(draft: MeetingDraft, meetingId: string) {
-  await draft.persist((value) => notesQueue.run(() => api.saveMeetingNotes(meetingId, value)));
+  await draft.persist((value) => notesQueue.run(async () => { await api.saveMeetingNotes(meetingId, value); acknowledgeRetainedNotes(meetingId, value); }));
 }
 
 async function flushLiveTitle() {
@@ -56,8 +57,9 @@ async function flushLiveTitle() {
   await liveTitleDraft.persist((title) => titleQueue.run(() => api.setMeetingTitle(title, sessionId)));
 }
 
-export async function flushMeetingDrafts() {
+export async function flushMeetingDrafts(includeLiveWorkspaces = true) {
   await persistAll([
+    ...includeLiveWorkspaces ? [flushLiveWorkspaces] : [],
     async () => { await titleQueue.drain(); await flushLiveTitle(); },
     async () => {
       await notesQueue.drain();
@@ -71,10 +73,11 @@ export async function flushMeetingDrafts() {
 }
 
 export function displayedMeetingSession(): string | null {
-  return liveDraft.sessionId;
+  return displayedLiveWorkspaceSession() ?? liveDraft.sessionId;
 }
 
 export function finishMeetingDrafts(event: MeetingFinished) {
+  finishLiveWorkspace(event);
   if (!event.id) return;
   const oldId = sessionMeetingIds.get(event.session_id);
   if (oldId && oldId !== event.id && drafts.has(oldId)) {
@@ -341,6 +344,8 @@ function chat(ctx: Context, meetingId: string | null) {
 export async function meetingsView(ctx: Context): Promise<HTMLElement> {
   if (ctx.param === "__chat__") return h("div", { class: "meeting-selected" }, chat(ctx, null));
   if (ctx.param) {
+    const retained = ctx.review ? null : retainedMeetingWorkspace(ctx, ctx.param);
+    if (retained) return retained;
     try { return h("div", { class: "meeting-selected" }, await meetingDetail(ctx, ctx.param)); }
     catch (error) { return h("div", { class: "empty-state" }, h("p", { class: "error" }, errorText(error)), controlButton({ class: "btn", onclick: () => ctx.navigate("meetings") }, l("meetings.back_meetings"))); }
   }
@@ -352,6 +357,8 @@ export async function meetingsView(ctx: Context): Promise<HTMLElement> {
 }
 
 async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
+  const retained = ctx.review ? null : retainedMeetingWorkspace(ctx, id);
+  if (retained) return retained;
   let disposed = false;
   ctx.onDispose(() => { disposed = true; });
   const reportOptional = (error: unknown) => { if (!disposed) ctx.report(error); };
@@ -658,6 +665,7 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
   const metadata = h("p", { class: "help" }, metadataText());
   bindLocalization(metadata, () => { metadata.textContent = metadataText(); });
   const result = h("article", { class: "meeting-detail" },
+    ctx.review && getRetainedMeetingWorkspace(id) ? h("button", { class: "text-button source-back meeting-workspace-return", onclick: () => ctx.navigate("meetings", id) }, l("meetings.workspace_return")) : null,
     answerReturn?.sourceMeetingId === id ? h("button", { class: "text-button source-back meeting-source-return", onclick: () => {
       const origin = answerReturn;
       answerReturn = null;
@@ -752,6 +760,7 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
 
 export async function meetingView(ctx: Context): Promise<HTMLElement> {
   const initial = await api.meetingStatus();
+  if (retainedMeetingFailure(initial) && initial.id && initial.session_id) return liveMeetingWorkspace(ctx, initial);
   if (retainedMeetingFailure(initial)) {
     return h("div", { class: "recording-view retained-recording" }, h("h1", {}, initial.title ?? l("meetings.save_recording")),
       h("p", { class: "help" }, l("meetings.recording_stopped", { time: formatClock(initial.elapsed_secs) })),
@@ -795,88 +804,5 @@ export async function meetingView(ctx: Context): Promise<HTMLElement> {
     schedule(ctx, 500, async () => { const status = await api.meetingRuntimeStatus(); if (status.id || !status.busy) ctx.rerender(); });
     return h("div", { class: "recording-view" }, h("h1", {}, l("meetings.starting")), meetingProcessingNotice(ctx, () => initial, true).element, h("progress", { "aria-label": l("meetings.starting_label") }));
   }
-  if (liveDraft.dirty && liveMeetingId && liveDraft.sessionId !== initial.session_id) {
-    const retained = new MeetingDraft();
-    retained.sync(liveDraft.sessionId, liveDraft.value);
-    retained.edit(liveDraft.value);
-    drafts.set(liveMeetingId, retained);
-  }
-  liveDraft.sync(initial.session_id ?? initial.id, initial.notes);
-  liveTitleDraft.sync(initial.session_id, initial.title ?? t("meetings.default_title"));
-  liveMeetingId = initial.id;
-  if (initial.session_id) sessionMeetingIds.set(initial.session_id, initial.id);
-  const notes = editNotes(ctx, liveDraft, initial.id!);
-  notes.input.classList.add("live-notes");
-  notes.input.placeholder = t("meetings.live_notes_placeholder");
-  bindLocalization(notes.input, () => { notes.input.placeholder = t("meetings.live_notes_placeholder"); });
-  const title = textField({ type: "text", class: "live-title", value: liveTitleDraft.value, "aria-label": l("meetings.meeting_title_label") });
-  title.addEventListener("input", () => { liveTitleDraft.edit(title.value); void flushLiveTitle().catch(ctx.report); });
-  title.addEventListener("blur", () => { void flushLiveTitle().catch(ctx.report); });
-  ctx.onDispose(() => { void flushLiveTitle().catch(ctx.report); });
-  const clock = h("span", { class: "live-clock" });
-  const warning = h("p", { class: "help", role: "status" });
-  const recovery = h("div", { class: "meeting-recovery" });
-  let latestStatus = initial;
-  const processing = meetingProcessingNotice(ctx, () => latestStatus, true);
-  let recoveryKey = "";
-  const consent = h("p", { class: "help", role: "status", hidden: true }, l("meetings.consent_copied"));
-  const output = h("div", { class: "live-transcript" });
-  const transcriptContent = transcript(ctx, initial.transcript);
-  output.append(transcriptContent.element);
-  let shownTranscript = initial.transcript;
-  const refreshing = new RecordingRefresh(initial);
-  let disposed = false;
-  ctx.onDispose(() => { disposed = true; refreshing.dispose(); });
-  const phase = h("span", { class: "help", role: "status" });
-  const stop = controlButton({ class: "btn", disabled: initial.phase !== "recording" }, l("common.stop_recording"));
-  const update = (status: MeetingStatus) => {
-    latestStatus = status;
-    processing.refresh();
-    if (document.activeElement !== title && !liveTitleDraft.dirty) {
-      liveTitleDraft.sync(status.session_id, status.title ?? t("meetings.default_title"));
-      title.value = liveTitleDraft.value;
-    }
-    title.disabled = status.phase !== "recording";
-    clock.textContent = t("meetings.recording_clock", { time: formatClock(status.elapsed_secs) });
-    phase.textContent = status.phase === "starting" ? t("meetings.starting") : status.phase === "finalizing" || status.phase === "stopping"
-      ? status.pending ? t(status.pending === 1 ? "meetings.finishing_pending_one" : "meetings.finishing_pending_many", { count: formatNumber(status.pending) }) : t("meetings.finishing_recording") : "";
-    const audioWarning = status.audio_warning ?? (!status.system_audio ? t("meetings.no_system_audio")
-      : !status.heard_system_audio && status.elapsed_secs > 20 ? t("meetings.no_system_audio_heard") : "");
-    const warningText = [status.transcription_warning, audioWarning].filter((message): message is string => !!message).map(localizeBackendText).join(" ");
-    if (warning.textContent !== warningText) warning.textContent = warningText;
-    const nextRecovery = JSON.stringify([status.terminal_error, status.persistence_error, status.can_retry_persistence, status.session_id]);
-    if (nextRecovery !== recoveryKey) {
-      recoveryKey = nextRecovery;
-      const notice = recoveryNotice(ctx, status, () => latestStatus, false);
-      recovery.replaceChildren(...(notice ? [notice] : []));
-    }
-    stop.disabled = status.phase !== "recording";
-    notes.input.disabled = status.phase !== "recording";
-    consent.hidden = !(status.consent_copied ?? false);
-    if (status.transcript !== shownTranscript) {
-      const position = output.scrollTop;
-      const following = output.scrollTop + output.clientHeight >= output.scrollHeight - 1;
-      transcriptContent.update(status.transcript);
-      output.scrollTop = following ? output.scrollHeight : position;
-      shownTranscript = status.transcript;
-    }
-  };
-  update(initial);
-  bindLocalization(clock, () => { update(latestStatus); });
-  stop.addEventListener("click", async () => {
-    stop.disabled = true;
-    try { await flushLiveTitle(); await notes.flush(); await api.stopMeeting(); ctx.rerender(); }
-    catch (error) { warning.textContent = errorText(error); stop.disabled = false; }
-  });
-  schedule(ctx, 1000, async () => {
-    const runtime = await api.meetingRuntimeStatus();
-    if (disposed) return;
-    if (!runtime.busy || runtime.session_id !== initial.session_id || runtime.id !== initial.id) { ctx.rerender(); return; }
-    update({ ...latestStatus, ...runtime, transcript_revision: latestStatus.transcript_revision });
-    const status = await refreshing.refresh(runtime, () => api.meetingStatus());
-    if (status && !disposed) update(status);
-  });
-  return h("div", { class: "recording-view live-recording" }, title,
-    h("div", { class: "row recording-controls" }, h("span", { class: "status-dot" }), clock, h("span", { class: "grow" }), stop), processing.element, consent, phase, warning, recovery, notes.input,
-    h("details", { class: "live-transcript-disclosure" }, h("summary", {}, l("meetings.live_transcript")), output));
+  return liveMeetingWorkspace(ctx, initial);
 }

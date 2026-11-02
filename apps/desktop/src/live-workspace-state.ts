@@ -1,0 +1,45 @@
+export type LivePane = "notes" | "transcript" | "questions" | "suggestions";
+
+export class LivePaneState {
+  selected: LivePane = "notes";
+  companion: Exclude<LivePane, "notes"> = "transcript";
+  wide = false;
+  ratio = 60;
+  select(pane: LivePane) { this.selected = pane; if (pane !== "notes") this.companion = pane; }
+  resize(width: number) { this.wide = width >= 800; }
+  shown(pane: LivePane) { return this.wide ? pane === "notes" || pane === this.companion : pane === this.selected; }
+}
+
+export function formatSelection(value: string, start: number, end: number, format: "heading" | "bold" | "list" | "task") {
+  if (format === "bold") return { value: value.slice(0, start) + "**" + value.slice(start, end) + "**" + value.slice(end), start: start + 2, end: end + 2 };
+  const from = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+  const next = value.indexOf("\n", end);
+  const until = next < 0 ? value.length : next;
+  const prefix = format === "heading" ? "## " : format === "task" ? "- [ ] " : "- ";
+  const selected = value.slice(from, until);
+  const changed = selected.split("\n").map(line => prefix + line).join("\n");
+  const insertedBeforeEnd = prefix.length * (value.slice(from, end).split("\n").length);
+  return { value: value.slice(0, from) + changed + value.slice(until), start: start + prefix.length, end: end + insertedBeforeEnd };
+}
+
+export class LiveRequestState {
+  readonly meetingUid: string;
+  readonly sessionId: string;
+  active: string | null = null;
+  constructor(meetingUid: string, sessionId: string) { this.meetingUid = meetingUid; this.sessionId = sessionId; }
+  begin(requestId: string) { this.active = requestId; }
+  cancel() { this.active = null; }
+  accepts(uid: string, sessionId: string, requestId: string) { return uid === this.meetingUid && sessionId === this.sessionId && requestId === this.active; }
+}
+
+export class LiveStatusEpoch {
+  private revision = 0;
+  capture() { return this.revision; }
+  invalidate() { ++this.revision; }
+  accepts(revision: number) { return revision === this.revision; }
+}
+
+export function segmentEvidenceValue(segment: { start_ms: number; speaker: string; text: string; failed: boolean; voice: number | null }) {
+  const text = segment.failed ? "" : segment.text.split(/\p{White_Space}+/u).filter(Boolean).join(" ");
+  return [segment.start_ms, segment.speaker, text, segment.failed, segment.speaker === "others" ? segment.voice ?? null : null];
+}
