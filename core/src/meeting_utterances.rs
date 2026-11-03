@@ -1419,7 +1419,7 @@ mod tests {
     }
 
     #[test]
-    fn recovery_schema_preserves_future_provisional_formats_read_only() {
+    fn recovery_proof_and_provisional_attribution_require_distinct_schema_capabilities() {
         let (_directory, store, id) = fixture();
         let path = store
             .write_recovery(
@@ -1434,50 +1434,32 @@ mod tests {
         row.metadata.refresh_fingerprints(&row.segment);
         row.metadata.recovery_audio =
             crate::meetings::recovery_provenance(&path, RecoveryAudioDisposition::Complete);
-        let saved = store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        let snapshot = store.write_transcript_snapshot(&id, None, &[row]).unwrap();
         let root = store.dir_of(&id);
-        let original = fs::read(root.join(MANIFEST)).unwrap();
-        let manifest: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join(MANIFEST)).unwrap()).unwrap();
         assert_eq!(manifest["schema_version"], 3);
-        assert_eq!(saved.metadata_status, TranscriptMetadataStatus::Valid);
-        let text = fs::read(root.join("transcript.md")).unwrap();
-        for version in [2, 4, 9_000] {
-            let mut future = manifest.clone();
-            future["schema_version"] = version.into();
-            let bytes = serde_json::to_vec(&future).unwrap();
-            fs::write(root.join(MANIFEST), &bytes).unwrap();
-            assert_eq!(
-                store.read_transcript_snapshot(&id).unwrap().metadata_status,
-                TranscriptMetadataStatus::Unsupported
-            );
-            assert!(
-                store
-                    .write_transcript_snapshot(&id, None, &saved.utterances)
-                    .is_err()
-            );
-            assert_eq!(fs::read(root.join(MANIFEST)).unwrap(), bytes);
-            assert_eq!(fs::read(root.join("transcript.md")).unwrap(), text);
-            assert!(path.exists());
-        }
-        let mut invalid = manifest.clone();
-        invalid["schema_version"] = 1.into();
-        let bytes = serde_json::to_vec(&invalid).unwrap();
-        fs::write(root.join(MANIFEST), &bytes).unwrap();
-        assert_eq!(
-            store.read_transcript_snapshot(&id).unwrap().metadata_status,
-            TranscriptMetadataStatus::Corrupt
-        );
-        assert!(
-            store
-                .write_transcript_snapshot(&id, None, &saved.utterances)
-                .is_err()
-        );
-        assert_eq!(fs::read(root.join(MANIFEST)).unwrap(), bytes);
-        fs::write(root.join(MANIFEST), original).unwrap();
+        let mut rows = snapshot.utterances;
+        rows[0].metadata.attribution.provisional = true;
+        store
+            .write_transcript_snapshot(&id, Some(snapshot.revision), &rows)
+            .unwrap();
+        manifest = serde_json::from_slice(&fs::read(root.join(MANIFEST)).unwrap()).unwrap();
+        assert_eq!(manifest["schema_version"], 4);
         assert_eq!(
             store.read_transcript_snapshot(&id).unwrap().metadata_status,
             TranscriptMetadataStatus::Valid
         );
+        for unsupported_combination in [1, 2, 3] {
+            manifest["schema_version"] = unsupported_combination.into();
+            fs::write(root.join(MANIFEST), serde_json::to_vec(&manifest).unwrap()).unwrap();
+            assert_eq!(
+                store.read_transcript_snapshot(&id).unwrap().metadata_status,
+                TranscriptMetadataStatus::Corrupt
+            );
+            assert!(store.write_transcript_snapshot(&id, None, &rows).is_err());
+            assert!(path.exists());
+        }
     }
 
     #[test]
@@ -1980,5 +1962,66 @@ mod tests {
         assert!(snapshot.utterances[0].segment.failed);
         assert!(snapshot.utterances[0].segment.text.is_empty());
         assert_eq!(snapshot.utterances[0].segment.end_ms, 2_000);
+    }
+    #[test]
+    fn recovery_schema_preserves_future_formats_read_only() {
+        let (_directory, store, id) = fixture();
+        let path = store
+            .write_recovery(
+                &id,
+                Speaker::Me,
+                0,
+                &crate::wav::encode_wav(&vec![0.2; 16_000], 16_000),
+            )
+            .unwrap();
+        let mut row = utterance(0, "Owned versioned recovery.");
+        row.segment.end_ms = 1_000;
+        row.metadata.refresh_fingerprints(&row.segment);
+        row.metadata.recovery_audio =
+            crate::meetings::recovery_provenance(&path, RecoveryAudioDisposition::Complete);
+        let saved = store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        let root = store.dir_of(&id);
+        let original = fs::read(root.join(MANIFEST)).unwrap();
+        let manifest: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        assert_eq!(manifest["schema_version"], 3);
+        assert_eq!(saved.metadata_status, TranscriptMetadataStatus::Valid);
+        let text = fs::read(root.join("transcript.md")).unwrap();
+        for version in [5, 9_000] {
+            let mut future = manifest.clone();
+            future["schema_version"] = version.into();
+            let bytes = serde_json::to_vec(&future).unwrap();
+            fs::write(root.join(MANIFEST), &bytes).unwrap();
+            assert_eq!(
+                store.read_transcript_snapshot(&id).unwrap().metadata_status,
+                TranscriptMetadataStatus::Unsupported
+            );
+            assert!(
+                store
+                    .write_transcript_snapshot(&id, None, &saved.utterances)
+                    .is_err()
+            );
+            assert_eq!(fs::read(root.join(MANIFEST)).unwrap(), bytes);
+            assert_eq!(fs::read(root.join("transcript.md")).unwrap(), text);
+            assert!(path.exists());
+        }
+        let mut invalid = manifest.clone();
+        invalid["schema_version"] = 1.into();
+        let bytes = serde_json::to_vec(&invalid).unwrap();
+        fs::write(root.join(MANIFEST), &bytes).unwrap();
+        assert_eq!(
+            store.read_transcript_snapshot(&id).unwrap().metadata_status,
+            TranscriptMetadataStatus::Corrupt
+        );
+        assert!(
+            store
+                .write_transcript_snapshot(&id, None, &saved.utterances)
+                .is_err()
+        );
+        assert_eq!(fs::read(root.join(MANIFEST)).unwrap(), bytes);
+        fs::write(root.join(MANIFEST), original).unwrap();
+        assert_eq!(
+            store.read_transcript_snapshot(&id).unwrap().metadata_status,
+            TranscriptMetadataStatus::Valid
+        );
     }
 }
