@@ -26,6 +26,7 @@ The shared desktop application must look and behave **near-identically** on macO
 - Same copy: the shared UI supports English and Dutch, defaults to the system’s first supported language (English fallback), and uses identical copy for the selected interface language on every platform. Interface language stays independent of speech recognition and user content.
 - When a feature exists in the core, the shared app exposes it on every platform. If one platform cannot support it yet (e.g. echo cancellation, Apple dictation), show the same control disabled with a short reason rather than hiding it silently, and record the gap in `docs/desktop.md`.
 - Review the look with screenshots of the app's own windows or headless renders, never by capturing the user's screen.
+- Every PR that changes visuals must show before and after images (light and dark where the change affects both) in the PR description. Publish them on the `pr-assets` branch under `pr-<number>/` and embed them with `https://github.com/pennel-app/pennel/blob/pr-assets/pr-<number>/<name>.png?raw=true`, so images never enter the code history. Render both from the same input; mark mock renders as such.
 
 ## Build and test everything
 
