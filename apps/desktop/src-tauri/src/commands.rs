@@ -1695,7 +1695,11 @@ pub async fn save_meeting_notes(
     off_main("save_meeting_notes", move || {
         checked_meeting_dir(&shared.engine, &id)?;
         if let Some(attempt_id) = insight_receipt {
-            shared.engine.set_meeting_notes_with_insight_receipt(id, text, attempt_id).map(|_| ()).map_err(err)
+            shared
+                .engine
+                .set_meeting_notes_with_insight_receipt(id, text, attempt_id)
+                .map(|_| ())
+                .map_err(err)
         } else {
             shared.engine.set_meeting_notes(id, text).map_err(err)
         }

@@ -115,10 +115,6 @@ pub use meeting_evidence::{
     utterance_evidence_revision,
 };
 pub use meeting_index::{Passage, PassageKind};
-pub use meeting_preview::{
-    MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode, MeetingPreviewSnapshot,
-    MeetingPreviewState, MeetingTrackPreview,
-};
 pub use meeting_insight_engine::MeetingInsightAnalysisAdmission;
 pub use meeting_insights::{
     CommitmentState, InsightAssessmentScope, InsightCandidate, InsightExtractionScope,
@@ -128,6 +124,10 @@ pub use meeting_insights::{
     InsightSnapshot, InsightSource, InsightSourceReassociation, InsightSourceState,
     InsightStoreStatus, MAX_INSIGHTS_BYTES, SupportedInsightDetail, insight_dedup_key,
     insight_item_markdown,
+};
+pub use meeting_preview::{
+    MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode, MeetingPreviewSnapshot,
+    MeetingPreviewState, MeetingTrackPreview,
 };
 pub use meeting_qualification::{
     MeetingActualInference, MeetingAnalysisAvailability, MeetingAnalysisUseCase,
