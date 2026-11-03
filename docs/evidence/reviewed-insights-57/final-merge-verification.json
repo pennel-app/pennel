@@ -1,0 +1,154 @@
+{
+  "verified_production_candidate": "a496495e75f6af327f80ab6429713ddb759c4b88",
+  "final_rebased_candidate": "360d5d2b6289e9de1f0e0e5abd1fbe931d312aad",
+  "base": "e00bb9ac2b4adcc758ab01de94e7338d6179d19b",
+  "audio_base": "119c1dc196e86ed9a952211efef69f7edfcfbb0d",
+  "receipt_guard_original_commit": "878008aad5f5002ddad24d6c6c3e8d73331621c3",
+  "receipt_guard_file_sha256": "562d14a62fc282bcca024f6748bd4e09b4c16826d9cea1ce2874c97ef0fb290a",
+  "all_11_review_phase_edits_preserved": true,
+  "six_reviewed_audio_prefixes": {
+    "core/src/engine.rs": {
+      "sha256": "678942aa21ebc04527d3340e1fd57bf03c9c829fc5931a28fbd206ffb7c30b18",
+      "boundary": "before b'\\n#[cfg(test)]\\nmod tests'",
+      "matches_reviewed_12a": true
+    },
+    "core/src/lib.rs": {
+      "sha256": "17729462c79c810cbeb310e1acf9e234866d1d56eaabfd270e7891f083038dd5",
+      "boundary": "whole_file",
+      "matches_reviewed_12a": true
+    },
+    "core/src/meeting_utterances.rs": {
+      "sha256": "6d5e08a39554c4b01fe859800a586639614388181cff9c799deecc4f94c85cbf",
+      "boundary": "before b'\\n#[cfg(test)]\\nmod tests'",
+      "matches_reviewed_12a": true
+    },
+    "core/src/meetings.rs": {
+      "sha256": "ce7c9918ac473451e11a2b63fd76420b6963df464c7b2ed506f0ef8718980823",
+      "boundary": "before b'\\n#[cfg(test)]\\nmod tests'",
+      "matches_reviewed_12a": true
+    },
+    "core/src/retranscription.rs": {
+      "sha256": "ef33b83130cceb77cc5d3ba4a9fcd70048ca8c2f1fe4e95d29e99d0363f41857",
+      "boundary": "before b'\\n#[cfg(test)]\\nmod tests'",
+      "matches_reviewed_12a": true
+    },
+    "core/src/session.rs": {
+      "sha256": "a700149f61820aef0ec7aafa72d32fd6134b1739cb28dcf058fd66e8cfdd8c65",
+      "boundary": "before b'\\n#[cfg(test)]\\nmod tests'",
+      "matches_reviewed_12a": true
+    }
+  },
+  "context_audit": {
+    "review_phase_reversal_equals98": true,
+    "all_later_phase_reversal_equals129": true
+  },
+  "final_test_only_rebase": {
+    "previous_local_head": "c816b453c8db7a41c827242909db56846d85466b",
+    "final_rebased_head": "360d5d2b6289e9de1f0e0e5abd1fbe931d312aad",
+    "final_base": "e00bb9ac2b4adcc758ab01de94e7338d6179d19b",
+    "inherited_delta": [
+      "core/src/session.rs",
+      "docs/evidence/speaker-turns-22/merge-review-recovery-audio.md"
+    ],
+    "production_audio_and_guard_unchanged": true,
+    "mobile_desktop_platform_evaluation_assets_unchanged": true,
+    "guard_file_sha256": "562d14a62fc282bcca024f6748bd4e09b4c16826d9cea1ce2874c97ef0fb290a"
+  },
+  "checks": {
+    "core_default": {
+      "passed": 1002,
+      "failed": 0,
+      "ignored": 7
+    },
+    "core_lean": {
+      "passed": 985,
+      "failed": 0,
+      "ignored": 5
+    },
+    "backend": {
+      "passed": 258,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "other_checks": {
+    "desktop_frontend": {
+      "passed": 291,
+      "failed": 0
+    },
+    "mobile_ui": {
+      "passed": 121,
+      "failed": 0
+    },
+    "mobile_plugins": {
+      "passed": 17,
+      "failed": 0
+    },
+    "mobile_widgets": {
+      "passed": 7,
+      "failed": 0
+    },
+    "fixtures": {
+      "passed": 34,
+      "failed": 0
+    },
+    "offline": {
+      "passed": 287,
+      "ok": true
+    },
+    "macos_swift": {
+      "passed": 139
+    }
+  },
+  "native_tests": {
+    "passedTests": 171,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "totalTestCount": 171,
+    "result": "Passed"
+  },
+  "mobile_core_manifest": {
+    "schema": 1,
+    "revision": "a496495e75f6af327f80ab6429713ddb759c4b88",
+    "core_sha256": "df54c8ccb775200cc938ac2fcc020c9ce302f693fe82c2387163473e0ecdf127",
+    "bindings_sha256": "b23d9e4f215be3ef3510d1d22a532c49568b8d8e5b085d8257b014e02e952b79",
+    "features": [],
+    "targets": [
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim"
+    ]
+  },
+  "binding_sha256_unchanged": true,
+  "generation_inputs_unchanged": true,
+  "pod_checks": 6,
+  "mobile_release_products": [
+    {
+      "platform": "iphonesimulator",
+      "identifier": "app.pennel.ios.preview",
+      "architecture": "arm64",
+      "executable_sha256": "20681db917350f461a2a4e5ad508f68eca12330e0974e17ca091294eadac1914",
+      "signing": "CODE_SIGNING_ALLOWED=NO"
+    },
+    {
+      "platform": "iphoneos",
+      "identifier": "app.pennel.ios.preview",
+      "architecture": "arm64",
+      "executable_sha256": "8cd5eeeb6b21ce0fd6d6832179bb5c71727c3caf902aa446cd32d35a96093e38",
+      "signing": "CODE_SIGNING_ALLOWED=NO"
+    }
+  ],
+  "source_scope": "Current-library native/core/backend verification covers the reviewed audio production and exact receipt-body guard. The final inherited spool fixture changed only cfg(test); its exact test passed default and lean. No second native/frontend/Release loop was run for that delta.",
+  "personal_signing_preflight": {
+    "sha1": "26AD2732047AB5E2F5CB1B239B71806C54EB3026",
+    "team": "B538Q2K76C",
+    "test_signing": "explicit ad hoc, empty team",
+    "release_signing": "disabled"
+  },
+  "qualification_records": 0,
+  "live97_enabled": false,
+  "background_enabled": false,
+  "new_model_or_provider_inference": false,
+  "source_logs": "build/issue57/final-merge-verification/",
+  "prior_products_retained": "build/issue57/final-merge-verification/retained-prior-products",
+  "remaining_acceptance": "Real calls, acoustic quality/resources, physical signed-device/keyboard/store and deployment acceptance remain open."
+}
