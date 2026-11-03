@@ -1,0 +1,555 @@
+{
+  "schema_version": 1,
+  "issue": 98,
+  "parent": 94,
+  "date": "2026-11-03",
+  "baseline": "340d02ead696f2b821a664a218dc42738a184df8",
+  "depends_on_pr": 130,
+  "code_candidate": "cec07d14ba9c32ff165ced33064382f2e46f87af",
+  "core_source_sha256": "24d0b25332a7c29943da99c7f8d4039faf7bb2c3e8189da4c02b0621136c670e",
+  "source_history": {
+    "reviewed_product_source": "e79c8d6",
+    "rebased_product_source": "db85213066e8eeaec49a8eaf54da121671312975",
+    "enlarged_question_css": "2effae2d69e87e27326bb962fcee915a0afecf94",
+    "test_only_preemption_isolation": "cec07d14ba9c32ff165ced33064382f2e46f87af",
+    "base": "d5c116545619401e973fe0ace27190201f40cf7f",
+    "default_suite_predates_test_only_isolation": true,
+    "default_and_lean_exact_repaired_test_passed": true
+  },
+  "checks": [
+    {
+      "name": "core_default_suite",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --lib",
+      "result": "passed",
+      "log": "build/issue98/core-default-tests.log",
+      "log_sha256": "ca6eab2dea18d6077afeeadbdf785403103868111e9329f85320a0571a3666ac",
+      "passed": 917,
+      "failed": 0,
+      "ignored": 7
+    },
+    {
+      "name": "core_lean_suite_after_fixture_isolation",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib",
+      "result": "passed",
+      "log": "build/issue98/core-lean-tests-isolated-fixture.log",
+      "log_sha256": "4f9a88c886503fa90898f0e7b18409775ab1d1f29d58bd1aa6e5e47c98858326",
+      "passed": 900,
+      "failed": 0,
+      "ignored": 5
+    },
+    {
+      "name": "core_default_priority_final",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --lib engine::tests::ordinary_dictation_cleanup_uses_speech_priority_while_optional_work_is_busy -- --exact",
+      "result": "passed",
+      "log": "build/issue98/core-default-priority-final.log",
+      "log_sha256": "f170de33ab1de1a2842883bec20dc87f9618fee2fcd27b7067508be5ffefdae8",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "core_lean_priority_final",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib engine::tests::ordinary_dictation_cleanup_uses_speech_priority_while_optional_work_is_busy -- --exact",
+      "result": "passed",
+      "log": "build/issue98/cleanup-priority-fixture-isolated-final.log",
+      "log_sha256": "dd152197254ef34c73d3fbe53a67fc2b217a0806e027b3cb196396a536a82f37",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "core_format",
+      "command": "scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check",
+      "result": "passed",
+      "log": "build/issue98/core-format-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "core_clippy_default",
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings",
+      "result": "passed",
+      "log": "build/issue98/core-clippy-default.log",
+      "log_sha256": "9572c19672753f3106e1c2410b38e60de2ddfed41b9e6b56cc341b58936b5ae0"
+    },
+    {
+      "name": "core_clippy_lean",
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --no-default-features --lib --tests -- -D warnings",
+      "result": "passed",
+      "log": "build/issue98/core-clippy-lean.log",
+      "log_sha256": "b8aad6dd6e4cc00a52e966c5229b29714aa2107acc615a6f60c116b94771038d"
+    },
+    {
+      "name": "core_release",
+      "command": "make core",
+      "result": "passed",
+      "log": "build/issue98/core-release.log",
+      "log_sha256": "6dc106b34ce8f59adeb302bdfed9d2e7b4da46fa60815c22e93070d1f88a0bb7"
+    },
+    {
+      "name": "core_lean_library",
+      "command": "scripts/with-toolchain.sh cargo build --manifest-path core/Cargo.toml --no-default-features --lib",
+      "result": "passed",
+      "log": "build/issue98/core-lean-build.log",
+      "log_sha256": "7a3594ba40d5cb33ebe0efc4bdc487556699dc797d4fd7d120144a8563740231"
+    },
+    {
+      "name": "frontend_tests",
+      "command": "npm --prefix apps/desktop test",
+      "result": "passed",
+      "log": "build/issue98/frontend-final-tests.log",
+      "log_sha256": "fa9e522eb3b12d88f33d71ec99ce9470db920e0837feeecedee27c8706e2fa42",
+      "passed": 277
+    },
+    {
+      "name": "frontend_build",
+      "command": "npm --prefix apps/desktop run build",
+      "result": "passed",
+      "log": "build/issue98/frontend-final-build.log",
+      "log_sha256": "a5b1064ce1ce47666589bc35dc731f989900400f285f255ab7a73305f558d352"
+    },
+    {
+      "name": "backend_format",
+      "command": "scripts/with-toolchain.sh cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
+      "result": "passed",
+      "log": "build/issue98/backend-format.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "backend_tests",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+      "result": "passed",
+      "log": "build/issue98/backend-tests.log",
+      "log_sha256": "65a9eb50c4e2e16030098bc93305590a13ce6fac28295dcc41d682190e9b3552",
+      "passed": 256,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "backend_clippy",
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings",
+      "result": "passed",
+      "log": "build/issue98/backend-clippy.log",
+      "log_sha256": "fbb91dbaa2d971dc5c7596bad635d706b40acafc645dec82354f4dd9465a32dd"
+    },
+    {
+      "name": "offline_python",
+      "command": "python3 -B -m unittest discover -s evaluations/decision-models/tests -v",
+      "result": "passed",
+      "log": "build/issue98/python-evaluation-tests.log",
+      "log_sha256": "56172392fd05831c20ed33e18a179e12565eaac45664da41ca070ac4d00da8ad",
+      "passed": 287
+    },
+    {
+      "name": "fixture_tests",
+      "command": "node --test scripts/fixtures/desktop-platform.test.mjs",
+      "result": "passed",
+      "log": "build/issue98/fixture-final-tests.log",
+      "log_sha256": "7dbf9158629544d9fee108c2c6d1a789119a3e070983bd42a426c292dc4193c4",
+      "passed": 33
+    },
+    {
+      "name": "owned_ui",
+      "command": "node scripts/capture-desktop-reference.mjs --case live-question-selected-scope-wide --case live-question-selected-scope-minimum --case live-question-selected-scope-zoom --case live-workspace-sources-cancel --case live-workspace-stop-next --output build/issue98/scope-ui-verified",
+      "result": "passed",
+      "log": "build/issue98/scope-ui-verified.log",
+      "log_sha256": "4c7506c9e6bd95ebaf90fbe0706eee8484bb2335e58b8926bb7b0aa512024dde"
+    },
+    {
+      "name": "mobile_types",
+      "command": "npm --prefix apps/mobile run typecheck",
+      "result": "passed",
+      "log": "build/issue98/mobile-types.log",
+      "log_sha256": "1887206e1f2ab35629274153742349e28c6142cf640b7673b5f6850e37ca1595"
+    },
+    {
+      "name": "mobile_ui",
+      "command": "npm --prefix apps/mobile run test:ui",
+      "result": "passed",
+      "log": "build/issue98/mobile-ui.log",
+      "log_sha256": "7dc2820f5dfc76a607fd6dcfb2a802fbfe62dadf31b8ad44f55f732abed32d58",
+      "passed": 117
+    },
+    {
+      "name": "theme",
+      "command": "python3 scripts/generate-theme.py --check",
+      "result": "passed",
+      "log": "build/issue98/theme.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "packaging",
+      "command": "python3 -B -m unittest discover -s scripts/tests -p 'test_desktop_*.py'",
+      "result": "passed",
+      "log": "build/issue98/packaging-tests.log",
+      "log_sha256": "09444c08036b4bc98a4927ad1aaeb1b7b10c01db276c302491e36ac4289eb6db",
+      "passed": 61
+    },
+    {
+      "name": "swift_generation",
+      "command": "cd core && ../scripts/with-toolchain.sh cargo run --quiet --no-default-features --bin uniffi-bindgen -- generate --library target/debug/libpennel_core.dylib --language swift --out-dir ../build/issue98/bindings",
+      "result": "passed",
+      "log": "build/issue98/swift-generation.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "swift_typecheck",
+      "command": "xcrun swiftc -typecheck -I build/issue98/bindings/headers build/issue98/bindings/pennel_core.swift",
+      "result": "passed",
+      "log": "build/issue98/swift-typecheck.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "swift_probe_build",
+      "command": "xcrun swiftc -I build/issue98/bindings/headers -L core/target/debug -lpennel_core -Xlinker -rpath -Xlinker \"$PWD/core/target/debug\" build/issue98/bindings/pennel_core.swift scripts/verify-meeting-analysis-bindings.swift -o build/issue98/qualification-bindings-probe",
+      "result": "passed",
+      "log": "build/issue98/swift-probe-build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "swift_abi_runtime",
+      "command": "build/issue98/qualification-bindings-probe build/issue98 evaluations/decision-models/fixtures/incremental-qualification-record-v1.json",
+      "result": "passed",
+      "log": "build/issue98/swift-probe.log",
+      "log_sha256": "2001e8ee88039c481e362944e1ddb6558d1fb04110986db0429d17bd99bcfba0"
+    }
+  ],
+  "limits": {
+    "global_physical_workers": 2,
+    "optional_physical_workers": 1,
+    "background_active_per_meeting": 1,
+    "background_replaceable_pending_per_meeting": 1,
+    "background_minimum_start_interval_seconds": 60,
+    "deadline": "one absolute deadline from initial admission to underlying transport exit",
+    "physical_retention": "permits and worker-owned strong attachments survive logical cancellation until real exit",
+    "background_enabled_by_default": false,
+    "qualified_production_routes": 0,
+    "automatic_retry": false
+  },
+  "representative_regressions": [
+    "meeting_scheduler::tests::one_optional_worker_preserves_a_foreground_slot",
+    "meeting_scheduler::tests::logical_cancellation_does_not_free_a_physical_optional_slot",
+    "meeting_scheduler::tests::cancellation_keeps_the_real_worker_and_library_attachment_alive",
+    "meeting_scheduler::tests::speech_preempts_optional_work_without_freeing_its_physical_slot",
+    "meeting_scheduler::tests::background_minute_cadence_uses_actual_start_and_never_catches_up",
+    "engine::tests::live_question_deadline_and_credential_epoch_begin_at_admission",
+    "engine::tests::live_question_mutation_cancels_logically_while_its_real_worker_keeps_ownership",
+    "engine::tests::cancelled_questions_keep_physical_capacity_until_the_provider_exits",
+    "engine::tests::live_apple_question_scope_and_guards_match_only_complete_sources_actually_sent",
+    "engine::tests::oversized_current_live_question_is_refused_before_source_or_history_selection"
+  ],
+  "red_and_green_evidence": {
+    "original_failures": [
+      {
+        "log": "build/issue98/core-lean-tests.log",
+        "sha256": "14131b83e3bca7086d92bffd575aa8a36ea236781d3792f6ebb21acce7f693c4"
+      },
+      {
+        "log": "build/issue98/scope-red.log",
+        "sha256": "23d12e263edc8e4eb8d69c99928891ae4381a22ce2a73782bf94238f56efc9d2"
+      },
+      {
+        "log": "build/issue98/scope-enlarged-red.log",
+        "sha256": "1294e5ca8f9dbe023084396ec7891a90b3b9da9e6304bbe0b75ce21039b03c04"
+      },
+      {
+        "log": "build/issue98/fixture-scope-red.log",
+        "sha256": "289f1127f1dc24472feef7e648b337d215c1ee95fa156a76d94a4e28754abc76"
+      }
+    ],
+    "lean_fixture_diagnosis": "Other parallel speech fixtures could legitimately cancel an optional worker after acquire but before its startup closure. The exact test now runs in a bounded subprocess against the same real global pool; every original assertion and production limit is unchanged.",
+    "subprocess_timeout_seconds": 50,
+    "enlarged_ui_diagnosis": "At760x520 and doubled text the Questions history flex-collapsed to zero. Scoped CSS moves overflow to the enlarged pane and preserves intrinsic history height."
+  },
+  "owned_ui": {
+    "capture_method": "Owned Chromium headless page via CDP; no user screen/profile",
+    "complete": true,
+    "executions": 20,
+    "recorded_images": [
+      {
+        "case": "live-question-selected-scope-wide",
+        "locale": "en",
+        "appearance": "light",
+        "file": "docs/evidence/meeting-scheduling-98/en/light/live-question-selected-scope-wide.png",
+        "bytes": 93407,
+        "sha256": "3142074920a6682815899d64396a845f192ea4a9990735a5ae53a71b19fd9848",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-minimum",
+        "locale": "en",
+        "appearance": "light",
+        "file": "docs/evidence/meeting-scheduling-98/en/light/live-question-selected-scope-minimum.png",
+        "bytes": 65411,
+        "sha256": "04ab27038eefef15f18b4bc310b80a0b862a76b816d057391d99d5dc7464552b",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-zoom",
+        "locale": "en",
+        "appearance": "light",
+        "file": "docs/evidence/meeting-scheduling-98/en/light/live-question-selected-scope-zoom.png",
+        "bytes": 75500,
+        "sha256": "66763d35009578d6f66ed7d594a441b18a50187ad4a82b974aabe457f8142612",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true,
+            "enlargedAnswerReachable": true,
+            "enlargedSourceReturnPreserved": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-wide",
+        "locale": "en",
+        "appearance": "dark",
+        "file": "docs/evidence/meeting-scheduling-98/en/dark/live-question-selected-scope-wide.png",
+        "bytes": 93689,
+        "sha256": "d91c4f5321237909c4c6315cbc37e8a70116bf7df43354c5392b43193ba4f286",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-minimum",
+        "locale": "en",
+        "appearance": "dark",
+        "file": "docs/evidence/meeting-scheduling-98/en/dark/live-question-selected-scope-minimum.png",
+        "bytes": 65606,
+        "sha256": "c8430c0cc8392005271a53c79b8ba56363535773c5d54a4781894440c7468f4f",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-zoom",
+        "locale": "en",
+        "appearance": "dark",
+        "file": "docs/evidence/meeting-scheduling-98/en/dark/live-question-selected-scope-zoom.png",
+        "bytes": 75996,
+        "sha256": "59db6a5a4caaeabd374500a76b5cc67a90c58f71888a3e0cb20a614887e1433b",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true,
+            "enlargedAnswerReachable": true,
+            "enlargedSourceReturnPreserved": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-wide",
+        "locale": "nl",
+        "appearance": "light",
+        "file": "docs/evidence/meeting-scheduling-98/nl/light/live-question-selected-scope-wide.png",
+        "bytes": 96208,
+        "sha256": "86a8f4a214b3da8028d9537be99e8e4a976c25771008e63872b0ea505929a8c3",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-minimum",
+        "locale": "nl",
+        "appearance": "light",
+        "file": "docs/evidence/meeting-scheduling-98/nl/light/live-question-selected-scope-minimum.png",
+        "bytes": 68297,
+        "sha256": "eb9a102af88744767823f8446549117979f156cb93b0b0863d0c9740ce3bf8bf",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-zoom",
+        "locale": "nl",
+        "appearance": "light",
+        "file": "docs/evidence/meeting-scheduling-98/nl/light/live-question-selected-scope-zoom.png",
+        "bytes": 80188,
+        "sha256": "e1700c30c900164fb567d1f38b8bc7daf64712c0502000dbae38d3f5b66154d3",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true,
+            "enlargedAnswerReachable": true,
+            "enlargedSourceReturnPreserved": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-wide",
+        "locale": "nl",
+        "appearance": "dark",
+        "file": "docs/evidence/meeting-scheduling-98/nl/dark/live-question-selected-scope-wide.png",
+        "bytes": 96162,
+        "sha256": "867edcf418910345667cce66a7ca98d85ecef4b80abd6c1b17f78901eaab7986",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-minimum",
+        "locale": "nl",
+        "appearance": "dark",
+        "file": "docs/evidence/meeting-scheduling-98/nl/dark/live-question-selected-scope-minimum.png",
+        "bytes": 68586,
+        "sha256": "286605882d27a18c79aa4ba6be5f85112e415219d299754d1311f7ec18b2d2db",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true
+          }
+        }
+      },
+      {
+        "case": "live-question-selected-scope-zoom",
+        "locale": "nl",
+        "appearance": "dark",
+        "file": "docs/evidence/meeting-scheduling-98/nl/dark/live-question-selected-scope-zoom.png",
+        "bytes": 80293,
+        "sha256": "034872abfe3ae63ed59e480de38ffe05a9dfa0c911612fb8d2c43bd9164b9456",
+        "horizontal_overflow": false,
+        "runtime_errors": 0,
+        "acceptance": {
+          "selected_question_scope": {
+            "sourceCounts": true,
+            "shortenedHistory": true,
+            "localized": true,
+            "frozenAfterAppend": true,
+            "noteSelectionPreserved": true,
+            "syntheticOnly": true,
+            "enlargedAnswerReachable": true,
+            "enlargedSourceReturnPreserved": true
+          }
+        }
+      }
+    ]
+  },
+  "matching_host_swift": {
+    "bindings_sha256": "bdc2ebf5b94db9b14aab422d8c1cb94a75743e26325adff73da9565baffe89bf",
+    "probe_source_sha256": "c41ee5c600cfab84eb7763439f71e0b63f88f64988b2c26dd817684e46b2aea5",
+    "runtime": {
+      "abi_runtime": "passed",
+      "available": false,
+      "configured": false,
+      "foreground_busy": false,
+      "profile": "isolated-preview",
+      "qualified": false,
+      "reason_code": "unconfigured",
+      "speech_busy": false
+    },
+    "native_app_or_device_acceptance": false
+  },
+  "independent_review": [
+    {
+      "reviewer": "caption_review",
+      "scope": "scheduler identity, priority, real-exit lifetime and final e79 source-scope disclosure; no remaining actionable finding",
+      "ran_tests_or_models": false
+    },
+    {
+      "reviewer": "caption_review",
+      "scope": "2effae2 enlarged Questions CSS and source-return ownership; no concrete actionable risk",
+      "ran_tests_or_models": false
+    }
+  ],
+  "privacy": "Owned synthetic fixtures and isolated Preview ABI profile; loopback/mock transports only. No actual model inference, download, provider substitution, external hosted request or paid call.",
+  "remaining_gates": [
+    "exact-head hosted CI and merge",
+    "same owned/consented recording comparison with340d02e",
+    "actual inference usage, p50/p95, CPU, aggregate RSS and queue/resource measurements",
+    "long-recording input, physical IME, Stop latency and transcription lag",
+    "background quality, foreground impact and resource acceptance; #97 remains gated",
+    "exact-head native app generation and hosted/device builds (upstream #99 and downstream #57 are separate evidence)",
+    "signed physical iPhone, installed Windows/Linux, real calls and deployment acceptance"
+  ]
+}

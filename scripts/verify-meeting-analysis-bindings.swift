@@ -16,8 +16,11 @@ enum MeetingAnalysisBindingsProbe {
         let result = try engine.meetingAnalysisAvailability(requestJson: String(decoding: requestData, as: UTF8.self))
         precondition(result.useCase == .manualFinishedSuggestions)
         precondition(!result.configured && !result.qualified && !result.available && result.reasonCode == "unconfigured")
+        let resources = engine.meetingAnalysisResourceDemand()
+        precondition(!resources.speechBusy && !resources.foregroundBusy)
         let receipt: [String: Any] = ["abi_runtime": "passed", "profile": "isolated-preview", "configured": result.configured,
-                                      "qualified": result.qualified, "available": result.available, "reason_code": result.reasonCode]
+                                      "qualified": result.qualified, "available": result.available, "reason_code": result.reasonCode,
+                                      "speech_busy": resources.speechBusy, "foreground_busy": resources.foregroundBusy]
         let data = try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys])
         print(String(decoding: data, as: UTF8.self))
     }
