@@ -40,6 +40,73 @@ use crate::wav::{decode_wav, encode_wav};
 
 const MAX_PROMPT_CHARS: usize = 800;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingQuestionScope {
+    WholeMeeting,
+    SelectedExcerpts,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct MeetingQuestionSelection {
+    pub scope: MeetingQuestionScope,
+    pub available_sources: u32,
+    pub included_sources: u32,
+    pub available_history_turns: u32,
+    pub included_history_turns: u32,
+    pub history_reduced: bool,
+}
+
+impl MeetingQuestionSelection {
+    fn from_messages(
+        available_sources: usize,
+        included_sources: usize,
+        history: &[ChatTurn],
+        messages: &[crate::llm::ChatMessage],
+    ) -> Self {
+        let included_history = messages
+            .iter()
+            .filter(|message| message.role == "assistant")
+            .count();
+        let retained = &history[history.len().saturating_sub(included_history)..];
+        let history_reduced = included_history != history.len()
+            || retained.iter().enumerate().any(|(index, turn)| {
+                messages
+                    .get(1 + index * 2)
+                    .is_none_or(|message| message.content != turn.question)
+                    || messages
+                        .get(2 + index * 2)
+                        .is_none_or(|message| message.content != turn.answer)
+            });
+        Self {
+            scope: if available_sources == included_sources {
+                MeetingQuestionScope::WholeMeeting
+            } else {
+                MeetingQuestionScope::SelectedExcerpts
+            },
+            available_sources: available_sources.try_into().unwrap_or(u32::MAX),
+            included_sources: included_sources.try_into().unwrap_or(u32::MAX),
+            available_history_turns: history.len().try_into().unwrap_or(u32::MAX),
+            included_history_turns: included_history.try_into().unwrap_or(u32::MAX),
+            history_reduced,
+        }
+    }
+}
+
+fn validate_live_question_size(question: &str, kind: ProviderKind) -> Result<(), PennelError> {
+    if question.len() > 64 * 1024
+        || kind == ProviderKind::AppleIntelligence
+            && crate::system_llm::input_bytes(&crate::meeting_chat::chat_messages(
+                question,
+                &[],
+                &[],
+            )) > crate::system_llm::APPLE_INPUT_BYTES
+    {
+        return Err(PennelError::InvalidResponse { message: "This question exceeds the selected setup's input budget. It was not truncated or sent. Shorten the question and try again.".into() });
+    }
+    Ok(())
+}
+
 /// A source-bound request whose provider and evidence cannot change while it is queued.
 pub struct PreparedMeetingQuestion {
     provider: ProviderConfig,
@@ -51,6 +118,7 @@ pub struct PreparedMeetingQuestion {
     _registration: Option<PreparedInferenceRegistration>,
     source_guard: Option<QuestionSourceGuard>,
     cloud_guard: Option<(Arc<Session>, u64)>,
+    selection: MeetingQuestionSelection,
 }
 
 struct PreparedInferenceRegistration {
@@ -168,6 +236,10 @@ fn utf16_source_slice(text: &str, start: usize, end: usize) -> Option<&str> {
 impl PreparedMeetingQuestion {
     pub fn sources(&self) -> &[Passage] {
         &self.sources
+    }
+
+    pub fn selection(&self) -> MeetingQuestionSelection {
+        self.selection
     }
 
     pub fn complete(
@@ -2110,6 +2182,7 @@ impl PennelEngine {
         let (account, model) = settings
             .resolve(&settings.llm)
             .ok_or(PennelError::NotFound)?;
+        validate_live_question_size(&question, account.kind)?;
         let cloud_guard = if account.kind == ProviderKind::PennelCloud {
             let session = self.cloud_session()?;
             let generation = session.generation();
@@ -2158,12 +2231,6 @@ impl PennelEngine {
             .filter_map(Weak::upgrade)
             .find(|session| self.meeting_uid(session.id()).as_deref() == Some(uid.as_str()))
             .map(|session| Arc::downgrade(&session));
-        let source_guard = QuestionSourceGuard {
-            root: self.meeting_store().root(),
-            uid,
-            live,
-            anchors: evidence.anchors_for_sources(&sources)?,
-        };
         let provider = if let Some((session, _)) = &cloud_guard {
             ProviderConfig {
                 kind: account.kind,
@@ -2173,7 +2240,7 @@ impl PennelEngine {
         } else {
             self.endpoint(&account, model)
         };
-        self.prepare_source_question(
+        let mut prepared = self.prepare_source_question(
             question,
             history,
             sources,
@@ -2183,10 +2250,25 @@ impl PennelEngine {
                 system,
                 admission,
                 registration: Some(registration),
-                source_guard: Some(source_guard),
+                source_guard: None,
                 cloud_guard,
             },
-        )
+        )?;
+        prepared.selection.available_sources =
+            evidence.sources.len().try_into().unwrap_or(u32::MAX);
+        prepared.selection.scope =
+            if prepared.selection.included_sources == prepared.selection.available_sources {
+                MeetingQuestionScope::WholeMeeting
+            } else {
+                MeetingQuestionScope::SelectedExcerpts
+            };
+        prepared.source_guard = Some(QuestionSourceGuard {
+            root: self.meeting_store().root(),
+            uid,
+            live,
+            anchors: evidence.anchors_for_sources(prepared.sources())?,
+        });
+        Ok(prepared)
     }
 
     fn prepare_source_question(
@@ -2209,6 +2291,7 @@ impl PennelEngine {
         if requires_key(preparation.provider.kind) && preparation.key.is_none() {
             return Err(PennelError::MissingApiKey { task: "llm".into() });
         }
+        let available_sources = sources.len();
         let (messages, sources) = if preparation.provider.kind == ProviderKind::AppleIntelligence {
             crate::meeting_chat::apple_chat_messages(&question, &history, &sources)?
         } else {
@@ -2217,6 +2300,12 @@ impl PennelEngine {
                 sources,
             )
         };
+        let selection = MeetingQuestionSelection::from_messages(
+            available_sources,
+            sources.len(),
+            &history,
+            &messages,
+        );
         if preparation.registration.is_some()
             && crate::llm::request_body(&preparation.provider, &messages, Reasoning::Low)
                 .to_string()
@@ -2235,6 +2324,7 @@ impl PennelEngine {
             _registration: preparation.registration,
             source_guard: preparation.source_guard,
             cloud_guard: preparation.cloud_guard,
+            selection,
         })
     }
 
@@ -5048,6 +5138,174 @@ mod tests {
         });
         engine.set_system_language_model(model.clone());
         model
+    }
+
+    #[test]
+    fn live_question_scope_discloses_large_ascii_excerpts_and_shortened_history() {
+        let (dir, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&dir, &server);
+        let rows: Vec<_> = (0..160)
+            .map(|index| {
+                crate::MeetingUtterance::new(
+                    Segment {
+                        start_ms: index * 1_000,
+                        end_ms: (index + 1) * 1_000,
+                        speaker: Speaker::Others,
+                        text: format!("Owned passage {index}: {}", "a".repeat(440)),
+                        failed: false,
+                        voice: None,
+                    },
+                    Some("system_audio".into()),
+                )
+            })
+            .collect();
+        let evidence =
+            crate::MeetingEvidence::new_with_utterances("owned-scope", "Scope", "", "", &rows, &[])
+                .unwrap();
+        assert!(
+            evidence
+                .sources
+                .iter()
+                .map(|source| source.text.len())
+                .sum::<usize>()
+                > crate::meeting_chat::WHOLE_MEETING_CHARS
+        );
+        let history: Vec<_> = (0..8)
+            .map(|index| ChatTurn {
+                question: format!("Prior question {index}"),
+                answer: "Prior answer. ".repeat(200),
+            })
+            .collect();
+        let prepared = engine
+            .prepare_meeting_evidence_question(
+                "What was decided?".into(),
+                history,
+                &evidence,
+                keys(),
+            )
+            .unwrap();
+        let selection = prepared.selection();
+        assert_eq!(selection.scope, MeetingQuestionScope::SelectedExcerpts);
+        assert_eq!(selection.available_sources, 160);
+        assert_eq!(selection.included_sources, prepared.sources().len() as u32);
+        assert_eq!(
+            selection.included_sources,
+            crate::meeting_chat::MEETING_PASSAGES
+        );
+        assert_eq!(selection.available_history_turns, 8);
+        assert_eq!(selection.included_history_turns, 6);
+        assert!(selection.history_reduced);
+        assert_eq!(
+            evidence
+                .anchors_for_sources(prepared.sources())
+                .unwrap()
+                .len(),
+            prepared.sources().len()
+        );
+        let clipped = engine
+            .prepare_meeting_evidence_question(
+                "What was decided?".into(),
+                vec![ChatTurn {
+                    question: "One earlier turn".into(),
+                    answer: "answer ".repeat(500),
+                }],
+                &evidence,
+                keys(),
+            )
+            .unwrap();
+        assert_eq!(clipped.selection().available_history_turns, 1);
+        assert_eq!(clipped.selection().included_history_turns, 1);
+        assert!(clipped.selection().history_reduced);
+    }
+
+    #[test]
+    fn live_apple_question_scope_and_guards_match_only_complete_sources_actually_sent() {
+        let (dir, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&dir, &server);
+        use_apple_intelligence(&engine, "Unused");
+        let rows: Vec<_> = (0..18)
+            .map(|index| {
+                crate::MeetingUtterance::new(
+                    Segment {
+                        start_ms: index * 1_000,
+                        end_ms: (index + 1) * 1_000,
+                        speaker: Speaker::Others,
+                        text: format!("Owned Apple passage {index}: {}", "b".repeat(440)),
+                        failed: false,
+                        voice: None,
+                    },
+                    Some("system_audio".into()),
+                )
+            })
+            .collect();
+        let evidence = crate::MeetingEvidence::new_with_utterances(
+            "owned-apple-scope",
+            "Scope",
+            "",
+            "",
+            &rows,
+            &[],
+        )
+        .unwrap();
+        let history: Vec<_> = (0..8)
+            .map(|index| ChatTurn {
+                question: format!("Prior {index}"),
+                answer: "Long prior answer. ".repeat(200),
+            })
+            .collect();
+        let question = "  Wat beslissen we nu? 😀  ";
+        let prepared = engine
+            .prepare_meeting_evidence_question(question.into(), history, &evidence, keys())
+            .unwrap();
+        let selection = prepared.selection();
+        assert_eq!(selection.scope, MeetingQuestionScope::SelectedExcerpts);
+        assert_eq!(selection.available_sources, 18);
+        assert!(selection.included_sources > 0 && selection.included_sources < 18);
+        assert_eq!(
+            selection.included_sources as usize,
+            prepared.sources().len()
+        );
+        assert_eq!(selection.available_history_turns, 8);
+        assert_eq!(
+            selection.included_history_turns as usize,
+            (prepared.messages.len() - 2) / 2
+        );
+        assert!(selection.history_reduced);
+        assert!(
+            prepared
+                .messages
+                .last()
+                .unwrap()
+                .content
+                .ends_with(question)
+        );
+        assert!(
+            crate::system_llm::input_bytes(&prepared.messages)
+                <= crate::system_llm::APPLE_INPUT_BYTES
+        );
+        let guarded: Vec<_> = prepared
+            .source_guard
+            .as_ref()
+            .unwrap()
+            .anchors
+            .iter()
+            .map(|anchor| anchor.passage.clone())
+            .collect();
+        assert_eq!(guarded, prepared.sources());
+    }
+
+    #[test]
+    fn oversized_current_live_question_is_refused_before_source_or_history_selection() {
+        let (dir, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&dir, &server);
+        let evidence = crate::MeetingEvidence::new("owned-empty", "Empty", "", "", &[]);
+        let model = use_apple_intelligence(&engine, "Must not run");
+        let error = engine
+            .prepare_meeting_evidence_question("q".repeat(7_000), vec![], &evidence, keys())
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("not truncated or sent"));
+        assert!(model.calls.lock().unwrap().is_empty());
     }
 
     #[test]

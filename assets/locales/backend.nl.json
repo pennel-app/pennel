@@ -1,4 +1,5 @@
 {
+  "backend.live_question_too_large": "Je vraag is te lang voor deze configuratie. Ze werd niet ingekort of verstuurd. Maak je vraag korter en probeer opnieuw.",
   "backend.retranscription_unknown_tracks": "De oorspronkelijke opnamesporen konden niet worden vastgesteld. Voor oudere transcripties met sprekerlabels zijn beide sporen nodig.",
   "backend.retranscription_local_model_required": "Kies een lokaal spraakmodel voor het opnieuw transcriberen van een opname.",
   "backend.retranscription_download_model": "Download eerst het gekozen lokale spraakmodel.",

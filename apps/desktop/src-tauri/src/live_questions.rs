@@ -119,6 +119,7 @@ pub struct LiveQuestionSnapshot {
     pub included_through_ms: u64,
     pub pending_transcription: u32,
     pub anchors: Vec<MeetingSourceAnchor>,
+    pub selection: pennel_core::MeetingQuestionSelection,
 }
 
 #[derive(Clone, Serialize)]
@@ -305,6 +306,7 @@ pub async fn begin_live_question(
             included_through_ms: evidence.included_through_ms,
             pending_transcription: pending,
             anchors,
+            selection: prepared.selection(),
         };
         let output_snapshot = snapshot.clone();
         std::thread::Builder::new()

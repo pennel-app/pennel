@@ -10,6 +10,7 @@ import { speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
 import { attributionNoticeKey } from "./meeting-source";
 import { LiveSpeakerControl, liveSpeakerStatusKey } from "./live-speaker-state";
+import { liveQuestionMetadata } from "./live-question-scope";
 import type { Context } from "./main";
 
 interface Turn {
@@ -624,13 +625,11 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   }
   function updateTurnMetadata(turn: Turn) {
     if (!turn.snapshot) return;
-    turn.metadata.textContent = t("meetings.workspace_cutoff", { time: formatClock(turn.snapshot.included_through_ms / 1000) })
-      + (turn.snapshot.pending_transcription ? ` · ${t("meetings.workspace_pending", { count: turn.snapshot.pending_transcription })}` : "");
+    updateTurnMetadataText(turn);
     bindLocalization(turn.metadata, () => updateTurnMetadataText(turn));
   }
   function updateTurnMetadataText(turn: Turn) {
-    if (turn.snapshot) turn.metadata.textContent = t("meetings.workspace_cutoff", { time: formatClock(turn.snapshot.included_through_ms / 1000) })
-      + (turn.snapshot.pending_transcription ? ` · ${t("meetings.workspace_pending", { count: turn.snapshot.pending_transcription })}` : "");
+    if (turn.snapshot) turn.metadata.textContent = liveQuestionMetadata(turn.snapshot, formatClock(turn.snapshot.included_through_ms / 1000));
   }
   function renderTurn(turn: Turn) {
     const position = history.scrollTop;
