@@ -950,5 +950,65 @@
     "whitespace_check": "passed",
     "no_native_release_frontend_repeat": "The changed Rust test module is excluded from production builds; existing 171 native, Release, frontend and screenshot evidence remains applicable.",
     "qualification": "Still empty; no model/provider inference or activation from this test repair."
+  },
+  "deadline_fixture_ci_maintenance": {
+    "previous_head": "8ba325c7ac3ef97581eef7959fcd279db492fa14",
+    "verified_rebased_phase_head": "8e4af7b82f0ab10fff8d10442ddac0b4deac3e50",
+    "current_stack_base": "b94119a65e3378c15546d1b1fc3ae656f563ba2d",
+    "source_proof": {
+      "previous_head": "8ba325c7ac3ef97581eef7959fcd279db492fa14",
+      "rebased_head": "8e4af7b82f0ab10fff8d10442ddac0b4deac3e50",
+      "base": "b94119a65e3378c15546d1b1fc3ae656f563ba2d",
+      "inherited_delta": [
+        "core/src/inference_tests.rs",
+        "docs/evidence/meeting-scheduling-98/deadline-fixture-ci-follow-up.json",
+        "docs/evidence/meeting-scheduling-98/deadline-fixture-ci-follow-up.md"
+      ],
+      "all_9_phase_patches_equal": true,
+      "production_blobs_unchanged": true,
+      "all_other_blobs_unchanged": true,
+      "test_source_sha256_before": "1a1c9dfc58a27aa0a17be34a7dbfd054e3c7ea36f2ceb7b80cdc309fb9e5c9d0",
+      "test_source_sha256_after": "b9c0ad4a3ea96dad72ae49c5dbae5a302d328a98ea7694eca7f0fbea66cd3bbb",
+      "test_module_gate": "#[cfg(test)] #[path = inference_tests.rs] mod tests"
+    },
+    "all_9_phase_patches_equal": true,
+    "full_joined_suites": {
+      "default": {
+        "passed": 975,
+        "failed": 0,
+        "ignored": 7,
+        "seconds": 78.82,
+        "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --lib",
+        "log": "build/issue57/deadline-fixture-maintenance/core-default.log"
+      },
+      "lean": {
+        "passed": 958,
+        "failed": 0,
+        "ignored": 5,
+        "seconds": 77.06,
+        "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib",
+        "log": "build/issue57/deadline-fixture-maintenance/core-lean.log"
+      }
+    },
+    "strict_default_lean_clippy": "passed with warnings denied",
+    "core_format_and_whitespace": "passed",
+    "repair_evidence": "meeting-scheduling-98/deadline-fixture-ci-follow-up.md",
+    "controlled_oracle": "Both physical POSTs are required; production shared deadline must expire while valid content is withheld. A fresh-session test-only per-phase reset control returns valid JSON after the original boundary and before its reset deadline; controlled red failed at 11.01 seconds.",
+    "production_scope": "Dedicated cfg(test) Rust test file and upstream receipt only; transport, clock, limits, providers, qualification and all product blobs unchanged.",
+    "prior_hosted_mobile_ci": {
+      "source_commit": "8ba325c7ac3ef97581eef7959fcd279db492fa14",
+      "workflow": "mobile",
+      "run_id": 41678611486,
+      "url": "https://github.com/pennel-app/pennel/actions/runs/41678611486",
+      "conclusion": "success",
+      "runtime_tests_passed": 135,
+      "keyboard_tests_passed": 36,
+      "total_passed": 171,
+      "test_succeeded_marker": true,
+      "log": "build/issue57/deadline-fixture-maintenance/previous-mobile-ci.log",
+      "log_sha256": "448c396af7b000680daa5866276e0371d1e3c0775a4321f9022ce0510926b486",
+      "scope": "Actual prior hosted GitHub mobile CI on the unchanged native application; current repair changes only a cfg(test) Rust source file."
+    },
+    "build_scope": "No native, bindings, frontend or Release repeat for this test-only patch; prior actual 171 hosted-CI tests cover the unchanged application."
   }
 }
