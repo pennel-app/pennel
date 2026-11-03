@@ -33,6 +33,8 @@ mod localization;
 mod meeting_chat;
 mod meeting_evidence;
 mod meeting_index;
+mod meeting_insights;
+mod meeting_insight_engine;
 mod meeting_preview;
 mod meeting_qualification;
 mod meeting_recording;
@@ -116,6 +118,13 @@ pub use meeting_index::{Passage, PassageKind};
 pub use meeting_preview::{
     MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode, MeetingPreviewSnapshot,
     MeetingPreviewState, MeetingTrackPreview,
+};
+pub use meeting_insights::{
+    CommitmentState, InsightCandidate, InsightInsertionPreparation, InsightInsertionReceipt,
+    InsightInsertionRequest, InsightInsertionResolution, InsightInsertionState, InsightItem, InsightKind, InsightProcessing,
+    InsightReviewState, InsightReviewUpdate, InsightSnapshot, InsightSource, InsightSourceState,
+    InsightSourceReassociation, InsightStoreStatus, MAX_INSIGHTS_BYTES, SupportedInsightDetail,
+    insight_dedup_key, insight_item_markdown,
 };
 pub use meeting_qualification::{
     MeetingActualInference, MeetingAnalysisAvailability, MeetingAnalysisUseCase,

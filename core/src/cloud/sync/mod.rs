@@ -1231,6 +1231,159 @@ mod tests {
         assert_eq!(report.status, SyncStatus::Synced, "{report:?}");
     }
 
+    fn insight_fixture(
+        device: &Device,
+    ) -> (
+        String,
+        crate::MeetingTranscriptSnapshot,
+        crate::InsightSnapshot,
+    ) {
+        let id = device
+            .store()
+            .create("Owned reviewed insights", start())
+            .unwrap();
+        let row = crate::MeetingUtterance::new(
+            crate::Segment {
+                start_ms: 1_000,
+                end_ms: 5_000,
+                speaker: crate::Speaker::Others,
+                text: "Jan will send the report on Friday.".into(),
+                failed: false,
+                voice: None,
+            },
+            Some("room_microphone".into()),
+        );
+        let source = device
+            .store()
+            .write_transcript_snapshot(&id, Some(0), &[row])
+            .unwrap();
+        let proposal = crate::meeting_insights::tests::candidate(&source);
+        let insights = device
+            .store()
+            .merge_insight_candidates(
+                &id,
+                0,
+                &[proposal],
+                &source,
+                &crate::InferenceCancellation::new(),
+            )
+            .unwrap();
+        (id, source, insights)
+    }
+
+    #[test]
+    fn portable_review_store_near_its_limit_syncs_encrypted_without_becoming_transcript_text() {
+        let (api, a, b) = setup();
+        let (id, _, insights) = insight_fixture(&a);
+        let edited = format!(
+            "INSIGHT_ONLY_SENTINEL {}",
+            "x".repeat(crate::MAX_INSIGHTS_BYTES - 8_000)
+        );
+        let item = &insights.items[0];
+        let reviewed = a
+            .store()
+            .update_insight_review(
+                &id,
+                insights.revision,
+                &item.id,
+                item.revision,
+                &crate::InsightReviewUpdate {
+                    review_state: Some(crate::InsightReviewState::Accepted),
+                    edited_text: Some(edited.clone()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let raw = std::fs::read(a.path(&format!("{id}/insights.json"))).unwrap();
+        assert!(raw.len() <= crate::MAX_INSIGHTS_BYTES);
+        synced(&a.sync(&api));
+        synced(&b.sync(&api));
+        assert_eq!(b.store().read_insights(&id).unwrap(), reviewed);
+        assert_eq!(
+            std::fs::read(b.path(&format!("{id}/insights.json"))).unwrap(),
+            raw
+        );
+        assert!(
+            b.store()
+                .export_insights_markdown(&id)
+                .unwrap()
+                .starts_with(&edited)
+        );
+        assert!(
+            !b.store()
+                .read_transcript(&id)
+                .iter()
+                .any(|segment| segment.text.contains("INSIGHT_ONLY_SENTINEL"))
+        );
+        let key = crypto::object_id(
+            &VaultKey::from_b64(&a.key).unwrap(),
+            &format!("meeting/{}/insights.json", reviewed.meeting_uid),
+        );
+        let (_, sealed) = api.get(&key).unwrap().unwrap();
+        assert!(sealed.len() <= MAX_OBJECT_BYTES);
+        assert!(
+            !sealed
+                .windows(b"INSIGHT_ONLY_SENTINEL".len())
+                .any(|window| window == b"INSIGHT_ONLY_SENTINEL")
+        );
+    }
+
+    #[test]
+    fn concurrent_review_edits_survive_sync_as_the_current_file_and_a_conflict_copy() {
+        let (api, a, b) = setup();
+        let (id, _, initial) = insight_fixture(&a);
+        synced(&a.sync(&api));
+        synced(&b.sync(&api));
+        let item = &initial.items[0];
+        for (device, text) in [
+            (&a, "User edit from the first device."),
+            (&b, "User edit from the second device."),
+        ] {
+            device
+                .store()
+                .update_insight_review(
+                    &id,
+                    initial.revision,
+                    &item.id,
+                    item.revision,
+                    &crate::InsightReviewUpdate {
+                        review_state: Some(crate::InsightReviewState::Accepted),
+                        edited_text: Some(text.into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+        synced(&a.sync(&api));
+        synced(&b.sync(&api));
+        let files: Vec<_> = b
+            .names_in(&id)
+            .into_iter()
+            .filter(|name| {
+                name == "insights.json"
+                    || name.starts_with("insights (conflict ") && name.ends_with(").json")
+            })
+            .collect();
+        assert_eq!(files.len(), 2);
+        let edits: HashSet<_> = files
+            .iter()
+            .map(|name| {
+                let value: serde_json::Value =
+                    serde_json::from_str(&b.read(&format!("{id}/{name}")).unwrap()).unwrap();
+                value["items"][0]["edited_text"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert!(edits.contains("User edit from the first device."));
+        assert!(edits.contains("User edit from the second device."));
+        assert_eq!(
+            b.store().read_insights(&id).unwrap().items[0].review_state,
+            crate::InsightReviewState::Accepted
+        );
+    }
+
     #[test]
     fn canonical_transcript_parts_upload_within_sealed_limit_and_reopen_on_another_device() {
         use crate::meeting_utterances::{METADATA_PART_BYTES, MeetingUtterance, TimedTextSpan};

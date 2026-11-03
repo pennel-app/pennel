@@ -32,6 +32,8 @@ public final class PennelNativeRuntime {
     private let recognitionTransport = NativeRecognitionTransport()
     private var recognitionJobs: [String: SpeakerRecognitionJob] = [:]
     private var recognitionWatches: [String: Task<Void, Never>] = [:]
+    private var insightJobs: [String: [String: Any]] = [:]
+    private var insightRevisions: [String: UInt64] = [:]
     private var finishBudgetGeneration: UInt64 = 0
     private var settingsTail: Task<Void, Never>?
     private lazy var inferenceRequests = NativeInferenceRequests(engine: model.engine)
@@ -259,6 +261,39 @@ public final class PennelNativeRuntime {
                 try BridgeJSON.encode(BridgeJSON.inferenceVerification(engine.verifyInference(capability: capability, cancellation: cancellation, keys: Keychain.apiKeys())))
             }
         case "inference.cancel": return try BridgeJSON.encode(inferenceRequests.cancel(id: input.required("request_id")))
+        case "insights.read", "insights.availability", "insights.start", "insights.review", "insights.claimEdit", "insights.prepareInsertion", "insights.reconcile", "insights.reassociate", "insights.export", "insights.itemMarkdown":
+            let id = try input.required("id")
+            let language = input.text("language_policy", default: "unknown")
+            let request = try BridgeJSON.encode(input.values["request"] as? [String: Any] ?? [:])
+            let storeRevision = (input.values["store_revision"] as? NSNumber)?.uint64Value ?? 0
+            let itemId = input.text("item_id")
+            let itemRevision = (input.values["item_revision"] as? NSNumber)?.uint64Value ?? 0
+            let output = try await background { engine in
+                switch method {
+                case "insights.read": return try engine.meetingInsightsJson(id: id)
+                case "insights.availability": return try engine.meetingInsightAvailabilityJson(id: id, languagePolicy: language)
+                case "insights.start": return try engine.beginMeetingInsightAnalysisJson(id: id, languagePolicy: language, keys: Keychain.apiKeys())
+                case "insights.review": return try engine.reviewMeetingInsightJson(id: id, updateJson: request)
+                case "insights.claimEdit": return try engine.claimMeetingInsightEditJson(id: id, requestJson: request)
+                case "insights.prepareInsertion": return try engine.prepareMeetingInsightInsertionJson(id: id, requestJson: request)
+                case "insights.reconcile": return try engine.reconcileMeetingInsightInsertionsJson(id: id, storeRevision: storeRevision)
+                case "insights.reassociate": return try engine.reassociateMeetingInsightJson(id: id, requestJson: request)
+                case "insights.itemMarkdown": return try BridgeJSON.encode(engine.exportMeetingInsightMarkdown(id: id, itemId: itemId, itemRevision: itemRevision))
+                default: return try BridgeJSON.encode(engine.exportMeetingInsightsMarkdown(id: id))
+                }
+            }
+            rememberInsightMetadata(output)
+            if !["insights.read", "insights.availability", "insights.export", "insights.itemMarkdown"].contains(method) { CloudSyncRunner.shared.poke() }
+            publish()
+            return output
+        case "insights.job", "insights.cancel":
+            let jobId = try input.required("job_id")
+            let output = try await background { engine in
+                method == "insights.cancel" ? try engine.cancelMeetingInsightAnalysisJson(jobId: jobId) : try engine.meetingInsightJobJson(jobId: jobId)
+            }
+            rememberInsightMetadata(output)
+            publish()
+            return output
         case "providers.add":
             let kind = try BridgeJSON.kind(input.required("kind"))
             if let reason = ProviderKinds.unavailableReason(kind) { throw PennelBridgeError("unsupported", reason) }
@@ -379,8 +414,11 @@ public final class PennelNativeRuntime {
             guard let notes = input.values["notes"] as? String ?? input.values["text"] as? String else { throw PennelBridgeError("invalid_request", "Missing notes.") }
             if MeetingRuntime.shared.activeMeetingId == id { try MeetingRuntime.shared.saveLiveNotes(notes); return "null" }
             guard let expected = input.values["expected_notes"] as? String else { throw PennelBridgeError("invalid_request", "Reload the current notes before saving.") }
+            let insightReceipt = input.values["insight_receipt"] as? String
             let output = try await background { engine in
-                try engine.mobileSetMeetingNotes(id: id, text: notes, expected: expected)
+                if let receipt = insightReceipt {
+                    _ = try engine.mobileSetMeetingNotesWithInsightReceipt(id: id, text: notes, expected: expected, attemptId: receipt)
+                } else { try engine.mobileSetMeetingNotes(id: id, text: notes, expected: expected) }
                 return "null"
             }
             CloudSyncRunner.shared.poke()
@@ -494,6 +532,27 @@ public final class PennelNativeRuntime {
     private func background(_ work: @escaping @Sendable (PennelEngine) throws -> String) async throws -> String {
         let engine = model.engine
         return try await Task.detached(priority: .userInitiated) { try work(engine) }.value
+    }
+
+    private func rememberInsightMetadata(_ text: String) {
+        guard let value = try? BridgeJSON.object(text) else { return }
+        let metadata = BridgeJSON.insightMetadata(value)
+        if let id = metadata["job_id"] as? String { insightJobs[id] = metadata }
+        else if let uid = metadata["meeting_uid"] as? String, let revision = metadata["revision"] as? NSNumber { insightRevisions[uid] = revision.uint64Value }
+        while insightJobs.count > 32, let id = insightJobs.keys.sorted().first(where: { insightJobs[$0]?["physical_running"] as? Bool != true }) { insightJobs[id] = nil }
+        while insightRevisions.count > 32, let id = insightRevisions.keys.sorted().first { insightRevisions[id] = nil }
+    }
+
+    private func cancelInsightJobsForBackground() {
+        let ids = insightJobs.compactMap { id, value in value["physical_running"] as? Bool == true || ["queued", "running"].contains(value["state"] as? String ?? "") ? id : nil }
+        let engine = model.engine
+        for id in ids {
+            Task { [weak self] in
+                if let value = try? await Task.detached(operation: { try engine.cancelMeetingInsightAnalysisJson(jobId: id) }).value {
+                    self?.rememberInsightMetadata(value); self?.publish()
+                }
+            }
+        }
     }
 
     private func inferenceFingerprint(_ capability: InferenceCapability) throws -> String {
@@ -1167,6 +1226,7 @@ extension PennelNativeRuntime {
                         "full_access_seen": KeyboardFullAccess.seen(in: AppPaths.keyboardDefaults), "error": BridgeJSON.optional(session.startError), "error_code": BridgeJSON.optional(session.startErrorCode), "cleanup_verification": BridgeJSON.optional(session.cleanupVerificationAvailability.map(BridgeJSON.cleanupVerification))] as [String: Any],
             "meeting": meeting,
             "cloud": cloudState(), "recognition_jobs": model.engine.speakerRecognitionJobs().map(BridgeJSON.recognition),
+            "insight_jobs": insightJobs.keys.sorted().compactMap { insightJobs[$0] }, "insight_revisions": insightRevisions,
             "navigation": navigation.map { $0 as Any } ?? NSNull(),
         ]
         let comparable = try BridgeJSON.encode(value)
@@ -1235,7 +1295,7 @@ extension PennelNativeRuntime {
             })
         }
         observations.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.inferenceRequests.cancelAll(); CloudSyncRunner.shared.enterBackground(); CloudSyncBackground.schedule() }
+            MainActor.assumeIsolated { self?.inferenceRequests.cancelAll(); self?.cancelInsightJobsForBackground(); CloudSyncRunner.shared.enterBackground(); CloudSyncBackground.schedule() }
         })
         observations.append(center.addObserver(forName: Notification.Name("PennelFinishTaskExpired"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {

@@ -1,6 +1,10 @@
 import Foundation
 
 enum BridgeJSON {
+    static func insightMetadata(_ value: [String: Any]) -> [String: Any] {
+        let source = value["snapshot"] as? [String: Any] ?? value
+        return source.filter { ["meeting_uid", "revision", "job_id", "state", "physical_running"].contains($0.key) }
+    }
     static func encode(_ value: Any) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed])
         guard let text = String(data: data, encoding: .utf8) else {

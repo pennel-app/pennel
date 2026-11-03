@@ -4,6 +4,16 @@ import Testing
 import PennelMobileKit
 @testable internal import PennelMobile
 
+@Test("Insight invalidation metadata excludes proposal, source and private-note content")
+func insightInvalidationMetadataIsContentFree() throws {
+    let metadata = BridgeJSON.insightMetadata(["snapshot": ["meeting_uid": "owned", "revision": 3,
+        "items": [["text": "private sentinel", "sources": [["quote": "private sentinel"]]]], "notes": "private sentinel"]])
+    let encoded = try BridgeJSON.encode(metadata)
+    #expect(metadata["meeting_uid"] as? String == "owned")
+    #expect(!encoded.contains("sentinel"))
+    #expect(metadata.count == 2)
+}
+
 private final class UploadProgress: RecognitionUploadProgress, @unchecked Sendable {
     func sent(sentBytes: UInt64, totalBytes: UInt64) {}
 }

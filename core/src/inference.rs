@@ -752,6 +752,13 @@ struct WireRequest<'a> {
     request_id: Option<&'a str>,
 }
 
+pub(crate) fn validate_decision_request(
+    config: &InferenceConfig,
+    request: &DecisionRequest,
+) -> Result<(), PennelError> {
+    decision_body(config, request).map(|_| ())
+}
+
 fn decision_body(
     config: &InferenceConfig,
     request: &DecisionRequest,

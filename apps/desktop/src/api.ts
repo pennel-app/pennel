@@ -7,6 +7,8 @@ export type { ClaudeStatus };
 import type { WorkspaceRoute } from "./workspace-state";
 import { localizeUiResponse } from "./ui-response.ts";
 import type { DesktopCommandState, DesktopEnvironment } from "./desktop-chrome-state.ts";
+import type { InsightSnapshot, InsightAvailability, InsightJob, InsightLanguagePolicy, InsightReviewRequest, InsightClaimRequest,
+  InsightInsertionRequest, InsightInsertionPreparation, InsightReassociationRequest } from "../../../assets/contracts/meeting-insights";
 
 interface PlatformClient {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -216,6 +218,8 @@ export interface DecisionResult { answers: DecisionAnswer[]; identity: Inference
 export interface RerankRequest { query: string; passages: { id: string; text: string }[] }
 export interface RerankResult { scores: { passage_id: string; score: number }[]; identity: InferenceIdentity; usage: InferenceUsage }
 export interface InferenceVerification { verified: boolean; message: string; identity: InferenceIdentity | null }
+export type { InsightItem, InsightSource, InsightSnapshot, InsightAvailability, InsightJob, InsightLanguagePolicy, InsightReviewState,
+  InsightReviewRequest, InsightClaimRequest, InsightInsertionRequest, InsightInsertionPreparation, InsightReassociationRequest } from "../../../assets/contracts/meeting-insights";
 
 export interface ClaudeAccessView {
   enabled: boolean;
@@ -710,6 +714,18 @@ export interface CloudError {
 }
 
 export const api = {
+  insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
+  insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),
+  beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy }),
+  insightsJob: (jobId: string) => invoke<InsightJob>("insights_job", { jobId }),
+  cancelInsightsAnalysis: (jobId: string) => invoke<InsightJob>("cancel_insights_analysis", { jobId }),
+  reviewInsight: (id: string, request: InsightReviewRequest) => invoke<InsightSnapshot>("review_insight", { id, request }),
+  claimInsightEdit: (id: string, request: InsightClaimRequest) => invoke<InsightSnapshot>("claim_insight_edit", { id, request }),
+  prepareInsightInsertion: (id: string, request: InsightInsertionRequest) => invoke<InsightInsertionPreparation>("prepare_insight_insertion", { id, request }),
+  reconcileInsightInsertions: (id: string, storeRevision: number) => invoke<InsightSnapshot>("reconcile_insight_insertions", { id, storeRevision }),
+  reassociateInsightSource: (id: string, request: InsightReassociationRequest) => invoke<InsightSnapshot>("reassociate_insight_source", { id, request }),
+  exportInsights: (id: string) => invoke<string>("insights_export", { id }),
+  insightMarkdown: (id: string, itemId: string, itemRevision: number) => invoke<string>("insight_markdown", { id, itemId, itemRevision }),
   desktopEnvironment: () => invoke<DesktopEnvironment>("desktop_environment"),
   setDesktopCommandState: (state: DesktopCommandState) => invoke<void>("set_desktop_command_state", { state }),
   info: () => invoke<AppInfo>("app_info"),
@@ -811,7 +827,7 @@ export const api = {
     invoke<string>("summarize_meeting", { id, templateId }),
   retranscribeMeeting: (id: string) => invoke<number>("retranscribe_meeting", { id }),
   retranscribeMeetingAudio: (id: string) => invoke<number>("retranscribe_meeting_audio", { id }),
-  saveMeetingNotes: (id: string, text: string) => invoke<void>("save_meeting_notes", { id, text }),
+  saveMeetingNotes: (id: string, text: string, insightReceipt?: string) => invoke<void>("save_meeting_notes", { id, text, insightReceipt }),
   setMeetingAttendees: (id: string, attendees: string[]) => invoke<void>("set_meeting_attendees", { id, attendees }),
   renameSpeaker: (id: string, voice: number, name: string) => invoke<void>("rename_speaker", { id, voice, name }),
   recognizeSpeakers: (id: string) => invoke<SpeakerRecognition>("diarize_meeting", { id }),

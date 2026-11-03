@@ -7,10 +7,10 @@ export function useNoteDraft(id: string | null | undefined, remote: string, sess
   const target = useRef(id);
   target.current = id;
   // A remote refresh must update the session without replacing its pending edits or in-flight save.
-  const session = useMemo(() => new NoteSession(remote, async (notes, expected_notes) => {
+  const session = useMemo(() => new NoteSession(remote, async (notes, expected_notes, insight_receipt) => {
     const meetingId = target.current;
     if (!meetingId) return false;
-    return (await run(`notes-${meetingId}`, 'meetings.notes', { id: meetingId, notes, expected_notes })) !== undefined;
+    return (await run(`notes-${meetingId}`, 'meetings.notes', { id: meetingId, notes, expected_notes, ...(insight_receipt ? { insight_receipt } : {}) })) !== undefined;
   }), [sessionKey, run]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   useEffect(() => session.adoptRemote(remote), [remote, session]);
@@ -19,5 +19,6 @@ export function useNoteDraft(id: string | null | undefined, remote: string, sess
     const timer = setTimeout(() => void session.save(), 500);
     return () => clearTimeout(timer);
   }, [session, state]);
-  return { ...state, setDraft: session.edit, save: session.save, discard: session.discard, getCurrent: session.getSnapshot, retarget: (meetingId: string) => { target.current = meetingId; } };
+  return { ...state, setDraft: session.edit, save: session.save, discard: session.discard, getCurrent: session.getSnapshot,
+    stageInsightInsertion: session.stageInsightInsertion, retarget: (meetingId: string) => { target.current = meetingId; } };
 }
