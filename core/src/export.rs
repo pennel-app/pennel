@@ -357,7 +357,7 @@ mod tests {
             .unwrap();
         let (_, md) = export_markdown(&store, &id, true).unwrap();
         assert!(!md.contains("---") && !md.contains("template:"));
-        assert!(md.ends_with("## Transcript\n\n**[00:00] Me:** Hallo\n"));
+        assert!(md.ends_with("## Transcript\n\n**[00:00] Unknown speaker:** Hallo\n"));
     }
 
     #[test]
@@ -383,9 +383,9 @@ mod tests {
             export_markdown_for_language(&store, &id, true, crate::InterfaceLanguage::Dutch)
                 .unwrap()
                 .1;
-        assert!(english.contains("Me:** Mijn notitie"));
+        assert!(english.contains("Unknown speaker:** Mijn notitie"));
         assert!(english.contains("Speaker 2:** Mijn naam is Ik"));
-        assert!(dutch.contains("Ik:** Mijn notitie"));
+        assert!(dutch.contains("Onbekende spreker:** Mijn notitie"));
         assert!(dutch.contains("Anderen 2:** Mijn naam is Ik"));
         assert!(english.contains("## Samenvatting\nMijn eigen tekst."));
         assert_eq!(
@@ -454,6 +454,31 @@ mod tests {
         assert!(dutch.contains("Me:** Named statement"));
         assert!(!english.contains("Me:** Room commitment"));
         assert!(!dutch.contains("Ik:** Room commitment"));
+    }
+
+    #[test]
+    fn legacy_absent_metadata_exports_preserve_saved_labels_without_creating_a_sidecar() {
+        let (_dir, store, id) = store();
+        std::fs::write(
+            store.dir_of(&id).join("transcript.md"),
+            "[00:00] **Ik:** Hallo\n[00:02] **Anderen 2:** Een antwoord\n",
+        )
+        .unwrap();
+        assert_eq!(
+            store.read_transcript_snapshot(&id).unwrap().metadata_status,
+            crate::TranscriptMetadataStatus::Absent
+        );
+        let english = export_markdown_for_language(&store, &id, true, InterfaceLanguage::English)
+            .unwrap()
+            .1;
+        let dutch = export_markdown_for_language(&store, &id, true, InterfaceLanguage::Dutch)
+            .unwrap()
+            .1;
+        assert!(english.contains("Me:** Hallo"));
+        assert!(english.contains("Speaker 2:** Een antwoord"));
+        assert!(dutch.contains("Ik:** Hallo"));
+        assert!(dutch.contains("Anderen 2:** Een antwoord"));
+        assert!(!store.dir_of(&id).join("transcript.meta.json").exists());
     }
 
     #[test]

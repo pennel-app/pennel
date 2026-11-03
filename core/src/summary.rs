@@ -477,6 +477,29 @@ mod tests {
     }
 
     #[test]
+    fn summary_generation_sends_canonical_uncertainty_to_the_selected_provider() {
+        let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = engine(&dir, &server);
+        let store = engine.meeting_store();
+        let id = store
+            .create("Owned summary identity", chrono::Local::now())
+            .unwrap();
+        let row = crate::MeetingUtterance::new(
+            seg(0, Speaker::Me, "Room commitment", false),
+            Some("microphone".into()),
+        );
+        store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        let provider = server.mock("POST", "/chat/completions")
+            .match_body(mockito::Matcher::Regex("Unknown speaker: Room commitment".into()))
+            .with_body(serde_json::json!({"choices":[{"message":{"content":"## Summary\n- Owned response."}}]}).to_string())
+            .expect(1).create();
+        engine
+            .summarize_meeting(id, "algemeen".into(), keys())
+            .unwrap();
+        provider.assert();
+    }
+
+    #[test]
     fn summarize_writes_meeting_md() {
         let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
         let engine = engine(&dir, &server);
