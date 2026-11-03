@@ -163,7 +163,7 @@ export async function checkUnifiedWorkspaceRecordingFlow() {
     assert(!fixture.unknown.length, "Unified recording navigation used an unsupported fixture operation.");
     return { sameMainWindow: true, sameRecordingSession: true, draftsPreserved: true, noCaptureRestart: true, externalServicesUsed: false, userDataUsed: false };
   } finally {
-    await api.setMeetingTitle(before.id, before.title ?? "");
+    await api.setMeetingTitle(before.title ?? "", before.session_id);
     await api.saveMeetingNotes(before.id, before.notes);
     observed.restore();
   }

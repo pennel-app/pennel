@@ -59,6 +59,10 @@ pub struct Capture {
 }
 
 impl Capture {
+    #[cfg(not(target_os = "macos"))]
+    pub fn request_stop(&self) {
+        let _ = self.stop.send(());
+    }
     /// `sink` receives 16 kHz mono chunks on the audio thread; keep it cheap.
     pub fn start(
         source: Source,

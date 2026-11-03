@@ -3,6 +3,31 @@ import XCTest
 @testable import PennelMacPlatform
 
 final class MeetingCaptureHealthTests: XCTestCase {
+    func testQuiescenceClosesAdmissionWithoutWaitingForBlockedArchiveWrites() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writing = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let writer = try TrackWriter(
+            track: 0, sink: { _, _, _, _, _ in }, context: nil, started: 0,
+            url: directory.appendingPathComponent("ik.m4a"),
+            write: { _ in writing.signal(); release.wait() }
+        )
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: MonoResampler.format, frameCapacity: 16_000))
+        buffer.frameLength = 16_000
+        buffer.floatChannelData![0].initialize(repeating: 0.1, count: 16_000)
+        writer.append(buffer, at: 0)
+        XCTAssertEqual(writing.wait(timeout: .now() + 2), .success)
+        let quiescent = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async { writer.quiesce(); quiescent.signal() }
+        let closedBeforeWriteFinished = quiescent.wait(timeout: .now() + 1) == .success
+        if closedBeforeWriteFinished { writer.append(buffer, at: 1) }
+        release.signal()
+        XCTAssertTrue(closedBeforeWriteFinished)
+        XCTAssertNil(writer.finish())
+        XCTAssertEqual(writing.wait(timeout: .now() + 0.1), .timedOut, "quiescence must reject later audio")
+    }
+
     func testFailedMicrophoneRestartRemainsVisibleUntilCaptureActuallyStarts() {
         var health = MeetingCaptureHealth(echoRequested: true)
         health.microphoneStarted(echoActive: true)

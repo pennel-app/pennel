@@ -84,6 +84,7 @@ unsafe extern "C" {
     fn pennel_mac_meeting_status(handle: *mut c_void) -> *mut c_char;
     fn pennel_mac_meeting_stop(handle: *mut c_void) -> *mut c_char;
     fn pennel_mac_meeting_stop_status(handle: *mut c_void) -> *mut c_char;
+    fn pennel_mac_meeting_quiesce(handle: *mut c_void);
     fn pennel_mac_transcribe(
         samples: *const f32,
         count: usize,
@@ -546,7 +547,22 @@ pub struct MeetingCapture {
 
 unsafe impl Send for MeetingCapture {}
 
+/// Borrowed only by the monitor that owns the retained native handle. It is used before
+/// signalling the monitor to finish, so diagnostics I/O cannot delay hardware shutdown.
+pub struct MeetingCaptureQuiescence(NonNull<c_void>);
+
+unsafe impl Send for MeetingCaptureQuiescence {}
+
+impl MeetingCaptureQuiescence {
+    pub fn quiesce(&self) {
+        unsafe { pennel_mac_meeting_quiesce(self.0.as_ptr()) }
+    }
+}
+
 impl MeetingCapture {
+    pub fn quiescence(&self) -> MeetingCaptureQuiescence {
+        MeetingCaptureQuiescence(self.handle.expect("capture has not been stopped"))
+    }
     pub fn start(
         directory: &Path,
         microphone_path: &Path,

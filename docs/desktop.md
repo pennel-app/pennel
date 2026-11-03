@@ -369,6 +369,12 @@ Retiring the old source shell does not establish real Mac/Windows/X11/Wayland de
 
 The approved [Glaze design #92](https://github.com/pennel-app/pennel/issues/92) defines neutral opaque reading surfaces, compact Inter titles, inset rounded navigation/content panes, consistent controls and Pennel's existing marks and real app icons. The integrated header has a quiet sidebar toggle, aligned context and recording action, and one search field in the sidebar. Choices retain segmented controls, switches and native popup menus. `scripts/capture-desktop-windows.sh` captures the dedicated capture build's own windows over an owned synthetic backdrop, using isolated fixture data; `scripts/capture-desktop-reference.mjs` renders frontend fixtures headless. Browser checks do not establish actual native glass or installed-platform acceptance. The [macOS audit](macos-liquid-glass.md) records layer ownership and native-material limits.
 
+### Live meeting workspace verification — 2 November 2026
+
+[#95](https://github.com/pennel-app/pennel/issues/95) adds a retained Markdown/transcript/questions workspace and capture-first Stop. Local checks passed: 766 core tests (7 existing ignored), 17 keyboard tests, 251 frontend tests, 237 backend tests and 124 Mac platform tests, with formatting, strict Clippy, production builds, theme, packaging and fixture checks. There are 748 owned EN/NL light/dark renders and 16 personally signed native-window captures. The [verification receipt](evidence/live-workspace-95.md) records commands, screenshots, source/cancellation regressions and accelerated sixty-minute fixture timings.
+
+The native Preview uses real local storage and window lifecycle; its live audio/provider IPC is synthetic. Hardware capture, real meetings, physical IME/accessibility and installed-platform acceptance remain separate. Review/merge and hosted CI are tracked on the PR; no release or deployment is claimed.
+
 ### Glaze implementation verification — 2 November 2026
 
 Prepared locally on `codex/desktop-glaze`, based on `a6c2941`, for [#92](https://github.com/pennel-app/pennel/issues/92). Desktop tokens generate a separate theme; the base mobile palette/fonts, fixed pill theme, product commands, storage formats and data locations remain compatible. The bundled app retains the Forma MIT and Inter OFL notices under `Contents/Resources/licenses/`.

@@ -203,19 +203,39 @@
     external_paste_available: !shortcutDenied(), external_paste_reason: shortcutDenied() ? capabilities.pad_external_paste.reason : null });
   let recordingStorageError = Boolean(options.recording_storage_error);
   let recordingRecovered = false;
+  let recordingStopped = false;
+  let transcriptRevision = 1;
+  let saveFailure = Boolean(options.live_save_error);
+  const liveRequests = new Map();
+  let meetingUid = "qa-meeting-stable-uid";
+  let liveSession = "qa-recording";
+  let activeMeetingId = meetingId;
+  const retainedMeetings = new Map();
+  const storedTranscript = segments => segments.map(segment => ({ ...segment, end_ms: segment.start_ms,
+    text: segment.text.trim().replace(/\p{White_Space}+/gu, " "), voice: segment.speaker === "others" ? segment.voice ?? null : null }));
+  const fingerprint = async text => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))), byte => byte.toString(16).padStart(2, "0")).join("");
+  const completeLiveQuestion = (requestId, force = false) => {
+    const request = liveRequests.get(requestId);
+    if (!request || !force && (request.cancelled || request.completed)) return false;
+    request.completed = true;
+    const anchor = request.snapshot.anchors.find(anchor => anchor.passage.kind === "transcript");
+    emit("live-question-result", { snapshot: request.snapshot,
+      answer: { text: "Synthetic frozen answer [1]", citations: anchor ? [{ number: 1, passage: anchor.passage }] : [] }, error: null });
+    return true;
+  };
   const meetingStatus = (includeContent = true) => {
-    const retained = options.section === "recording" && !recordingRecovered;
+    const retained = options.section === "recording" && !recordingRecovered && !recordingStopped;
     const storageError = retained && recordingStorageError;
     const paused = retained && Boolean(options.transcription_paused);
     const persistenceError = storageError ? "Je opname kon niet volledig worden bewaard. Probeer opnieuw te bewaren." : null;
     return {
       recording: retained && !storageError, phase: storageError ? "error" : retained ? "recording" : "idle", busy: retained && !storageError,
-      error: persistenceError, session_id: retained ? "qa-recording" : null, id: retained ? meetingId : null,
+      error: persistenceError, session_id: retained ? liveSession : null, meeting_uid: retained ? meetingUid : null, id: retained ? activeMeetingId : null,
       title: meeting.title, elapsed_secs: 754, system_audio: true, heard_system_audio: true,
       echo_cancellation_active: retained && !storageError, audio_warning: null, persistence_error: persistenceError,
       transcription_warning: paused ? "Transcriptie is tijdelijk gepauzeerd. Je audio en herstelbestanden blijven lokaal bewaard." : null,
       terminal_error: storageError ? "De opname is gestopt omdat bewaren niet lukt." : null, can_retry_persistence: storageError,
-      pending: storageError ? 1 : paused ? 3 : 0, transcript_revision: retained ? 1 : 0,
+      pending: storageError ? 1 : paused ? 3 : 0, transcript_revision: retained ? transcriptRevision : 0,
       ...(includeContent ? { notes, transcript: retained ? clone(transcript) : [] } : {}),
       ...(retained ? { recognition: { provider_kind: "local", provider_name: "Lokaal", model: settings.meeting_stt.model, language: "nl" } } : {}),
     };
@@ -415,7 +435,49 @@
       case "meeting_status": return meetingStatus();
       case "meeting_runtime_status": return meetingStatus(false);
       case "set_meeting_title": meeting.title = String(args.title ?? ""); return null;
-      case "set_meeting_notes": case "save_meeting_notes": notes = String(args.text ?? ""); return null;
+      case "set_meeting_notes": case "save_meeting_notes": {
+        if (saveFailure) throw new Error("Synthetic notes storage unavailable.");
+        if (args.id && args.id !== activeMeetingId && retainedMeetings.has(args.id)) { retainedMeetings.get(args.id).notes = String(args.text ?? ""); return null; }
+        notes = String(args.text ?? ""); return null;
+      }
+      case "begin_live_question": {
+        if (args.meetingUid !== meetingUid || args.sessionId !== liveSession || args.expectedNotesText !== notes) throw new Error("The saved notes or meeting session changed. Try the question again.");
+        if ([...liveRequests.values()].some(request => request.snapshot.meeting_uid === args.meetingUid && request.snapshot.session_id === args.sessionId && !request.cancelled && !request.completed)) throw new Error("A question is already running.");
+        const frozen = clone(transcript);
+        const anchors = [];
+        const occurrences = new Map();
+        const passage = (kind, start_ms, text) => ({ meeting_id: meetingUid, title: meeting.title, start_iso: meeting.start_iso, kind, start_ms, text, snippet: text.slice(0, 180) });
+        for (const segment of frozen) {
+          const base = `${segment.speaker}:${segment.start_ms}`;
+          const count = occurrences.get(base) || 0; occurrences.set(base, count + 1);
+          if (segment.failed || !segment.text.trim()) continue;
+          anchors.push({ passage: passage("transcript", segment.start_ms, `${segment.speaker === "me" ? "Ik" : "Anderen"}: ${segment.text}`),
+            segment_keys: [`${base}:${count}`], segment_fingerprints: [await fingerprint(JSON.stringify([segment.start_ms, segment.speaker, segment.text.trim().replace(/\p{White_Space}+/gu, " "), segment.failed, segment.speaker === "others" ? segment.voice ?? null : null]))],
+            notes_start: null, notes_end: null, source_text: segment.text });
+        }
+        let notesOffset = 0;
+        for (const line of notes.split("\n")) {
+          if (line.trim()) anchors.push({ passage: passage("notes", null, line), segment_keys: [], segment_fingerprints: [], notes_start: notesOffset, notes_end: notesOffset + line.length, source_text: line });
+          notesOffset += line.length + 1;
+        }
+        const snapshot = { request_id: args.requestId, meeting_uid: meetingUid, session_id: liveSession,
+          transcript_revision: transcriptRevision, notes_revision: await fingerprint(notes), included_through_ms: Math.max(0, ...frozen.filter(segment => !segment.failed && segment.text.trim()).map(segment => segment.end_ms)),
+          pending_transcription: meetingStatus().pending, anchors };
+        liveRequests.set(args.requestId, { snapshot, cancelled: false, completed: false });
+        if (!options.live_question_manual) setTimeout(() => completeLiveQuestion(args.requestId), options.live_question_delay_ms ?? 80);
+        return clone(snapshot);
+      }
+      case "cancel_live_question": {
+        const request = liveRequests.get(args.requestId);
+        if (request && request.snapshot.meeting_uid === args.meetingUid && request.snapshot.session_id === args.sessionId) request.cancelled = true;
+        return null;
+      }
+      case "stop_meeting": {
+        const status = meetingStatus(); recordingStopped = true;
+        const event = { id: activeMeetingId, meeting_uid: meetingUid, session_id: status.session_id || liveSession, error: null, flush_warning: saveFailure ? "Synthetic notes storage unavailable." : null };
+        queueMicrotask(() => emit("meeting-finished", event));
+        return null;
+      }
       case "retry_meeting_persistence": {
         const status = meetingStatus();
         if (!status.can_retry_persistence || args.sessionId !== status.session_id) throw new Error("Deze QA-opnamesessie is niet meer actief.");
@@ -424,7 +486,7 @@
         emit("meeting-updated", null); return null;
       }
       case "meetings": return options.empty ? [] : clone(library);
-      case "meeting_detail": return { info: clone(meetingInfo(args.id)), notes, summary, transcript: clone(transcript), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${meetingId}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", available: !!options.saved_audio }, { speaker: "others", available: !!options.saved_audio }],
+      case "meeting_detail": return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? notes, summary, transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", available: !!options.saved_audio }, { speaker: "others", available: !!options.saved_audio }],
         summary_outdated: summaryOutdated, retranscription_status: clone(retranscriptionStatus),
         retranscription_plan: { recognition: frozenMeetingRecognition(), available: !!options.saved_audio && !retranscriptionStatus?.running && frozenMeetingRecognition().provider_kind === "local", reason: options.saved_audio ? null : "Er is geen bewaarde audio om opnieuw te transcriberen." } };
       case "search_library": return { meetings: options.empty ? [] : clone(library), passages: [] };
@@ -525,7 +587,7 @@
       case "show_window": case "show_workspace": case "copy_text": case "play_meeting_audio": case "stop_audio":
       case "answer_record_prompt": case "toggle_dictation": case "install_update": case "share_meeting": case "open_log": case "open_path":
       case "set_meeting_attendees": case "rename_speaker":
-      case "delete_meeting": case "delete_template": case "test_apple_intelligence": case "stop_meeting": return null;
+      case "delete_meeting": case "delete_template": case "test_apple_intelligence": return null;
       default: unknown.push(command); throw new Error(`Onbekend fixturecommando: ${command}`);
     }
   }
@@ -542,5 +604,17 @@
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
-  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace };
+  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace,
+    workspace: { append: segment => { transcript.push(clone(segment)); transcriptRevision++; },
+      requests: () => [...liveRequests.values()].map(request => clone(request.snapshot)), complete: completeLiveQuestion,
+      forceComplete: requestId => completeLiveQuestion(requestId, true),
+      replaceTranscript: segments => { transcript.splice(0, transcript.length, ...clone(segments)); transcriptRevision++; },
+      restart: (next = { id: "qa-next-meeting", uid: "qa-next-uid", session: "qa-next-session", title: "Next synthetic meeting", notes: "New meeting notes", transcript: [] }) => {
+        retainedMeetings.set(activeMeetingId, { info: { ...meeting, id: activeMeetingId }, notes, transcript: recordingStopped ? storedTranscript(transcript) : clone(transcript) });
+        activeMeetingId = next.id; meetingUid = next.uid; liveSession = next.session; meeting.title = next.title;
+        notes = next.notes ?? ""; transcript.splice(0, transcript.length, ...clone(next.transcript ?? []));
+        transcriptRevision = 1; recordingStopped = false; recordingRecovered = false;
+        return { id: activeMeetingId, meeting_uid: meetingUid, session_id: liveSession, notes };
+      },
+      failSaves: value => { saveFailure = value; }, notes: () => notes, recording: () => meetingStatus().recording } };
 })();

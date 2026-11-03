@@ -2,7 +2,7 @@ import "./styles.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, fixtureClient, listen, listenToWindow, type AppInfo, type MeetingFinished, type MeetingRuntimeStatus, type Settings, type UpdateInfo } from "./api";
 import { LatestRequest, SerialQueue, afterPaint, fillWhenReady, persistAll } from "./async";
-import { controlButton, errorText, h, section, select } from "./dom";
+import { controlButton, errorText, formatClock, h, section, select } from "./dom";
 import { dictationView, dictionaryView, stylesView } from "./views/dictation";
 import { historyView } from "./views/history";
 import { displayedMeetingSession, finishMeetingDrafts, flushMeetingDrafts, meetingView, meetingsView } from "./views/meetings";
@@ -46,6 +46,8 @@ export interface Context {
   param?: string;
   jumpMs?: number;
   sourceTarget?: MeetingSourceTarget;
+  review?: boolean;
+  meetingRenamed?: (previousId: string, id: string) => void;
 }
 
 type View = (ctx: Context) => HTMLElement | Promise<HTMLElement>;
@@ -113,6 +115,7 @@ let sidebar = readSidebarPresentation();
 let sidebarToggle: HTMLButtonElement | null = null;
 let toolbarCaption: HTMLElement | null = null;
 let toolbarRecording: HTMLButtonElement | null = null;
+let toolbarStop: HTMLButtonElement | null = null;
 let publishedCommands = "";
 
 function readSidebarPresentation(): SidebarPresentation {
@@ -192,7 +195,7 @@ function desktopCommands(): DesktopCommandState {
 function publishDesktopCommands() {
   if (!info || mode !== "workspace") return;
   const state = desktopCommands();
-  const buttons = [sidebarToggle, toolbarRecording].filter((button): button is HTMLButtonElement => !!button);
+  const buttons = [sidebarToggle, toolbarRecording, toolbarStop].filter((button): button is HTMLButtonElement => !!button && !button.hidden);
   const tabStop = buttons.find((button) => !button.disabled && button.tabIndex === 0) ?? buttons.find((button) => !button.disabled);
   for (const button of buttons) button.tabIndex = button === tabStop ? 0 : -1;
   const key = JSON.stringify(state);
@@ -319,6 +322,19 @@ async function flushAll() {
   ]);
 }
 
+async function flushForNavigation() {
+  // Session-owned meeting drafts remain mounted in memory while another section is shown.
+  // Their durable barrier still runs for native hide, quit, update and capture finalization.
+  const retained = content.querySelector(".live-workspace") !== null;
+  await persistAll([
+    async () => { await settingsQueue.drain(); await settingsQueue.run(flushSettings); await settingsQueue.drain(); },
+    () => flushMeetingDrafts(false),
+    ...(retained ? [] : mounted?.flush ?? []),
+    ...(taskSetup ? [taskSetup.flush] : []),
+  ]);
+  if (retained) void flushMeetingDrafts().catch(() => undefined);
+}
+
 function editing(): boolean {
   return !!document.querySelector("dialog[open]") || !!document.activeElement?.matches("input,textarea,select,[contenteditable=true]");
 }
@@ -341,6 +357,7 @@ function navigate(tab: string, param?: string, jumpMs?: number, sourceTarget?: M
   if (tab === "meetings" || tab === "library" || tab === "chat") {
     void go(workspaceRoute("meetings", tab === "chat" ? "chat" : null, param ?? null, jumpMs ?? null, sourceTarget)); return;
   }
+  if (tab === "review") { void go(workspaceRoute("meetings", "review", param ?? null)); return; }
   if (tab === "meeting" || tab === "live") { void go(workspaceRoute("recording", null, param ?? null)); return; }
   if (tab === "history") { void go(historyRoute(param)); return; }
   if (tab === "settings") { void go(workspaceRoute("settings", null)); return; }
@@ -363,10 +380,10 @@ async function go(route: WorkspaceRoute) {
   ++generation;
   showPendingNavigation(route);
   try {
-    content.inert = true;
+    content.inert = content.querySelector(".live-workspace") === null;
     await afterPaint();
     if (mine !== navigationGeneration) return;
-    await flushAll();
+    await flushForNavigation();
     if (mine !== navigationGeneration) return;
     await persistAll(mounted?.leave ?? []);
     if (mine !== navigationGeneration) return;
@@ -423,6 +440,12 @@ function contextFor(target: Mounted, reportError: (error: unknown) => void = rep
     param: route.section === "dictation" && route.tab === "pad" ? "__pad__" : route.section === "settings" && route.tab === "local" ? "__local__" : route.section === "history" ? historyEntryId(route.tab) ?? undefined : route.tab === "chat" ? "__chat__" : route.meeting_id ?? undefined,
     jumpMs: route.jump_ms ?? undefined,
     sourceTarget: route.source_target ?? undefined,
+    review: route.section === "meetings" && route.tab === "review",
+    meetingRenamed: (previousId, id) => {
+      navigation.meetingRenamed(previousId, id);
+      if (pendingRoute?.meeting_id === previousId) pendingRoute.meeting_id = id;
+      library?.highlight();
+    },
   };
 }
 
@@ -432,17 +455,21 @@ async function openSetup(task: SetupTask, origin: Mounted) {
   setupOpening = true;
   publishDesktopCommands();
   try {
-    await flushAll();
+    await flushForNavigation();
     if (mounted !== origin) return;
     const scope: Mounted = { key: `setup:${task}`, scrollKey: origin.scrollKey, cleanup: [], flush: [], leave: [], info: [], focus: [], visibility: [] };
     // The setup owns error presentation; a repaired task must not leave an error behind its dialog.
-    taskSetup = openTaskSetupDialog(contextFor(scope, () => undefined), task, flushAll, () => {
+    taskSetup = openTaskSetupDialog(contextFor(scope, () => undefined), task, flushForNavigation, () => {
       taskSetup = null;
       publishDesktopCommands();
       const refreshNeeded = deferredRender || needsRefresh;
       deferredRender = false; needsRefresh = false;
       if (refreshNeeded && (!mounted?.info.length || mounted.key !== routeKey(navigation.current))) void render().catch(report);
     });
+    if (currentMeetingStatus?.recording) {
+      document.querySelector(".task-setup-footer")?.prepend(captureStopControl("btn"));
+      updateCaptureControls();
+    }
   } finally { setupOpening = false; publishDesktopCommands(); }
 }
 
@@ -554,7 +581,7 @@ async function render(allowed: () => boolean = () => true, request?: number) {
     mounted?.cleanup.forEach((cleanup) => cleanup());
     mounted = target;
     target.visibility.forEach((listener) => listener(presentationVisible()));
-    content.replaceChildren(node);
+    if (content.childElementCount !== 1 || content.firstElementChild !== node) content.replaceChildren(node);
     refreshLocalization(node);
     content.scrollTop = contentPositions.get(target.scrollKey) ?? 0;
     if (paneScroll !== undefined) { const pane = content.querySelector<HTMLElement>(".settings-pane"); if (pane) pane.scrollTop = paneScroll; }
@@ -586,12 +613,41 @@ function updateNavigation() {
 }
 
 function updateSettingsRecording() {
+  updateCaptureControls();
   const button = content.querySelector<HTMLButtonElement>(".settings-recording");
   if (!button || !currentMeetingStatus) return;
   const entry = recordingEntry(currentMeetingStatus);
   button.hidden = entry.kind === "new";
   button.replaceChildren(entry.kind === "recovery" ? icon("warning") : h("span", { class: "status-dot" }),
     h("span", {}, l(entry.kind === "recovery" ? "meetings.recording_needs_attention" : "meetings.return_recording")));
+}
+
+function captureStopControl(className: string): HTMLButtonElement {
+  return controlButton({ class: className, "data-capture-stop": true, hidden: true, onclick: async (event: Event) => {
+    const session = currentMeetingStatus?.session_id;
+    if (!currentMeetingStatus?.recording || !session) return;
+    const button = event.currentTarget as HTMLButtonElement;
+    button.dataset.stoppingSession = session;
+    button.disabled = true;
+    try { await api.stopMeeting(session); }
+    catch (error) {
+      report(error);
+      if (button.dataset.stoppingSession === session) { delete button.dataset.stoppingSession; button.disabled = false; }
+    }
+  } }, l("meetings.stop_audio"));
+}
+
+function updateCaptureControls() {
+  const status = currentMeetingStatus;
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-capture-stop]")) {
+    const workspace = content.querySelector<HTMLElement>(".live-workspace");
+    const hasLocalStop = workspace?.dataset.sessionId === status?.session_id && workspace?.dataset.recording === "true";
+    button.hidden = !status?.recording || button === toolbarStop && hasLocalStop;
+    if (!status || button.hidden) continue;
+    button.disabled = button.dataset.stoppingSession === status.session_id;
+    button.title = status.title ?? "";
+    button.replaceChildren(h("span", {}, l("meetings.stop_audio")), h("span", { class: "help" }, formatClock(status.elapsed_secs)));
+  }
 }
 
 /** On macOS the transparent system title bar overlays the webview; this strip keeps it draggable. */
@@ -607,13 +663,14 @@ function workspaceShell() {
   toolbarRecording = library.element.querySelector<HTMLButtonElement>(".library-record")!;
   const actions = toolbarRecording.parentElement!;
   toolbarRecording.classList.add("btn", "toolbar-recording");
+  toolbarStop = captureStopControl("btn toolbar-capture-stop");
   sidebarToggle = controlButton({ class: "toolbar-sidebar toolbar-icon", "data-command": "toggle_sidebar", onclick: () => { void runDesktopCommand("toggle_sidebar"); } }, icon("sidebar"));
   toolbarCaption = h("span", { class: "toolbar-section", "data-tauri-drag-region": true, "aria-hidden": "true" });
   const toolbar = h("div", { class: "workspace-toolbar", role: "toolbar", "aria-label": l("chrome.toolbar") },
     h("div", { class: "toolbar-leading", "data-tauri-drag-region": true }, sidebarToggle), toolbarCaption,
     h("div", { class: "toolbar-drag grow", "data-tauri-drag-region": true, "aria-hidden": "true" }),
-    h("div", { class: "toolbar-actions" }, toolbarRecording));
-  const toolbarButtons = () => [...toolbar.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    h("div", { class: "toolbar-actions" }, toolbarStop, toolbarRecording));
+  const toolbarButtons = () => [...toolbar.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")].filter(button => !button.hidden);
   toolbarRecording.tabIndex = -1;
   toolbar.addEventListener("focusin", (event) => {
     const button = (event.target as HTMLElement).closest("button");
@@ -677,7 +734,8 @@ function meetingFinished(event: MeetingFinished) {
     const showing = navigation.current.section === "recording" || (navigation.current.section === "meetings" && navigation.current.meeting_id === event.id);
     if (navigation.current.section === "recording" && accepted && event.id) navigation.set(workspaceRoute("meetings", null, event.id));
     if (accepted && showing && (barrier.kind === null || barrier.kind === "recording")) {
-      const warning = event.error ?? event.flush_warning; if (warning) report(warning);
+      const warning = event.error ?? event.flush_warning;
+      if (warning && !content.querySelector(".live-workspace")) report(warning);
       void render();
     }
     void refreshSidebar().catch(report);

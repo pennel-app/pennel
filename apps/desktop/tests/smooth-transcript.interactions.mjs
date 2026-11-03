@@ -72,12 +72,12 @@ export async function checkLiveTranscriptStability() {
     return snapshot;
   };
   try {
-    const disclosure = document.querySelector(".live-transcript-disclosure");
-    disclosure.open = true;
+    document.querySelector('[data-live-tab="transcript"]').click();
     await settle();
     const output = document.querySelector(".live-transcript");
-    const content = output.querySelector(".transcript");
-    const rows = [...content.children];
+    const content = output;
+    const currentRows = () => [...content.querySelectorAll(".transcript-line")];
+    const rows = currentRows();
     const selectedText = rows[0].querySelector(".transcript-copy").firstChild;
     const range = document.createRange();
     range.setStart(selectedText, 0);
@@ -90,16 +90,21 @@ export async function checkLiveTranscriptStability() {
 
     segments = [...segments, ...Array.from({ length: 40 }, (_, index) => ({ ...segments[0], start_ms: 100_000 + index * 2000, end_ms: 101_000 + index * 2000, text: `Owned synthetic segment ${index}` }))];
     revision++;
-    await until(() => content.children.length === segments.length, "New transcript segments did not arrive.");
+    await until(() => currentRows().length === segments.length, "New transcript segments did not arrive.");
     assert(reads === 1, "A single revision caused duplicate full transcript requests.");
-    assert(rows.every((row, index) => content.children[index] === row), "Appending transcript text replaced existing rows.");
+    assert(rows.every((row, index) => currentRows()[index] === row), "Appending transcript text replaced existing rows.");
     assert(getSelection().toString() === selected && getSelection().anchorNode === selectedText, "Appending transcript text lost the existing selection.");
-    assert(output.scrollTop + output.clientHeight >= output.scrollHeight - 1, "Following the live transcript stopped at its old end.");
+    assert(output.scrollTop === 0 && !document.querySelector(".live-follow").hidden, "Selecting transcript text did not pause automatic following.");
+    getSelection().removeAllRanges();
+    document.querySelector(".live-follow").click();
+    assert(output.scrollTop + output.clientHeight >= output.scrollHeight - 1, "Follow live did not resume at the transcript end.");
 
     output.scrollTop = 0;
+    output.dispatchEvent(new Event("scroll"));
+    getSelection().addRange(range);
     segments = [...segments, { ...segments[0], start_ms: 200_000, end_ms: 201_000, text: "A final owned synthetic segment" }];
     revision++;
-    await until(() => content.children.length === segments.length, "A later transcript segment did not arrive.");
+    await until(() => currentRows().length === segments.length, "A later transcript segment did not arrive.");
     assert(output.scrollTop === 0, "A new transcript segment pulled the user away from their reading position.");
     assert(getSelection().toString() === selected, "A later transcript update lost the selected text.");
 

@@ -27,7 +27,8 @@ export class RecordingRefresh {
   dispose() { this.disposed = true; ++this.generation; }
 
   async refresh(runtime: MeetingRuntimeStatus, load: () => Promise<MeetingStatus>): Promise<MeetingStatus | null> {
-    if (this.disposed || runtime.session_id !== this.value.session_id || runtime.id !== this.value.id) return null;
+    if (this.disposed || runtime.session_id !== this.value.session_id
+      || (runtime.meeting_uid && this.value.meeting_uid ? runtime.meeting_uid !== this.value.meeting_uid : runtime.id !== this.value.id)) return null;
     const generation = ++this.generation;
     const currentRevision = this.value.transcript_revision;
     if (currentRevision !== undefined && runtime.transcript_revision <= currentRevision) {
@@ -40,7 +41,8 @@ export class RecordingRefresh {
       void loading.finally(() => { if (this.loading === loading) this.loading = null; }).catch(() => undefined);
     }
     const snapshot = await this.loading;
-    if (this.disposed || generation !== this.generation || snapshot.session_id !== runtime.session_id || snapshot.id !== runtime.id) return null;
+    if (this.disposed || generation !== this.generation || snapshot.session_id !== runtime.session_id
+      || (snapshot.meeting_uid && runtime.meeting_uid ? snapshot.meeting_uid !== runtime.meeting_uid : snapshot.id !== runtime.id)) return null;
     this.value = { ...snapshot, ...runtime, transcript: snapshot.transcript, notes: snapshot.notes,
       transcript_revision: snapshot.transcript_revision ?? runtime.transcript_revision };
     return this.value;

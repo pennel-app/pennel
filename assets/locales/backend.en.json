@@ -683,5 +683,18 @@
   "backend.managed_inference_availability_unknown": "Pennel Cloud inference availability could not be confirmed. Check the connection and try again.",
   "backend.managed_inference_configured": "Configured. Test with the synthetic sample to verify this connection.",
   "backend.managed_inference_unavailable": "This inference capability is not available from the selected service yet.",
-  "backend.managed_inference_check_failed": "The inference availability could not be checked."
+  "backend.managed_inference_check_failed": "The inference availability could not be checked.",
+  "backend.live_invalid_session": "This question has no valid meeting session.",
+  "backend.live_expired_request": "This question request is no longer available. Try again.",
+  "backend.live_question_running": "A question is already running for this meeting. Cancel it or wait for its answer.",
+  "backend.live_notes_changed": "The saved notes changed. Your question was not sent; save your notes and try again.",
+  "backend.live_other_session": "This question belongs to another meeting session.",
+  "backend.live_source_missing": "The meeting source is no longer available.",
+  "backend.live_source_unavailable": "The meeting source is unavailable.",
+  "backend.live_source_changed": "The meeting source changed. Your question was not sent.",
+  "backend.live_question_start_failed": "The question could not start. Try again.",
+  "backend.live_question_cancelled": "Question cancelled.",
+  "backend.audio_processing_overloaded": "Audio processing could not keep up with recording.",
+  "backend.audio_processing_stopped": "Audio processing stopped unexpectedly.",
+  "backend.live_source_verify_failed": "The question source could not be verified; it was not sent."
 }

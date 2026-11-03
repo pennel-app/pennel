@@ -348,6 +348,7 @@ export interface Segment {
 }
 
 export interface MeetingStatus {
+  meeting_uid?: string | null;
   transcript_revision?: number;
   recognition?: { provider_kind: ProviderKind | null; provider_name: string; model: string; language: string | null };
   recording: boolean;
@@ -375,10 +376,46 @@ export interface MeetingStatus {
 export type MeetingRuntimeStatus = Omit<MeetingStatus, "notes" | "transcript" | "transcript_revision"> & { transcript_revision: number };
 
 export interface MeetingFinished {
+  meeting_uid?: string | null;
   id: string | null;
   session_id: string;
   error: string | null;
   flush_warning: string | null;
+}
+
+export interface LiveSourceAnchor {
+  passage: Passage;
+  segment_keys: string[];
+  segment_fingerprints: string[];
+  notes_start: number | null;
+  notes_end: number | null;
+  source_text: string;
+}
+
+export interface LiveQuestionSnapshot {
+  request_id: string;
+  meeting_uid: string;
+  session_id: string;
+  transcript_revision: number;
+  notes_revision: string;
+  included_through_ms: number;
+  pending_transcription: number;
+  anchors: LiveSourceAnchor[];
+}
+
+export interface LiveQuestionResult {
+  snapshot: LiveQuestionSnapshot;
+  answer: MeetingAnswer | null;
+  error: string | null;
+}
+
+export interface LiveQuestionRequest {
+  requestId: string;
+  meetingUid: string;
+  sessionId: string;
+  expectedNotesText: string;
+  question: string;
+  history: ChatTurn[];
 }
 
 export interface MeetingDetail {
@@ -690,7 +727,7 @@ export const api = {
   meetingStatus: () => invoke<MeetingStatus>("meeting_status"),
   meetingRuntimeStatus: () => invoke<MeetingRuntimeStatus>("meeting_runtime_status"),
   startMeeting: (title: string) => invoke<string>("start_meeting", { title }),
-  stopMeeting: () => invoke<void>("stop_meeting"),
+  stopMeeting: (sessionId?: string) => invoke<void>("stop_meeting", sessionId ? { sessionId } : undefined),
   retryMeetingPersistence: (sessionId: string) => invoke<void>("retry_meeting_persistence", { sessionId }),
   setMeetingNotes: (text: string, sessionId: string) => invoke<void>("set_meeting_notes", { text, sessionId }),
   setMeetingTitle: (title: string, sessionId: string) => invoke<void>("set_meeting_title", { title, sessionId }),
@@ -698,6 +735,9 @@ export const api = {
   searchLibrary: (query: string) => invoke<LibrarySearch>("search_library", { query }),
   askMeetings: (question: string, meetingId: string | null, history: ChatTurn[]) =>
     invoke<MeetingAnswer>("ask_meetings", { question, meetingId, history }),
+  beginLiveQuestion: (request: LiveQuestionRequest) => invoke<LiveQuestionSnapshot>("begin_live_question", { ...request }),
+  cancelLiveQuestion: (requestId: string, meetingUid: string, sessionId: string) =>
+    invoke<boolean>("cancel_live_question", { requestId, meetingUid, sessionId }),
   meetingDetail: (id: string) => invoke<MeetingDetail>("meeting_detail", { id }),
   meetingTemplates: () => invoke<MeetingTemplate[]>("meeting_templates"),
   templateSource: (id: string) => invoke<string | null>("template_source", { id }),
