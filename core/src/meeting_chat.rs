@@ -288,7 +288,25 @@ mod tests {
             start_ms,
             text: text.into(),
             snippet: String::new(),
+            meeting_uid: None,
+            utterance_ids: Vec::new(),
+            utterance_fingerprints: Vec::new(),
         }
+    }
+
+    #[test]
+    fn cited_answers_retain_durable_utterance_bindings() {
+        let mut source = passage(
+            "M",
+            PassageKind::Transcript,
+            Some(1_250),
+            "Unknown speaker: Ja.",
+        );
+        source.meeting_uid = Some("stable-meeting".into());
+        source.utterance_ids = vec!["stable-utterance".into()];
+        source.utterance_fingerprints = vec!["immutable-source".into()];
+        let citations = cited("The source agrees [1].", &[source.clone()]);
+        assert_eq!(citations[0].passage, source);
     }
 
     #[test]

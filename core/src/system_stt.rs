@@ -15,6 +15,18 @@ pub trait SystemTranscriber: Send + Sync {
     ) -> Result<String, PennelError>;
 }
 
+/// Optional richer host capability; existing text-only hosts remain source-compatible.
+#[uniffi::export(with_foreign)]
+pub trait TimedSystemTranscriber: Send + Sync {
+    fn transcribe_timed(
+        &self,
+        samples: Vec<f32>,
+        sample_rate: u32,
+        language: Option<String>,
+        vocabulary: Vec<String>,
+    ) -> Result<crate::SpeechTranscript, PennelError>;
+}
+
 pub(crate) fn bounded_vocabulary(terms: &[String]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     terms

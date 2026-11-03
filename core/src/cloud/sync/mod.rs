@@ -668,6 +668,18 @@ impl Pass<'_> {
         let (meeting_files, others): (Vec<_>, Vec<_>) = tombstones.into_iter().partition(|(e, _)| {
             matches!(parse_key(&e.key), Some(Key::Meeting { name, .. }) if name == MEETING_FILE)
         });
+        let mut whole_without_local_work = HashSet::new();
+        for (entry, _) in &meeting_files {
+            if let Some(Key::Meeting { uid, .. }) = parse_key(&entry.key)
+                && let Some((dir, folder, _)) = self.location(&entry.key)
+                && !folder
+                    .as_deref()
+                    .is_some_and(|folder| self.is_recording(folder))
+                && !self.meeting_has_local_work(&uid, &dir)?
+            {
+                whole_without_local_work.insert(uid);
+            }
+        }
         for (entry, version) in others.into_iter().chain(meeting_files) {
             let Some((dir, folder, name)) = self.location(&entry.key) else {
                 self.state.remove(&entry.key)?;
@@ -681,6 +693,19 @@ impl Pass<'_> {
                 Some(Key::Meeting { uid, .. }) => Some(uid),
                 _ => None,
             };
+            // A local conflict manifest can still need a part retired by the other device.
+            if uid
+                .as_ref()
+                .is_some_and(|uid| !whole_without_local_work.contains(uid))
+                && crate::meeting_utterances::part_is_referenced(&dir, &name)
+            {
+                self.state.put(&Entry {
+                    server_version: version,
+                    synced_hash: String::new(),
+                    ..entry
+                })?;
+                continue;
+            }
             // Edits made here to other files of a deleted meeting keep the meeting alive.
             if name == MEETING_FILE
                 && let Some(uid) = uid.as_deref()
@@ -1204,6 +1229,208 @@ mod tests {
 
     fn synced(report: &SyncReport) {
         assert_eq!(report.status, SyncStatus::Synced, "{report:?}");
+    }
+
+    #[test]
+    fn canonical_transcript_parts_upload_within_sealed_limit_and_reopen_on_another_device() {
+        use crate::meeting_utterances::{METADATA_PART_BYTES, MeetingUtterance, TimedTextSpan};
+        let (api, a, b) = setup();
+        let id = a.store().create("Portable rapid turns", start()).unwrap();
+        let rows: Vec<_> = (0..3_600)
+            .map(|turn| {
+                let mut row = MeetingUtterance::new(
+                    crate::Segment {
+                        start_ms: turn * 500,
+                        end_ms: turn * 500 + 400,
+                        speaker: crate::Speaker::Others,
+                        text: "Ja. Yes.".into(),
+                        failed: false,
+                        voice: Some(2),
+                    },
+                    Some("microphone".into()),
+                );
+                row.metadata.spans = vec![TimedTextSpan(0, 3, turn * 500, turn * 500 + 200)];
+                row
+            })
+            .collect();
+        let original = a
+            .store()
+            .write_transcript_snapshot(&id, Some(0), &rows)
+            .unwrap();
+        synced(&a.sync(&api));
+        let parts: Vec<_> = a
+            .names_in(&id)
+            .into_iter()
+            .filter(|name| name.starts_with("transcript.meta.") && name != "transcript.meta.json")
+            .collect();
+        assert!(parts.len() > 1);
+        let vault_key = VaultKey::from_b64(&a.key).unwrap();
+        for name in &parts {
+            assert!(
+                std::fs::metadata(a.path(&format!("{id}/{name}")))
+                    .unwrap()
+                    .len()
+                    <= METADATA_PART_BYTES as u64
+            );
+            let object_id = crypto::object_id(
+                &vault_key,
+                &format!("meeting/{}/{name}", original.meeting_uid),
+            );
+            let (_, sealed) = api
+                .get(&object_id)
+                .unwrap()
+                .expect("metadata part uploaded");
+            assert!(sealed.len() <= MAX_OBJECT_BYTES);
+        }
+        synced(&b.sync(&api));
+        let reopened = b.store().read_transcript_snapshot(&id).unwrap();
+        assert_eq!(reopened, original);
+        assert_eq!(reopened.utterances, rows);
+        assert_eq!(
+            b.names_in(&id)
+                .into_iter()
+                .filter(|name| parts.contains(name))
+                .count(),
+            parts.len()
+        );
+    }
+
+    #[test]
+    fn hour_of_transcript_revisions_bounds_live_sync_parts_without_triggering_meeting_delete_brake()
+    {
+        use crate::meeting_utterances::MeetingUtterance;
+        let (api, a, b) = setup();
+        let id = a.store().create("Hour of revisions", start()).unwrap();
+        let mut rows = Vec::new();
+        for chunk in 0..240 {
+            rows.push(MeetingUtterance::new(
+                crate::Segment {
+                    start_ms: chunk * 15_000,
+                    end_ms: chunk * 15_000 + 4_000,
+                    speaker: crate::Speaker::Others,
+                    text: "A finalized Dutch and English acknowledgement.".into(),
+                    failed: false,
+                    voice: Some(2),
+                },
+                Some("microphone".into()),
+            ));
+            let snapshot = a
+                .store()
+                .write_transcript_snapshot(&id, None, &rows)
+                .unwrap();
+            if chunk % 10 == 9 {
+                synced(&a.sync(&api));
+                synced(&b.sync(&api));
+                let parts = a
+                    .names_in(&id)
+                    .into_iter()
+                    .filter(|name| {
+                        name.starts_with("transcript.meta.") && name != "transcript.meta.json"
+                    })
+                    .count();
+                assert!(api.live_objects() <= parts + 4);
+                assert_eq!(b.store().read_transcript_snapshot(&id).unwrap(), snapshot);
+            }
+        }
+        assert_eq!(
+            b.store().read_transcript_snapshot(&id).unwrap().utterances,
+            rows
+        );
+    }
+
+    #[test]
+    fn metadata_part_retirement_keeps_parts_needed_by_a_synced_conflict_manifest() {
+        use crate::meeting_utterances::MeetingUtterance;
+        let (api, a, b) = setup();
+        let id = a.store().create("Metadata conflict", start()).unwrap();
+        let row = MeetingUtterance::new(
+            crate::Segment {
+                start_ms: 0,
+                end_ms: 400,
+                speaker: crate::Speaker::Others,
+                text: "Original source.".into(),
+                failed: false,
+                voice: Some(1),
+            },
+            Some("microphone".into()),
+        );
+        a.store()
+            .write_transcript_snapshot(&id, Some(0), std::slice::from_ref(&row))
+            .unwrap();
+        synced(&a.sync(&api));
+        synced(&b.sync(&api));
+        let manifest = b.read(&format!("{id}/transcript.meta.json")).unwrap();
+        let old_part = b
+            .names_in(&id)
+            .into_iter()
+            .find(|name| name.starts_with("transcript.meta.") && name != "transcript.meta.json")
+            .unwrap();
+        b.write(
+            &format!("{id}/transcript.meta (conflict Mac 2026-10-25 1400).json"),
+            &manifest,
+        );
+        let mut changed = row;
+        changed.segment.text = "New source revision.".into();
+        a.store()
+            .write_transcript_snapshot(&id, Some(1), &[changed])
+            .unwrap();
+        assert!(!a.path(&format!("{id}/{old_part}")).exists());
+        synced(&a.sync(&api));
+        synced(&b.sync(&api));
+        assert!(
+            b.path(&format!("{id}/{old_part}")).exists(),
+            "Remote retirement removed conflict recovery evidence"
+        );
+        let restored_manifest: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+        assert!(
+            restored_manifest["parts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|part| {
+                    b.path(&format!(
+                        "{id}/transcript.meta.{}.json",
+                        part["sha256"].as_str().unwrap()
+                    ))
+                    .exists()
+                })
+        );
+    }
+
+    #[test]
+    fn deleting_a_whole_canonical_meeting_does_not_resurrect_unmodified_metadata_parts() {
+        use crate::meeting_utterances::MeetingUtterance;
+        let (api, a, b) = setup();
+        let id = a
+            .store()
+            .create("Explicit metadata deletion", start())
+            .unwrap();
+        let row = MeetingUtterance::new(
+            crate::Segment {
+                start_ms: 0,
+                end_ms: 400,
+                speaker: crate::Speaker::Others,
+                text: "Owned source.".into(),
+                failed: false,
+                voice: Some(1),
+            },
+            Some("microphone".into()),
+        );
+        a.store()
+            .write_transcript_snapshot(&id, Some(0), &[row])
+            .unwrap();
+        synced(&a.sync(&api));
+        synced(&b.sync(&api));
+        a.store().delete(&id).unwrap();
+        synced(&a.sync(&api));
+        synced(&b.sync(&api));
+        assert!(b.store().list().is_empty());
+        assert_eq!(api.live_objects(), 0);
+        assert!(
+            b.trash_files()
+                .iter()
+                .any(|name| name == "transcript.meta.json")
+        );
     }
 
     /// A meeting with notes, transcript and audio, synced from `a` to `b`.

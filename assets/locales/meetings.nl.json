@@ -196,5 +196,19 @@
   "meetings.captions_busy": "Live ondertiteling is gepauzeerd terwijl spraak wordt verwerkt.",
   "meetings.captions_failed": "Live ondertiteling is niet beschikbaar. Definitieve transcriptie gaat door.",
   "meetings.captions_unsupported": "Deze provider geeft verwerkte spraakblokken van 15–30 seconden terug.",
-  "meetings.captions_stopped": "Live ondertiteling is gestopt."
+  "meetings.captions_stopped": "Live ondertiteling is gestopt.",
+  "meetings.attribution_unknown": "Onbekende spreker",
+  "meetings.attribution_mixed": "Meerdere sprekers",
+  "meetings.attribution_overlap": "Overlappende sprekers",
+  "meetings.attribution_metadata_absent": "Gedetailleerde sprekerstijden zijn niet beschikbaar voor dit oudere transcript.",
+  "meetings.attribution_metadata_pending": "Sprekertoewijzingen worden bewaard. Het transcript blijft beschikbaar.",
+  "meetings.attribution_metadata_stale": "De sprekerstijden komen niet meer overeen met dit transcript. Controleer de toewijzingen voordat je op de labels vertrouwt.",
+  "meetings.attribution_metadata_unsupported": "Deze sprekerinformatie gebruikt een nieuwer formaat. Werk Pennel bij om ze te bekijken.",
+  "meetings.attribution_metadata_corrupt": "De sprekerstijden konden niet worden gelezen. Het oorspronkelijke transcript blijft bewaard.",
+  "meetings.attribution_source_microphone": "Microfoon",
+  "meetings.attribution_source_system": "Computeraudio",
+  "meetings.attribution_source_room_microphone": "Ruimtemicrofoon",
+  "meetings.attribution_source_system_audio": "Computeraudio",
+  "meetings.attribution_correction_review": "Controleer de sprekercorrectie.",
+  "meetings.passage_audio_unavailable": "De audiobron voor deze passage is niet beschikbaar."
 }

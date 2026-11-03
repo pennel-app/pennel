@@ -62,9 +62,21 @@ export function sourceBlocks(blocks: string[], passage: string): SourceBlocks | 
 }
 
 export function transcriptSourceBlocks(
-  segments: { start_ms: number; end_ms: number; text: string }[],
-  source: { start_ms: number | null; text: string },
+  segments: { start_ms: number; end_ms: number; text: string; utterance_id?: string | null; source_fingerprint?: string | null }[],
+  source: { start_ms: number | null; text: string; utterance_ids?: string[]; utterance_fingerprints?: string[] },
 ): SourceBlocks | null {
+  if (source.utterance_ids != null) {
+    const ids = source.utterance_ids;
+    if (!ids.length || source.utterance_fingerprints?.length !== ids.length || new Set(ids).size !== ids.length) return null;
+    const indices: number[] = [];
+    for (const [offset, id] of ids.entries()) {
+      const matches = segments.flatMap((segment, index) => segment.utterance_id === id ? [index] : []);
+      if (matches.length !== 1 || !segments[matches[0]].source_fingerprint || segments[matches[0]].source_fingerprint !== source.utterance_fingerprints[offset]
+        || offset > 0 && matches[0] !== indices[offset - 1] + 1) return null;
+      indices.push(matches[0]);
+    }
+    return { first: indices[0], last: indices[indices.length - 1] };
+  }
   const first = source.start_ms === null ? 0
     : segments.findIndex((segment) => segment.start_ms <= source.start_ms! && segment.end_ms > source.start_ms!);
   if (first < 0) return null;

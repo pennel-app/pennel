@@ -10,7 +10,7 @@ const MAX_AUDIO_SAMPLES: usize = SAMPLE_RATE as usize * 6;
 const INTERVAL_SAMPLES: u64 = SAMPLE_RATE * 3;
 const MAX_CAPTION_CHARS: usize = 240;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingPreviewMode {
     Local,
@@ -18,7 +18,7 @@ pub enum MeetingPreviewMode {
     AfterRecording,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingPreviewState {
     Disabled,
@@ -30,7 +30,7 @@ pub enum MeetingPreviewState {
     Stopped,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct MeetingTrackPreview {
     /// Compatibility track identifiers: Me is the physical microphone, Others is system audio.
     pub source: Speaker,
@@ -44,7 +44,7 @@ pub struct MeetingTrackPreview {
     pub state: MeetingPreviewState,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 pub struct MeetingPreviewSnapshot {
     pub session_id: String,
     pub revision: u64,

@@ -75,16 +75,25 @@ pub fn export_markdown_for_language(
     }
     if include_transcript {
         let names = store.speaker_names(id);
-        let lines: Vec<String> = store
-            .read_transcript(id)
+        let snapshot = store.read_transcript_snapshot(id).ok()?;
+        let legacy = snapshot.metadata_status == crate::TranscriptMetadataStatus::Absent;
+        let lines: Vec<String> = snapshot
+            .utterances
             .into_iter()
-            .filter(|s| !s.failed && !s.text.trim().is_empty())
-            .map(|s| {
+            .filter(|row| !row.segment.failed && !row.segment.text.trim().is_empty())
+            .map(|row| {
+                let label = if legacy {
+                    exported_speaker_label(&row.segment, &names, language)
+                } else {
+                    crate::meeting_evidence::localized_utterance_speaker_label(
+                        &row, &names, language,
+                    )
+                };
                 format!(
                     "**[{}] {}:** {}",
-                    timestamp(s.start_ms),
-                    exported_speaker_label(&s, &names, language),
-                    s.text.trim()
+                    timestamp(row.segment.start_ms),
+                    label,
+                    row.segment.text.trim()
                 )
             })
             .collect();
@@ -348,7 +357,7 @@ mod tests {
             .unwrap();
         let (_, md) = export_markdown(&store, &id, true).unwrap();
         assert!(!md.contains("---") && !md.contains("template:"));
-        assert!(md.ends_with("## Transcript\n\n**[00:00] Me:** Hallo\n"));
+        assert!(md.ends_with("## Transcript\n\n**[00:00] Unknown speaker:** Hallo\n"));
     }
 
     #[test]
@@ -374,9 +383,9 @@ mod tests {
             export_markdown_for_language(&store, &id, true, crate::InterfaceLanguage::Dutch)
                 .unwrap()
                 .1;
-        assert!(english.contains("Me:** Mijn notitie"));
+        assert!(english.contains("Unknown speaker:** Mijn notitie"));
         assert!(english.contains("Speaker 2:** Mijn naam is Ik"));
-        assert!(dutch.contains("Ik:** Mijn notitie"));
+        assert!(dutch.contains("Onbekende spreker:** Mijn notitie"));
         assert!(dutch.contains("Anderen 2:** Mijn naam is Ik"));
         assert!(english.contains("## Samenvatting\nMijn eigen tekst."));
         assert_eq!(
@@ -398,6 +407,78 @@ mod tests {
                 .1;
             assert!(body.contains("Mijn eigen naam:** Mijn naam is Ik"));
         }
+    }
+
+    #[test]
+    fn canonical_export_localizes_uncertainty_without_inventing_the_user_or_translating_names() {
+        let (_dir, store, id) = store();
+        let mut rows = [
+            "Room commitment",
+            "Rapid turns",
+            "Shared speech",
+            "Named statement",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, text)| {
+            crate::MeetingUtterance::new(
+                segment(index as u64 * 1_000, Speaker::Me, text, false),
+                Some("microphone".into()),
+            )
+        })
+        .collect::<Vec<_>>();
+        rows[1].metadata.attribution.kind = crate::AttributionKind::Mixed;
+        rows[1].metadata.attribution.voices = vec![1, 2];
+        rows[2].metadata.attribution.kind = crate::AttributionKind::Overlap;
+        rows[2].metadata.attribution.voices = vec![1, 2];
+        rows[3].metadata.manual = Some(crate::ManualCorrection {
+            name: Some("Me".into()),
+            voice: Some(3),
+            source_fingerprint: rows[3].metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        store.write_transcript_snapshot(&id, None, &rows).unwrap();
+        let english = export_markdown_for_language(&store, &id, true, InterfaceLanguage::English)
+            .unwrap()
+            .1;
+        let dutch = export_markdown_for_language(&store, &id, true, InterfaceLanguage::Dutch)
+            .unwrap()
+            .1;
+        assert!(english.contains("Unknown speaker:** Room commitment"));
+        assert!(english.contains("Mixed speakers:** Rapid turns"));
+        assert!(english.contains("Overlapping speakers:** Shared speech"));
+        assert!(dutch.contains("Onbekende spreker:** Room commitment"));
+        assert!(dutch.contains("Meerdere sprekers:** Rapid turns"));
+        assert!(dutch.contains("Overlappende sprekers:** Shared speech"));
+        assert!(english.contains("Me:** Named statement"));
+        assert!(dutch.contains("Me:** Named statement"));
+        assert!(!english.contains("Me:** Room commitment"));
+        assert!(!dutch.contains("Ik:** Room commitment"));
+    }
+
+    #[test]
+    fn legacy_absent_metadata_exports_preserve_saved_labels_without_creating_a_sidecar() {
+        let (_dir, store, id) = store();
+        std::fs::write(
+            store.dir_of(&id).join("transcript.md"),
+            "[00:00] **Ik:** Hallo\n[00:02] **Anderen 2:** Een antwoord\n",
+        )
+        .unwrap();
+        assert_eq!(
+            store.read_transcript_snapshot(&id).unwrap().metadata_status,
+            crate::TranscriptMetadataStatus::Absent
+        );
+        let english = export_markdown_for_language(&store, &id, true, InterfaceLanguage::English)
+            .unwrap()
+            .1;
+        let dutch = export_markdown_for_language(&store, &id, true, InterfaceLanguage::Dutch)
+            .unwrap()
+            .1;
+        assert!(english.contains("Me:** Hallo"));
+        assert!(english.contains("Speaker 2:** Een antwoord"));
+        assert!(dutch.contains("Ik:** Hallo"));
+        assert!(dutch.contains("Anderen 2:** Een antwoord"));
+        assert!(!store.dir_of(&id).join("transcript.meta.json").exists());
     }
 
     #[test]

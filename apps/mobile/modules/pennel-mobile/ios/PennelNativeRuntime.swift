@@ -14,6 +14,7 @@ public final class PennelNativeRuntime {
     private lazy var dictation = NativeDictationRecorder(engine: model.engine)
     private var revision: UInt64 = 0
     private var previousState = ""
+    private let liveTranscriptCache = NativeTranscriptProjectionCache()
     private var listeners: [UUID: @MainActor (String) -> Void] = [:]
     private var timer: Timer?
     private var observations: [NSObjectProtocol] = []
@@ -354,7 +355,8 @@ public final class PennelNativeRuntime {
             let id = try input.required("id")
             let interruption = interruptionMessage(id: id)
             let interruptionCode = interruptionCode(id: id)
-            return try await background { try Self.meetingJSON($0, id: id, interruption: interruption, interruptionCode: interruptionCode) }
+            let liveSession = MeetingRuntime.shared.transcriptSnapshotSession(id: id)
+            return try await background { try Self.meetingJSON($0, id: id, interruption: interruption, interruptionCode: interruptionCode, liveTranscript: liveSession?.transcriptSnapshotJson()) }
         case "meetings.start": try await startMeeting(title: input.text("title"), navigate: false); return try snapshot()
         case "meetings.stop":
             if let id = input.values["id"] as? String {
@@ -427,25 +429,38 @@ public final class PennelNativeRuntime {
             if input.flag("share") { MeetingShare.present(value) }
             if input.flag("copy") { MeetingShare.copy(value, formatted: input.flag("formatted")) }
             return try BridgeJSON.encode(["title": value.title, "markdown": value.markdown, "html": value.html])
-        case "meetings.play":
+        case "meetings.play", "meetings.playUtterance":
             let id = try input.required("id")
             guard engine.meetingInfo(id: id) != nil else { throw PennelBridgeError("not_found", "Meeting not found.") }
             guard !MeetingRuntime.shared.unfinalisedMeetingIds.contains(id) else { throw PennelBridgeError("meeting_busy", "Finish this recording first.") }
-            stopPlayback()
             let speaker: Speaker
-            switch input.text("speaker", default: "others") {
-            case "me": speaker = .me
-            case "others": speaker = .others
-            default: throw PennelBridgeError("invalid_request", "Unknown audio track.")
+            let sourceID: String?
+            let startMs: Double
+            if method == "meetings.playUtterance" {
+                let utterance = try input.required("utterance_id")
+                let value = try await background { try $0.meetingUtteranceAudioJson(id: id, utteranceId: utterance) }
+                let target = try BridgeJSON.utteranceAudioProjection(value)
+                speaker = target.speaker
+                sourceID = target.sourceID
+                startMs = Double(target.startMs)
+            } else {
+                switch input.text("speaker", default: "others") {
+                case "me": speaker = .me
+                case "others": speaker = .others
+                default: throw PennelBridgeError("invalid_request", "Unknown audio track.")
+                }
+                sourceID = nil
+                startMs = input.number("start_ms")
             }
-            guard let url = engine.meetingArchiveURL(id: id, speaker: speaker) else {
+            guard let url = engine.meetingArchiveURL(id: id, speaker: speaker, sourceID: sourceID) else {
                 throw PennelBridgeError("audio_unavailable", "This meeting has no saved audio for that track.")
             }
+            stopPlayback()
             let audio = SharedAudioSession.shared.client(.playback)
             try audio.activate()
             do {
                 let next = try AVAudioPlayer(contentsOf: url)
-                next.currentTime = max(0, input.number("start_ms") / 1_000)
+                next.currentTime = max(0, startMs / 1_000)
                 guard next.play() else { throw PennelBridgeError("audio_unavailable", "This audio could not play.") }
                 player = next
                 playbackSession = audio
@@ -545,20 +560,20 @@ public final class PennelNativeRuntime {
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    private nonisolated static func meetingJSON(_ engine: PennelEngine, id: String, interruption: String? = nil, interruptionCode: String? = nil) throws -> String {
+    private nonisolated static func meetingJSON(_ engine: PennelEngine, id: String, interruption: String? = nil, interruptionCode: String? = nil, liveTranscript: String? = nil) throws -> String {
         guard let info = engine.meetingInfo(id: id) else { throw PennelBridgeError("not_found", "Meeting not found.") }
         let directory = URL(fileURLWithPath: engine.meetingDir(id: id))
         let speakers = engine.meetingSpeakers(id: id).map { ["voice": $0.voice, "name": $0.name] as [String: Any] }
         let voices = engine.mobileMeetingVoices(id: id).map { ["voice": $0.voice, "name": BridgeJSON.optional($0.name), "remembered": $0.remembered, "can_remember": $0.canRemember] as [String: Any] }
+        let transcript = try BridgeJSON.transcriptProjection(liveTranscript ?? engine.meetingTranscriptSnapshotJson(id: id))
         return try BridgeJSON.encode([
             "info": BridgeJSON.meeting(info), "notes": engine.meetingNotes(id: id),
             "summary": BridgeJSON.optional(engine.meetingMarkdown(id: id)),
             "markdown": BridgeJSON.optional(engine.meetingMarkdown(id: id)),
-            "transcript": engine.meetingTranscript(id: id).map(BridgeJSON.segment),
+            "transcript": transcript["transcript"]!, "meeting_uid": transcript["meeting_uid"]!,
+            "revision": transcript["revision"]!, "metadata_status": transcript["metadata_status"]!,
             "speakers": speakers, "voices": voices, "attendees": engine.meetingAttendees(id: id),
-            "audio_tracks": engine.meetingAudioTracks(id: id).map { track in
-                ["speaker": track.speaker == .me ? "me" : "others", "available": track.available] as [String: Any]
-            },
+            "audio_tracks": engine.meetingAudioTracks(id: id).map(BridgeJSON.audioTrack),
             "summary_outdated": engine.mobileMeetingSummaryOutdated(id: id),
             "interruption": BridgeJSON.optional(interruption),
             "interruption_code": BridgeJSON.optional(interruptionCode),
@@ -1124,6 +1139,24 @@ extension PennelNativeRuntime {
         adoptNavigation()
         let runtime = MeetingRuntime.shared
         let session = DictationSession.shared
+        let liveTranscript: [String: Any]?
+        if let liveSession = runtime.transcriptSnapshotSession() {
+            liveTranscript = liveTranscriptCache.value(key: String(describing: ObjectIdentifier(liveSession)), revision: liveSession.previewSnapshot().transcriptRevision,
+                                                       load: { try liveSession.transcriptSnapshotJson() }, changed: { [weak self] in self?.publish() })
+        } else {
+            liveTranscriptCache.clear()
+            liveTranscript = nil
+        }
+        var meeting: [String: Any] = [
+            "phase": phase(runtime.phase), "id": BridgeJSON.optional(runtime.activeMeetingId), "title": runtime.title,
+            "retained_id": BridgeJSON.optional(runtime.retainedId), "last_finished_id": BridgeJSON.optional(runtime.lastFinish?.id),
+            "elapsed_secs": Double(runtime.elapsedMs) / 1_000, "notes": runtime.notes,
+            "transcript": liveTranscript?["transcript"] ?? runtime.transcript.map(BridgeJSON.segment), "pending": runtime.pending,
+            "error": BridgeJSON.optional(runtime.warning ?? runtime.lastFinish?.error),
+            "error_code": BridgeJSON.optional(MeetingRuntime.Message.code(for: runtime.warning ?? runtime.lastFinish?.error))]
+        for key in ["meeting_uid", "revision", "metadata_status"] {
+            if let value = liveTranscript?[key] { meeting[key] = value }
+        }
         var value: [String: Any] = [
             "ready": true, "platform": "ios", "settings": try settingsProjection(), "inference_key_revisions": inferenceKeyRevisions,
             "cleanup_verification": BridgeJSON.cleanupVerification(model.engine.cleanupVerificationAvailability()),
@@ -1132,12 +1165,7 @@ extension PennelNativeRuntime {
             "dictation": ["phase": dictation.phase.rawValue, "text": dictation.text, "level": dictation.level, "session_id": BridgeJSON.optional(dictation.sessionID), "practice": dictation.isPractice, "result_session_id": BridgeJSON.optional(dictation.resultSessionID), "error": BridgeJSON.optional(dictation.error), "error_code": BridgeJSON.optional(dictation.errorCode), "cleanup_verification": BridgeJSON.optional(dictation.cleanupVerification.map(BridgeJSON.cleanupVerification))] as [String: Any],
             "session": ["phase": session.phase.rawValue, "expires_at_ms": BridgeJSON.optional(session.expiresAt.map { $0.timeIntervalSince1970 * 1_000 }),
                         "full_access_seen": KeyboardFullAccess.seen(in: AppPaths.keyboardDefaults), "error": BridgeJSON.optional(session.startError), "error_code": BridgeJSON.optional(session.startErrorCode), "cleanup_verification": BridgeJSON.optional(session.cleanupVerificationAvailability.map(BridgeJSON.cleanupVerification))] as [String: Any],
-            "meeting": ["phase": phase(runtime.phase), "id": BridgeJSON.optional(runtime.activeMeetingId), "title": runtime.title,
-                        "retained_id": BridgeJSON.optional(runtime.retainedId), "last_finished_id": BridgeJSON.optional(runtime.lastFinish?.id),
-                        "elapsed_secs": Double(runtime.elapsedMs) / 1_000, "notes": runtime.notes,
-                        "transcript": runtime.transcript.map(BridgeJSON.segment), "pending": runtime.pending,
-                        "error": BridgeJSON.optional(runtime.warning ?? runtime.lastFinish?.error),
-                        "error_code": BridgeJSON.optional(MeetingRuntime.Message.code(for: runtime.warning ?? runtime.lastFinish?.error))] as [String: Any],
+            "meeting": meeting,
             "cloud": cloudState(), "recognition_jobs": model.engine.speakerRecognitionJobs().map(BridgeJSON.recognition),
             "navigation": navigation.map { $0 as Any } ?? NSNull(),
         ]

@@ -882,6 +882,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     {
         engine.set_system_transcriber(Arc::new(AppleTranscriber));
+        engine.set_timed_system_transcriber(Arc::new(AppleTranscriber));
         engine.set_system_language_model(Arc::new(AppleLanguageModel));
     }
     let (tx, rx) = mpsc::channel();
@@ -1058,6 +1059,20 @@ impl pennel_core::SystemTranscriber for AppleTranscriber {
     }
 }
 
+#[cfg(target_os = "macos")]
+impl pennel_core::TimedSystemTranscriber for AppleTranscriber {
+    fn transcribe_timed(
+        &self,
+        samples: Vec<f32>,
+        sample_rate: u32,
+        language: Option<String>,
+        vocabulary: Vec<String>,
+    ) -> Result<pennel_core::SpeechTranscript, pennel_core::PennelError> {
+        macos::transcribe_timed(&samples, sample_rate, language.as_deref(), &vocabulary)
+            .map_err(|message| pennel_core::PennelError::InvalidResponse { message })
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(ExitState::default())
@@ -1190,6 +1205,7 @@ fn main() {
             platform_commands::request_permission,
             platform_commands::calendar_snapshot,
             platform_commands::play_meeting_audio,
+            platform_commands::play_meeting_utterance_audio,
             platform_commands::stop_audio,
             platform_commands::copy_text,
             platform_commands::copy_secret_text,

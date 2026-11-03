@@ -49,14 +49,23 @@ export interface Settings {
   keyboard_haptics?: boolean;
   [key: string]: unknown;
 }
-export interface Segment { start_ms: number; end_ms: number; speaker: 'me' | 'others'; text: string; failed: boolean; voice: number | null }
+export type MeetingAudioSource = 'microphone' | 'system_audio' | 'system' | 'room_microphone';
+export type TranscriptMetadataStatus = 'valid' | 'absent' | 'pending' | 'stale' | 'unsupported' | 'corrupt';
+export interface SpeakerAttribution { kind: 'unknown' | 'single' | 'mixed' | 'overlap'; voices: number[]; self_voice?: boolean }
+export interface Segment {
+  start_ms: number; end_ms: number; speaker: 'me' | 'others'; text: string; failed: boolean; voice: number | null;
+  utterance_id?: string | null; source_id?: MeetingAudioSource | null; source_fingerprint?: string | null;
+  attribution?: SpeakerAttribution | null; attribution_revision?: number;
+  correction_review_required?: boolean;
+  confirmed_speaker_name?: string | null;
+}
 export interface MeetingInfo { id: string; title: string; start_iso: string; duration_min: number; has_summary: boolean; sync_state?: 'synced' | 'pending' | 'conflict' }
 export interface MeetingVoice { voice: number; name: string | null; remembered: boolean; can_remember: boolean }
-export interface MeetingDetail { info: MeetingInfo; notes: string; summary: string | null; transcript: Segment[]; speakers: { voice: number; name: string }[]; voices?: MeetingVoice[]; attendees: string[]; audio_tracks: { speaker: 'me' | 'others'; available: boolean }[]; summary_outdated?: boolean; conflicts?: ConflictFile[]; interruption?: string | null; interruption_code?: string | null }
+export interface MeetingDetail { info: MeetingInfo; notes: string; summary: string | null; transcript: Segment[]; speakers: { voice: number; name: string }[]; voices?: MeetingVoice[]; attendees: string[]; audio_tracks: { speaker: 'me' | 'others'; source_id?: MeetingAudioSource | null; available: boolean }[]; summary_outdated?: boolean; conflicts?: ConflictFile[]; interruption?: string | null; interruption_code?: string | null; meeting_uid?: string; metadata_status?: TranscriptMetadataStatus; revision?: number }
 export interface ConflictFile { name: string; text?: string }
 export interface MeetingTemplate { id: string; name: string; builtin: boolean; customized: boolean }
 export interface HistoryEntry { id: string; created_at_ms: number; raw: string; text: string; status: 'done' | 'failed' | 'unsaved'; error: string | null; has_audio: boolean }
-export interface Passage { meeting_id: string; title: string; kind: 'notes' | 'transcript' | 'summary'; start_ms: number | null; text: string; snippet: string }
+export interface Passage { meeting_id: string; title: string; kind: 'notes' | 'transcript' | 'summary'; start_ms: number | null; text: string; snippet: string; meeting_uid?: string | null; utterance_ids?: string[]; utterance_fingerprints?: string[] }
 export interface MeetingAnswer { text: string; citations: { number: number; passage: Passage }[] }
 export interface ChatTurn { question: string; answer: string }
 export interface CloudAccount { email: string; audio_seconds: number; tokens: number; storage_bytes: number; limit_audio_seconds: number; limit_tokens: number; limit_storage_bytes: number }
@@ -135,6 +144,7 @@ export interface MobileCommandResults {
   'meetings.search': Passage[];
   'meetings.export': { title: string; markdown: string; html: string };
   'meetings.play': void;
+  'meetings.playUtterance': void;
   'meetings.stopPlayback': void;
   'meetings.retryTranscription': number;
   'meetings.conflictDelete': void;

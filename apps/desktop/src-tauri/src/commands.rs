@@ -7,10 +7,10 @@ use std::sync::Arc;
 use pennel_core::{
     ChatTurn, DetectedAgent, HistoryEntry, KnownVoice, LibrarySearch, LocalModel, MeetingAnswer,
     MeetingExport, MeetingInfo, MeetingTemplate, MeetingVoice, ModelChoice, ModelState,
-    ProviderKind, ProviderTask, RemoteModel, Segment, Settings, SpeakerName, SpeakerRecognition,
+    ProviderKind, ProviderTask, RemoteModel, Settings, SpeakerName, SpeakerRecognition,
     VoiceProfile,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -794,20 +794,22 @@ pub struct MeetingRuntimeStatus {
     consent_copied: bool,
     pending: u32,
     transcript_revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata_status: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct MeetingStatus {
     #[serde(flatten)]
     runtime: MeetingRuntimeStatus,
-    transcript: Vec<Segment>,
+    transcript: Vec<serde_json::Value>,
     notes: String,
 }
 
 #[tauri::command]
 pub async fn meeting_status(shared: State<'_, Arc<Shared>>) -> Result<MeetingStatus> {
     let shared = shared.inner().clone();
-    off_main("meeting_status", move || Ok(status(&shared))).await
+    off_main("meeting_status", move || status(&shared)).await
 }
 
 #[tauri::command]
@@ -821,21 +823,43 @@ pub async fn meeting_runtime_status(
     .await
 }
 
-fn status(shared: &Shared) -> MeetingStatus {
+#[derive(Deserialize)]
+struct TranscriptProjection {
+    meeting_uid: String,
+    revision: u64,
+    metadata_status: String,
+    transcript: Vec<serde_json::Value>,
+    preview: Option<pennel_core::MeetingPreviewSnapshot>,
+}
+
+fn transcript_projection(value: &str) -> Result<TranscriptProjection> {
+    serde_json::from_str(value).map_err(|_| "The transcript snapshot could not be read.".into())
+}
+
+fn status(shared: &Shared) -> Result<MeetingStatus> {
     let (mut runtime, session) = runtime_status(shared);
     let (transcript, notes) = if let Some(session) = session {
-        let (revision, transcript, preview) = session.display_snapshot();
-        runtime.transcript_revision = revision;
-        runtime.preview = Some(preview);
-        (transcript, shared.engine.meeting_notes(session.id()))
+        let snapshot = transcript_projection(&session.transcript_snapshot_json().map_err(err)?)?;
+        runtime.transcript_revision = snapshot.revision;
+        runtime.meeting_uid = Some(snapshot.meeting_uid);
+        runtime.metadata_status = Some(snapshot.metadata_status);
+        runtime.preview = Some(
+            snapshot
+                .preview
+                .ok_or("The live transcript snapshot has no preview state.")?,
+        );
+        (
+            snapshot.transcript,
+            shared.engine.meeting_notes(session.id()),
+        )
     } else {
         (Vec::new(), String::new())
     };
-    MeetingStatus {
+    Ok(MeetingStatus {
         runtime,
         transcript,
         notes,
-    }
+    })
 }
 
 fn runtime_status(
@@ -923,6 +947,7 @@ fn runtime_status(
         consent_copied: false,
         pending: 0,
         transcript_revision: 0,
+        metadata_status: None,
     };
     let mut active_session = None;
     if let Some((
@@ -1068,7 +1093,10 @@ pub struct MeetingDetail {
     info: Option<MeetingInfo>,
     notes: String,
     summary: Option<String>,
-    transcript: Vec<Segment>,
+    transcript: Vec<serde_json::Value>,
+    meeting_uid: String,
+    revision: u64,
+    metadata_status: String,
     speakers: Vec<SpeakerName>,
     dir: String,
     attendees: Vec<String>,
@@ -1083,6 +1111,17 @@ pub struct MeetingDetail {
 pub struct AudioTrack {
     speaker: pennel_core::Speaker,
     available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_id: Option<&'static str>,
+}
+
+fn physical_source_id(track: &pennel_core::MeetingAudioTrack) -> Option<&'static str> {
+    match track.relative_path.as_str() {
+        "audio/microphone.m4a" => Some("microphone"),
+        "audio/system.m4a" => Some("system_audio"),
+        "audio/room.m4a" => Some("room_microphone"),
+        _ => None,
+    }
 }
 
 fn audio_tracks(dir: &Path) -> Vec<AudioTrack> {
@@ -1094,6 +1133,10 @@ fn audio_tracks(dir: &Path) -> Vec<AudioTrack> {
             available: tracks
                 .iter()
                 .any(|track| track.speaker == speaker && track.available),
+            source_id: tracks
+                .iter()
+                .find(|track| track.speaker == speaker && track.available)
+                .and_then(physical_source_id),
         })
         .collect()
 }
@@ -1104,11 +1147,19 @@ pub async fn meeting_detail(id: String, shared: State<'_, Arc<Shared>>) -> Resul
     off_main("meeting_detail", move || {
         let engine = &shared.engine;
         let directory = checked_meeting_dir(engine, &id)?;
+        let snapshot = transcript_projection(
+            &engine
+                .meeting_transcript_snapshot_json(id.clone())
+                .map_err(err)?,
+        )?;
         Ok(MeetingDetail {
             info: engine.meeting_info(id.clone()),
             notes: engine.meeting_notes(id.clone()),
             summary: engine.meeting_markdown(id.clone()),
-            transcript: engine.meeting_transcript(id.clone()),
+            transcript: snapshot.transcript,
+            meeting_uid: snapshot.meeting_uid,
+            revision: snapshot.revision,
+            metadata_status: snapshot.metadata_status,
             speakers: engine.meeting_speakers(id.clone()),
             attendees: engine.meeting_attendees(id.clone()),
             dir: directory.to_string_lossy().into_owned(),
@@ -1993,6 +2044,37 @@ mod tests {
     }
 
     #[test]
+    fn transcript_projection_preserves_durable_identity_physical_source_and_uncertainty() {
+        let value = serde_json::json!({
+            "meeting_uid":"meeting-uid", "revision":7, "metadata_status":"valid",
+            "transcript":[{"start_ms":1200,"end_ms":1600,"speaker":"others","text":"Ja.","failed":false,"voice":2,
+                "utterance_id":"utterance-1","source_id":"microphone","source_fingerprint":"immutable-content",
+                "attribution":{"kind":"overlap","voices":[2,3]},"attribution_revision":4}]
+        });
+        let projection = transcript_projection(&value.to_string()).unwrap();
+        assert_eq!(
+            projection.transcript,
+            value["transcript"].as_array().unwrap().clone()
+        );
+        assert_eq!(projection.meeting_uid, "meeting-uid");
+        assert_eq!(projection.revision, 7);
+        assert_eq!(projection.metadata_status, "valid");
+    }
+
+    #[test]
+    fn unavailable_transcript_metadata_preserves_legacy_text_and_never_becomes_an_empty_success() {
+        for status in ["absent", "pending", "stale", "unsupported", "corrupt"] {
+            let value = serde_json::json!({"meeting_uid":"legacy", "revision":0,"metadata_status":status,
+                "transcript":[{"start_ms":1000,"end_ms":1000,"speaker":"others","text":"Legacy line.","failed":false,"voice":null}]});
+            let projection = transcript_projection(&value.to_string()).unwrap();
+            assert_eq!(projection.metadata_status, status);
+            assert_eq!(projection.transcript[0]["text"], "Legacy line.");
+            assert!(projection.transcript[0].get("utterance_id").is_none());
+        }
+        assert!(transcript_projection("{\"meeting_uid\":\"legacy\"}").is_err());
+    }
+
+    #[test]
     fn runtime_previews_share_the_finalized_revision_without_becoming_meeting_content() {
         let root = tempfile::tempdir().unwrap();
         let shared = Shared::testing(root.path().join("preview"));
@@ -2022,7 +2104,7 @@ mod tests {
         shared.recording.lock().unwrap().recording(&token).unwrap();
         *shared.meeting_context.lock().unwrap() = Some(crate::meeting_runtime::MeetingContext {
             token,
-            uid: "preview-fixture-uid".into(),
+            uid: shared.engine.meeting_uid(session.id()).unwrap(),
             session: session.clone(),
             notes_gate: Arc::new(std::sync::Mutex::new(true)),
             title: "Owned preview fixture".into(),
@@ -2047,7 +2129,7 @@ mod tests {
             1_000,
             "INTERIM_RUNTIME_ONLY".into()
         ));
-        let full = serde_json::to_value(status(&shared)).unwrap();
+        let full = serde_json::to_value(status(&shared).unwrap()).unwrap();
         let light = serde_json::to_value(runtime_status(&shared).0).unwrap();
         assert_eq!(full["preview"]["tracks"][0]["text"], "INTERIM_RUNTIME_ONLY");
         assert_eq!(light["preview"], full["preview"]);
@@ -2073,6 +2155,7 @@ mod tests {
         assert!(!session.is_finalized());
         assert!(
             status(&shared)
+                .unwrap()
                 .runtime
                 .preview
                 .unwrap()
@@ -2104,6 +2187,7 @@ mod tests {
             )
             .unwrap();
         session.set_notes("Mijn eigen notities.".into()).unwrap();
+        let uid = engine.meeting_uid(session.id()).unwrap();
         let mut lifecycle = pennel_core::RecordingLifecycle::default();
         let token = lifecycle.begin(None).unwrap();
         lifecycle.recording(&token).unwrap();
@@ -2133,7 +2217,7 @@ mod tests {
             paste_jobs: std::sync::atomic::AtomicUsize::new(0),
             meeting_context: std::sync::Mutex::new(Some(crate::meeting_runtime::MeetingContext {
                 token,
-                uid: "fixture-uid".into(),
+                uid,
                 session: session.clone(),
                 notes_gate: Arc::new(std::sync::Mutex::new(true)),
                 title: "Klantgesprek".into(),
@@ -2146,7 +2230,7 @@ mod tests {
                 consent_copied: true,
             })),
         };
-        let snapshot = status(&shared);
+        let snapshot = status(&shared).unwrap();
         assert!(snapshot.runtime.busy);
         assert!(!snapshot.runtime.recording);
         assert_eq!(
@@ -2177,6 +2261,7 @@ mod tests {
         let fields = serialized.as_object_mut().unwrap();
         assert!(fields.remove("notes").is_some());
         assert!(fields.remove("transcript").is_some());
+        assert!(fields.remove("metadata_status").is_some());
         assert_eq!(serialized, metadata);
         assert!(require_inactive_meeting(&shared, &session.id()).is_err());
         session.stop().unwrap();

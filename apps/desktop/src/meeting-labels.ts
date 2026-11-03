@@ -1,5 +1,5 @@
 import type { MeetingDetail, MeetingTemplate, Segment } from "./api";
-import { formatDateTime, formatNumber, l, t, type TranslationKey, type UiText } from "./i18n.ts";
+import { formatDateTime, formatNumber, l, liveText, t, type TranslationKey, type UiText } from "./i18n.ts";
 
 export function meetingDate(date: string): string {
   const parsed = new Date(date);
@@ -15,12 +15,22 @@ export function dayGroup(date: string, now = new Date()): string {
 }
 
 export function speakerLabel(segment: Segment, detail?: Pick<MeetingDetail, "speakers">): string {
+  if (segment.confirmed_speaker_name) return segment.confirmed_speaker_name;
+  if (segment.attribution) {
+    if (segment.attribution.kind !== "single") return t(`meetings.attribution_${segment.attribution.kind}`);
+    if (segment.attribution.self_voice === true) return t("meetings.speaker_me");
+    const voice = segment.attribution.voices.length === 1 ? segment.attribution.voices[0] : null;
+    if (voice === null) return t("meetings.attribution_unknown");
+    return detail?.speakers.find((name) => name.voice === voice)?.name ?? t("meetings.speaker_number", { number: formatNumber(voice) });
+  }
   if (segment.speaker === "me") return t("meetings.speaker_me");
   if (segment.voice === null) return t("meetings.speaker_others");
   return detail?.speakers.find((name) => name.voice === segment.voice)?.name ?? t("meetings.speaker_number", { number: formatNumber(segment.voice) });
 }
 
 export function speakerUiLabel(segment: Segment, detail?: Pick<MeetingDetail, "speakers">): UiText {
+  if (segment.confirmed_speaker_name) return segment.confirmed_speaker_name;
+  if (segment.attribution) return liveText(() => speakerLabel(segment, detail));
   if (segment.speaker === "me") return l("meetings.speaker_me");
   if (segment.voice === null) return l("meetings.speaker_others");
   return detail?.speakers.find((name) => name.voice === segment.voice)?.name

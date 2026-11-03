@@ -93,6 +93,7 @@ struct SpeakerLabels {
     prints: Vec<MeetingVoiceprint>,
 }
 
+#[cfg(test)]
 fn relabel_speakers(
     segments: &mut [Segment],
     diarization: &Diarization,
@@ -134,6 +135,169 @@ fn relabel_speakers(
         }
     }
     result
+}
+
+fn relabel_utterances(
+    rows: &[crate::meeting_utterances::MeetingUtterance],
+    diarization: &Diarization,
+    track: crate::diarize::Track,
+    me: Option<&[f32]>,
+    candidates: &[VoiceCandidate],
+) -> (
+    Vec<crate::meeting_utterances::MeetingUtterance>,
+    SpeakerLabels,
+) {
+    let prints: Vec<_> = candidates
+        .iter()
+        .map(|candidate| candidate.embedding.as_slice())
+        .collect();
+    let identities = pennel_speakers::identify(&diarization.speakers, me, &prints);
+    let (rows, applied) =
+        crate::diarize::apply_utterances(rows, &diarization.turns, &identities, track);
+    let mut labels = SpeakerLabels::default();
+    for (voice, speaker) in applied.voices {
+        let candidate = match identities.get(speaker) {
+            Some(Identity::Known(index, _)) => candidates.get(*index),
+            _ => None,
+        };
+        if let Some(name) = candidate.and_then(|candidate| candidate.name.as_ref()) {
+            labels.names.push(SpeakerName {
+                voice,
+                name: name.clone(),
+            });
+        }
+        if let Some(speaker) = diarization
+            .speakers
+            .get(speaker)
+            .filter(|speaker| !speaker.embedding.is_empty())
+        {
+            labels.prints.push(MeetingVoiceprint {
+                voice,
+                embedding: speaker.embedding.clone(),
+                known_id: candidate.and_then(|candidate| candidate.known_id.clone()),
+            });
+        }
+    }
+    (rows, labels)
+}
+
+/// A rerun may preserve identity/corrections only for an exact, unique physical source match.
+/// Changed or split text keeps the old correction as review material, never as a remembered guess.
+pub(crate) fn reconcile_rerun_utterances(
+    before: &[crate::meeting_utterances::MeetingUtterance],
+    after: &mut [crate::meeting_utterances::MeetingUtterance],
+) {
+    use crate::meetings::VOICES;
+    fn source(value: &Option<String>) -> Option<&str> {
+        value.as_deref().map(|source| {
+            if source == "system" {
+                "system_audio"
+            } else {
+                source
+            }
+        })
+    }
+    let mut used = HashSet::new();
+    for row in after.iter_mut() {
+        let candidates: Vec<_> = before
+            .iter()
+            .enumerate()
+            .filter(|(_, old)| {
+                old.metadata.source_id.is_some()
+                    && source(&old.metadata.source_id) == source(&row.metadata.source_id)
+                    && old.metadata.start_ms == row.metadata.start_ms
+                    && old.metadata.end_ms == row.metadata.end_ms
+                    && old.segment.text == row.segment.text
+                    && old.segment.failed == row.segment.failed
+            })
+            .collect();
+        if let [(index, old)] = candidates.as_slice()
+            && !used.contains(index)
+        {
+            used.insert(*index);
+            row.metadata.utterance_id = old.metadata.utterance_id.clone();
+            row.metadata.source_id = old.metadata.source_id.clone();
+            row.metadata.lineage = old.metadata.lineage.clone();
+            row.metadata.recovery_audio = old.metadata.recovery_audio.clone();
+            row.metadata.manual = old.metadata.manual.clone();
+            row.metadata.unresolved_manual = old.metadata.unresolved_manual.clone();
+            row.metadata.attribution_revision = row.metadata.attribution_revision.max(
+                old.metadata.attribution_revision.saturating_add(u64::from(
+                    row.metadata.attribution != old.metadata.attribution,
+                )),
+            );
+            row.metadata.refresh_fingerprints(&row.segment);
+            if let Some(manual) = row.metadata.manual.as_ref().filter(|manual| {
+                !manual.review_required
+                    && manual.source_fingerprint == row.metadata.source_fingerprint
+            }) && let Some(voice) = manual.voice.filter(|voice| VOICES.contains(voice))
+            {
+                row.segment.speaker = Speaker::Others;
+                row.segment.voice = Some(voice);
+            }
+        } else {
+            for old in before.iter().filter(|old| {
+                old.metadata.source_id.is_some()
+                    && source(&old.metadata.source_id) == source(&row.metadata.source_id)
+                    && old.metadata.end_ms.min(row.metadata.end_ms)
+                        > old.metadata.start_ms.max(row.metadata.start_ms)
+            }) {
+                if !row.metadata.lineage.contains(&old.metadata.utterance_id) {
+                    row.metadata.lineage.push(old.metadata.utterance_id.clone());
+                }
+            }
+        }
+    }
+    let resolved: HashSet<_> = before
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| used.contains(index))
+        .filter_map(|(_, row)| {
+            row.metadata.manual.as_ref().filter(|manual| {
+                !manual.review_required
+                    && manual.source_fingerprint == row.metadata.source_fingerprint
+            })
+        })
+        .map(|manual| manual.source_fingerprint.clone())
+        .collect();
+    for row in after.iter_mut() {
+        row.metadata
+            .unresolved_manual
+            .retain(|manual| !resolved.contains(&manual.source_fingerprint));
+    }
+    for (_, old) in before
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !used.contains(index))
+    {
+        let target = after
+            .iter()
+            .position(|row| {
+                old.metadata.source_id.is_some()
+                    && source(&old.metadata.source_id) == source(&row.metadata.source_id)
+                    && old.metadata.end_ms.min(row.metadata.end_ms)
+                        > old.metadata.start_ms.max(row.metadata.start_ms)
+            })
+            .or_else(|| (!after.is_empty()).then_some(0));
+        if let Some(index) = target {
+            for mut correction in old
+                .metadata
+                .manual
+                .iter()
+                .chain(old.metadata.unresolved_manual.iter())
+                .cloned()
+            {
+                correction.review_required = true;
+                if !after[index]
+                    .metadata
+                    .unresolved_manual
+                    .contains(&correction)
+                {
+                    after[index].metadata.unresolved_manual.push(correction);
+                }
+            }
+        }
+    }
 }
 
 impl PennelEngine {
@@ -192,6 +356,7 @@ impl PennelEngine {
         let exclusions = store.dictation_intervals(id)?;
         let sources: Vec<_> = [
             "transcript.md",
+            "transcript.meta.json",
             "meeting.md",
             "notes.md",
             ".pennel-dictation-intervals.json",
@@ -205,8 +370,15 @@ impl PennelEngine {
         .into_iter()
         .map(|name| (name, store.file_stamp(id, name)))
         .collect();
-        let before = store.read_transcript(id);
+        let before_snapshot = store.read_transcript_snapshot(id)?;
+        let legacy_names = before_snapshot.metadata_status
+            == crate::meeting_utterances::TranscriptMetadataStatus::Absent;
+        let old_metadata = before_snapshot.metadata_digest;
+        let mut before = before_snapshot.utterances;
         let old_names = store.speaker_names(id);
+        if legacy_names {
+            crate::diarize::preserve_manual_names(&mut before, &old_names);
+        }
         let voices = self.voice_store();
         let key = store.uid_of(id).unwrap_or_else(|| id.to_owned());
         let old_hash = store.transcript_fingerprint(id)?;
@@ -229,62 +401,40 @@ impl PennelEngine {
         };
         self.publish_retranscription(id, &status, &mut notify);
         let mut result = (|| {
-            let mut segments = stage_audio(
+            let mut utterances = stage_audio_timed(
                 &tracks,
                 &exclusions,
                 &mut decode,
                 |samples| {
-                    self.transcribe_complete_local(&frozen.settings, &frozen.model_path, samples)
+                    self.transcribe_complete_local_timed(
+                        &frozen.settings,
+                        &frozen.model_path,
+                        samples,
+                    )
                 },
                 |progress| {
                     status.progress = progress;
                     self.publish_retranscription(id, &status, &mut notify);
                 },
             )?;
-            if segments.is_empty() {
+            if utterances.is_empty() {
                 return Err(PennelError::NoSpeech);
             }
+            reconcile_rerun_utterances(&before, &mut utterances);
             let mut labels = SpeakerLabels::default();
-            if before.iter().any(|segment| segment.voice.is_some()) {
+            if before.iter().any(|row| {
+                row.segment.voice.is_some()
+                    || row.metadata.manual.is_some()
+                    || !row.metadata.unresolved_manual.is_empty()
+            }) {
                 let local_models = (
                     self.models.path(crate::models::SEGMENTATION_ID),
                     self.models.path(crate::models::EMBEDDING_ID),
                 );
                 let me = voices.my_voiceprint();
-                let selected = tracks
-                    .iter()
-                    .find(|(speaker, _)| {
-                        *speaker == Speaker::Others
-                            && segments
-                                .iter()
-                                .any(|segment| segment.speaker == Speaker::Others)
-                    })
-                    .or_else(|| {
-                        tracks
-                            .iter()
-                            .find(|(speaker, _)| *speaker == Speaker::Me && me.is_some())
-                    });
-                if let (Some((speaker, path)), (Some(segmentation), Some(embedding)), true) =
-                    (selected, local_models, cfg!(feature = "speakers"))
+                if let (Some(segmentation), Some(embedding), true) =
+                    (local_models.0, local_models.1, cfg!(feature = "speakers"))
                 {
-                    status.progress = RetranscriptionProgress {
-                        phase: RetranscriptionPhase::Speakers,
-                        speaker: Some(*speaker),
-                        completed: 0,
-                        total: 1,
-                    };
-                    self.publish_retranscription(id, &status, &mut notify);
-                    let mut samples = decode(path)?;
-                    for &(start, end) in &exclusions {
-                        let first = start.saturating_mul(16).min(samples.len() as u64) as usize;
-                        let last = end.saturating_mul(16).min(samples.len() as u64) as usize;
-                        if last > first {
-                            samples[first..last].fill(0.0);
-                        }
-                    }
-                    let diarization =
-                        crate::speakers::diarize_local(&segmentation, &embedding, &samples)?;
-                    drop(samples);
                     let mut candidates: Vec<_> = voices
                         .known_voiceprints()
                         .into_iter()
@@ -304,22 +454,62 @@ impl PennelEngine {
                             known_id: print.known_id.clone(),
                         }
                     }));
-                    let track = crate::diarize::Track::from(*speaker);
-                    labels = relabel_speakers(
-                        &mut segments,
-                        &diarization,
-                        track,
-                        me.as_deref()
-                            .filter(|_| track == crate::diarize::Track::Microphone),
-                        &candidates,
-                    );
+                    for (speaker, path) in &tracks {
+                        status.progress = RetranscriptionProgress {
+                            phase: RetranscriptionPhase::Speakers,
+                            speaker: Some(*speaker),
+                            completed: 0,
+                            total: 1,
+                        };
+                        self.publish_retranscription(id, &status, &mut notify);
+                        let mut samples = decode(path)?;
+                        for &(start, end) in &exclusions {
+                            let first = start.saturating_mul(16).min(samples.len() as u64) as usize;
+                            let last = end.saturating_mul(16).min(samples.len() as u64) as usize;
+                            if last > first {
+                                samples[first..last].fill(0.0);
+                            }
+                        }
+                        let diarization =
+                            crate::speakers::diarize_local(&segmentation, &embedding, &samples)?;
+                        drop(samples);
+                        let track = if path.file_name().is_some_and(|name| name == "room.m4a") {
+                            crate::diarize::Track::Microphone
+                        } else {
+                            crate::diarize::Track::from(*speaker)
+                        };
+                        let (updated, mut applied) = relabel_utterances(
+                            &utterances,
+                            &diarization,
+                            track,
+                            me.as_deref()
+                                .filter(|_| track == crate::diarize::Track::Microphone),
+                            &candidates,
+                        );
+                        utterances = updated;
+                        labels.names.append(&mut applied.names);
+                        labels.prints.append(&mut applied.prints);
+                    }
                 } else {
                     status.warning=Some("The text has been transcribed again. Download local speaker models to rebuild the speaker labels.".into());
                 }
             }
+            reconcile_rerun_utterances(&before, &mut utterances);
+            let recognized: Vec<_> = labels
+                .names
+                .iter()
+                .map(|name| (name.voice, name.name.clone()))
+                .collect();
+            labels.names = crate::diarize::carry_utterance_names(
+                &before,
+                &utterances,
+                &old_names,
+                &recognized,
+            );
             if sources
                 .iter()
                 .any(|(name, stamp)| store.file_stamp(id, name) != *stamp)
+                || store.read_transcript_snapshot(id)?.metadata_digest != old_metadata
             {
                 return Err(PennelError::storage(
                     "The recording or meeting changed during processing. The transcript has not been replaced.",
@@ -333,7 +523,8 @@ impl PennelEngine {
             };
             self.publish_retranscription(id, &status, &mut notify);
             let sources: Vec<_> = tracks.iter().map(|(speaker, _)| *speaker).collect();
-            let backup = store.replace_retranscribed(id, &segments, &labels.names, &sources)?;
+            let backup =
+                store.replace_retranscribed_utterances(id, &utterances, &labels.names, &sources)?;
             let finish = (|| {
                 voices.set_meeting_voiceprints(
                     &key,
@@ -358,7 +549,7 @@ impl PennelEngine {
                 voices.set_meeting_voiceprints(&key, old_prints.clone(), Some(&old_hash))?;
                 return Err(error);
             }
-            Ok(segments.len() as u32)
+            Ok(utterances.len() as u32)
         })();
         if result.is_err() {
             match store.recording_metadata(id) {
@@ -465,13 +656,31 @@ pub(crate) fn saved_tracks(
     Ok(tracks)
 }
 
+#[cfg(test)]
 pub(crate) fn stage_audio(
     tracks: &[(Speaker, PathBuf)],
     exclusions: &[(u64, u64)],
-    mut decode: impl FnMut(&Path) -> Result<Vec<f32>, PennelError>,
+    decode: impl FnMut(&Path) -> Result<Vec<f32>, PennelError>,
     mut transcribe: impl FnMut(&[f32]) -> Result<String, PennelError>,
-    mut progress: impl FnMut(RetranscriptionProgress),
+    progress: impl FnMut(RetranscriptionProgress),
 ) -> Result<Vec<Segment>, PennelError> {
+    stage_audio_timed(
+        tracks,
+        exclusions,
+        decode,
+        |samples| transcribe(samples).map(crate::SpeechTranscript::plain),
+        progress,
+    )
+    .map(|rows| rows.into_iter().map(|row| row.segment).collect())
+}
+
+pub(crate) fn stage_audio_timed(
+    tracks: &[(Speaker, PathBuf)],
+    exclusions: &[(u64, u64)],
+    mut decode: impl FnMut(&Path) -> Result<Vec<f32>, PennelError>,
+    mut transcribe: impl FnMut(&[f32]) -> Result<crate::SpeechTranscript, PennelError>,
+    mut progress: impl FnMut(RetranscriptionProgress),
+) -> Result<Vec<crate::meeting_utterances::MeetingUtterance>, PennelError> {
     let mut segments = Vec::new();
     for (speaker, path) in tracks {
         progress(RetranscriptionProgress {
@@ -504,16 +713,56 @@ pub(crate) fn stage_audio(
         let mut chunker = Chunker::new(16_000);
         let mut recognize = |chunk: crate::chunker::Chunk| -> Result<(), PennelError> {
             let end_ms = chunk.start_ms + chunk.samples.len() as u64 / 16;
-            let text = transcribe(&chunk.samples)?;
-            if !is_hallucination(&text) {
-                segments.push(Segment {
-                    start_ms: chunk.start_ms,
-                    end_ms,
-                    speaker: *speaker,
-                    text: text.trim().to_owned(),
-                    failed: false,
-                    voice: None,
-                });
+            let transcript = transcribe(&chunk.samples)?;
+            let transcript = crate::SpeechTranscript::validated(
+                transcript.text,
+                transcript.spans,
+                transcript.timing_kind,
+                end_ms - chunk.start_ms,
+            )
+            .trimmed();
+            if !is_hallucination(&transcript.text) {
+                let source = if path.file_name().is_some_and(|name| name == "room.m4a") {
+                    "room_microphone"
+                } else if *speaker == Speaker::Me {
+                    "microphone"
+                } else {
+                    "system_audio"
+                };
+                let mut row = crate::meeting_utterances::MeetingUtterance::new(
+                    Segment {
+                        start_ms: chunk.start_ms,
+                        end_ms,
+                        speaker: *speaker,
+                        text: transcript.text,
+                        failed: false,
+                        voice: None,
+                    },
+                    Some(source.into()),
+                );
+                row.metadata.spans = transcript
+                    .spans
+                    .into_iter()
+                    .map(|span| {
+                        let start = chunk.start_ms.checked_add(span.start_ms);
+                        let end = chunk.start_ms.checked_add(span.end_ms);
+                        match (start, end) {
+                            (Some(start), Some(end)) => {
+                                Ok(crate::meeting_utterances::TimedTextSpan(
+                                    span.start_byte,
+                                    span.end_byte,
+                                    start,
+                                    end,
+                                ))
+                            }
+                            _ => Err(PennelError::InvalidResponse {
+                                message: "The transcription timing is outside the recording."
+                                    .into(),
+                            }),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                segments.push(row);
             }
             progress(RetranscriptionProgress {
                 phase: RetranscriptionPhase::Transcribing,
@@ -550,6 +799,198 @@ mod tests {
             failed: false,
             voice: None,
         }
+    }
+
+    #[test]
+    fn timed_retranscription_retains_word_bounds_and_adds_chunk_offset_once() {
+        use crate::{SpeechTextSpan, SpeechTimingKind, SpeechTranscript};
+        let tracks = vec![(Speaker::Others, PathBuf::from("audio/room.m4a"))];
+        let rows = stage_audio_timed(
+            &tracks,
+            &[],
+            |_| {
+                Ok((0..31 * 16_000)
+                    .map(|sample| (sample as f32 * 0.05).sin() * 0.2)
+                    .collect())
+            },
+            |_| {
+                Ok(SpeechTranscript::validated(
+                    "Ja".into(),
+                    vec![SpeechTextSpan {
+                        start_byte: 0,
+                        end_byte: 2,
+                        start_ms: 0,
+                        end_ms: 500,
+                    }],
+                    SpeechTimingKind::Word,
+                    30_000,
+                ))
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|row| row.metadata.source_id.as_deref() == Some("room_microphone"))
+        );
+        assert_eq!(
+            rows[0].metadata.spans,
+            [crate::meeting_utterances::TimedTextSpan(0, 2, 0, 500)]
+        );
+        assert_eq!(
+            rows[1].metadata.spans,
+            [crate::meeting_utterances::TimedTextSpan(
+                0, 2, 30_000, 30_500
+            )]
+        );
+        assert_eq!(rows[1].segment.end_ms, 31_000);
+    }
+
+    #[test]
+    fn invalid_retranscription_timing_preserves_every_authoritative_word() {
+        use crate::{SpeechTextSpan, SpeechTimingKind, SpeechTranscript};
+        let tracks = vec![(Speaker::Me, PathBuf::from("audio/microphone.m4a"))];
+        let rows = stage_audio_timed(
+            &tracks,
+            &[],
+            |_| {
+                Ok((0..2 * 16_000)
+                    .map(|sample| (sample as f32 * 0.05).sin() * 0.2)
+                    .collect())
+            },
+            |_| {
+                Ok(SpeechTranscript {
+                    text: "All spoken words stay.".into(),
+                    spans: vec![SpeechTextSpan {
+                        start_byte: 0,
+                        end_byte: 500,
+                        start_ms: 0,
+                        end_ms: 1_000,
+                    }],
+                    timing_kind: SpeechTimingKind::Word,
+                })
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(rows[0].segment.text, "All spoken words stay.");
+        assert!(rows[0].metadata.spans.is_empty());
+    }
+
+    #[test]
+    fn exact_rerun_keeps_manual_identity_and_source_alias_without_remembered_guess() {
+        use crate::meeting_utterances::{ManualCorrection, MeetingUtterance};
+        let mut old = MeetingUtterance::new(
+            segment(Speaker::Others, "Exact source."),
+            Some("system".into()),
+        );
+        old.metadata.manual = Some(ManualCorrection {
+            name: Some("Manual".into()),
+            voice: Some(4),
+            source_fingerprint: old.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let mut new = vec![MeetingUtterance::new(
+            old.segment.clone(),
+            Some("system_audio".into()),
+        )];
+        new[0].segment.voice = Some(2);
+        reconcile_rerun_utterances(&[old.clone()], &mut new);
+        assert_eq!(new[0].metadata.utterance_id, old.metadata.utterance_id);
+        assert_eq!(new[0].metadata.source_id, old.metadata.source_id);
+        assert_eq!(new[0].segment.voice, Some(4));
+        assert_eq!(new[0].metadata.manual, old.metadata.manual);
+    }
+
+    #[test]
+    fn changed_rerun_keeps_original_manual_correction_for_review() {
+        use crate::meeting_utterances::{ManualCorrection, MeetingUtterance};
+        let mut old = MeetingUtterance::new(
+            segment(Speaker::Others, "Original words."),
+            Some("system_audio".into()),
+        );
+        old.metadata.manual = Some(ManualCorrection {
+            name: Some("Retained correction".into()),
+            voice: Some(4),
+            source_fingerprint: old.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let mut new = vec![MeetingUtterance::new(
+            segment(Speaker::Others, "Changed words."),
+            Some("system_audio".into()),
+        )];
+        reconcile_rerun_utterances(&[old.clone()], &mut new);
+        assert_ne!(new[0].metadata.utterance_id, old.metadata.utterance_id);
+        assert_eq!(new[0].metadata.lineage, [old.metadata.utterance_id]);
+        assert!(new[0].metadata.manual.is_none());
+        let pending = &new[0].metadata.unresolved_manual[0];
+        assert_eq!(pending.name.as_deref(), Some("Retained correction"));
+        assert!(pending.review_required);
+        assert_eq!(pending.source_fingerprint, old.metadata.source_fingerprint);
+    }
+
+    #[test]
+    fn persisted_rerun_preserves_revision_after_repeated_manual_naming() {
+        use crate::meeting_utterances::{AttributionKind, AutomaticAttribution, MeetingUtterance};
+        let (_directory, store, id) = meeting();
+        let mut row = MeetingUtterance::new(
+            segment(Speaker::Others, "Same exact spoken text."),
+            Some("system_audio".into()),
+        );
+        row.segment.voice = Some(4);
+        row.metadata.attribution = AutomaticAttribution {
+            kind: AttributionKind::Single,
+            voices: vec![4],
+            ..AutomaticAttribution::default()
+        };
+        row.metadata.attribution_revision = 7;
+        store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        store
+            .rename_speaker(&id, 4, "First confirmed name")
+            .unwrap();
+        store
+            .rename_speaker(&id, 4, "Edited confirmed name")
+            .unwrap();
+        let before = store.read_transcript_snapshot(&id).unwrap();
+        let mut after = vec![MeetingUtterance::new(
+            segment(Speaker::Others, "Same exact spoken text."),
+            Some("system_audio".into()),
+        )];
+        reconcile_rerun_utterances(&before.utterances, &mut after);
+        assert!(
+            after[0].metadata.attribution_revision
+                >= before.utterances[0].metadata.attribution_revision
+        );
+        let names = crate::diarize::carry_utterance_names(
+            &before.utterances,
+            &after,
+            &store.speaker_names(&id),
+            &[],
+        );
+        store
+            .replace_retranscribed_utterances(&id, &after, &names, &[Speaker::Others])
+            .unwrap();
+        store.finish_retranscription(&id).unwrap();
+        let reopened = store.read_transcript_snapshot(&id).unwrap();
+        assert_eq!(
+            reopened.utterances[0].metadata.utterance_id,
+            before.utterances[0].metadata.utterance_id
+        );
+        assert!(
+            reopened.utterances[0].metadata.attribution_revision
+                >= before.utterances[0].metadata.attribution_revision
+        );
+        assert_eq!(
+            reopened.utterances[0]
+                .metadata
+                .manual
+                .as_ref()
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("Edited confirmed name")
+        );
     }
 
     fn meeting() -> (tempfile::TempDir, MeetingStore, String) {
@@ -829,9 +1270,14 @@ mod tests {
                     .unwrap();
             }
             if boundary >= 3 {
-                store
-                    .write_transcript(&id, &[segment(Speaker::Me, "nieuwe tekst")])
-                    .unwrap();
+                let replacement = [segment(Speaker::Me, "nieuwe tekst")];
+                assert!(store.write_transcript(&id, &replacement).is_err());
+                // Simulate the interrupted internal install, bypassing the public save barrier.
+                std::fs::write(
+                    root.join("transcript.md"),
+                    crate::meetings::render_transcript(&replacement),
+                )
+                .unwrap();
             }
             let reopened = MeetingStore::new(&store.root());
             reopened.recover_retranscriptions().unwrap();

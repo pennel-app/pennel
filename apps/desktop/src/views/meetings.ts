@@ -15,6 +15,7 @@ import { frozenRecognitionLabel, meetingProcessingSummary, processingLabel, reta
 import { retranscriptionControl, retranscriptionPercent } from "../meeting-retranscription";
 import { summaryControl } from "../voice-flow-state";
 import { segmentKeys, sameSegment } from "../recording-refresh";
+import { attributionEditable, attributionNoticeKey, segmentAudioAvailable } from "../meeting-source";
 import { liveMeetingWorkspace, retainedMeetingWorkspace, getRetainedMeetingWorkspace, acknowledgeRetainedNotes, flushLiveWorkspaces, finishLiveWorkspace, displayedLiveWorkspaceSession } from "../live-workspace";
 
 const notesQueue = new SerialQueue();
@@ -137,15 +138,18 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
   const create = (initialSegment: Segment, index: number) => {
     let segment = initialSegment;
     const play = ctx.info.capabilities.audio_playback;
-    const available = !!detail?.audio_tracks.some((track) => track.speaker === segment.speaker && track.available);
-    const stamp = h("button", { class: "transcript-stamp text-button", disabled: !id || !available || play.status !== "available",
-      title: available ? play.reason ? localizeBackendText(play.reason) : l("meetings.play_from_here") : l("meetings.no_saved_audio") }, formatClock(segment.start_ms / 1000));
-    if (play.reason) bindLocalization(stamp, () => { stamp.title = available ? localizeBackendText(play.reason!) : t("meetings.no_saved_audio"); });
-    if (id) stamp.addEventListener("click", () => { void api.playMeetingAudio(id, segment.speaker, segment.start_ms).catch(ctx.report); });
+    const available = () => !!detail && segmentAudioAvailable(segment, detail.audio_tracks, detail.metadata_status);
+    const stamp = h("button", { class: "transcript-stamp text-button", disabled: !id || !available() || play.status !== "available",
+      title: available() ? play.reason ? localizeBackendText(play.reason) : l("meetings.play_from_here") : l("meetings.passage_audio_unavailable") }, formatClock(segment.start_ms / 1000));
+    if (play.reason) bindLocalization(stamp, () => { stamp.title = available() ? localizeBackendText(play.reason!) : t("meetings.passage_audio_unavailable"); });
+    if (id) stamp.addEventListener("click", () => {
+      const work = segment.utterance_id ? api.playMeetingUtteranceAudio(id, segment.utterance_id) : api.playMeetingAudio(id, segment.speaker, segment.start_ms);
+      void work.catch(ctx.report);
+    });
     const makeSpeaker = () => {
-      const speakerColor = segment.speaker === "me" ? "var(--accent)" : segment.voice === null ? "var(--foreground)" : `var(--voice-${(segment.voice + 3) % 4 + 1})`;
+      const speakerColor = segment.attribution && segment.attribution.kind !== "single" ? "var(--foreground)" : segment.speaker === "me" ? "var(--accent)" : segment.voice === null ? "var(--foreground)" : `var(--voice-${(segment.voice + 3) % 4 + 1})`;
       let speaker: HTMLElement = h("span", { class: "speaker", style: `color:${speakerColor}` }, speakerUiLabel(segment, detail));
-      if (id && segment.voice !== null && segment.speaker === "others" && voices !== null) {
+      if (id && segment.voice !== null && segment.speaker === "others" && voices !== null && (!segment.attribution || segment.attribution.kind === "single") && attributionEditable(detail?.metadata_status)) {
         const currentName = detail?.speakers.find((item) => item.voice === segment.voice)?.name ?? "";
         const names = detail?.attendees ?? [];
         const chosen = names.indexOf(currentName);
@@ -190,12 +194,21 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
       }
     };
     drawBody();
-    const row = h("div", { class: "transcript-line", "data-start-ms": segment.start_ms, "data-transcript-index": index }, stamp, speaker, body);
+    const correction = h("p", { class: "help transcript-correction-review", hidden: !segment.correction_review_required }, l("meetings.attribution_correction_review"));
+    const row = h("div", { class: "transcript-line", "data-start-ms": segment.start_ms, "data-transcript-index": index,
+      "data-source-id": segment.source_id ?? "", title: segment.source_id ? l(`meetings.attribution_source_${segment.source_id}`) : "" }, stamp, speaker, body, correction);
     return { segment, element: row, update: (next: Segment, nextIndex: number, speakersChanged: boolean) => {
       const bodyChanged = next.text !== segment.text || next.failed !== segment.failed;
-      const speakerChanged = speakersChanged || next.voice !== segment.voice || next.speaker !== segment.speaker;
+      const speakerChanged = speakersChanged || next.voice !== segment.voice || next.speaker !== segment.speaker
+        || next.confirmed_speaker_name !== segment.confirmed_speaker_name
+        || JSON.stringify(next.attribution ?? null) !== JSON.stringify(segment.attribution ?? null);
       if (next.start_ms !== segment.start_ms) { stamp.textContent = formatClock(next.start_ms / 1000); row.dataset.startMs = String(next.start_ms); }
       segment = next;
+      stamp.disabled = !id || !available() || play.status !== "available";
+      stamp.title = available() ? play.reason ? localizeBackendText(play.reason) : t("meetings.play_from_here") : t("meetings.passage_audio_unavailable");
+      correction.hidden = !segment.correction_review_required;
+      row.dataset.sourceId = segment.source_id ?? "";
+      row.title = segment.source_id ? t(`meetings.attribution_source_${segment.source_id}`) : "";
       if (bodyChanged) drawBody();
       if (speakerChanged) { const replacement = makeSpeaker(); speaker.replaceWith(replacement); speaker = replacement; }
       row.dataset.transcriptIndex = String(nextIndex);
@@ -300,7 +313,9 @@ function chat(ctx: Context, meetingId: string | null) {
         state.scrollTop = history.scrollTop;
         answerReturn = { scope: meetingId, sourceMeetingId: citation.passage.meeting_id };
         ctx.navigate("meetings", citation.passage.meeting_id, citation.passage.kind === "transcript" ? citation.passage.start_ms ?? undefined : undefined,
-          { kind: citation.passage.kind, start_ms: citation.passage.start_ms, text: citation.passage.text });
+          { kind: citation.passage.kind, start_ms: citation.passage.start_ms, text: citation.passage.text,
+            ...(citation.passage.meeting_uid ? { meeting_uid: citation.passage.meeting_uid } : {}),
+            ...(citation.passage.utterance_ids != null ? { utterance_ids: citation.passage.utterance_ids, utterance_fingerprints: citation.passage.utterance_fingerprints } : {}) });
       } }, label());
       bindLocalization(button, () => { button.textContent = label(); });
       return button;
@@ -391,6 +406,10 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
   const playback = ctx.info.capabilities.audio_playback;
   const audioAvailable = detail.audio_tracks.some((track) => track.available);
   const audioReason = () => !audioAvailable ? t("meetings.no_saved_audio") : playback.status !== "available" ? playback.reason ? localizeBackendText(playback.reason) : t("meetings.audio_unavailable") : null;
+  const metadataReason = () => {
+    const key = attributionNoticeKey(detail.metadata_status);
+    return !attributionEditable(detail.metadata_status) && key ? t(key) : null;
+  };
   let voices: MeetingVoice[] | null = null;
   let speakerSetup: SpeakerSetup | null = null;
   let speakersLoaded = false;
@@ -440,10 +459,11 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
   const reprocessReason = h("p", { class: "help meeting-control-reason" });
   const refreshRetranscription = () => {
     const control = retranscriptionControl(detail.retranscription_plan, retranscriptionStatus, runtime.busy, current.working);
-    reprocess.disabled = control.disabled;
-    reprocess.title = control.reason ? localizeBackendText(control.reason) : "";
-    reprocessReason.textContent = control.reason ? localizeBackendText(control.reason) : "";
-    reprocessReason.hidden = !control.reason;
+    const reason = metadataReason() ?? (control.reason ? localizeBackendText(control.reason) : null);
+    reprocess.disabled = control.disabled || !!metadataReason();
+    reprocess.title = reason ?? "";
+    reprocessReason.textContent = reason ?? "";
+    reprocessReason.hidden = !reason || !!metadataReason();
     notes.input.disabled = active || !!retranscriptionStatus?.running;
   };
   const tabs = h("div", { class: "segmented detail-tabs", role: "tablist", "aria-label": l("meetings.default_title") });
@@ -481,7 +501,9 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
       }
       transcriptContent ??= transcript(ctx, detail.transcript, detail, id, voices);
       refreshRetranscription();
-      panel.replaceChildren(transcriptControls, reprocessReason, remembered, transcriptContent.element);
+      const metadataNotice = attributionNoticeKey(detail.metadata_status);
+      panel.replaceChildren(transcriptControls, reprocessReason, remembered,
+        ...(metadataNotice ? [h("p", { class: "help attribution-notice" }, l(metadataNotice))] : []), transcriptContent.element);
       return;
     }
     panel.replaceChildren(detail.summary ? enhanced : detail.notes.trim() ? h("div", { class: "markdown" }, detail.notes) : h("p", { class: "muted" }, l("meetings.empty_summary")));
@@ -582,13 +604,13 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
   ], "share-menu");
   const diarization = ctx.info.capabilities.diarization;
   const cloudRoute = ctx.info.settings.speaker_recognition === "cloud";
-  const speakerReason = () => retranscriptionStatus?.running ? t("meetings.working") : runtime.busy || meetingInfo.duration_min <= 0 ? t("meetings.finish_first")
+  const speakerReason = () => metadataReason() ?? (retranscriptionStatus?.running ? t("meetings.working") : runtime.busy || meetingInfo.duration_min <= 0 ? t("meetings.finish_first")
     : diarization.status !== "available" ? diarization.reason ? localizeBackendText(diarization.reason) : t("meetings.speaker_recognition_unavailable")
     : !detail.audio_tracks.some((track) => track.available) ? t("meetings.no_saved_audio")
     : !detail.transcript.some((segment) => !segment.failed) ? t("meetings.empty_transcript")
     : !speakersLoaded ? t("common.loading")
     : !speakerSetup?.ready ? cloudRoute ? t("backend.sign_in_to_pennel_cloud_under_settings_account_first") : t("meetings.download_speaker_models")
-    : null;
+    : null);
   const canDiarize = !speakerReason();
   const diarize = controlButton({ class: "btn", disabled: !canDiarize || current.working,
     title: speakerReason() ?? (cloudRoute ? l("meetings.speaker_cloud_help") : l("meetings.speaker_local_help")) }, l("meetings.recognize_speakers"));
@@ -603,7 +625,7 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
   bindLocalization(diarizeReason, () => { diarizeReason.textContent = speakerReason(); });
   bindLocalization(diarize, () => { diarize.title = speakerReason() ?? t(cloudRoute ? "meetings.speaker_cloud_help" : "meetings.speaker_local_help"); });
   reprocess.addEventListener("click", async () => {
-    if (retranscriptionControl(detail.retranscription_plan, retranscriptionStatus, runtime.busy, current.working).disabled) return;
+    if (metadataReason() || retranscriptionControl(detail.retranscription_plan, retranscriptionStatus, runtime.busy, current.working).disabled) return;
     try {
       await notes.flush();
       const fresh = await api.meetingDetail(id);
@@ -738,7 +760,9 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
         if (range) highlight(summaryBlocks.slice(range.first, range.last + 1).map((block) => block.element));
       } else {
         const candidates = detail.transcript.map((segment, index) => ({ ...segment, index, text: `${sourceSpeakerLabel(segment, detail)}: ${segment.text.trim()}` })).filter((segment) => !segment.failed);
-        const range = transcriptSourceBlocks(candidates, source);
+        const stale = source.meeting_uid && source.meeting_uid !== detail.meeting_uid
+          || source.utterance_ids && detail.metadata_status && detail.metadata_status !== "valid";
+        const range = stale ? null : transcriptSourceBlocks(candidates, source);
         if (range) highlight(candidates.slice(range.first, range.last + 1).flatMap((segment) => {
           const element = result.querySelector<HTMLElement>(`[data-transcript-index="${segment.index}"]`);
           return element ? [element] : [];

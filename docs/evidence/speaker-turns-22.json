@@ -1,0 +1,387 @@
+{
+  "issue": 22,
+  "parent": 94,
+  "date": "2026-11-03",
+  "code_candidate": "2a8b66c",
+  "desktop_binary_candidate": "b93a1a4",
+  "depends_on_pr": 127,
+  "checks": {
+    "core_tests": 841,
+    "core_existing_ignored": 7,
+    "keyboard_tests": 17,
+    "frontend_tests": 264,
+    "backend_tests": 253,
+    "mac_swift_tests": 139,
+    "mobile_ui_tests": 116,
+    "mobile_plugin_tests": 17,
+    "mobile_widget_tests": 7,
+    "mobile_portable_swift_tests": 116,
+    "mobile_hosted_tests": 169,
+    "mobile_hosted_failed": 0,
+    "mobile_hosted_skipped": 0,
+    "core_release_frontend_build": "passed",
+    "core_backend_formatting_strict_clippy": "passed",
+    "mobile_types_and_matching_device_simulator_bindings": "passed",
+    "mobile_clean_repeated_prebuild_and_deployment_pods": "passed",
+    "unsigned_arm64_simulator_and_device_release": "passed"
+  },
+  "owned_browser_renders": [
+    {
+      "case": "speaker-turns-live",
+      "locale": "en",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-live-minimum",
+      "locale": "en",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-review-playback",
+      "locale": "en",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-honest-states",
+      "locale": "en",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-metadata-unavailable",
+      "locale": "en",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-live",
+      "locale": "en",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-live-minimum",
+      "locale": "en",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-review-playback",
+      "locale": "en",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-honest-states",
+      "locale": "en",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-metadata-unavailable",
+      "locale": "en",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-live",
+      "locale": "nl",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-live-minimum",
+      "locale": "nl",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-review-playback",
+      "locale": "nl",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-honest-states",
+      "locale": "nl",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-metadata-unavailable",
+      "locale": "nl",
+      "appearance": "light"
+    },
+    {
+      "case": "speaker-turns-live",
+      "locale": "nl",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-live-minimum",
+      "locale": "nl",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-review-playback",
+      "locale": "nl",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-honest-states",
+      "locale": "nl",
+      "appearance": "dark"
+    },
+    {
+      "case": "speaker-turns-metadata-unavailable",
+      "locale": "nl",
+      "appearance": "dark"
+    }
+  ],
+  "owned_native_screenshots": 16,
+  "native": {
+    "binary_sha256": "8b10183b5baf94b8cd9b4312e5e5baa87f8f51c33e1ec507e97869e975494605",
+    "personal_team": "B538Q2K76C",
+    "os_version": "27.0.1",
+    "capture_ipc": "synthetic",
+    "provider_ipc": "synthetic",
+    "actual_hardware_capture": false,
+    "real_call_acceptance": false
+  },
+  "native_checks": [
+    {
+      "locale": "en",
+      "appearance": "light",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "durable_row_retained": true,
+          "physical_source_retained": true,
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 375,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 5,
+          "actual_hardware_capture": false
+        }
+      }
+    },
+    {
+      "locale": "en",
+      "appearance": "dark",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "durable_row_retained": true,
+          "physical_source_retained": true,
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 346,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 4,
+          "actual_hardware_capture": false
+        }
+      }
+    },
+    {
+      "locale": "nl",
+      "appearance": "light",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "durable_row_retained": true,
+          "physical_source_retained": true,
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 311,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 4,
+          "actual_hardware_capture": false
+        }
+      }
+    },
+    {
+      "locale": "nl",
+      "appearance": "dark",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "durable_row_retained": true,
+          "physical_source_retained": true,
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 342,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 4,
+          "actual_hardware_capture": false
+        }
+      }
+    }
+  ],
+  "bound_measurements": {
+    "metadata_part_max_bytes": 1048576,
+    "sealed_sync_object_max_bytes": 5242880,
+    "append_revisions_tested": 240,
+    "format_duration_fixtures_minutes": [
+      60,
+      120
+    ],
+    "retention_and_encrypted_sync": "bounded live parts and preserved conflict/backup references verified"
+  },
+  "remaining": [
+    "Consented EN/Dutch/Flemish/mixed two/four/six voice acoustic quality and DER/speaker-attributed word error",
+    "Real hybrid routes/echo/device changes and60minute CPU/aggregate RSS/latency baseline comparison",
+    "Signed iPhone upgrade/storage acceptance, installed Windows/Linux and review/merge; no release/deployment"
+  ],
+  "local_logs": "build/issue22* and build/utterance-*",
+  "legacy_projection": "Segment and transcript.md compatibility labels are lossy; current UI, questions, summaries, exports and playback use verified canonical identity/source metadata."
+}

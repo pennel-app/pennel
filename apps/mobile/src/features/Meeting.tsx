@@ -17,6 +17,7 @@ import { AskPanel, type AskSession } from '../components/AskPanel';
 import { workflowText } from '../workflow-copy';
 import { summaryHasHeading } from '../workflow-state';
 import { useHapticFeedback } from '../haptics';
+import { attributionEditable, transcriptKeys, transcriptSpeakerLabel, transcriptPlayback } from '../transcript-state';
 
 type Pane = 'notes' | 'transcript' | 'questions';
 type Editor = { type: 'rename' } | { type: 'speaker'; voice: number; initial: string } | null;
@@ -43,6 +44,7 @@ export default function Meeting() {
   const [viewConflict, setViewConflict] = useState<{ name: string; text: string } | null>(null);
   const [currentJob, setCurrentJob] = useState<SpeakerJob | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sourceIssue, setSourceIssue] = useState<string | null>(null);
   const transcriptList = useRef<FlatList>(null);
   const transcriptOffset = useRef(0);
   useEffect(() => { if (pane !== 'transcript') return; const frame = requestAnimationFrame(() => transcriptList.current?.scrollToOffset({ offset: transcriptOffset.current, animated: false })); return () => cancelAnimationFrame(frame); }, [pane]);
@@ -56,7 +58,8 @@ export default function Meeting() {
     if (!token || !detail || token === openedSource.current) return;
     openedSource.current = token;
     const source = resolveSource(token, detail);
-    if (source.changed || !source.passage) { setNotice(t('meetings.source_changed')); return; }
+    if (source.changed || !source.passage) { setSourceIssue(source.passage?.text ?? ''); return; }
+    setSourceIssue(null);
     setPane(source.passage.kind === 'transcript' ? 'transcript' : 'notes');
     if (source.transcriptIndex !== null) {
       const index = source.transcriptIndex;
@@ -93,10 +96,12 @@ export default function Meeting() {
   if (!detail) return <Page title={t('navigation.meetings')} inset={false}>{query.loading ? <Loading /> : query.error ? <><Notice error>{query.error}</Notice><Button title={t('common.retry')} subtle onPress={() => void query.refresh()} /></> : <Empty title={t('meetings.not_found')} />}</Page>;
   const voices = [...new Set(detail.transcript.flatMap((segment) => segment.voice === null ? [] : [segment.voice]))].sort((a, b) => a - b);
   const names = new Map(detail.speakers.map((speaker) => [speaker.voice, speaker.name]));
+  const rowKeys = transcriptKeys(detail.transcript);
   const canPlay = detail.audio_tracks.some((track) => track.available);
   const active = Boolean(snapshot && snapshot.meeting.id === id && snapshot.meeting.phase !== 'idle');
   const jobBusy = job && ['preparing', 'uploading', 'recognizing', 'applying'].includes(job.stage);
-  const speakerEnabled = snapshot?.cloud.signed_in && !active && canPlay && !jobBusy;
+  const canEditAttribution = attributionEditable(detail.metadata_status);
+  const speakerEnabled = snapshot?.cloud.signed_in && !active && canPlay && !jobBusy && canEditAttribution;
   const deleteMeeting = () => confirm(t('meetings.delete_title', { title: detail.info.title }), t('meetings.delete_help'), t('common.delete'), t('common.cancel'), () => { void draft.save().then((saved) => saved ? run('delete-meeting', 'meetings.delete', { id }) : undefined).then((value) => { if (value !== undefined) { draft.discard(); disableRemoval(); router.replace('/(tabs)'); } }); }, true);
   return <Page subtitle={`${dateLabel(detail.info.start_iso, language)} · ${t('meetings.duration_minutes', { count: detail.info.duration_min })}`} inset={false} scroll={pane !== 'transcript'} scrollKey={`${id}:${pane}`} action={<ActionMenu label={copy('moreActions')} actions={[
     { label: t('meetings.share_action'), onPress: () => void exportMeeting('share') },
@@ -108,6 +113,7 @@ export default function Meeting() {
   ]} />}>
     <Stack.Screen options={{ title: detail.info.title }} />
     {notice && <Section><Notice>{notice}</Notice></Section>}
+    {sourceIssue !== null && <Section><Notice>{t('meetings.source_changed')}</Notice>{sourceIssue ? <Body selectable>{sourceIssue}</Body> : null}</Section>}
     {detail.interruption && <Section><Notice error>{ownedFailureText(language, detail.interruption, detail.interruption_code)}</Notice></Section>}
     {(detail.conflicts ?? []).length > 0 && <Section description={t('meetings.conflict_notice')}>{detail.conflicts?.map((conflict) => <Row key={conflict.name} title={conflict.name} onPress={() => setViewConflict({ name: conflict.name, text: conflict.text ?? '' })} />)}</Section>}
     <View style={{ marginBottom: theme.space[5] }}><NativeChoice label={copy('content')} segmented value={pane} options={(['notes', 'transcript', 'questions'] as const).map((value) => ({ value, label: t(`meetings.${value}`) }))} onChange={setPane} /></View>
@@ -117,18 +123,23 @@ export default function Meeting() {
     </>}
     {pane === 'transcript' && <>
       <Actions><Button title={copy('manageSpeakers')} subtle icon="people-outline" onPress={() => setShowSpeakers(true)} />{canPlay && playRequested && <Button title={t('mobile.playback.stop')} subtle onPress={() => void run('playback', 'meetings.stopPlayback').then((value) => { if (value !== undefined) setPlayRequested(false); })} />}</Actions>
-
-      <FlatList ref={transcriptList} data={detail.transcript} onScroll={(event) => { transcriptOffset.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={32} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={7} contentContainerStyle={{ paddingTop: theme.space[3], paddingBottom: theme.space[10] }} keyExtractor={(segment, index) => `${segment.start_ms}-${index}`} onScrollToIndexFailed={({ index, averageItemLength }) => { transcriptList.current?.scrollToOffset({ offset: averageItemLength * index, animated: !reducedMotion }); }} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`${clock(item.start_ms / 1000)} ${item.voice !== null ? names.get(item.voice) || t('mobile.speakers.unknown', { number: item.voice }) : t(`meetings.speaker_${item.speaker}`)}. ${item.text}`} accessibilityState={{ disabled: !canPlay }} accessibilityHint={canPlay ? t('meetings.play_from_here') : t('meetings.no_saved_audio')} disabled={!canPlay} onPress={() => void run('playback', 'meetings.play', { id, speaker: item.speaker, start_ms: item.start_ms }).then((value) => { if (value !== undefined) setPlayRequested(true); })} style={{ gap: theme.space[1], minHeight: 44, paddingBottom: theme.space[5] }}><Body muted style={{ fontSize: theme.size.label }}>{clock(item.start_ms / 1000)} · {item.voice !== null ? names.get(item.voice) || t('mobile.speakers.unknown', { number: item.voice }) : t(`meetings.speaker_${item.speaker}`)}</Body><Body selectable style={item.failed ? { color: theme.colors.accent } : undefined}>{item.failed ? t('meetings.transcription_failed') : item.text}</Body></Pressable>} ListEmptyComponent={<Empty title={t('meetings.empty_transcript')} />} />
+      {detail.metadata_status && detail.metadata_status !== 'valid' && <Notice>{t(`meetings.attribution_metadata_${detail.metadata_status}`)}</Notice>}
+      <FlatList ref={transcriptList} data={detail.transcript} onScroll={(event) => { transcriptOffset.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={32} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={7} contentContainerStyle={{ paddingTop: theme.space[3], paddingBottom: theme.space[10] }} keyExtractor={(_segment, index) => rowKeys[index]} onScrollToIndexFailed={({ index, averageItemLength }) => { transcriptList.current?.scrollToOffset({ offset: averageItemLength * index, animated: !reducedMotion }); }} renderItem={({ item }) => {
+        const label = transcriptSpeakerLabel(item, detail.speakers, t);
+        const source = item.source_id ? t(`meetings.attribution_source_${item.source_id}`) : '';
+        const playback = transcriptPlayback(id, item, detail.audio_tracks, detail.metadata_status);
+        return <Pressable accessibilityRole="button" accessibilityLabel={`${clock(item.start_ms / 1000)} ${label}${source ? ` · ${source}` : ''}. ${item.text}`} accessibilityState={{ disabled: !playback }} accessibilityHint={playback ? t('meetings.play_from_here') : t('meetings.passage_audio_unavailable')} disabled={!playback} onPress={() => { if (playback) void run('playback', playback.method, playback.payload).then(value => { if (value !== undefined) setPlayRequested(true); }); }} style={{ gap: theme.space[1], minHeight: 44, paddingBottom: theme.space[5] }}><Body muted style={{ fontSize: theme.size.label }}>{clock(item.start_ms / 1000)} · {label}{source ? ` · ${source}` : ''}</Body><Body selectable style={item.failed ? { color: theme.colors.accent } : undefined}>{item.failed ? t('meetings.transcription_failed') : item.text}</Body>{item.correction_review_required && <Body muted style={{ fontSize: theme.size.label }}>{t('meetings.attribution_correction_review')}</Body>}</Pressable>;
+      }} ListEmptyComponent={<Empty title={t('meetings.empty_transcript')} />} />
     </>}
     {pane === 'questions' && <AskPanel meetingId={id} session={askSession} onSessionChange={setAskSession} />}
     <Modal visible={showSpeakers} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => { setShowSpeakers(false); setEditor(null); }}><Page title={copy('manageSpeakers')} bottomInset action={<Button title={t('common.close')} subtle onPress={() => { setShowSpeakers(false); setEditor(null); }} />}>
-      {editor?.type === 'speaker' ? <Section description={t('mobile.speakers.name_help')}><Field label={t('mobile.speakers.name')} value={editor.initial} onChangeText={(initial) => setEditor((current) => current?.type === 'speaker' ? { ...current, initial } : current)} autoFocus /><Actions><Button title={t('common.save')} busy={busy.has('rename-speaker')} onPress={() => { void run('rename-speaker', 'recognition.renameSpeaker', { id, voice: editor.voice, name: editor.initial.trim(), remember: false }).then((value) => { if (value !== undefined) { setEditor(null); return query.refresh(); } }); }} /><Button title={t('common.cancel')} subtle onPress={() => setEditor(null)} /></Actions></Section> : <>
+      {editor?.type === 'speaker' ? <Section description={t('mobile.speakers.name_help')}><Field label={t('mobile.speakers.name')} value={editor.initial} onChangeText={(initial) => setEditor((current) => current?.type === 'speaker' ? { ...current, initial } : current)} autoFocus /><Actions><Button title={t('common.save')} busy={busy.has('rename-speaker')} disabled={!canEditAttribution} onPress={() => { void run('rename-speaker', 'recognition.renameSpeaker', { id, voice: editor.voice, name: editor.initial.trim(), remember: false }).then((value) => { if (value !== undefined) { setEditor(null); return query.refresh(); } }); }} /><Button title={t('common.cancel')} subtle onPress={() => setEditor(null)} /></Actions></Section> : <>
       <Section title={t('mobile.speakers.choice')}>
         <Button title={t('mobile.speakers.manual')} busy={busy.has('recognition-start')} disabled={!speakerEnabled} onPress={recognize} />
         {!snapshot?.cloud.signed_in && <Button title={t('meetings.speaker_cloud_sign_in')} subtle onPress={() => { setShowSpeakers(false); router.push({ pathname: '/settings/[section]', params: { section: 'account' } }); }} />}
         {!canPlay && <Notice>{t('meetings.no_saved_audio')}</Notice>}
         {job && <><Notice error={job.stage === 'failed' || job.stage === 'response_unknown'}>{t(`mobile.speakers.${job.stage}`, { count: job.confirmed_chunks })}</Notice>{job.error && <Notice error>{localizedFailure(language, job.error)}</Notice>}<Actions>{recognitionActions(job).cancel && <Button title={t(job.error?.code === 'speaker_cleanup' ? 'mobile.speakers.cleanup' : 'common.cancel')} subtle onPress={() => void run<SpeakerJob>('recognition-cancel', 'recognition.cancel', { job_id: job.id }).then((value) => { if (value) setCurrentJob(speakerJob(value)); })} />}{recognitionActions(job).resume && <Button title={t('mobile.speakers.resume')} subtle busy={busy.has('recognition-resume')} onPress={resume} />}</Actions></>}
-        {voices.map((voice) => <Row key={voice} title={names.get(voice) || t('mobile.speakers.unknown', { number: voice })} onPress={() => setEditor({ type: 'speaker', voice, initial: names.get(voice) ?? '' })} trailing={detail.voices?.find((item) => item.voice === voice)?.can_remember && names.get(voice) ? <Button title={t('mobile.speakers.remember')} subtle onPress={() => confirm(t('mobile.speakers.remember'), t('mobile.speakers.remember_help'), t('common.save'), t('common.cancel'), () => void run('remember-speaker', 'recognition.renameSpeaker', { id, voice, name: names.get(voice), remember: true }).then(() => query.refresh()))} /> : undefined} />)}
+        {voices.map((voice) => <Row key={voice} disabled={!canEditAttribution} title={names.get(voice) || t('mobile.speakers.unknown', { number: voice })} onPress={() => setEditor({ type: 'speaker', voice, initial: names.get(voice) ?? '' })} trailing={detail.voices?.find((item) => item.voice === voice)?.can_remember && names.get(voice) ? <Button title={t('mobile.speakers.remember')} subtle disabled={!canEditAttribution} onPress={() => confirm(t('mobile.speakers.remember'), t('mobile.speakers.remember_help'), t('common.save'), t('common.cancel'), () => void run('remember-speaker', 'recognition.renameSpeaker', { id, voice, name: names.get(voice), remember: true }).then(() => query.refresh()))} /> : undefined} />)}
         {detail.transcript.some((segment) => segment.failed) && <Button title={t('common.retry')} subtle busy={busy.has('retry-transcription')} onPress={() => void run('retry-transcription', 'meetings.retryTranscription', { id }).then(() => query.refresh())} />}
       </Section>
       </>}

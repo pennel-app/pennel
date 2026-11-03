@@ -34,6 +34,7 @@ mod meeting_evidence;
 mod meeting_index;
 mod meeting_preview;
 mod meeting_recording;
+mod meeting_utterances;
 mod meetings;
 mod models;
 mod paste_queue;
@@ -50,6 +51,7 @@ mod speaker_commit;
 mod speaker_jobs;
 mod speakers;
 mod speech;
+mod speech_result;
 mod status;
 mod storage;
 mod stt;
@@ -58,6 +60,9 @@ mod system_llm;
 mod system_stt;
 mod templates;
 mod transcript_filter;
+mod transcript_projection;
+#[cfg(test)]
+mod utterance_integration_tests;
 mod voices;
 mod wav;
 
@@ -98,6 +103,7 @@ pub use localization::{
 pub use meeting_chat::{ChatTurn, Citation, MeetingAnswer};
 pub use meeting_evidence::{
     MeetingEvidence, MeetingSourceAnchor, evidence_revision, segment_evidence_revision,
+    utterance_evidence_revision,
 };
 pub use meeting_index::{Passage, PassageKind};
 pub use meeting_preview::{
@@ -109,6 +115,11 @@ pub use meeting_recording::{
     MeetingRecordingMetadata, RecordingEnvironment, RecordingRecognition, RecordingSource,
     RecordingTrackMetadata, RecordingTranscriptionAttempt, RecordingTransport,
     resolve_meeting_audio_tracks,
+};
+pub use meeting_utterances::{
+    AcousticTurn, AttributionKind, AutomaticAttribution, ManualCorrection,
+    MeetingTranscriptSnapshot, MeetingUtterance, RecoveryAudioDisposition, RecoveryAudioProvenance,
+    RecoveryAudioTrack, TimedTextSpan, TranscriptMetadataStatus, UtteranceMetadata,
 };
 pub use meetings::{MeetingInfo, NoteLine, Segment, Speaker, SpeakerName, mark_lines};
 pub use models::{DownloadListener, LocalModel, ModelState};
@@ -142,8 +153,9 @@ pub use speaker_jobs::{
     SpeakerRecognitionJob, SpeakerRecognitionJobSnapshot, SpeakerRecognitionStage,
 };
 pub use speakers::{MeetingVoice, SpeakerRecognition};
+pub use speech_result::{SpeechTextSpan, SpeechTimingKind, SpeechTranscript};
 pub use status::{CommandIntent, DictationStatus, PillState};
 pub use system_llm::{LanguageModelMessage, SystemLanguageModel};
-pub use system_stt::SystemTranscriber;
+pub use system_stt::{SystemTranscriber, TimedSystemTranscriber};
 pub use templates::MeetingTemplate;
 pub use voices::{KnownVoice, VoiceProfile};

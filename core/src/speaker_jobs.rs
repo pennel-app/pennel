@@ -136,6 +136,8 @@ struct Manifest {
     audio_digest: String,
     transcript_digest: String,
     names_digest: String,
+    #[serde(default)]
+    metadata_digest: Option<String>,
     ranges: Vec<(u64, u64)>,
     confirmed: Vec<ConfirmedChunk>,
     #[serde(default)]
@@ -160,6 +162,7 @@ fn invalid_checkpoint(job_id: &str, library: &Path) -> Manifest {
         audio_digest: String::new(),
         transcript_digest: String::new(),
         names_digest: String::new(),
+        metadata_digest: None,
         ranges: Vec::new(),
         confirmed: Vec::new(),
         applied_transcript_digest: None,
@@ -363,6 +366,7 @@ impl SpeakerRecognitionJob {
             || meeting_audio_digest(&store, &id)? != manifest.audio_digest
             || store.transcript_fingerprint(&id)? != manifest.transcript_digest
             || speaker_names_digest(&store.speaker_names(&id))? != manifest.names_digest
+            || store.read_transcript_snapshot(&id)?.metadata_digest != manifest.metadata_digest
         {
             return Err(PennelError::Cloud {
                 code: "speaker_stale".into(),
@@ -608,7 +612,18 @@ impl SpeakerRecognitionJob {
         engine.apply_recognized_speakers_observed(
             &id,
             merged,
-            crate::diarize::Track::System,
+            if engine
+                .meeting_store()
+                .audio_tracks(&id)?
+                .iter()
+                .any(|track| {
+                    track.source == crate::meeting_recording::RecordingSource::RoomMicrophone
+                })
+            {
+                crate::diarize::Track::Microphone
+            } else {
+                crate::diarize::Track::System
+            },
             None,
             Some(&self.directory),
             |segments, names| {
@@ -897,6 +912,7 @@ impl PennelEngine {
                 "The transcript contains lines that Pennel does not recognize.",
             ));
         }
+        crate::meeting_utterances::assert_writable(&store.read_transcript_snapshot(&id)?)?;
         let info = reader.info()?;
         if info.total_frames == 0 || info.total_frames / (600 * u64::from(SAMPLE_RATE)) > 10_000 {
             return Err(invalid("The recording does not have a valid duration."));
@@ -934,6 +950,7 @@ impl PennelEngine {
             audio_digest,
             transcript_digest: store.transcript_fingerprint(&_edit.id)?,
             names_digest: speaker_names_digest(&store.speaker_names(&_edit.id))?,
+            metadata_digest: store.read_transcript_snapshot(&_edit.id)?.metadata_digest,
             ranges,
             confirmed: Vec::new(),
             applied_transcript_digest: None,
@@ -1337,20 +1354,25 @@ mod tests {
         let store = engine.meeting_store();
         let id = store.create("Fixture", chrono::Local::now()).unwrap();
         store
-            .write_transcript(
+            .write_transcript_snapshot(
                 &id,
-                &[crate::Segment {
-                    start_ms: 0,
-                    end_ms: 2000,
-                    speaker: crate::Speaker::Others,
-                    text: "A fixture sentence.".into(),
-                    failed: false,
-                    voice: None,
-                }],
+                None,
+                &[crate::meeting_utterances::MeetingUtterance::new(
+                    crate::Segment {
+                        start_ms: 0,
+                        end_ms: 2000,
+                        speaker: crate::Speaker::Others,
+                        text: "A fixture sentence.".into(),
+                        failed: false,
+                        voice: None,
+                    },
+                    Some("room_microphone".into()),
+                )],
             )
             .unwrap();
         store.write_notes(&id, "Original personal note.").unwrap();
-        let audio = store.dir_of(&id).join("anderen.m4a");
+        let audio = store.dir_of(&id).join("audio/room.m4a");
+        fs::create_dir_all(audio.parent().unwrap()).unwrap();
         fs::write(&audio, b"unit-test archive identity; decoding is injected").unwrap();
         let reader = Arc::new(Reader {
             info: RecognitionAudioInfo {
@@ -1383,6 +1405,34 @@ mod tests {
                 job.snapshot()
             );
             std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    #[test]
+    fn unsupported_or_corrupt_metadata_refuses_before_audio_upload() {
+        for bytes in [
+            br#"{"schema_version":9000}"#.as_slice(),
+            b"invalid metadata".as_slice(),
+        ] {
+            let f = fixture(16_000);
+            let store = f.engine.meeting_store();
+            fs::write(store.dir_of(&f.id).join("transcript.meta.json"), bytes).unwrap();
+            let transport = Transport::new(Vec::new());
+            assert!(
+                f.engine
+                    .clone()
+                    .start_speaker_recognition(f.id.clone(), f.reader.clone(), transport.clone())
+                    .is_err()
+            );
+            assert_eq!(transport.calls.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                f.engine.meeting_transcript(f.id.clone())[0].text,
+                "A fixture sentence."
+            );
+            assert_eq!(
+                f.engine.meeting_notes(f.id.clone()),
+                "Original personal note."
+            );
         }
     }
 
@@ -1487,6 +1537,56 @@ mod tests {
         assert_eq!(settled(&job).stage, SpeakerRecognitionStage::Completed);
         assert_eq!(transport.calls.load(Ordering::SeqCst), 1);
         assert_eq!(f.reader.requests.lock().unwrap()[0].0, 600 * 16000);
+    }
+
+    #[test]
+    fn changed_manual_metadata_cannot_be_overwritten_when_text_is_unchanged() {
+        let f = fixture(16_000);
+        let transport = Transport::new(Vec::new());
+        let engine = f.engine.clone();
+        let id = f.id.clone();
+        *transport.on_upload.lock().unwrap() = Some(Box::new(move || {
+            let store = engine.meeting_store();
+            let mut snapshot = store.read_transcript_snapshot(&id).unwrap();
+            let row = &mut snapshot.utterances[0];
+            row.metadata.manual = Some(crate::meeting_utterances::ManualCorrection {
+                name: Some("User correction".into()),
+                voice: Some(4),
+                source_fingerprint: row.metadata.source_fingerprint.clone(),
+                review_required: false,
+            });
+            store
+                .write_transcript_snapshot(&id, Some(snapshot.revision), &snapshot.utterances)
+                .unwrap();
+        }));
+        let original_text = f.engine.meeting_transcript(f.id.clone())[0].text.clone();
+        let job = f
+            .engine
+            .clone()
+            .start_speaker_recognition(f.id.clone(), f.reader.clone(), transport)
+            .unwrap();
+        let state = settled(&job);
+        assert_eq!(state.stage, SpeakerRecognitionStage::Failed);
+        assert_eq!(state.error_code.as_deref(), Some("speaker_stale"));
+        assert_eq!(
+            f.engine.meeting_transcript(f.id.clone())[0].text,
+            original_text
+        );
+        let snapshot = f
+            .engine
+            .meeting_store()
+            .read_transcript_snapshot(&f.id)
+            .unwrap();
+        assert_eq!(
+            snapshot.utterances[0]
+                .metadata
+                .manual
+                .as_ref()
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("User correction")
+        );
     }
 
     #[test]

@@ -262,6 +262,7 @@ mark { background: none; color: inherit; font-weight: 600; }
 .menu-button.speaker-picker .menu-button-chevron { opacity: .6; }
 .transcript-copy { min-width: 0; white-space: pre-wrap; }
 .transcript-copy > .text-button { margin-left: 10px; }
+.transcript-correction-review { grid-column: 2 / -1; margin: 0; }
 
 /* Questions */
 .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }

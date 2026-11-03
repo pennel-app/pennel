@@ -6,12 +6,12 @@ use crate::{PennelError, system_llm};
 pub(crate) const MAP_REDUCE_ABOVE: usize = 40_000;
 pub(crate) const BLOCK_CHARS: usize = 30_000;
 
-const SYSTEM_PROMPT: &str = "You write meeting notes from a transcript. \"Ik\" is the user; every other label (\"Anderen\", \"Anderen 2\" or a name) is another participant.
+const SYSTEM_PROMPT: &str = "You write meeting notes from a transcript. In legacy transcripts, \"Ik\" labels the user. \"Me\" labels an explicit own-voice estimate. Unknown, mixed or overlapping speaker labels do not establish a person's identity or who made a commitment. Never infer a person from a microphone or system-audio track. Keep an owner unknown unless the source supports the assignment.
 Never invent facts that are not in the transcript or notes.";
 
 const LANGUAGE_RULE: &str = "Determine the predominant meeting language from the transcript content, ignoring speaker labels, template wording and interface language. If there is no transcript, use the notes. If the language is indeterminate, use English. Write generated prose and empty-section text in that language. Use \"- None\" in English or \"- Geen\" in Dutch for empty generated sections, or the equivalent in the meeting language.";
 const DEFAULT_SECTION_RULE: &str = "Use Markdown with exactly these semantic sections, translating their headings into the meeting language: Summary, Decisions, Action items. English headings: ## Summary, ## Decisions, ## Action items. Dutch headings: ## Samenvatting, ## Beslissingen, ## Actiepunten. These examples do not determine the meeting language.";
-const MAP_PROMPT: &str = "Summarize this part of a meeting transcript as concise bullet points: facts, decisions and action items with who is responsible. Keep the predominant language of the source content, ignoring speaker labels. If the language is indeterminate, use English. \"Ik\" is the user.";
+const MAP_PROMPT: &str = "Summarize this part of a meeting transcript as concise bullet points: facts, decisions and action items with who is responsible. Keep the predominant language of the source content, ignoring speaker labels. If the language is indeterminate, use English. In legacy transcripts, \"Ik\" labels the user; \"Me\" is an explicit own-voice estimate. Unknown, mixed and overlapping speech does not establish a named owner. Never infer a person from an audio track; keep unsupported owners unknown.";
 
 fn section_is(section: &str, english: &str, dutch: &str) -> bool {
     let section = section.trim();
@@ -107,6 +107,36 @@ pub fn transcript_text(segments: &[Segment], names: &[SpeakerName]) -> String {
                 timestamp(s.start_ms),
                 speaker_label(s, names),
                 s.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub(crate) fn transcript_snapshot_text(
+    snapshot: &crate::MeetingTranscriptSnapshot,
+    names: &[SpeakerName],
+) -> String {
+    if snapshot.metadata_status == crate::TranscriptMetadataStatus::Absent {
+        return transcript_text(
+            &snapshot
+                .utterances
+                .iter()
+                .map(|row| row.segment.clone())
+                .collect::<Vec<_>>(),
+            names,
+        );
+    }
+    snapshot
+        .utterances
+        .iter()
+        .filter(|row| !row.segment.failed && !row.segment.text.trim().is_empty())
+        .map(|row| {
+            format!(
+                "[{}] {}: {}",
+                timestamp(row.segment.start_ms),
+                crate::meeting_evidence::utterance_speaker_label(row, names),
+                row.segment.text
             )
         })
         .collect::<Vec<_>>()
@@ -377,6 +407,50 @@ mod tests {
         assert_eq!(text, "[00:00] Ik: Hallo\n[01:05] Anderen: Dag");
     }
 
+    #[test]
+    fn canonical_summary_keeps_unknown_mixed_overlap_and_manual_identity_separate() {
+        let mut rows = [
+            "Room commitment",
+            "Rapid turns",
+            "Shared speech",
+            "Named statement",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, text)| {
+            crate::MeetingUtterance::new(
+                seg(index as u64 * 1_000, Speaker::Me, text, false),
+                Some("microphone".into()),
+            )
+        })
+        .collect::<Vec<_>>();
+        rows[1].metadata.attribution.kind = crate::AttributionKind::Mixed;
+        rows[1].metadata.attribution.voices = vec![1, 2];
+        rows[2].metadata.attribution.kind = crate::AttributionKind::Overlap;
+        rows[2].metadata.attribution.voices = vec![1, 2];
+        rows[3].metadata.manual = Some(crate::ManualCorrection {
+            name: Some("Ada".into()),
+            voice: Some(3),
+            source_fingerprint: rows[3].metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let snapshot = crate::MeetingTranscriptSnapshot {
+            meeting_uid: "uid".into(),
+            revision: 1,
+            transcript_digest: String::new(),
+            metadata_digest: None,
+            metadata_status: crate::TranscriptMetadataStatus::Valid,
+            utterances: rows,
+        };
+        let text = transcript_snapshot_text(&snapshot, &[]);
+        assert!(text.contains("Unknown speaker: Room commitment"));
+        assert!(text.contains("Mixed speakers: Rapid turns"));
+        assert!(text.contains("Overlapping speakers: Shared speech"));
+        assert!(text.contains("Ada: Named statement"));
+        assert!(!text.contains("Ik:"));
+        assert!(!text.contains("Me:"));
+    }
+
     fn engine(dir: &tempfile::TempDir, server: &mockito::Server) -> std::sync::Arc<PennelEngine> {
         let engine =
             PennelEngine::new(dir.path().join("data").to_string_lossy().into_owned()).unwrap();
@@ -400,6 +474,29 @@ mod tests {
                 serde_json::json!({ "choices": [{ "message": { "content": text } }] }).to_string(),
             )
             .create()
+    }
+
+    #[test]
+    fn summary_generation_sends_canonical_uncertainty_to_the_selected_provider() {
+        let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = engine(&dir, &server);
+        let store = engine.meeting_store();
+        let id = store
+            .create("Owned summary identity", chrono::Local::now())
+            .unwrap();
+        let row = crate::MeetingUtterance::new(
+            seg(0, Speaker::Me, "Room commitment", false),
+            Some("microphone".into()),
+        );
+        store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        let provider = server.mock("POST", "/chat/completions")
+            .match_body(mockito::Matcher::Regex("Unknown speaker: Room commitment".into()))
+            .with_body(serde_json::json!({"choices":[{"message":{"content":"## Summary\n- Owned response."}}]}).to_string())
+            .expect(1).create();
+        engine
+            .summarize_meeting(id, "algemeen".into(), keys())
+            .unwrap();
+        provider.assert();
     }
 
     #[test]

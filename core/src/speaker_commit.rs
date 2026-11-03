@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::engine::PennelEngine;
 use crate::error::PennelError;
+use crate::meeting_utterances::MeetingUtterance;
 use crate::meetings::{Segment, SpeakerName, durable_write};
 use crate::voices::MeetingVoiceprint;
 
@@ -18,6 +19,8 @@ struct CommitReceipt {
     backup: String,
     transcript_digest: String,
     names_digest: String,
+    #[serde(default)]
+    metadata_digest: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -27,6 +30,10 @@ struct SpeakerCommit {
     old_hash: String,
     new_hash: String,
     old_prints: Vec<MeetingVoiceprint>,
+    #[serde(default)]
+    old_metadata_digest: Option<String>,
+    #[serde(default)]
+    new_metadata_digest: Option<String>,
     #[serde(default)]
     backup: Option<String>,
 }
@@ -41,6 +48,7 @@ fn save(path: &Path, value: &SpeakerCommit) -> Result<(), PennelError> {
 impl PennelEngine {
     /// The caller holds the meeting-edit and sync guards. The existing transcript replacement
     /// journal restores text/names; this private journal restores the matching voice cache.
+    #[allow(dead_code)] // Retained as the legacy text-only speaker commit wrapper.
     pub(crate) fn commit_speaker_result(
         &self,
         id: &str,
@@ -49,10 +57,42 @@ impl PennelEngine {
         prints: Vec<MeetingVoiceprint>,
         job_directory: Option<&Path>,
     ) -> Result<(), PennelError> {
+        self.commit_speaker_result_with_utterances(id, segments, names, prints, job_directory, None)
+    }
+
+    pub(crate) fn commit_speaker_utterances(
+        &self,
+        id: &str,
+        utterances: &[MeetingUtterance],
+        names: &[SpeakerName],
+        prints: Vec<MeetingVoiceprint>,
+        job_directory: Option<&Path>,
+    ) -> Result<(), PennelError> {
+        let segments: Vec<_> = utterances.iter().map(|row| row.segment.clone()).collect();
+        self.commit_speaker_result_with_utterances(
+            id,
+            &segments,
+            names,
+            prints,
+            job_directory,
+            Some(utterances),
+        )
+    }
+
+    fn commit_speaker_result_with_utterances(
+        &self,
+        id: &str,
+        segments: &[Segment],
+        names: &[SpeakerName],
+        prints: Vec<MeetingVoiceprint>,
+        job_directory: Option<&Path>,
+        utterances: Option<&[MeetingUtterance]>,
+    ) -> Result<(), PennelError> {
         let store = self.meeting_store();
         let voices = self.voice_store();
         let uid = store.ensure_uid(id)?;
         let old_hash = store.transcript_fingerprint(id)?;
+        let old_metadata_digest = store.read_transcript_snapshot(id)?.metadata_digest;
         let old_prints = voices.meeting_voiceprints(&uid, Some(&old_hash));
         let mut sorted = segments.to_vec();
         sorted.sort_by_key(|segment| segment.start_ms);
@@ -74,6 +114,8 @@ impl PennelEngine {
             old_hash: old_hash.clone(),
             new_hash,
             old_prints: old_prints.clone(),
+            old_metadata_digest,
+            new_metadata_digest: None,
             backup: None,
         };
         save(&path, &pending)?;
@@ -83,7 +125,11 @@ impl PennelEngine {
                 .filter(|speaker| segments.iter().any(|segment| segment.speaker == *speaker))
                 .collect()
         });
-        let backup = match store.replace_speaker_labels(id, segments, names, &tracks) {
+        let replacement = match utterances {
+            Some(rows) => store.replace_speaker_utterances(id, rows, names, &tracks),
+            None => store.replace_speaker_labels(id, segments, names, &tracks),
+        };
+        let backup = match replacement {
             Ok(backup) => backup,
             Err(error) => {
                 let _ = fs::remove_file(path);
@@ -93,6 +139,7 @@ impl PennelEngine {
         pending.backup = backup
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
+        pending.new_metadata_digest = store.read_transcript_snapshot(id)?.metadata_digest;
         if let Err(error) = save(&path, &pending) {
             store.restore_retranscription(id, &backup)?;
             let _ = fs::remove_file(path);
@@ -110,6 +157,7 @@ impl PennelEngine {
                     backup: pending.backup.clone().expect("recorded backup"),
                     transcript_digest: pending.new_hash.clone(),
                     names_digest: crate::speaker_jobs::speaker_names_digest(names)?,
+                    metadata_digest: pending.new_metadata_digest.clone(),
                 };
                 durable_write(
                     &directory.join(RECEIPT),
@@ -170,6 +218,15 @@ impl PennelEngine {
                 .ok()
                 .as_deref()
                 == Some(names)
+            && receipt.metadata_digest.as_ref().is_none_or(|expected| {
+                store
+                    .read_transcript_snapshot(&meeting.id)
+                    .is_ok_and(|snapshot| {
+                        snapshot.metadata_status
+                            == crate::meeting_utterances::TranscriptMetadataStatus::Valid
+                            && snapshot.metadata_digest.as_ref() == Some(expected)
+                    })
+            })
     }
 
     pub(crate) fn recover_speaker_commits(&self) -> Result<(), PennelError> {
@@ -298,6 +355,11 @@ mod tests {
                     old_hash: old_hash.clone(),
                     new_hash: new_hash.clone(),
                     old_prints: old_prints.clone(),
+                    old_metadata_digest: store
+                        .read_transcript_snapshot(&id)
+                        .unwrap()
+                        .metadata_digest,
+                    new_metadata_digest: None,
                     backup: None,
                 };
                 save(&path, &pending).unwrap();

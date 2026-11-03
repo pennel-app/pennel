@@ -165,6 +165,38 @@ pub struct MeetingSourceTarget {
     pub kind: MeetingSourceKind,
     pub start_ms: Option<u64>,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meeting_uid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utterance_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utterance_fingerprints: Option<Vec<String>>,
+}
+
+impl MeetingSourceTarget {
+    fn has_valid_identity(&self) -> bool {
+        if self
+            .meeting_uid
+            .as_ref()
+            .is_some_and(|uid| uid.trim().is_empty())
+        {
+            return false;
+        }
+        match (&self.utterance_ids, &self.utterance_fingerprints) {
+            (None, None) => true,
+            (Some(ids), Some(fingerprints)) => {
+                self.kind == MeetingSourceKind::Transcript
+                    && self.meeting_uid.is_some()
+                    && !ids.is_empty()
+                    && ids.len() == fingerprints.len()
+                    && ids
+                        .iter()
+                        .chain(fingerprints)
+                        .all(|value| !value.trim().is_empty())
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +215,7 @@ impl WorkspaceRoute {
             self.section == WorkspaceSection::Meetings
                 && self.meeting_id.as_deref().is_some_and(valid_meeting_id)
                 && !source.text.trim().is_empty()
+                && source.has_valid_identity()
         })
     }
 
@@ -617,6 +650,9 @@ mod tests {
             kind: MeetingSourceKind::Notes,
             start_ms: None,
             text: "Besluit over de planning".into(),
+            meeting_uid: None,
+            utterance_ids: None,
+            utterance_fingerprints: None,
         });
         assert!(route.has_valid_source());
         let roundtrip: WorkspaceRoute =
@@ -626,6 +662,42 @@ mod tests {
         assert!(!route.has_valid_source());
         route.section = WorkspaceSection::Meetings;
         route.source_target.as_mut().unwrap().text = " ".into();
+        assert!(!route.has_valid_source());
+    }
+
+    #[test]
+    fn durable_source_navigation_roundtrips_identity_without_accepting_partial_anchors() {
+        let mut route = legacy_route("meetings", Some("2026-11-03 Room meeting")).unwrap();
+        route.source_target = Some(MeetingSourceTarget {
+            kind: MeetingSourceKind::Transcript,
+            start_ms: Some(1250),
+            text: "Ja, zeker.".into(),
+            meeting_uid: Some("stable-meeting-uid".into()),
+            utterance_ids: Some(vec!["utterance-1".into(), "utterance-2".into()]),
+            utterance_fingerprints: Some(vec!["source-1".into(), "source-2".into()]),
+        });
+        assert!(route.has_valid_source());
+        let reopened: WorkspaceRoute =
+            serde_json::from_str(&serde_json::to_string(&route).unwrap()).unwrap();
+        assert_eq!(reopened, route);
+        route
+            .source_target
+            .as_mut()
+            .unwrap()
+            .utterance_fingerprints
+            .as_mut()
+            .unwrap()
+            .pop();
+        assert!(!route.has_valid_source());
+        route
+            .source_target
+            .as_mut()
+            .unwrap()
+            .utterance_fingerprints
+            .as_mut()
+            .unwrap()
+            .push("source-2".into());
+        route.source_target.as_mut().unwrap().meeting_uid = None;
         assert!(!route.has_valid_source());
     }
 

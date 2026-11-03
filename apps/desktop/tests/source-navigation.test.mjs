@@ -43,3 +43,25 @@ test("source routes validate targets, keep their text literal and clear one-shot
   }
   assert.equal(parseWorkspaceRoute({ ...route, section: "history" }), null);
 });
+
+test("durable transcript citations resolve exact utterances despite mutable speaker text", () => {
+  const segments = [
+    { utterance_id: "u-first", source_fingerprint: "a".repeat(64), start_ms: 0, end_ms: 4000, text: "New name: The exact first words." },
+    { utterance_id: "u-second", source_fingerprint: "b".repeat(64), start_ms: 4000, end_ms: 8000, text: "Unknown speaker: The exact next words." },
+  ];
+  const source = { start_ms: 0, text: "Previous name: The exact first words.", utterance_ids: ["u-first"], utterance_fingerprints: ["a".repeat(64)] };
+  assert.deepEqual(transcriptSourceBlocks(segments, source), { first: 0, last: 0 });
+  assert.equal(transcriptSourceBlocks(segments, { ...source, utterance_ids: ["missing"] }), null);
+  assert.equal(transcriptSourceBlocks([{ ...segments[0], source_fingerprint: "c".repeat(64) }], source), null);
+  assert.equal(transcriptSourceBlocks([segments[0], segments[0]], source), null);
+});
+
+test("source routes preserve durable identity and refuse malformed identity without downgrading", () => {
+  const target = { kind: "transcript", start_ms: 0, text: "Frozen source", meeting_uid: "stable-meeting",
+    utterance_ids: ["u-first"], utterance_fingerprints: ["a".repeat(64)] };
+  const route = workspaceRoute("meetings", null, "Projectoverleg", null, target);
+  assert.deepEqual(parseWorkspaceRoute(route), route);
+  for (const change of [{ utterance_ids: [] }, { utterance_ids: ["u-first", "u-first"] }, { utterance_fingerprints: [] }, { utterance_fingerprints: ["invalid"] }]) {
+    assert.equal(parseWorkspaceRoute({ ...route, source_target: { ...target, ...change } }), null);
+  }
+});

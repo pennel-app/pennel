@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
@@ -66,9 +67,33 @@ struct StoredJob {
     start_ms: u64,
     end_ms: u64,
     path: PathBuf,
+    sha256: String,
 }
 
 impl StoredJob {
+    fn recovery_provenance(
+        &self,
+        complete: bool,
+    ) -> crate::meeting_utterances::RecoveryAudioProvenance {
+        crate::meeting_utterances::RecoveryAudioProvenance {
+            file_name: self
+                .path
+                .file_name()
+                .expect("owned recovery file")
+                .to_string_lossy()
+                .into(),
+            track: crate::meeting_utterances::RecoveryAudioTrack::from_speaker(self.speaker),
+            start_ms: self.start_ms,
+            end_ms: self.end_ms,
+            sha256: self.sha256.clone(),
+            disposition: if complete {
+                crate::meeting_utterances::RecoveryAudioDisposition::Complete
+            } else {
+                crate::meeting_utterances::RecoveryAudioDisposition::Pending
+            },
+        }
+    }
+
     fn failed(&self) -> Segment {
         Segment {
             start_ms: self.start_ms,
@@ -85,6 +110,8 @@ impl StoredJob {
 struct Progress {
     preview: PreviewDisplay,
     segments: Vec<Segment>,
+    metadata: HashMap<(usize, u64), crate::UtteranceMetadata>,
+    metadata_revision: u64,
     dictations: Vec<(u64, u64)>,
     pending: u32,
     unpersisted: Vec<Job>,
@@ -97,6 +124,49 @@ struct Progress {
 }
 
 impl Progress {
+    fn insert_recovery(
+        &mut self,
+        segment: Segment,
+        source: Speaker,
+        spans: Vec<crate::TimedTextSpan>,
+        recovery: Option<crate::meeting_utterances::RecoveryAudioProvenance>,
+    ) {
+        let mut metadata =
+            crate::UtteranceMetadata::new(&segment, Some(physical_source_id(source).into()));
+        metadata.spans = spans;
+        metadata.recovery_audio = recovery;
+        self.metadata
+            .insert((index(segment.speaker), segment.start_ms), metadata);
+        self.segments.push(segment);
+        self.segments.sort_by_key(|segment| segment.start_ms);
+    }
+
+    fn canonical(&mut self, segments: &[Segment]) -> Vec<crate::MeetingUtterance> {
+        segments
+            .iter()
+            .map(|segment| {
+                let metadata = self
+                    .metadata
+                    .entry((index(segment.speaker), segment.start_ms))
+                    .or_insert_with(|| {
+                        crate::UtteranceMetadata::new(
+                            segment,
+                            Some(physical_source_id(segment.speaker).into()),
+                        )
+                    });
+                let mut metadata = metadata.clone();
+                if segment.failed || segment.text.is_empty() {
+                    metadata.spans.clear();
+                    metadata.refresh_fingerprints(segment);
+                }
+                crate::MeetingUtterance {
+                    segment: segment.clone(),
+                    metadata,
+                }
+            })
+            .collect()
+    }
+
     fn visible(&self) -> Vec<Segment> {
         filter_segments(&self.segments, &self.dictations)
             .into_iter()
@@ -168,6 +238,7 @@ fn persist_job(store: &MeetingStore, id: &str, job: &Job) -> Result<StoredJob, P
         start_ms: job.chunk.start_ms,
         end_ms: job.chunk.start_ms + job.chunk.samples.len() as u64 * 1000 / u64::from(SAMPLE_RATE),
         path,
+        sha256: crate::meeting_utterances::digest(&wav),
     })
 }
 
@@ -176,10 +247,13 @@ fn commit_progress(
     id: &str,
     progress: &Mutex<Progress>,
 ) -> Result<(), PennelError> {
-    let (segments, cleanup, revision, dictations) = {
-        let progress = progress.lock().unwrap();
+    let (rows, metadata_revision, cleanup, revision, dictations) = {
+        let mut progress = progress.lock().unwrap();
+        let segments = progress.persisted();
+        let rows = progress.canonical(&segments);
         (
-            progress.persisted(),
+            rows,
+            progress.metadata_revision,
             progress.cleanup.clone(),
             progress.revision,
             progress.dictations.clone(),
@@ -188,7 +262,20 @@ fn commit_progress(
     if !dictations.is_empty() {
         retry_storage(|| store.write_dictation_intervals(id, &dictations))?;
     }
-    retry_storage(|| store.write_transcript(id, &segments))?;
+    let saved = retry_storage(|| {
+        store
+            .write_transcript_snapshot(id, Some(metadata_revision), &rows)
+            .or_else(|error| {
+                let current = store.read_committed_transcript_snapshot(id)?;
+                if current.metadata_status == crate::TranscriptMetadataStatus::Valid
+                    && current.utterances == rows
+                {
+                    Ok(current)
+                } else {
+                    Err(error)
+                }
+            })
+    })?;
     if let Err(error) = retry_storage(|| store.cleanup_committed_audio(id)) {
         progress.lock().unwrap().persistence_error = Some(format!(
             "The text is saved, but recovery audio could not be cleaned up: {error}"
@@ -196,9 +283,10 @@ fn commit_progress(
     }
     let removed: Vec<_> = cleanup
         .into_iter()
-        .filter(|path| path.try_exists().is_ok_and(|exists| !exists))
+        .filter(|path| !store.recovery_path_may_exist(id, path))
         .collect();
     let mut progress = progress.lock().unwrap();
+    progress.metadata_revision = saved.revision;
     progress.cleanup.retain(|path| !removed.contains(path));
     if progress.revision == revision {
         progress.dirty = false;
@@ -210,6 +298,7 @@ fn commit_progress(
 #[derive(uniffi::Object)]
 pub struct MeetingSession {
     id: String,
+    meeting_uid: String,
     store: MeetingStore,
     recognition: MeetingRecognition,
     preview_vocabulary: Vec<String>,
@@ -236,6 +325,14 @@ fn index(speaker: Speaker) -> usize {
     match speaker {
         Speaker::Me => 0,
         Speaker::Others => 1,
+    }
+}
+
+fn physical_source_id(speaker: Speaker) -> &'static str {
+    match speaker {
+        Speaker::Me => "microphone",
+        Speaker::Others if cfg!(target_os = "ios") => "room_microphone",
+        Speaker::Others => "system_audio",
     }
 }
 
@@ -371,12 +468,12 @@ impl MeetingSession {
             let mut paused = false;
             for job in stored_receiver {
                 let attempted = !paused && !worker_terminal.load(Ordering::SeqCst);
-                let segment = match if attempted {
+                let (segment, spans) = match if attempted {
                     transcribe_job(&engine, &settings, &keys, &job, &worker_terminal)
                 } else {
-                    Ok(job.failed())
+                    Ok((job.failed(), Vec::new()))
                 } {
-                    Ok(segment) => {
+                    Ok((segment, spans)) => {
                         if attempted {
                             failed_chunks = if segment.failed { failed_chunks + 1 } else { 0 };
                             if failed_chunks >= 2 {
@@ -386,11 +483,11 @@ impl MeetingSession {
                                 );
                             }
                         }
-                        segment
+                        (segment, spans)
                     }
                     Err(error) => {
                         storage_failure(&worker_progress, &worker_terminal, &error);
-                        job.failed()
+                        (job.failed(), Vec::new())
                     }
                 };
                 {
@@ -398,11 +495,11 @@ impl MeetingSession {
                     progress
                         .preview
                         .complete(segment.speaker, segment.start_ms, segment.end_ms);
+                    let recovery = job.recovery_provenance(!segment.failed);
                     if !segment.failed {
-                        progress.cleanup.push(job.path);
+                        progress.cleanup.push(job.path.clone());
                     }
-                    progress.segments.push(segment);
-                    progress.segments.sort_by_key(|segment| segment.start_ms);
+                    progress.insert_recovery(segment, job.speaker, spans, Some(recovery));
                     progress.changed();
                 }
                 if let Err(error) = commit_progress(&worker_store, &worker_id, &worker_progress) {
@@ -413,6 +510,7 @@ impl MeetingSession {
             }
         });
         Arc::new(Self {
+            meeting_uid: store.uid_of(&id).unwrap_or_else(|| id.clone()),
             id,
             store,
             recognition,
@@ -615,31 +713,65 @@ fn transcribe_job(
     keys: &ApiKeys,
     job: &StoredJob,
     terminal: &AtomicBool,
-) -> Result<Segment, PennelError> {
-    let wav = std::fs::read(&job.path).map_err(PennelError::storage)?;
+) -> Result<(Segment, Vec<crate::TimedTextSpan>), PennelError> {
+    if !job.path.parent().is_some_and(|parent| {
+        std::fs::symlink_metadata(parent)
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+    }) || !std::fs::symlink_metadata(&job.path)
+        .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+    {
+        return Err(PennelError::storage(
+            "The saved recovery audio is not a valid local file.",
+        ));
+    }
+    let wav = crate::meetings::read_recovery_bytes(&job.path).map_err(PennelError::storage)?;
+    if crate::meeting_utterances::digest(&wav) != job.sha256 {
+        return Err(PennelError::storage(
+            "The saved recovery audio changed before recognition.",
+        ));
+    }
     let mut result = Err(PennelError::NotFound);
     for _ in 0..ATTEMPTS {
         if terminal.load(Ordering::SeqCst) {
             break;
         }
-        result = engine.stt(settings, &settings.meeting_stt, &wav, keys);
+        result = engine.stt_meeting(settings, &wav, keys);
         if result.is_ok() {
             break;
         }
     }
     let mut segment = job.failed();
-    if let Ok(text) = result {
+    let mut spans = Vec::new();
+    if let Ok(transcript) = result {
         segment.failed = false;
-        segment.text = if is_hallucination(&text) {
+        segment.text = if is_hallucination(&transcript.text) {
             String::new()
         } else {
-            text
+            spans = transcript
+                .spans
+                .into_iter()
+                .map(|span| {
+                    crate::TimedTextSpan(
+                        span.start_byte,
+                        span.end_byte,
+                        job.start_ms.saturating_add(span.start_ms),
+                        job.start_ms.saturating_add(span.end_ms),
+                    )
+                })
+                .collect();
+            transcript.text
         };
     }
-    Ok(segment)
+    Ok((segment, spans))
 }
 
 impl MeetingSession {
+    pub fn utterance_snapshot(&self) -> (u64, Vec<crate::MeetingUtterance>) {
+        let mut progress = self.progress.lock().unwrap();
+        let visible = progress.visible();
+        (progress.revision, progress.canonical(&visible))
+    }
+
     pub fn transcript_revision(&self) -> u64 {
         self.progress.lock().unwrap().revision
     }
@@ -695,6 +827,26 @@ impl MeetingSession {
 
 #[uniffi::export]
 impl MeetingSession {
+    pub fn transcript_snapshot_json(&self) -> Result<String, PennelError> {
+        let (revision, rows, preview) = {
+            let mut progress = self.progress.lock().unwrap();
+            let visible = progress.visible();
+            (
+                progress.revision,
+                progress.canonical(&visible),
+                progress.preview.snapshot(progress.revision),
+            )
+        };
+        serde_json::to_string(&serde_json::json!({
+            "meeting_uid": self.meeting_uid,
+            "revision": revision,
+            "metadata_status": "valid",
+            "transcript": crate::transcript_projection::rows(&rows)?,
+            "preview": preview,
+        }))
+        .map_err(PennelError::storage)
+    }
+
     pub fn preview_snapshot(&self) -> MeetingPreviewSnapshot {
         let progress = self.progress.lock().unwrap();
         progress.preview.snapshot(progress.revision)
@@ -891,7 +1043,12 @@ impl MeetingSession {
             match persist_job(&self.store, &self.id, &job) {
                 Ok(stored) => {
                     let mut progress = self.progress.lock().unwrap();
-                    progress.segments.push(stored.failed());
+                    progress.insert_recovery(
+                        stored.failed(),
+                        stored.speaker,
+                        Vec::new(),
+                        Some(stored.recovery_provenance(false)),
+                    );
                     progress.pending = progress.pending.saturating_sub(1);
                     progress.changed();
                 }
@@ -906,13 +1063,17 @@ impl MeetingSession {
             }
         }
         // A crashed worker may have queued durable files without publishing their segment yet.
-        let recovered = self.store.read_transcript(&self.id);
+        let recovered = self.store.read_transcript_snapshot(&self.id)?;
         {
             let mut progress = self.progress.lock().unwrap();
-            for segment in recovered {
+            for row in recovered.utterances {
+                let segment = row.segment;
                 if !progress.segments.iter().any(|existing| {
                     existing.speaker == segment.speaker && existing.start_ms == segment.start_ms
                 }) {
+                    progress
+                        .metadata
+                        .insert((index(segment.speaker), segment.start_ms), row.metadata);
                     progress.segments.push(segment);
                     progress.changed();
                 }
@@ -962,6 +1123,299 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const SR: usize = 16_000;
+
+    #[test]
+    fn recovery_proof_is_durable_before_cleanup_and_survives_a_later_timed_split() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned timed recovery commit", chrono::Local::now())
+            .unwrap();
+        let microphone = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Me,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: tone(1.0),
+                },
+            },
+        )
+        .unwrap();
+        let system = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Others,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: vec![0.3; SR],
+                },
+            },
+        )
+        .unwrap();
+        let microphone_bytes = std::fs::read(&microphone.path).unwrap();
+        let mut progress = Progress::default();
+        progress.insert_recovery(
+            Segment {
+                text: "Yes no".into(),
+                failed: false,
+                ..microphone.failed()
+            },
+            Speaker::Me,
+            vec![
+                crate::TimedTextSpan(0, 3, 100, 400),
+                crate::TimedTextSpan(4, 6, 600, 900),
+            ],
+            Some(microphone.recovery_provenance(true)),
+        );
+        progress.insert_recovery(
+            system.failed(),
+            Speaker::Others,
+            Vec::new(),
+            Some(system.recovery_provenance(false)),
+        );
+        progress.cleanup.push(microphone.path.clone());
+        let progress = Mutex::new(progress);
+        let transcript = store.dir_of(&id).join("transcript.md");
+        std::fs::create_dir(&transcript).unwrap();
+        assert!(commit_progress(&store, &id, &progress).is_err());
+        assert!(microphone.path.exists());
+        assert!(system.path.exists());
+        std::fs::remove_dir(&transcript).unwrap();
+        commit_progress(&store, &id, &progress).unwrap();
+        assert!(!microphone.path.exists());
+        assert!(system.path.exists());
+        assert!(progress.lock().unwrap().cleanup.is_empty());
+
+        let snapshot = store.read_transcript_snapshot(&id).unwrap();
+        let microphone_row = snapshot
+            .utterances
+            .iter()
+            .find(|row| row.metadata.source_id.as_deref() == Some("microphone"))
+            .unwrap();
+        let (mut split, _) = crate::diarize::apply_utterances(
+            std::slice::from_ref(microphone_row),
+            &[
+                pennel_speakers::Turn {
+                    start_ms: 100,
+                    end_ms: 400,
+                    speaker: 0,
+                },
+                pennel_speakers::Turn {
+                    start_ms: 600,
+                    end_ms: 900,
+                    speaker: 1,
+                },
+            ],
+            &[],
+            crate::diarize::Track::Microphone,
+        );
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0].segment.start_ms, 100);
+        split.extend(
+            snapshot
+                .utterances
+                .iter()
+                .filter(|row| row.segment.failed)
+                .cloned(),
+        );
+        store
+            .write_transcript_snapshot(&id, Some(snapshot.revision), &split)
+            .unwrap();
+        std::fs::write(&microphone.path, microphone_bytes).unwrap();
+        let reopened = MeetingStore::new(directory.path());
+        let snapshot = reopened.read_transcript_snapshot(&id).unwrap();
+        assert_eq!(snapshot.utterances.len(), 3);
+        let failed = snapshot
+            .utterances
+            .iter()
+            .filter(|row| row.segment.failed)
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(
+            failed[0].metadata.source_id.as_deref(),
+            Some("system_audio")
+        );
+        assert_eq!(
+            reopened.recovery_audio_path(&id, failed[0]),
+            Some(system.path.clone())
+        );
+        assert_eq!(reopened.cleanup_committed_audio(&id).unwrap(), 1);
+        assert!(!microphone.path.exists());
+        assert!(system.path.exists());
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(
+                reopened
+                    .dir_of(&id)
+                    .join(crate::meeting_utterances::MANIFEST),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["schema_version"], 3);
+    }
+
+    #[test]
+    fn stale_write_cannot_claim_an_uncommitted_private_completion_was_saved() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned raw completion CAS", chrono::Local::now())
+            .unwrap();
+        store.write_transcript_snapshot(&id, Some(0), &[]).unwrap();
+        let job = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Me,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: tone(1.0),
+                },
+            },
+        )
+        .unwrap();
+        let mut progress = Progress::default();
+        progress.insert_recovery(
+            Segment {
+                failed: false,
+                ..job.failed()
+            },
+            Speaker::Me,
+            Vec::new(),
+            Some(job.recovery_provenance(true)),
+        );
+        progress.cleanup.push(job.path.clone());
+        progress.changed();
+        let mut corrupt = std::fs::read(&job.path).unwrap();
+        corrupt[0] = b'X';
+        std::fs::write(&job.path, corrupt).unwrap();
+        let progress = Mutex::new(progress);
+        assert!(
+            commit_progress(&store, &id, &progress).is_err(),
+            "an old empty public projection is not a durable completion proof"
+        );
+        assert!(progress.lock().unwrap().dirty);
+        assert_eq!(progress.lock().unwrap().metadata_revision, 0);
+        assert!(job.path.exists());
+        assert!(
+            store
+                .read_transcript_snapshot(&id)
+                .unwrap()
+                .utterances
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn stale_write_can_acknowledge_the_same_full_private_completion_already_saved() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned durable completion replay", chrono::Local::now())
+            .unwrap();
+        let job = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Me,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: tone(1.0),
+                },
+            },
+        )
+        .unwrap();
+        let mut progress = Progress::default();
+        progress.insert_recovery(
+            Segment {
+                failed: false,
+                ..job.failed()
+            },
+            Speaker::Me,
+            Vec::new(),
+            Some(job.recovery_provenance(true)),
+        );
+        progress.cleanup.push(job.path.clone());
+        progress.changed();
+        let segments = progress.persisted();
+        let rows = progress.canonical(&segments);
+        store
+            .write_transcript_snapshot(&id, Some(0), &rows)
+            .unwrap();
+        let mut corrupt = std::fs::read(&job.path).unwrap();
+        corrupt[0] = b'X';
+        std::fs::write(&job.path, corrupt).unwrap();
+        let progress = Mutex::new(progress);
+        commit_progress(&store, &id, &progress).unwrap();
+        assert!(!progress.lock().unwrap().dirty);
+        assert_eq!(progress.lock().unwrap().metadata_revision, 1);
+        assert_eq!(progress.lock().unwrap().cleanup, vec![job.path]);
+        assert_eq!(
+            store
+                .read_committed_transcript_snapshot(&id)
+                .unwrap()
+                .utterances
+                .len(),
+            1
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_bookkeeping_retains_dangling_file_and_directory_entries() {
+        for directory_link in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let store = MeetingStore::new(directory.path());
+            let id = store
+                .create("Owned no-follow cleanup", chrono::Local::now())
+                .unwrap();
+            let job = persist_job(
+                &store,
+                &id,
+                &Job {
+                    speaker: Speaker::Me,
+                    chunk: Chunk {
+                        start_ms: 0,
+                        samples: tone(1.0),
+                    },
+                },
+            )
+            .unwrap();
+            let mut progress = Progress::default();
+            progress.insert_recovery(
+                Segment {
+                    failed: false,
+                    ..job.failed()
+                },
+                Speaker::Me,
+                Vec::new(),
+                Some(job.recovery_provenance(true)),
+            );
+            progress.cleanup.push(job.path.clone());
+            progress.changed();
+            std::fs::remove_file(&job.path).unwrap();
+            let link = if directory_link {
+                let parent = job.path.parent().unwrap();
+                std::fs::remove_dir(parent).unwrap();
+                parent.to_path_buf()
+            } else {
+                job.path.clone()
+            };
+            std::os::unix::fs::symlink(directory.path().join("missing-owned-data"), &link).unwrap();
+            let progress = Mutex::new(progress);
+            commit_progress(&store, &id, &progress).unwrap();
+            assert_eq!(progress.lock().unwrap().cleanup, vec![job.path]);
+            assert!(
+                std::fs::symlink_metadata(link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+        }
+    }
 
     #[derive(Default)]
     struct PreviewObserver(Mutex<Vec<MeetingPreviewAudio>>);
@@ -1812,6 +2266,7 @@ mod tests {
             .unwrap();
         let (sender, _receiver) = mpsc::sync_channel(INGRESS_CAPACITY);
         let session = MeetingSession {
+            meeting_uid: store.uid_of(&id).unwrap(),
             id,
             store,
             preview_vocabulary: Vec::new(),
@@ -1958,9 +2413,11 @@ mod tests {
         let session = engine.start_meeting("Opslag stop".into(), keys()).unwrap();
         let latch = Arc::new((Mutex::new(false), Condvar::new()));
         let release = Release(latch.clone());
+        let (provider_entered, provider_entry) = mpsc::channel();
         let request = server
             .mock("POST", "/audio/transcriptions")
             .with_body_from_request(move |_| {
+                provider_entered.send(()).unwrap();
                 let (lock, ready) = &*latch;
                 let mut released = lock.lock().unwrap();
                 while !*released {
@@ -1970,19 +2427,82 @@ mod tests {
             })
             .expect(1)
             .create();
+        #[derive(Debug, PartialEq, Eq)]
+        enum SpoolCheckpoint {
+            Queued(u64),
+            Durable,
+        }
+        // This fixture needs a durable backlog, not a capture-throughput deadline. A one-slot
+        // relay preserves real ingestion while acknowledging handoff to the bounded spool.
+        let (capture_sender, capture_receiver) = mpsc::sync_channel(1);
+        let spool_sender = session
+            .sender
+            .lock()
+            .unwrap()
+            .replace(capture_sender)
+            .unwrap();
+        let spool_worker = session.spool_worker.lock().unwrap().take().unwrap();
+        let (checkpoint_sender, checkpoints) = mpsc::channel();
+        let relay = std::thread::spawn(move || {
+            for (number, job) in capture_receiver.into_iter().enumerate() {
+                spool_sender.send(job).unwrap();
+                checkpoint_sender
+                    .send(SpoolCheckpoint::Queued(number as u64))
+                    .unwrap();
+            }
+            drop(spool_sender);
+            spool_worker.join().unwrap();
+            checkpoint_sender.send(SpoolCheckpoint::Durable).unwrap();
+        });
+        let setup_deadline = Instant::now() + Duration::from_secs(30);
+        let await_checkpoint = |expected| {
+            assert_eq!(
+                checkpoints.recv_timeout(setup_deadline.saturating_duration_since(Instant::now())),
+                Ok(expected),
+                "spool setup: pending={} health={:?}",
+                session.pending(),
+                session.health()
+            );
+        };
         let transcript_path = PathBuf::from(session.dir()).join("transcript.md");
         std::fs::create_dir(&transcript_path).unwrap();
         for number in 0..8 {
-            session
-                .push_audio_at(Speaker::Me, number * 30_000, tone(30.0))
-                .unwrap();
-            let path = failed_path(Path::new(&session.dir()), Speaker::Me, number * 30_000);
-            let deadline = Instant::now() + Duration::from_secs(3);
-            while !path.exists() && Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            assert!(path.exists());
+            let result = session.push_audio_at(Speaker::Me, number * 30_000, tone(30.0));
+            assert!(
+                result.is_ok(),
+                "chunk {number}/8 admission: {result:?}; pending={} health={:?}",
+                session.pending(),
+                session.health()
+            );
+            await_checkpoint(SpoolCheckpoint::Queued(number));
         }
+        session.sender.lock().unwrap().take();
+        await_checkpoint(SpoolCheckpoint::Durable);
+        relay.join().unwrap();
+        for number in 0..8 {
+            let path = failed_path(Path::new(&session.dir()), Speaker::Me, number * 30_000);
+            assert!(
+                path.is_file(),
+                "chunk {number}/8 missing after durable spool checkpoint: pending={} health={:?}",
+                session.pending(),
+                session.health()
+            );
+        }
+        assert_eq!(session.pending(), 8);
+        assert!(
+            session.health().terminal_error.is_none(),
+            "{:?}",
+            session.health()
+        );
+        assert!(session.progress.lock().unwrap().unpersisted.is_empty());
+        assert!(
+            provider_entry
+                .recv_timeout(setup_deadline.saturating_duration_since(Instant::now()))
+                .is_ok(),
+            "first provider did not enter: pending={} health={:?}",
+            session.pending(),
+            session.health()
+        );
         drop(release);
         let stopped = Instant::now();
         assert!(session.stop().is_err());
