@@ -112,15 +112,15 @@ pub use meeting_evidence::{
     utterance_evidence_revision,
 };
 pub use meeting_index::{Passage, PassageKind};
+pub use meeting_preview::{
+    MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode, MeetingPreviewSnapshot,
+    MeetingPreviewState, MeetingTrackPreview,
+};
 pub use meeting_qualification::{
     MeetingActualInference, MeetingAnalysisAvailability, MeetingAnalysisUseCase,
     MeetingConfiguredInference, MeetingQualificationContext, MeetingQualificationError,
     MeetingQualificationEvidence, MeetingQualificationMetrics, MeetingQualificationRecord,
     MeetingQualificationRegistry, MeetingQualificationRequest, QualifiedMeetingAnalysis,
-};
-pub use meeting_preview::{
-    MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode, MeetingPreviewSnapshot,
-    MeetingPreviewState, MeetingTrackPreview,
 };
 pub use meeting_recording::{
     CaptureEventKind, CaptureFormatEpoch, MeetingAudioTrack, MeetingCaptureEvent,
