@@ -1208,14 +1208,93 @@ mod tests {
             speakers: vec![voice(0, embedding, 5_000)],
         }
     }
-    fn until(mut check: impl FnMut() -> bool) {
+    #[track_caller]
+    fn until(check: impl FnMut() -> bool) {
+        until_phase("owned worker", check);
+    }
+    #[track_caller]
+    fn until_phase(phase: &str, mut check: impl FnMut() -> bool) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while !check() {
             assert!(
                 Instant::now() < deadline,
-                "The owned worker did not reach its checkpoint"
+                "The owned worker did not reach checkpoint: {phase}"
             );
             std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+    #[track_caller]
+    fn feed_accepted(worker: &LiveSpeakerWorker, start_ms: u64, samples: &[f32], phase: &str) {
+        // Capture may discard a contended packet; this fixture must acknowledge its one audio range.
+        until_phase(phase, || {
+            worker.feed(Speaker::Me, start_ms, samples);
+            let metrics = worker.metrics();
+            metrics.ring_samples > 0 || metrics.active_samples > 0 || metrics.native_calls > 0
+        });
+    }
+
+    #[derive(Default)]
+    struct PhysicalActivity {
+        active: AtomicUsize,
+        maximum: AtomicUsize,
+    }
+    struct PhysicalCall(Arc<PhysicalActivity>);
+    impl PhysicalActivity {
+        fn enter(activity: Arc<Self>) -> PhysicalCall {
+            let active = activity.active.fetch_add(1, Ordering::SeqCst) + 1;
+            activity.maximum.fetch_max(active, Ordering::SeqCst);
+            PhysicalCall(activity)
+        }
+    }
+    impl Drop for PhysicalCall {
+        fn drop(&mut self) {
+            self.0.active.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    struct TrackedInference<T> {
+        inner: T,
+        activity: Arc<PhysicalActivity>,
+    }
+    impl<T: LiveSpeakerInference> LiveSpeakerInference for TrackedInference<T> {
+        fn infer(&mut self, samples: &[f32]) -> Result<Diarization, PennelError> {
+            let _physical = PhysicalActivity::enter(self.activity.clone());
+            self.inner.infer(samples)
+        }
+    }
+
+    #[derive(Default)]
+    struct PriorityFixtureCleanup {
+        releases: Vec<Arc<AtomicBool>>,
+        workers: Vec<Arc<LiveSpeakerWorker>>,
+        foreground: Option<std::thread::JoinHandle<()>>,
+    }
+    impl PriorityFixtureCleanup {
+        fn finish(&mut self) -> bool {
+            for release in &self.releases {
+                release.store(true, Ordering::SeqCst);
+            }
+            for worker in &self.workers {
+                worker.stop();
+            }
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !self
+                .workers
+                .iter()
+                .all(|worker| worker.shared.finished.load(Ordering::Acquire))
+                || !self.foreground.as_ref().is_none_or(|job| job.is_finished())
+                || !LIVE_WORKERS.try_lock().is_ok_and(|workers| !workers.active)
+            {
+                if Instant::now() >= deadline {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            self.foreground.take().is_none_or(|job| job.join().is_ok())
+        }
+    }
+    impl Drop for PriorityFixtureCleanup {
+        fn drop(&mut self) {
+            let _ = self.finish();
         }
     }
     #[derive(Default)]
@@ -1550,61 +1629,139 @@ mod tests {
     #[test]
     fn retired_native_worker_keeps_its_slot_and_offline_work_has_priority() {
         let _serial = test_worker_guard();
+        let mut cleanup = PriorityFixtureCleanup::default();
+        let activity = Arc::new(PhysicalActivity::default());
+        let samples = vec![0.2; 10 * 16_000];
+        // A previous fixture can release the test mutex before its native worker actually exits.
+        let previous_entered = Arc::new(AtomicUsize::new(0));
+        let previous_release = Arc::new(AtomicBool::new(false));
+        cleanup.releases.push(previous_release.clone());
+        let (e, r, a) = (
+            previous_entered.clone(),
+            previous_release.clone(),
+            activity.clone(),
+        );
+        let previous = LiveSpeakerWorker::start(
+            "previous-fixture".into(),
+            0,
+            "fixture".into(),
+            Arc::new(|| true),
+            Box::new(move || {
+                Ok(Box::new(TrackedInference {
+                    inner: Blocking {
+                        entered: e,
+                        released: r,
+                    },
+                    activity: a,
+                }))
+            }),
+            Arc::new(Observer::default()),
+        );
+        cleanup.workers.push(previous.clone());
+        until_phase("predecessor admission", || previous.is_admitted());
+        feed_accepted(&previous, 0, &samples, "predecessor accepted audio");
+        until_phase("predecessor inference entry", || {
+            previous_entered.load(Ordering::SeqCst) == 1
+        });
+        previous.stop();
+
         let entered = Arc::new(AtomicUsize::new(0));
         let released = Arc::new(AtomicBool::new(false));
+        cleanup.releases.push(released.clone());
         let old_observer = Arc::new(Observer::default());
-        let (e, r) = (entered.clone(), released.clone());
+        let (e, r, a) = (entered.clone(), released.clone(), activity.clone());
         let old = LiveSpeakerWorker::start(
             "retired".into(),
             1,
             "fixture".into(),
             Arc::new(|| true),
             Box::new(move || {
-                Ok(Box::new(Blocking {
-                    entered: e,
-                    released: r,
+                Ok(Box::new(TrackedInference {
+                    inner: Blocking {
+                        entered: e,
+                        released: r,
+                    },
+                    activity: a,
                 }))
             }),
             old_observer.clone(),
         );
-        old.feed(Speaker::Me, 0, &vec![0.2; 10 * 16_000]);
-        until(|| entered.load(Ordering::SeqCst) == 1);
+        cleanup.workers.push(old.clone());
+        assert!(!old.is_admitted());
+        old.feed(Speaker::Me, 0, &samples);
+        assert_eq!(old.metrics().ring_samples, 0);
+        assert_eq!(old.metrics().pending_samples, 0);
+        assert!(previous.metrics().physical_active);
+        previous_release.store(true, Ordering::SeqCst);
+        until_phase("initial worker admission after predecessor exit", || {
+            old.is_admitted()
+        });
+        feed_accepted(&old, 0, &samples, "initial worker accepted audio");
+        until_phase("initial worker inference entry", || {
+            entered.load(Ordering::SeqCst) == 1
+        });
         old.stop();
         let offline_entered = Arc::new(AtomicBool::new(false));
         let offline_release = Arc::new(AtomicBool::new(false));
-        let (ready, finish) = (offline_entered.clone(), offline_release.clone());
-        let foreground = std::thread::spawn(move || {
+        cleanup.releases.push(offline_release.clone());
+        let (ready, finish, a) = (
+            offline_entered.clone(),
+            offline_release.clone(),
+            activity.clone(),
+        );
+        cleanup.foreground = Some(std::thread::spawn(move || {
             let _permit = offline_acoustic_permit();
+            let _physical = PhysicalActivity::enter(a);
             ready.store(true, Ordering::SeqCst);
-            until(|| finish.load(Ordering::SeqCst));
+            until_phase("offline fixture release", || finish.load(Ordering::SeqCst));
+        }));
+        until_phase("offline demand registered", || {
+            OFFLINE_DEMAND.load(Ordering::Acquire) > 0
         });
-        until(|| OFFLINE_DEMAND.load(Ordering::Acquire) > 0);
         let calls = Arc::new(AtomicUsize::new(0));
         let counter = calls.clone();
+        let a = activity.clone();
         let new_observer = Arc::new(Observer::default());
         let new = LiveSpeakerWorker::start(
             "new".into(),
             2,
             "fixture".into(),
             Arc::new(|| true),
-            Box::new(move || Ok(Box::new(Immediate(counter)))),
+            Box::new(move || {
+                Ok(Box::new(TrackedInference {
+                    inner: Immediate(counter),
+                    activity: a,
+                }))
+            }),
             new_observer.clone(),
         );
-        new.feed(Speaker::Me, 0, &vec![0.2; 10 * 16_000]);
+        cleanup.workers.push(new.clone());
+        new.feed(Speaker::Me, 0, &samples);
         std::thread::sleep(Duration::from_millis(40));
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert!(old.metrics().physical_active);
         released.store(true, Ordering::SeqCst);
-        until(|| offline_entered.load(Ordering::SeqCst));
+        until_phase("offline physical permit acquired", || {
+            offline_entered.load(Ordering::SeqCst)
+        });
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert!(old_observer.0.lock().unwrap().is_empty());
         offline_release.store(true, Ordering::SeqCst);
-        foreground.join().unwrap();
-        until(|| new.shared.admitted.load(Ordering::Acquire));
-        new.feed(Speaker::Me, 10_000, &vec![0.2; 10 * 16_000]);
-        until(|| new_observer.0.lock().unwrap().len() == 1);
+        cleanup.foreground.take().unwrap().join().unwrap();
+        until_phase("replacement worker admission", || new.is_admitted());
+        feed_accepted(&new, 10_000, &samples, "replacement worker accepted audio");
+        until_phase("replacement publication", || {
+            new_observer.0.lock().unwrap().len() == 1
+        });
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        new.stop();
+        assert_eq!(previous_entered.load(Ordering::SeqCst), 1);
+        assert_eq!(entered.load(Ordering::SeqCst), 1);
+        assert_eq!(activity.maximum.load(Ordering::SeqCst), 1);
+        assert!(
+            cleanup.finish(),
+            "physical priority fixture cleanup did not finish"
+        );
+        assert_eq!(activity.active.load(Ordering::SeqCst), 0);
     }
 
     #[test]
