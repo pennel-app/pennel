@@ -33,3 +33,11 @@ git diff --check
 ```
 
 Logs, controlled red evidence, patch snapshots and production-prefix comparisons are retained under `build/merge-audio-backport/`. Rejected patch hunks were moved there as adaptation evidence; only the intended source backport remains in the working tree. No source worktree, product, symbol or recovery data was deleted. Hosted CI, real-call/acoustic quality, resource, physical-device and installed-platform acceptance remain separate; keep issue #22 open for its unmet acceptance criteria.
+
+## Windows CI spool fixture follow-up
+
+Windows job `126206781293` at `5da3212` failed the terminal-storage fixture's three-second per-file setup assertion before provider release or Stop. The fixture, spool worker and durable write helper match the passing #129 revision `50e22e8`. The original log contains no chunk or health diagnostic, so its exact scheduling delay remains unknown.
+
+A controlled 3,250 ms first-handoff delay makes the old fixture fail at chunk 0 with one pending chunk and healthy storage; the new checkpoint fixture passes the same delay. Each command executed the named test once. The final fixture has no injected delay. It preserves all eight public capture pushes, acknowledges real bounded-spool handoffs and worker completion, verifies eight durable WAVs and actual provider entry under one 30-second setup watchdog, and reports chunk/pending/health on failure. The existing Stop <3 seconds, one provider call, seven failed rows and recovery assertions remain. Production and all source outside this test are byte-identical to `5da3212`.
+
+The final target and full suites passed (870 default / 853 lean), along with strict Clippy in both profiles, formatting and whitespace checks. Both independent review lanes cleared the fixture. Logs and controlled red/green evidence remain in `build/merge-audio-backport/windows-spool-followup/`; Windows rerun and all existing acceptance gates remain open.

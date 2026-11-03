@@ -2413,9 +2413,11 @@ mod tests {
         let session = engine.start_meeting("Opslag stop".into(), keys()).unwrap();
         let latch = Arc::new((Mutex::new(false), Condvar::new()));
         let release = Release(latch.clone());
+        let (provider_entered, provider_entry) = mpsc::channel();
         let request = server
             .mock("POST", "/audio/transcriptions")
             .with_body_from_request(move |_| {
+                provider_entered.send(()).unwrap();
                 let (lock, ready) = &*latch;
                 let mut released = lock.lock().unwrap();
                 while !*released {
@@ -2425,19 +2427,82 @@ mod tests {
             })
             .expect(1)
             .create();
+        #[derive(Debug, PartialEq, Eq)]
+        enum SpoolCheckpoint {
+            Queued(u64),
+            Durable,
+        }
+        // This fixture needs a durable backlog, not a capture-throughput deadline. A one-slot
+        // relay preserves real ingestion while acknowledging handoff to the bounded spool.
+        let (capture_sender, capture_receiver) = mpsc::sync_channel(1);
+        let spool_sender = session
+            .sender
+            .lock()
+            .unwrap()
+            .replace(capture_sender)
+            .unwrap();
+        let spool_worker = session.spool_worker.lock().unwrap().take().unwrap();
+        let (checkpoint_sender, checkpoints) = mpsc::channel();
+        let relay = std::thread::spawn(move || {
+            for (number, job) in capture_receiver.into_iter().enumerate() {
+                spool_sender.send(job).unwrap();
+                checkpoint_sender
+                    .send(SpoolCheckpoint::Queued(number as u64))
+                    .unwrap();
+            }
+            drop(spool_sender);
+            spool_worker.join().unwrap();
+            checkpoint_sender.send(SpoolCheckpoint::Durable).unwrap();
+        });
+        let setup_deadline = Instant::now() + Duration::from_secs(30);
+        let await_checkpoint = |expected| {
+            assert_eq!(
+                checkpoints.recv_timeout(setup_deadline.saturating_duration_since(Instant::now())),
+                Ok(expected),
+                "spool setup: pending={} health={:?}",
+                session.pending(),
+                session.health()
+            );
+        };
         let transcript_path = PathBuf::from(session.dir()).join("transcript.md");
         std::fs::create_dir(&transcript_path).unwrap();
         for number in 0..8 {
-            session
-                .push_audio_at(Speaker::Me, number * 30_000, tone(30.0))
-                .unwrap();
-            let path = failed_path(Path::new(&session.dir()), Speaker::Me, number * 30_000);
-            let deadline = Instant::now() + Duration::from_secs(3);
-            while !path.exists() && Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            assert!(path.exists());
+            let result = session.push_audio_at(Speaker::Me, number * 30_000, tone(30.0));
+            assert!(
+                result.is_ok(),
+                "chunk {number}/8 admission: {result:?}; pending={} health={:?}",
+                session.pending(),
+                session.health()
+            );
+            await_checkpoint(SpoolCheckpoint::Queued(number));
         }
+        session.sender.lock().unwrap().take();
+        await_checkpoint(SpoolCheckpoint::Durable);
+        relay.join().unwrap();
+        for number in 0..8 {
+            let path = failed_path(Path::new(&session.dir()), Speaker::Me, number * 30_000);
+            assert!(
+                path.is_file(),
+                "chunk {number}/8 missing after durable spool checkpoint: pending={} health={:?}",
+                session.pending(),
+                session.health()
+            );
+        }
+        assert_eq!(session.pending(), 8);
+        assert!(
+            session.health().terminal_error.is_none(),
+            "{:?}",
+            session.health()
+        );
+        assert!(session.progress.lock().unwrap().unpersisted.is_empty());
+        assert!(
+            provider_entry
+                .recv_timeout(setup_deadline.saturating_duration_since(Instant::now()))
+                .is_ok(),
+            "first provider did not enter: pending={} health={:?}",
+            session.pending(),
+            session.health()
+        );
         drop(release);
         let stopped = Instant::now();
         assert!(session.stop().is_err());
