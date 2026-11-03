@@ -13,6 +13,85 @@ pub(crate) const SNAPSHOT_JOURNAL: &str = ".pennel-transcript-snapshot-pending.j
 pub const METADATA_PART_BYTES: usize = 1_048_576;
 const MAX_MANIFEST_BYTES: u64 = 1_048_576;
 
+fn supported_metadata_schema(version: u64) -> bool {
+    matches!(version, 1 | 3)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryAudioTrack {
+    Microphone,
+    OtherCapture,
+}
+
+impl RecoveryAudioTrack {
+    pub(crate) fn from_speaker(source: crate::meetings::Speaker) -> Self {
+        match source {
+            crate::meetings::Speaker::Me => Self::Microphone,
+            crate::meetings::Speaker::Others => Self::OtherCapture,
+        }
+    }
+
+    pub(crate) fn accepts_source(self, source: Option<&str>) -> bool {
+        matches!(
+            (self, source),
+            (_, None)
+                | (Self::Microphone, Some("microphone"))
+                | (
+                    Self::OtherCapture,
+                    Some("system" | "system_audio" | "room_microphone")
+                )
+        )
+    }
+
+    fn file_prefix(self) -> &'static str {
+        match self {
+            Self::Microphone => "me",
+            Self::OtherCapture => "others",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryAudioDisposition {
+    Pending,
+    Complete,
+    Unverified,
+}
+
+/// Capture-lane identity, not an inferred person label. OtherCapture may be system or room audio.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryAudioProvenance {
+    pub file_name: String,
+    pub track: RecoveryAudioTrack,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub sha256: String,
+    pub disposition: RecoveryAudioDisposition,
+}
+
+impl RecoveryAudioProvenance {
+    pub(crate) fn valid(&self) -> bool {
+        self.file_name == format!("{}-{}.wav", self.track.file_prefix(), self.start_ms)
+            && self.end_ms >= self.start_ms
+            && self.end_ms - self.start_ms <= 31_000
+            && (valid_digest(&self.sha256)
+                || self.sha256.is_empty() && self.disposition != RecoveryAudioDisposition::Complete)
+    }
+
+    pub(crate) fn same_audio(&self, other: &Self) -> bool {
+        self.same_chunk(other) && self.sha256 == other.sha256
+    }
+
+    pub(crate) fn same_chunk(&self, other: &Self) -> bool {
+        self.file_name == other.file_name
+            && self.track == other.track
+            && self.start_ms == other.start_ms
+            && self.end_ms == other.end_ms
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttributionKind {
@@ -79,6 +158,8 @@ pub struct UtteranceMetadata {
     pub unresolved_manual: Vec<ManualCorrection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_audio: Option<RecoveryAudioProvenance>,
 }
 
 impl UtteranceMetadata {
@@ -97,6 +178,7 @@ impl UtteranceMetadata {
             manual: None,
             unresolved_manual: Vec::new(),
             original_text: None,
+            recovery_audio: None,
         };
         metadata.refresh_fingerprints(segment);
         metadata
@@ -258,7 +340,7 @@ fn save_ownership(root: &Path, state: &OwnedParts) -> Result<(), PennelError> {
 fn manifest_references(root: &Path, path: &Path, complete: bool) -> Option<HashSet<String>> {
     let manifest: MetadataManifest =
         serde_json::from_slice(&read_bounded(path, MAX_MANIFEST_BYTES).ok()?).ok()?;
-    if manifest.schema_version != 1
+    if !supported_metadata_schema(u64::from(manifest.schema_version))
         || manifest.revision == 0
         || !crate::meetings::valid_uid(&manifest.meeting_uid)
         || !valid_digest(&manifest.transcript_sha256)
@@ -543,6 +625,15 @@ fn validate_row(row: &MeetingUtterance) -> bool {
     {
         return false;
     }
+    if let Some(recovery) = &metadata.recovery_audio
+        && (!recovery.valid()
+            || !recovery.track.accepts_source(metadata.source_id.as_deref())
+            || metadata.start_ms < recovery.start_ms
+            || metadata.end_ms > recovery.end_ms
+            || segment.failed == (recovery.disposition == RecoveryAudioDisposition::Complete))
+    {
+        return false;
+    }
     if metadata.attribution.kind == AttributionKind::Single
         && !((metadata.attribution.voices.len() == 1 && !metadata.attribution.self_voice)
             || metadata.attribution.voices.is_empty() && metadata.attribution.self_voice)
@@ -636,7 +727,7 @@ pub(crate) fn load_snapshot(
     if value
         .get("schema_version")
         .and_then(serde_json::Value::as_u64)
-        .is_some_and(|version| version != 1)
+        .is_some_and(|version| !supported_metadata_schema(version))
     {
         snapshot.metadata_status = TranscriptMetadataStatus::Unsupported;
         return snapshot;
@@ -645,7 +736,7 @@ pub(crate) fn load_snapshot(
         return snapshot;
     };
     snapshot.revision = manifest.revision;
-    if manifest.schema_version != 1
+    if !supported_metadata_schema(u64::from(manifest.schema_version))
         || manifest.revision == 0
         || manifest.meeting_uid != uid
         || !valid_digest(&manifest.transcript_sha256)
@@ -716,6 +807,9 @@ pub(crate) fn load_snapshot(
         }
         segment.end_ms = metadata.end_ms;
         let row = MeetingUtterance { segment, metadata };
+        if manifest.schema_version == 1 && row.metadata.recovery_audio.is_some() {
+            return snapshot;
+        }
         if !ids.insert(row.metadata.utterance_id.clone()) || !validate_row(&row) {
             return snapshot;
         }
@@ -840,6 +934,23 @@ pub(crate) fn refresh_for_update(
                     "A newer speaker assignment is already saved.",
                 ));
             }
+            if let Some(recovery) = &previous.recovery_audio {
+                if let Some(current) = &row.metadata.recovery_audio {
+                    if !recovery.same_chunk(current)
+                        || !recovery.sha256.is_empty() && recovery.sha256 != current.sha256
+                        || recovery.disposition == RecoveryAudioDisposition::Complete
+                            && current.disposition != RecoveryAudioDisposition::Complete
+                        || recovery.disposition == RecoveryAudioDisposition::Unverified
+                            && current.disposition != RecoveryAudioDisposition::Unverified
+                    {
+                        return Err(PennelError::storage(
+                            "An utterance's original recovery audio cannot be changed by an edit.",
+                        ));
+                    }
+                } else {
+                    row.metadata.recovery_audio = Some(recovery.clone());
+                }
+            }
         }
         row.metadata.refresh_fingerprints(&row.segment);
     }
@@ -907,7 +1018,11 @@ pub(crate) fn prepare_metadata(
         ));
     }
     let manifest = serde_json::to_vec(&MetadataManifest {
-        schema_version: 1,
+        schema_version: if rows.iter().any(|row| row.metadata.recovery_audio.is_some()) {
+            3
+        } else {
+            1
+        },
         meeting_uid: uid.into(),
         transcript_sha256: digest(text),
         revision,
@@ -1010,7 +1125,7 @@ pub(crate) fn recover_snapshot(root: &Path) -> Result<(), PennelError> {
     }
     let parsed: MetadataManifest =
         serde_json::from_slice(&manifest).map_err(PennelError::storage)?;
-    if parsed.schema_version != 1
+    if !supported_metadata_schema(u64::from(parsed.schema_version))
         || parsed.revision == 0
         || parsed.transcript_sha256 != journal.transcript_sha256
         || !crate::meetings::valid_uid(&parsed.meeting_uid)
@@ -1256,6 +1371,110 @@ mod tests {
     }
 
     #[test]
+    fn recovery_schema_preserves_future_provisional_formats_read_only() {
+        let (_directory, store, id) = fixture();
+        let path = store
+            .write_recovery(
+                &id,
+                Speaker::Me,
+                0,
+                &crate::wav::encode_wav(&vec![0.2; 16_000], 16_000),
+            )
+            .unwrap();
+        let mut row = utterance(0, "Owned versioned recovery.");
+        row.segment.end_ms = 1_000;
+        row.metadata.refresh_fingerprints(&row.segment);
+        row.metadata.recovery_audio =
+            crate::meetings::recovery_provenance(&path, RecoveryAudioDisposition::Complete);
+        let saved = store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        let root = store.dir_of(&id);
+        let original = fs::read(root.join(MANIFEST)).unwrap();
+        let manifest: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        assert_eq!(manifest["schema_version"], 3);
+        assert_eq!(saved.metadata_status, TranscriptMetadataStatus::Valid);
+        let text = fs::read(root.join("transcript.md")).unwrap();
+        for version in [2, 4, 9_000] {
+            let mut future = manifest.clone();
+            future["schema_version"] = version.into();
+            let bytes = serde_json::to_vec(&future).unwrap();
+            fs::write(root.join(MANIFEST), &bytes).unwrap();
+            assert_eq!(
+                store.read_transcript_snapshot(&id).unwrap().metadata_status,
+                TranscriptMetadataStatus::Unsupported
+            );
+            assert!(
+                store
+                    .write_transcript_snapshot(&id, None, &saved.utterances)
+                    .is_err()
+            );
+            assert_eq!(fs::read(root.join(MANIFEST)).unwrap(), bytes);
+            assert_eq!(fs::read(root.join("transcript.md")).unwrap(), text);
+            assert!(path.exists());
+        }
+        let mut invalid = manifest.clone();
+        invalid["schema_version"] = 1.into();
+        let bytes = serde_json::to_vec(&invalid).unwrap();
+        fs::write(root.join(MANIFEST), &bytes).unwrap();
+        assert_eq!(
+            store.read_transcript_snapshot(&id).unwrap().metadata_status,
+            TranscriptMetadataStatus::Corrupt
+        );
+        assert!(
+            store
+                .write_transcript_snapshot(&id, None, &saved.utterances)
+                .is_err()
+        );
+        assert_eq!(fs::read(root.join(MANIFEST)).unwrap(), bytes);
+        fs::write(root.join(MANIFEST), original).unwrap();
+        assert_eq!(
+            store.read_transcript_snapshot(&id).unwrap().metadata_status,
+            TranscriptMetadataStatus::Valid
+        );
+    }
+
+    #[test]
+    fn speaker_edits_cannot_replace_or_downgrade_original_recovery_proof() {
+        let (_directory, store, id) = fixture();
+        let path = store
+            .write_recovery(
+                &id,
+                Speaker::Me,
+                0,
+                &crate::wav::encode_wav(&vec![0.2; 16_000], 16_000),
+            )
+            .unwrap();
+        let mut row = utterance(0, "Owned immutable recovery.");
+        row.segment.end_ms = 1_000;
+        row.metadata.refresh_fingerprints(&row.segment);
+        row.metadata.recovery_audio =
+            crate::meetings::recovery_provenance(&path, RecoveryAudioDisposition::Complete);
+        let snapshot = store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        for mutate in [false, true] {
+            let mut rows = snapshot.utterances.clone();
+            let proof = rows[0].metadata.recovery_audio.as_mut().unwrap();
+            if mutate {
+                proof.sha256 = "f".repeat(64);
+            } else {
+                proof.disposition = RecoveryAudioDisposition::Pending;
+            }
+            assert!(
+                store
+                    .write_transcript_snapshot(&id, Some(snapshot.revision), &rows)
+                    .is_err()
+            );
+        }
+        let mut rows = snapshot.utterances.clone();
+        rows[0].metadata.recovery_audio = None;
+        let saved = store
+            .write_transcript_snapshot(&id, Some(snapshot.revision), &rows)
+            .unwrap();
+        assert_eq!(
+            saved.utterances[0].metadata.recovery_audio,
+            snapshot.utterances[0].metadata.recovery_audio
+        );
+    }
+
+    #[test]
     fn legacy_ids_are_deterministic_without_mutating_files_and_unparsed_text_is_protected() {
         let (_directory, store, id) = fixture();
         let root = store.dir_of(&id);
@@ -1311,13 +1530,29 @@ mod tests {
 
     #[test]
     fn interrupted_snapshot_save_rolls_forward_without_partial_metadata() {
-        for boundary in 0..3 {
+        for (boundary, with_recovery) in (0..3)
+            .flat_map(|boundary| [false, true].map(move |with_recovery| (boundary, with_recovery)))
+        {
             let (_directory, store, id) = fixture();
             let old = store
                 .write_transcript_snapshot(&id, Some(0), &[utterance(0, "Previous.")])
                 .unwrap();
             let root = store.dir_of(&id);
-            let next = utterance(700, "Committed new words.");
+            let mut next = utterance(700, "Committed new words.");
+            let recovery = with_recovery.then(|| {
+                store
+                    .write_recovery(
+                        &id,
+                        Speaker::Me,
+                        700,
+                        &crate::wav::encode_wav(&vec![0.25; 16_000], 16_000),
+                    )
+                    .unwrap()
+            });
+            if let Some(path) = &recovery {
+                next.metadata.recovery_audio =
+                    crate::meetings::recovery_provenance(path, RecoveryAudioDisposition::Complete);
+            }
             let text = crate::meetings::render_transcript(std::slice::from_ref(&next.segment));
             let prepared = prepare_metadata(
                 &old.meeting_uid,
@@ -1365,6 +1600,10 @@ mod tests {
             assert_eq!(recovered.utterances, vec![next]);
             assert_eq!(recovered.revision, 2);
             assert!(!root.join(SNAPSHOT_JOURNAL).exists());
+            if let Some(path) = recovery {
+                assert_eq!(store.cleanup_committed_audio(&id).unwrap(), 1);
+                assert!(!path.exists());
+            }
         }
     }
 

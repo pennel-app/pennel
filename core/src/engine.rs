@@ -1106,14 +1106,42 @@ impl PennelEngine {
         }
         let mut rows = snapshot.utterances;
         let mut recovered = 0;
+        let mut unverified = false;
         for row in rows.iter_mut().filter(|row| row.segment.failed) {
-            let segment = &mut row.segment;
-            let path =
-                crate::session::failed_path(&store.dir_of(&id), segment.speaker, segment.start_ms);
-            let Ok(wav) = std::fs::read(&path) else {
+            if row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
+                proof.disposition == crate::meeting_utterances::RecoveryAudioDisposition::Unverified
+            }) {
+                unverified = true;
+                continue;
+            }
+            let Some(path) = store.recovery_audio_path(&id, row) else {
                 continue;
             };
+            let mut proof = row
+                .metadata
+                .recovery_audio
+                .clone()
+                .expect("verified recovery provenance");
+            let Ok(wav) = crate::meetings::read_recovery_bytes(&path) else {
+                continue;
+            };
+            let actual_sha = crate::meeting_utterances::digest(&wav);
+            if proof.sha256.is_empty() {
+                proof.sha256 = actual_sha;
+            } else if actual_sha != proof.sha256 {
+                return Err(PennelError::storage(
+                    "The recovery audio changed before recognition.",
+                ));
+            }
             if let Ok(transcript) = self.stt_meeting(&settings, &wav, &keys) {
+                if !crate::meetings::recovery_provenance(&path, proof.disposition)
+                    .is_some_and(|actual| proof.same_audio(&actual))
+                {
+                    return Err(PennelError::storage(
+                        "The recovery audio changed during recognition.",
+                    ));
+                }
+                let segment = &mut row.segment;
                 if let Some((samples, rate)) = decode_wav(&wav) {
                     segment.end_ms = segment
                         .start_ms
@@ -1126,6 +1154,8 @@ impl PennelEngine {
                     transcript.text
                 };
                 segment.failed = false;
+                proof.disposition = crate::meeting_utterances::RecoveryAudioDisposition::Complete;
+                row.metadata.recovery_audio = Some(proof);
                 row.metadata.spans = if retained {
                     transcript
                         .spans
@@ -1154,6 +1184,11 @@ impl PennelEngine {
         store.write_transcript_snapshot(&id, Some(snapshot.revision), &rows)?;
         store.restore_recovery_duration(&id)?;
         let _ = store.cleanup_committed_audio(&id);
+        if recovered == 0 && unverified {
+            return Err(PennelError::storage(
+                "Some recovery audio cannot be linked to its original transcript. Keep the files and review their sources before retrying recognition.",
+            ));
+        }
         Ok(recovered)
     }
 
@@ -4241,6 +4276,7 @@ mod tests {
         std::fs::create_dir(&transcript).unwrap();
         let recognition = stt(&mut server, "De herstelde zin.").expect(1);
         assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
+        assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
         assert!(path.exists());
         std::fs::remove_dir(&transcript).unwrap();
         std::fs::write(&transcript, previous_transcript).unwrap();
@@ -4261,6 +4297,13 @@ mod tests {
             crate::session::failed_path(&store.dir_of(&id), segment.speaker, segment.start_ms);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, encode_wav(&speech(), 16_000)).unwrap();
+        let mut rows = store.read_transcript_snapshot(&id).unwrap().utterances;
+        rows.retain(|row| !row.segment.failed);
+        rows[0].metadata.recovery_audio = crate::meetings::recovery_provenance(
+            &path,
+            crate::meeting_utterances::RecoveryAudioDisposition::Complete,
+        );
+        store.write_transcript_snapshot(&id, None, &rows).unwrap();
         let recognition = stt(&mut server, "Geen nieuwe aanvraag.").expect(0);
         assert_eq!(engine.retranscribe_failed(id.clone(), keys()).unwrap(), 0);
         assert!(!path.exists());
@@ -4268,6 +4311,106 @@ mod tests {
             store.read_transcript(&id)[0].text,
             "Deze zin is al bewaard."
         );
+        recognition.assert();
+    }
+
+    #[test]
+    fn ambiguous_legacy_completion_retains_audio_and_does_not_send_it() {
+        let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&dir, &server);
+        let id = add_meeting(
+            &engine,
+            "Owned unverified recovery",
+            9,
+            "Already readable text.",
+        );
+        let store = engine.meeting_store();
+        let path = store
+            .write_recovery(
+                &id,
+                crate::meetings::Speaker::Others,
+                1_000,
+                &encode_wav(&speech(), 16_000),
+            )
+            .unwrap();
+        let recognition = stt(&mut server, "Must not be sent.").expect(0);
+        assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
+        assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
+        assert!(path.exists());
+        let snapshot = store.read_transcript_snapshot(&id).unwrap();
+        assert!(
+            snapshot
+                .utterances
+                .iter()
+                .any(|row| row.segment.text == "Already readable text.")
+        );
+        assert!(snapshot.utterances.iter().any(|row| {
+            row.segment.failed
+                && row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
+                    proof.disposition
+                        == crate::meeting_utterances::RecoveryAudioDisposition::Unverified
+                })
+        }));
+        recognition.assert();
+    }
+
+    #[test]
+    fn metadata_only_peer_rewrite_cannot_resurrect_private_origin_recovery_audio() {
+        let (directory, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&directory, &server);
+        let origin = engine.meeting_store();
+        let id = add_meeting(
+            &engine,
+            "Owned portable private disposition",
+            9,
+            "Placeholder.",
+        );
+        let path = origin
+            .write_recovery(
+                &id,
+                crate::meetings::Speaker::Me,
+                0,
+                &encode_wav(&speech(), 16_000),
+            )
+            .unwrap();
+        let mut segment = origin.read_transcript(&id).remove(0);
+        segment.start_ms = 0;
+        segment.end_ms = 1_000;
+        segment.text.clear();
+        segment.failed = false;
+        let mut row = crate::MeetingUtterance::new(segment, Some("microphone".into()));
+        row.metadata.recovery_audio = crate::meetings::recovery_provenance(
+            &path,
+            crate::meeting_utterances::RecoveryAudioDisposition::Complete,
+        );
+        origin.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        let peer_root = tempfile::tempdir().unwrap();
+        let peer = MeetingStore::new(peer_root.path());
+        fn transfer_metadata(source: &std::path::Path, destination: &std::path::Path) {
+            std::fs::create_dir_all(destination).unwrap();
+            for entry in std::fs::read_dir(source).unwrap().map(Result::unwrap) {
+                if entry.file_type().unwrap().is_file() {
+                    std::fs::copy(entry.path(), destination.join(entry.file_name())).unwrap();
+                }
+            }
+        }
+        transfer_metadata(&origin.dir_of(&id), &peer.dir_of(&id));
+        assert!(!peer.dir_of(&id).join("failed").exists());
+        peer.write_transcript_snapshot(&id, None, &[]).unwrap();
+        assert_eq!(
+            peer.read_committed_transcript_snapshot(&id)
+                .unwrap()
+                .utterances
+                .len(),
+            1,
+            "a peer without private PCM cannot retire the origin's durable completion"
+        );
+        transfer_metadata(&peer.dir_of(&id), &origin.dir_of(&id));
+        let recognition = stt(&mut server, "Private audio must not be sent.").expect(0);
+        assert!(origin.read_transcript(&id).is_empty());
+        assert_eq!(engine.retranscribe_failed(id.clone(), keys()).unwrap(), 0);
+        assert!(!path.exists());
+        assert!(origin.read_transcript(&id).is_empty());
         recognition.assert();
     }
 

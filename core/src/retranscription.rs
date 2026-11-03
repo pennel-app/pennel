@@ -218,6 +218,7 @@ pub(crate) fn reconcile_rerun_utterances(
             row.metadata.utterance_id = old.metadata.utterance_id.clone();
             row.metadata.source_id = old.metadata.source_id.clone();
             row.metadata.lineage = old.metadata.lineage.clone();
+            row.metadata.recovery_audio = old.metadata.recovery_audio.clone();
             row.metadata.manual = old.metadata.manual.clone();
             row.metadata.unresolved_manual = old.metadata.unresolved_manual.clone();
             row.metadata.attribution_revision = row.metadata.attribution_revision.max(

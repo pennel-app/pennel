@@ -118,8 +118,8 @@ pub use meeting_recording::{
 };
 pub use meeting_utterances::{
     AcousticTurn, AttributionKind, AutomaticAttribution, ManualCorrection,
-    MeetingTranscriptSnapshot, MeetingUtterance, TimedTextSpan, TranscriptMetadataStatus,
-    UtteranceMetadata,
+    MeetingTranscriptSnapshot, MeetingUtterance, RecoveryAudioDisposition, RecoveryAudioProvenance,
+    RecoveryAudioTrack, TimedTextSpan, TranscriptMetadataStatus, UtteranceMetadata,
 };
 pub use meetings::{MeetingInfo, NoteLine, Segment, Speaker, SpeakerName, mark_lines};
 pub use models::{DownloadListener, LocalModel, ModelState};

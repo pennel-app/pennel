@@ -67,9 +67,33 @@ struct StoredJob {
     start_ms: u64,
     end_ms: u64,
     path: PathBuf,
+    sha256: String,
 }
 
 impl StoredJob {
+    fn recovery_provenance(
+        &self,
+        complete: bool,
+    ) -> crate::meeting_utterances::RecoveryAudioProvenance {
+        crate::meeting_utterances::RecoveryAudioProvenance {
+            file_name: self
+                .path
+                .file_name()
+                .expect("owned recovery file")
+                .to_string_lossy()
+                .into(),
+            track: crate::meeting_utterances::RecoveryAudioTrack::from_speaker(self.speaker),
+            start_ms: self.start_ms,
+            end_ms: self.end_ms,
+            sha256: self.sha256.clone(),
+            disposition: if complete {
+                crate::meeting_utterances::RecoveryAudioDisposition::Complete
+            } else {
+                crate::meeting_utterances::RecoveryAudioDisposition::Pending
+            },
+        }
+    }
+
     fn failed(&self) -> Segment {
         Segment {
             start_ms: self.start_ms,
@@ -100,6 +124,23 @@ struct Progress {
 }
 
 impl Progress {
+    fn insert_recovery(
+        &mut self,
+        segment: Segment,
+        source: Speaker,
+        spans: Vec<crate::TimedTextSpan>,
+        recovery: Option<crate::meeting_utterances::RecoveryAudioProvenance>,
+    ) {
+        let mut metadata =
+            crate::UtteranceMetadata::new(&segment, Some(physical_source_id(source).into()));
+        metadata.spans = spans;
+        metadata.recovery_audio = recovery;
+        self.metadata
+            .insert((index(segment.speaker), segment.start_ms), metadata);
+        self.segments.push(segment);
+        self.segments.sort_by_key(|segment| segment.start_ms);
+    }
+
     fn canonical(&mut self, segments: &[Segment]) -> Vec<crate::MeetingUtterance> {
         segments
             .iter()
@@ -197,6 +238,7 @@ fn persist_job(store: &MeetingStore, id: &str, job: &Job) -> Result<StoredJob, P
         start_ms: job.chunk.start_ms,
         end_ms: job.chunk.start_ms + job.chunk.samples.len() as u64 * 1000 / u64::from(SAMPLE_RATE),
         path,
+        sha256: crate::meeting_utterances::digest(&wav),
     })
 }
 
@@ -224,14 +266,9 @@ fn commit_progress(
         store
             .write_transcript_snapshot(id, Some(metadata_revision), &rows)
             .or_else(|error| {
-                let current = store.read_transcript_snapshot(id)?;
-                let intended: Vec<_> = rows
-                    .iter()
-                    .filter(|row| row.segment.failed || !row.segment.text.trim().is_empty())
-                    .cloned()
-                    .collect();
+                let current = store.read_committed_transcript_snapshot(id)?;
                 if current.metadata_status == crate::TranscriptMetadataStatus::Valid
-                    && current.utterances == intended
+                    && current.utterances == rows
                 {
                     Ok(current)
                 } else {
@@ -246,7 +283,7 @@ fn commit_progress(
     }
     let removed: Vec<_> = cleanup
         .into_iter()
-        .filter(|path| path.try_exists().is_ok_and(|exists| !exists))
+        .filter(|path| !store.recovery_path_may_exist(id, path))
         .collect();
     let mut progress = progress.lock().unwrap();
     progress.metadata_revision = saved.revision;
@@ -458,19 +495,11 @@ impl MeetingSession {
                     progress
                         .preview
                         .complete(segment.speaker, segment.start_ms, segment.end_ms);
+                    let recovery = job.recovery_provenance(!segment.failed);
                     if !segment.failed {
-                        progress.cleanup.push(job.path);
+                        progress.cleanup.push(job.path.clone());
                     }
-                    let mut metadata = crate::UtteranceMetadata::new(
-                        &segment,
-                        Some(physical_source_id(segment.speaker).into()),
-                    );
-                    metadata.spans = spans;
-                    progress
-                        .metadata
-                        .insert((index(segment.speaker), segment.start_ms), metadata);
-                    progress.segments.push(segment);
-                    progress.segments.sort_by_key(|segment| segment.start_ms);
+                    progress.insert_recovery(segment, job.speaker, spans, Some(recovery));
                     progress.changed();
                 }
                 if let Err(error) = commit_progress(&worker_store, &worker_id, &worker_progress) {
@@ -685,7 +714,22 @@ fn transcribe_job(
     job: &StoredJob,
     terminal: &AtomicBool,
 ) -> Result<(Segment, Vec<crate::TimedTextSpan>), PennelError> {
-    let wav = std::fs::read(&job.path).map_err(PennelError::storage)?;
+    if !job.path.parent().is_some_and(|parent| {
+        std::fs::symlink_metadata(parent)
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+    }) || !std::fs::symlink_metadata(&job.path)
+        .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+    {
+        return Err(PennelError::storage(
+            "The saved recovery audio is not a valid local file.",
+        ));
+    }
+    let wav = crate::meetings::read_recovery_bytes(&job.path).map_err(PennelError::storage)?;
+    if crate::meeting_utterances::digest(&wav) != job.sha256 {
+        return Err(PennelError::storage(
+            "The saved recovery audio changed before recognition.",
+        ));
+    }
     let mut result = Err(PennelError::NotFound);
     for _ in 0..ATTEMPTS {
         if terminal.load(Ordering::SeqCst) {
@@ -999,7 +1043,12 @@ impl MeetingSession {
             match persist_job(&self.store, &self.id, &job) {
                 Ok(stored) => {
                     let mut progress = self.progress.lock().unwrap();
-                    progress.segments.push(stored.failed());
+                    progress.insert_recovery(
+                        stored.failed(),
+                        stored.speaker,
+                        Vec::new(),
+                        Some(stored.recovery_provenance(false)),
+                    );
                     progress.pending = progress.pending.saturating_sub(1);
                     progress.changed();
                 }
@@ -1014,13 +1063,17 @@ impl MeetingSession {
             }
         }
         // A crashed worker may have queued durable files without publishing their segment yet.
-        let recovered = self.store.read_transcript(&self.id);
+        let recovered = self.store.read_transcript_snapshot(&self.id)?;
         {
             let mut progress = self.progress.lock().unwrap();
-            for segment in recovered {
+            for row in recovered.utterances {
+                let segment = row.segment;
                 if !progress.segments.iter().any(|existing| {
                     existing.speaker == segment.speaker && existing.start_ms == segment.start_ms
                 }) {
+                    progress
+                        .metadata
+                        .insert((index(segment.speaker), segment.start_ms), row.metadata);
                     progress.segments.push(segment);
                     progress.changed();
                 }
@@ -1070,6 +1123,299 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const SR: usize = 16_000;
+
+    #[test]
+    fn recovery_proof_is_durable_before_cleanup_and_survives_a_later_timed_split() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned timed recovery commit", chrono::Local::now())
+            .unwrap();
+        let microphone = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Me,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: tone(1.0),
+                },
+            },
+        )
+        .unwrap();
+        let system = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Others,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: vec![0.3; SR],
+                },
+            },
+        )
+        .unwrap();
+        let microphone_bytes = std::fs::read(&microphone.path).unwrap();
+        let mut progress = Progress::default();
+        progress.insert_recovery(
+            Segment {
+                text: "Yes no".into(),
+                failed: false,
+                ..microphone.failed()
+            },
+            Speaker::Me,
+            vec![
+                crate::TimedTextSpan(0, 3, 100, 400),
+                crate::TimedTextSpan(4, 6, 600, 900),
+            ],
+            Some(microphone.recovery_provenance(true)),
+        );
+        progress.insert_recovery(
+            system.failed(),
+            Speaker::Others,
+            Vec::new(),
+            Some(system.recovery_provenance(false)),
+        );
+        progress.cleanup.push(microphone.path.clone());
+        let progress = Mutex::new(progress);
+        let transcript = store.dir_of(&id).join("transcript.md");
+        std::fs::create_dir(&transcript).unwrap();
+        assert!(commit_progress(&store, &id, &progress).is_err());
+        assert!(microphone.path.exists());
+        assert!(system.path.exists());
+        std::fs::remove_dir(&transcript).unwrap();
+        commit_progress(&store, &id, &progress).unwrap();
+        assert!(!microphone.path.exists());
+        assert!(system.path.exists());
+        assert!(progress.lock().unwrap().cleanup.is_empty());
+
+        let snapshot = store.read_transcript_snapshot(&id).unwrap();
+        let microphone_row = snapshot
+            .utterances
+            .iter()
+            .find(|row| row.metadata.source_id.as_deref() == Some("microphone"))
+            .unwrap();
+        let (mut split, _) = crate::diarize::apply_utterances(
+            std::slice::from_ref(microphone_row),
+            &[
+                pennel_speakers::Turn {
+                    start_ms: 100,
+                    end_ms: 400,
+                    speaker: 0,
+                },
+                pennel_speakers::Turn {
+                    start_ms: 600,
+                    end_ms: 900,
+                    speaker: 1,
+                },
+            ],
+            &[],
+            crate::diarize::Track::Microphone,
+        );
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0].segment.start_ms, 100);
+        split.extend(
+            snapshot
+                .utterances
+                .iter()
+                .filter(|row| row.segment.failed)
+                .cloned(),
+        );
+        store
+            .write_transcript_snapshot(&id, Some(snapshot.revision), &split)
+            .unwrap();
+        std::fs::write(&microphone.path, microphone_bytes).unwrap();
+        let reopened = MeetingStore::new(directory.path());
+        let snapshot = reopened.read_transcript_snapshot(&id).unwrap();
+        assert_eq!(snapshot.utterances.len(), 3);
+        let failed = snapshot
+            .utterances
+            .iter()
+            .filter(|row| row.segment.failed)
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(
+            failed[0].metadata.source_id.as_deref(),
+            Some("system_audio")
+        );
+        assert_eq!(
+            reopened.recovery_audio_path(&id, failed[0]),
+            Some(system.path.clone())
+        );
+        assert_eq!(reopened.cleanup_committed_audio(&id).unwrap(), 1);
+        assert!(!microphone.path.exists());
+        assert!(system.path.exists());
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(
+                reopened
+                    .dir_of(&id)
+                    .join(crate::meeting_utterances::MANIFEST),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["schema_version"], 3);
+    }
+
+    #[test]
+    fn stale_write_cannot_claim_an_uncommitted_private_completion_was_saved() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned raw completion CAS", chrono::Local::now())
+            .unwrap();
+        store.write_transcript_snapshot(&id, Some(0), &[]).unwrap();
+        let job = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Me,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: tone(1.0),
+                },
+            },
+        )
+        .unwrap();
+        let mut progress = Progress::default();
+        progress.insert_recovery(
+            Segment {
+                failed: false,
+                ..job.failed()
+            },
+            Speaker::Me,
+            Vec::new(),
+            Some(job.recovery_provenance(true)),
+        );
+        progress.cleanup.push(job.path.clone());
+        progress.changed();
+        let mut corrupt = std::fs::read(&job.path).unwrap();
+        corrupt[0] = b'X';
+        std::fs::write(&job.path, corrupt).unwrap();
+        let progress = Mutex::new(progress);
+        assert!(
+            commit_progress(&store, &id, &progress).is_err(),
+            "an old empty public projection is not a durable completion proof"
+        );
+        assert!(progress.lock().unwrap().dirty);
+        assert_eq!(progress.lock().unwrap().metadata_revision, 0);
+        assert!(job.path.exists());
+        assert!(
+            store
+                .read_transcript_snapshot(&id)
+                .unwrap()
+                .utterances
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn stale_write_can_acknowledge_the_same_full_private_completion_already_saved() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned durable completion replay", chrono::Local::now())
+            .unwrap();
+        let job = persist_job(
+            &store,
+            &id,
+            &Job {
+                speaker: Speaker::Me,
+                chunk: Chunk {
+                    start_ms: 0,
+                    samples: tone(1.0),
+                },
+            },
+        )
+        .unwrap();
+        let mut progress = Progress::default();
+        progress.insert_recovery(
+            Segment {
+                failed: false,
+                ..job.failed()
+            },
+            Speaker::Me,
+            Vec::new(),
+            Some(job.recovery_provenance(true)),
+        );
+        progress.cleanup.push(job.path.clone());
+        progress.changed();
+        let segments = progress.persisted();
+        let rows = progress.canonical(&segments);
+        store
+            .write_transcript_snapshot(&id, Some(0), &rows)
+            .unwrap();
+        let mut corrupt = std::fs::read(&job.path).unwrap();
+        corrupt[0] = b'X';
+        std::fs::write(&job.path, corrupt).unwrap();
+        let progress = Mutex::new(progress);
+        commit_progress(&store, &id, &progress).unwrap();
+        assert!(!progress.lock().unwrap().dirty);
+        assert_eq!(progress.lock().unwrap().metadata_revision, 1);
+        assert_eq!(progress.lock().unwrap().cleanup, vec![job.path]);
+        assert_eq!(
+            store
+                .read_committed_transcript_snapshot(&id)
+                .unwrap()
+                .utterances
+                .len(),
+            1
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_bookkeeping_retains_dangling_file_and_directory_entries() {
+        for directory_link in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let store = MeetingStore::new(directory.path());
+            let id = store
+                .create("Owned no-follow cleanup", chrono::Local::now())
+                .unwrap();
+            let job = persist_job(
+                &store,
+                &id,
+                &Job {
+                    speaker: Speaker::Me,
+                    chunk: Chunk {
+                        start_ms: 0,
+                        samples: tone(1.0),
+                    },
+                },
+            )
+            .unwrap();
+            let mut progress = Progress::default();
+            progress.insert_recovery(
+                Segment {
+                    failed: false,
+                    ..job.failed()
+                },
+                Speaker::Me,
+                Vec::new(),
+                Some(job.recovery_provenance(true)),
+            );
+            progress.cleanup.push(job.path.clone());
+            progress.changed();
+            std::fs::remove_file(&job.path).unwrap();
+            let link = if directory_link {
+                let parent = job.path.parent().unwrap();
+                std::fs::remove_dir(parent).unwrap();
+                parent.to_path_buf()
+            } else {
+                job.path.clone()
+            };
+            std::os::unix::fs::symlink(directory.path().join("missing-owned-data"), &link).unwrap();
+            let progress = Mutex::new(progress);
+            commit_progress(&store, &id, &progress).unwrap();
+            assert_eq!(progress.lock().unwrap().cleanup, vec![job.path]);
+            assert!(
+                std::fs::symlink_metadata(link)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+        }
+    }
 
     #[derive(Default)]
     struct PreviewObserver(Mutex<Vec<MeetingPreviewAudio>>);
