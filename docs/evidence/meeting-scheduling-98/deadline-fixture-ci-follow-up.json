@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "issue": 98,
+  "parent": 94,
+  "date": "2026-11-03",
+  "owning_pr": 131,
+  "base_head": "52befd1e0674ad38e7d221d869fad0aff2995562",
+  "fixture_path": "core/src/inference_tests.rs",
+  "fixture_sha256": "c964d2bdfcd6ef7dc5721e234c3770689fe5747506f79c1d6c88dfe8ac439328",
+  "ci_failure": {
+    "pr": 132,
+    "head": "8ba325c7ac3ef97581eef7959fcd279db492fa14",
+    "job_url": "https://github.com/pennel-app/pennel/actions/runs/41678611439/job/126066003481",
+    "passed": 956,
+    "failed": 1,
+    "ignored": 5,
+    "log_sha256": "78713a80c8d33d9a4d5adabe1cb379d68961c84e23b399f62518119c4ea48701",
+    "diagnosis": "Shared220ms deadline could validly expire after120ms auth callback but before content POST; test still required1 content call."
+  },
+  "controlled_red": {
+    "primary_test": "inference::tests::managed_auth_and_content_share_one_deadline",
+    "temporary_test_only_strategy": "ResetBetweenPhases",
+    "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib inference::tests::managed_auth_and_content_share_one_deadline -- --exact --nocapture",
+    "expected_result": "failed cumulative-budget assertion after valid content response",
+    "elapsed_seconds": 11.01,
+    "auth_requests_required": 1,
+    "content_requests_required": 1,
+    "original_budget_seconds": 10,
+    "earliest_reset_deadline_seconds": 15,
+    "valid_body_received": true,
+    "log": "build/issue98/managed-deadline/reset-negative-control-red.log",
+    "log_sha256": "c87d0f110d3e1d0d111a521c47c2c91cf64e2fd2634940d63081a9a99ffe1e35",
+    "production_edits": false
+  },
+  "fixture_contract": {
+    "shared_path": "unchanged ManagedInference::send",
+    "fresh_session_per_strategy": true,
+    "auth_and_authenticated_content_entry_required": true,
+    "exact_auth_body_content_body_and_header_required": true,
+    "shared_completion": "Network error while content response held; timestamp in [original deadline,deadline+1s]",
+    "negative_control": "valid JSON response after original deadline, before earliest fresh deadline; cumulative-budget oracle false",
+    "test_budget_seconds": 10,
+    "auth_budget_fraction": 0.5,
+    "observation_allowance_seconds": 1,
+    "callback_watchdog_seconds": 30,
+    "cleanup": "Release-on-drop before scoped worker/mock teardown; loopback only"
+  },
+  "checks": [
+    {
+      "name": "managed_targeted_lean",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib inference::tests::managed_ -- --nocapture",
+      "result": "passed",
+      "log": "build/issue98/managed-deadline/managed-targeted-lean-green.log",
+      "log_sha256": "225b63ea80dca28469eab2064cff382f908c0835ce1751600167ae23a4677b06",
+      "passed": 8,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "core_default",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --lib",
+      "result": "passed",
+      "log": "build/issue98/managed-deadline/core-default-green.log",
+      "log_sha256": "77b1ac012c22ed44c923f236abcd215f6ab329435c5a23ce220fc5c2d388ab19",
+      "passed": 918,
+      "failed": 0,
+      "ignored": 7
+    },
+    {
+      "name": "core_lean",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib",
+      "result": "passed",
+      "log": "build/issue98/managed-deadline/core-lean-green.log",
+      "log_sha256": "b06e3008748126fd796082e57674ecda7632c1ca4e50bde794c786f0b66c6868",
+      "passed": 901,
+      "failed": 0,
+      "ignored": 5
+    },
+    {
+      "name": "clippy_default",
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings",
+      "result": "passed",
+      "log": "build/issue98/managed-deadline/clippy-default-green.log",
+      "log_sha256": "dff5068452fc46c82e3332e013cdc5b1b6b21a23378ef2ea7861839afff506f8"
+    },
+    {
+      "name": "clippy_lean",
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --no-default-features --lib --tests -- -D warnings",
+      "result": "passed",
+      "log": "build/issue98/managed-deadline/clippy-lean-green.log",
+      "log_sha256": "e27aa631f7af2c77a99725628702dc6e73c3e298e7dc1855973731d95da99aa0"
+    },
+    {
+      "name": "format",
+      "command": "scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check",
+      "result": "passed",
+      "log": "build/issue98/managed-deadline/format-green.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "independent_review": {
+    "reviewer": "caption_review",
+    "scope": "frozen source, both physical POSTs, cumulative timing oracle, fresh-session reset success, no auth-error false pass, cleanup/watchdogs and unchanged production deadline",
+    "result": "approved; no concrete actionable findings",
+    "reviewer_tests_or_provider_calls": false
+  },
+  "production_audit": {
+    "only_core_change": "cfg(test)-included core/src/inference_tests.rs",
+    "all_other_core_paths_unchanged": true,
+    "unchanged_git_blobs": {
+      "core/src/inference.rs": "0771c008dff96cab2f63a6c8a91b55740efedaad",
+      "core/src/cloud/account.rs": "2564149bd8432499dda6af6c60803a3ddb0d1088",
+      "assets/qualifications/meeting-assistance.json": "a9bcd84f903ec87e547b28774fea87c1eb3d37fc"
+    },
+    "provider_model_settings_qualification_and_physical_limits_unchanged": true
+  },
+  "not_repeated": [
+    "native builds/tests",
+    "frontend checks/renders",
+    "FFI generation",
+    "Release builds"
+  ],
+  "remaining": [
+    "new #131 exact-head hosted CI",
+    "propagation and joined #57 validation",
+    "previous real-call, hardware, resource and qualification gates remain open"
+  ]
+}
