@@ -401,3 +401,9 @@ The capture and ordinary Preview bundles were built with the personal Apple Deve
 The full render sweep exposed a pre-existing shared-storage dependency between a recovery-code scenario and a paused-sync scenario. The capture harness now creates and disposes a browser context per scenario, preserving state within that scenario. The paired regression passed all eight language/appearance combinations. Product sync behavior was unchanged. A stale Settings test now checks the actual final category instead of assuming Models remains last.
 
 This is local implementation and acceptance evidence, not a release or installed upgrade. Review/merge, hosted macOS/Windows/Linux checks and the existing older-OS, physical accessibility, recording/insertion and signed-update acceptance remain separate; retain their roadmap owners.
+
+### Finished-meeting suggestion review
+
+[#57](https://github.com/pennel-app/pennel/issues/57) adds the same Suggestions review to saved meetings and the retained workspace after recording finishes. Source-linked actions, decisions and open questions can be edited, accepted, dismissed, reopened and exported as accepted Markdown. Accepting does not change personal notes. Add to notes is a separate explicit, editable insertion through normal draft saving, with durable acknowledgement and duplicate protection.
+
+Content language is chosen explicitly, independently of interface language. Find suggestions shows the configured destination and exact qualification status. The production qualification registry is empty, so generation remains unavailable with a reason; recording, notes and ordinary questions stay available. Live suggestions and background updating remain gated under #97. Unknown/corrupt review metadata stays preserved and read-only. [The review receipt](evidence/reviewed-insights-57.md) distinguishes owned fixtures, native bridge/build evidence and the outstanding quality, resource and hardware gates.

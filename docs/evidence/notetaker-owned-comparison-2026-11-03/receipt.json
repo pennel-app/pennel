@@ -1,0 +1,804 @@
+{
+  "schema_version": 1,
+  "baseline_revision": "340d02ead696f2b821a664a218dc42738a184df8",
+  "candidate_revision": "5d63a37326a307ec5b355191c47dba2d74b7675f",
+  "fixture": {
+    "kind": "fresh owned synthetic English TTS",
+    "voice": "Aman",
+    "voice_language": "en_IN",
+    "voice_preinstalled_directory": "/System/Library/PrivateFrameworks/VoiceServices.framework/TTSResources/PreinstallAssets/en-IN_aman",
+    "voice_info_sha256": "c8204e70142c88820bb2f559b7cee594b4540676349a157c94bb0fdf70f95470",
+    "generation_command": [
+      "/usr/bin/say",
+      "-v",
+      "Aman",
+      "--file-format=WAVE",
+      "--data-format=LEI16@16000",
+      "-r",
+      "150",
+      "-o",
+      "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+      "-f",
+      "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+    ],
+    "wav_sha256": "5ddf2aac6e31c0f7a8de76edf4d7a8d9b690882843b4d4fb654c83167d7326be",
+    "duration_seconds": 3.989,
+    "sample_rate": 16000,
+    "channels": 1,
+    "sample_format": "signed PCM16",
+    "reference_text_sha256": "51f73ff1e9a5e970c8e96fe5e4b7e54f7e39bc18aa4bae0c339bcac5da51520b",
+    "human_recording": false,
+    "hello_fixture_used": false,
+    "hello_fixture_reason": "Committed fixture has no explicit synthetic/consent provenance in its original commit; regenerated rather than assuming."
+  },
+  "model": {
+    "path": "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+    "sha256": "b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183",
+    "size_bytes": 886381760,
+    "route": "explicit local file through transcribe-cpp 0.4.1; production-default Backend::Auto, compiled Metal+CPU",
+    "downloaded": false,
+    "provider_called": false,
+    "revision": "artifact SHA256 (catalog id alone is not a revision)",
+    "sha256_after_runs": "b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183",
+    "unchanged": true,
+    "actual_native_backend": "Not separately queried from the LocalEngine-owned Session; do not infer from CPU/RSS or claim a forced Metal run."
+  },
+  "harness": {
+    "kind": "isolated exact-source LocalEngine microbenchmark; not packaged app",
+    "source_modules": {
+      "baseline_local_engine.rs": "3e2192cc531f296dd09d5086d6da06e57eef64d408991fb94c7f711eaf36d21d",
+      "candidate_local_engine.rs": "787167ec090184613f5f43f64314c7f68a665e82cb97f40d4e8f3f66df76dd0e",
+      "speech_result.rs": "1b929d2a395cdc85f30412f8f69fc6ea79b357bfbfec8c3f59311238975d9be6",
+      "wav.rs": "19e83eb995bdb7830a097ade367ed7e9459daf52b0492a41f05fdf452002429f",
+      "bench.rs": "8548e35f15da537d07b987fde4e31dcafc987b5ad22f719938a3facccf67037e"
+    },
+    "transformations": [
+      "LocalEngine baseline/current included byte-for-byte from the recorded Git revisions.",
+      "SpeechTranscript types copied from current source; serde/UniFFI derives and serde rename attribute removed, no behavior changes.",
+      "PennelError adapter preserves relevant error variants; aarch64 macOS CPU-support adapter asserts host before returning the same supported result.",
+      "Candidate-only read accessor observes the existing preview token registration for the preemption barrier."
+    ],
+    "build_offline": true,
+    "compile_attempt_notes": [
+      "Retained release rlibs could not be reused directly because rustc could not resolve their dependency metadata.",
+      "Isolated Cargo release compile uses --offline with exact transcribe-cpp=0.4.1, no host app source changes."
+    ],
+    "binary_sha256": "33ac9a4a1db0a7634b7c96ba68304dda3a2a55e585a50b2df1dc841c9b6e799b",
+    "cargo_lock_sha256": "c3f9bca09fc28210b99ee755e8dd9005c538f2052c1df7b3f336d93dfe24e4a7",
+    "source_metadata_note": "The public successful-path LocalEngine methods are exact Git-source includes. Error/CPU adapters and removed serialization/FFI derives are declared harness differences; no app/package behavior is claimed.",
+    "logging": "Native diagnostics route to an unconfigured log facade; no transcript text is emitted. Results retain lengths, numeric reference edit distance and timings only.",
+    "cold_label_definition": "cold_authoritative means first call after creating a new LocalEngine in a new process. OS file cache, GPU shader cache and machine thermal state were not reset.",
+    "derivation_of_inference_counts": "Counts follow the executed harness methods and successful/cancelled returns: each enters one Session.run. They are not GPU kernel counts or app-wide inference telemetry.",
+    "transcribe_dependency_provenance": [
+      {
+        "name": "transcribe-cpp",
+        "version": "0.4.1",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "checksum": "8bab65d30f5a4c3ea0ab6f38236823389f3914b0605bbc0073a4ec88018c0714",
+        "dependencies": [
+          "log",
+          "thiserror",
+          "transcribe-cpp-sys"
+        ]
+      },
+      {
+        "name": "transcribe-cpp-sys",
+        "version": "0.4.1",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "checksum": "23a837974fdb873998a59a21ad2bf5a4b7bbf721c20d03d2a3ab8c221726a444",
+        "dependencies": [
+          "cmake",
+          "serde_json"
+        ]
+      }
+    ],
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: aarch64-apple-darwin\nrelease: 1.99.1\nLLVM version: 23.1.1"
+  },
+  "environment": {
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+    "architecture": "arm64",
+    "hardware": "Apple M4 Pro"
+  },
+  "speaker_acceptance": {
+    "available": false,
+    "reason": "No compatible diarizer/embedding model asset is installed in the normal Pennel model directory; no asset acquisition was attempted."
+  },
+  "limits": [
+    "Single 3.989-second synthetic English TTS clip, not English/Dutch/Flemish/mixed acoustic acceptance.",
+    "LocalEngine only; excludes app capture, routes, utterance persistence, live speaker attribution, UI Stop and input latency.",
+    "Build/test load from other phase verification may vary concurrently; serial paired timings remain noisy and unqualified.",
+    "Sampled process-tree RSS excludes system GPU/Metal driver memory and is not aggregate app/model resource acceptance."
+  ],
+  "runs": [
+    {
+      "ordinal": 1,
+      "variant": "baseline",
+      "mode": "authoritative",
+      "argv": [
+        "/usr/bin/time",
+        "-l",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "baseline",
+        "authoritative",
+        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+      ],
+      "started_utc": "2026-11-03T15:15:56.769104+00:00",
+      "wall_seconds": 9.087540916982107,
+      "exit_code": 0,
+      "events": [
+        {
+          "kind": "admission",
+          "samples": 63824,
+          "sample_rate": 16000,
+          "mode": "authoritative"
+        },
+        {
+          "kind": "cold_authoritative",
+          "index": 0,
+          "latency_ms": 5125.535,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 1,
+          "latency_ms": 572.42,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 2,
+          "latency_ms": 661.583,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 3,
+          "latency_ms": 778.37,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 4,
+          "latency_ms": 775.983,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 5,
+          "latency_ms": 757.154,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        }
+      ],
+      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.jsonl",
+      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.stderr",
+      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.samples.json",
+      "sample_count": 36,
+      "sampled_process_tree_peak_rss_bytes": 175947776,
+      "sampled_process_tree_peak_cpu_percent": 17.5,
+      "concurrent_native_build_processes_range": [
+        19,
+        34
+      ],
+      "time_process": {
+        "real_seconds": 8.96,
+        "user_cpu_seconds": 0.47,
+        "system_cpu_seconds": 0.23,
+        "max_rss_bytes": 179879936,
+        "peak_memory_footprint_bytes": 232227704
+      }
+    },
+    {
+      "ordinal": 2,
+      "variant": "candidate",
+      "mode": "authoritative",
+      "argv": [
+        "/usr/bin/time",
+        "-l",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "candidate",
+        "authoritative",
+        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+      ],
+      "started_utc": "2026-11-03T15:16:05.857259+00:00",
+      "wall_seconds": 4.22478733304888,
+      "exit_code": 0,
+      "events": [
+        {
+          "kind": "admission",
+          "samples": 63824,
+          "sample_rate": 16000,
+          "mode": "authoritative"
+        },
+        {
+          "kind": "cold_authoritative",
+          "index": 0,
+          "latency_ms": 761.322,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 1,
+          "latency_ms": 662.177,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 2,
+          "latency_ms": 662.636,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 3,
+          "latency_ms": 674.551,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 4,
+          "latency_ms": 659.659,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 5,
+          "latency_ms": 645.933,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        }
+      ],
+      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.jsonl",
+      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.stderr",
+      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.samples.json",
+      "sample_count": 22,
+      "sampled_process_tree_peak_rss_bytes": 178798592,
+      "sampled_process_tree_peak_cpu_percent": 30.7,
+      "concurrent_native_build_processes_range": [
+        16,
+        21
+      ],
+      "time_process": {
+        "real_seconds": 4.1,
+        "user_cpu_seconds": 0.42,
+        "system_cpu_seconds": 0.13,
+        "max_rss_bytes": 177651712,
+        "peak_memory_footprint_bytes": 221610848
+      }
+    },
+    {
+      "ordinal": 3,
+      "variant": "candidate",
+      "mode": "authoritative",
+      "argv": [
+        "/usr/bin/time",
+        "-l",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "candidate",
+        "authoritative",
+        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+      ],
+      "started_utc": "2026-11-03T15:16:10.082880+00:00",
+      "wall_seconds": 4.107657334010582,
+      "exit_code": 0,
+      "events": [
+        {
+          "kind": "admission",
+          "samples": 63824,
+          "sample_rate": 16000,
+          "mode": "authoritative"
+        },
+        {
+          "kind": "cold_authoritative",
+          "index": 0,
+          "latency_ms": 712.377,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 1,
+          "latency_ms": 604.645,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 2,
+          "latency_ms": 622.084,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 3,
+          "latency_ms": 652.292,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 4,
+          "latency_ms": 665.069,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 5,
+          "latency_ms": 608.474,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        }
+      ],
+      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.jsonl",
+      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.stderr",
+      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.samples.json",
+      "sample_count": 22,
+      "sampled_process_tree_peak_rss_bytes": 176340992,
+      "sampled_process_tree_peak_cpu_percent": 18.2,
+      "concurrent_native_build_processes_range": [
+        16,
+        18
+      ],
+      "time_process": {
+        "real_seconds": 3.94,
+        "user_cpu_seconds": 0.4,
+        "system_cpu_seconds": 0.12,
+        "max_rss_bytes": 175161344,
+        "peak_memory_footprint_bytes": 219153248
+      }
+    },
+    {
+      "ordinal": 4,
+      "variant": "baseline",
+      "mode": "authoritative",
+      "argv": [
+        "/usr/bin/time",
+        "-l",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "baseline",
+        "authoritative",
+        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+      ],
+      "started_utc": "2026-11-03T15:16:14.191055+00:00",
+      "wall_seconds": 4.077980583999306,
+      "exit_code": 0,
+      "events": [
+        {
+          "kind": "admission",
+          "samples": 63824,
+          "sample_rate": 16000,
+          "mode": "authoritative"
+        },
+        {
+          "kind": "cold_authoritative",
+          "index": 0,
+          "latency_ms": 794.082,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 1,
+          "latency_ms": 588.767,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 2,
+          "latency_ms": 636.57,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 3,
+          "latency_ms": 627.809,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 4,
+          "latency_ms": 628.137,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 5,
+          "latency_ms": 689.795,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        }
+      ],
+      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.jsonl",
+      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.stderr",
+      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.samples.json",
+      "sample_count": 21,
+      "sampled_process_tree_peak_rss_bytes": 176586752,
+      "sampled_process_tree_peak_cpu_percent": 23.4,
+      "concurrent_native_build_processes_range": [
+        16,
+        18
+      ],
+      "time_process": {
+        "real_seconds": 4.05,
+        "user_cpu_seconds": 0.39,
+        "system_cpu_seconds": 0.12,
+        "max_rss_bytes": 175472640,
+        "peak_memory_footprint_bytes": 219464544
+      }
+    },
+    {
+      "ordinal": 5,
+      "variant": "candidate",
+      "mode": "preview",
+      "argv": [
+        "/usr/bin/time",
+        "-l",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "candidate",
+        "preview",
+        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+      ],
+      "started_utc": "2026-11-03T15:16:18.273831+00:00",
+      "wall_seconds": 9.545146208954975,
+      "exit_code": 0,
+      "events": [
+        {
+          "kind": "admission",
+          "samples": 63824,
+          "sample_rate": 16000,
+          "mode": "preview"
+        },
+        {
+          "kind": "cold_authoritative",
+          "index": 0,
+          "latency_ms": 730.488,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 1,
+          "latency_ms": 577.491,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 2,
+          "latency_ms": 616.023,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 3,
+          "latency_ms": 657.586,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 4,
+          "latency_ms": 598.715,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_authoritative",
+          "index": 5,
+          "latency_ms": 591.804,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 2
+        },
+        {
+          "kind": "warm_preview_6s",
+          "index": 0,
+          "latency_ms": 592.411,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_preview_6s",
+          "index": 1,
+          "latency_ms": 604.924,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "warm_preview_6s",
+          "index": 2,
+          "latency_ms": 615.356,
+          "text_bytes": 73,
+          "word_count": 13,
+          "reference_words": 13,
+          "word_edit_distance": 1,
+          "timed_spans": 0
+        },
+        {
+          "kind": "preview_preemption",
+          "index": 0,
+          "demand_ms": 108.732,
+          "preview_exited_ms": 564.208,
+          "demand_to_preview_return_ms": 455.476,
+          "authoritative_latency_ms": 1080.166,
+          "cancelled": true,
+          "timed_spans": 2
+        },
+        {
+          "kind": "preview_preemption",
+          "index": 1,
+          "demand_ms": 109.379,
+          "preview_exited_ms": 567.828,
+          "demand_to_preview_return_ms": 458.449,
+          "authoritative_latency_ms": 1111.776,
+          "cancelled": true,
+          "timed_spans": 2
+        },
+        {
+          "kind": "preview_preemption",
+          "index": 2,
+          "demand_ms": 104.986,
+          "preview_exited_ms": 582.695,
+          "demand_to_preview_return_ms": 477.709,
+          "authoritative_latency_ms": 1122.097,
+          "cancelled": true,
+          "timed_spans": 2
+        }
+      ],
+      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.jsonl",
+      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.stderr",
+      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.samples.json",
+      "sample_count": 48,
+      "sampled_process_tree_peak_rss_bytes": 179748864,
+      "sampled_process_tree_peak_cpu_percent": 20.2,
+      "concurrent_native_build_processes_range": [
+        14,
+        33
+      ],
+      "time_process": {
+        "real_seconds": 9.28,
+        "user_cpu_seconds": 0.93,
+        "system_cpu_seconds": 0.2,
+        "max_rss_bytes": 178585600,
+        "peak_memory_footprint_bytes": 222593912
+      }
+    }
+  ],
+  "measurement_completed": true,
+  "summary": {
+    "baseline": {
+      "paired_warm_n": 10,
+      "paired_warm_min_ms": 572.42,
+      "paired_warm_median_ms": 649.0765,
+      "paired_warm_max_ms": 778.37,
+      "cold_n": 2,
+      "cold_ms": [
+        5125.535,
+        794.082
+      ],
+      "word_edit_distance_each": [
+        1
+      ],
+      "reference_word_count": 13,
+      "timed_spans_each": [
+        0
+      ],
+      "sampled_process_tree_peak_rss_bytes": 176586752
+    },
+    "candidate": {
+      "paired_warm_n": 10,
+      "paired_warm_min_ms": 604.645,
+      "paired_warm_median_ms": 655.9755,
+      "paired_warm_max_ms": 674.551,
+      "cold_n": 2,
+      "cold_ms": [
+        761.322,
+        712.377
+      ],
+      "word_edit_distance_each": [
+        1
+      ],
+      "reference_word_count": 13,
+      "timed_spans_each": [
+        2
+      ],
+      "sampled_process_tree_peak_rss_bytes": 178798592
+    },
+    "candidate_preview": {
+      "complete_n": 3,
+      "complete_ms": [
+        592.411,
+        604.924,
+        615.356
+      ],
+      "preemption_n": 3,
+      "cancelled_n": 3,
+      "demand_to_preview_return_ms": [
+        455.476,
+        458.449,
+        477.709
+      ],
+      "foreground_including_physical_wait_ms": [
+        1080.166,
+        1111.776,
+        1122.097
+      ],
+      "preview_samples": 96000,
+      "preview_buffer_bytes": 384000
+    },
+    "inference_usage": {
+      "model_loads": 5,
+      "authoritative_calls": 33,
+      "preview_completed_calls": 3,
+      "preview_cancelled_calls": 3,
+      "total_session_run_calls": 39,
+      "hosted_requests": 0,
+      "downloads": 0
+    },
+    "validity": "Exploratory same-host exact-source microbenchmark under changing concurrent build load; no resource, latency, quality or production qualification gate is passed."
+  },
+  "artifact_hashes": {
+    "05-candidate-preview.jsonl": "57983dce5599d6be2cf90c0e106d1d25284b812cd05c3fd428b38fb0d4c1f788",
+    "Cargo.toml": "00c9a4c08dbc434892d328a4fa2f16436cb126925224aebdbfe85fbce2eb7611",
+    "02-candidate-authoritative.samples.json": "51a82d621b85e4bd21e08d6d8b71e561a5cf061c53f478d92ad0b3a746626faa",
+    "run.py": "85ec753e1ab21886daf0a73681286e65883c585b019c90d31e5586f311c5d305",
+    "01-baseline-authoritative.stderr": "e16cea68eee2c6a7bac6f1a2c84c8d6bda77fb18ef11860638abaffa90d3ad29",
+    "compile-second.log": "0ddc9f53da9bd34a242fc486daa126040d71b6026bd2c296ad5c5f86807dbccc",
+    "03-candidate-authoritative.jsonl": "1ae785e21fff358376b35b4fefd40e4fea28a3cfa3902c34f0ec2144ea14315e",
+    "03-candidate-authoritative.samples.json": "dfa71297ba93e86007bdc74ad22d22e6b6fd155805ff27bab79ca97f21ea6c2d",
+    "speech_result.rs": "1b929d2a395cdc85f30412f8f69fc6ea79b357bfbfec8c3f59311238975d9be6",
+    "run.log": "28bab9058efb2ed398a0547a9a5865847f3f2c907db42f757e0b148aa9e5d6d0",
+    "Cargo.lock": "c3f9bca09fc28210b99ee755e8dd9005c538f2052c1df7b3f336d93dfe24e4a7",
+    "compile-cargo.log": "46e69f0e1f40ccd4b0102e43471812918b48dacbab6d99f4f9fbb6bb137ab7ed",
+    "expected.txt": "51f73ff1e9a5e970c8e96fe5e4b7e54f7e39bc18aa4bae0c339bcac5da51520b",
+    "02-candidate-authoritative.jsonl": "d7dfbf602384623c533a9a4a6068c8dfe1e5107938e29a8be3c2f88f842c0a97",
+    "05-candidate-preview.stderr": "acd48cdf3b15ce67bd7594d45a9adbaecb741afc9ba2120d7e4a1b2d14b603d6",
+    "compile.log": "0ddc9f53da9bd34a242fc486daa126040d71b6026bd2c296ad5c5f86807dbccc",
+    "candidate_local_engine.rs": "787167ec090184613f5f43f64314c7f68a665e82cb97f40d4e8f3f66df76dd0e",
+    "02-candidate-authoritative.stderr": "f1d71404f64a4dfc55ccb466c26dd0d1a9b8b62fea5d42ad04548738e4e04ac3",
+    "synthetic-en.wav": "5ddf2aac6e31c0f7a8de76edf4d7a8d9b690882843b4d4fb654c83167d7326be",
+    "01-baseline-authoritative.jsonl": "7af785541eac9640767afe5c4539a87d25a417c82d20b33788fa9dbb821fcc42",
+    "05-candidate-preview.samples.json": "da081697854c483e60adda2311ef7350a4a02be82a790107ea23fb3946d82921",
+    "04-baseline-authoritative.samples.json": "c4692aa70848bc5289056f3f5198ef7cdbbbbb1cf85bc852c796aa3a340c969b",
+    "baseline_local_engine.rs": "3e2192cc531f296dd09d5086d6da06e57eef64d408991fb94c7f711eaf36d21d",
+    "04-baseline-authoritative.stderr": "5ed148c8a922003eaf4bbb9354c2f196309b1092521771dca351aa64897ac504",
+    "04-baseline-authoritative.jsonl": "fe7a8f2de516a63d747857ff5efecc6b78909a169119b05b3625c777ab50e95e",
+    "03-candidate-authoritative.stderr": "0719e13f3e6dcc1526133da3897204f9db58a20f7a1a8638e2baa98175569199",
+    "wav.rs": "19e83eb995bdb7830a097ade367ed7e9459daf52b0492a41f05fdf452002429f",
+    "01-baseline-authoritative.samples.json": "8e754c9fb901574276862e5516a51e0550a017020de206317c53a8c4e9df84a6",
+    "runs.json": "25dff52f9fb3256d12525ed04df2fa329a328f4652e3782412c26b5065b3649b",
+    "bench.rs": "8548e35f15da537d07b987fde4e31dcafc987b5ad22f719938a3facccf67037e"
+  },
+  "limitations_status": {
+    "production_qualification_passed": false,
+    "background_activation_authorized_by_measurement": false,
+    "real_call_acceptance_passed": false,
+    "acoustic_speaker_accuracy_measured": false,
+    "local_whisper_source_behavior_exercised": true,
+    "preview_real_return_observed": true,
+    "authoritative_timing_retention_observed": true
+  },
+  "storage_guard": "All large compilation and execution used existing worktree-storage. Post-run maintenance reported that it preserved an uncertain concurrent debug temporary path; no bypass or manual deletion occurred."
+}
