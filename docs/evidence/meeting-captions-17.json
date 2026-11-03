@@ -1,0 +1,498 @@
+{
+  "issue": 17,
+  "parent": 94,
+  "date": "2026-11-03",
+  "candidate_revision": "73cbb7f5798db5dcc79cc11db8b8553fb4a26cd7",
+  "baseline_revision": "340d02ead696f2b821a664a218dc42738a184df8",
+  "checks": {
+    "core_release": "passed",
+    "core_tests": 778,
+    "core_existing_ignored": 7,
+    "keyboard_tests": 17,
+    "frontend_tests": 255,
+    "backend_tests": 244,
+    "mac_swift_tests": 133,
+    "packaging_tests": 61,
+    "fixture_unit_tests": 29,
+    "core_backend_formatting_and_strict_clippy": "passed",
+    "frontend_production_build": "passed",
+    "theme_check": "passed",
+    "mobile_types_ui_helpers_plugins_widgets": "passed",
+    "mobile_bindings_device_and_simulator": "passed",
+    "mobile_clean_repeated_generation_and_pods": "passed",
+    "mobile_simulator_release": "passed",
+    "mobile_device_release_unsigned": "passed",
+    "mobile_hosted_native_tests": "passed"
+  },
+  "browser_caption_renders": 28,
+  "browser_matched_comparison": {
+    "baseline_revision": "340d02ead696f2b821a664a218dc42738a184df8",
+    "actual_audio_capture": false,
+    "actual_provider_generation": false,
+    "comparison_scope": "Matched accelerated finalized-transcript/notes/questions browser fixtures; not acoustic preview cost or hardware acceptance",
+    "runs": {
+      "baseline": {
+        "renders": 12,
+        "complete": true,
+        "sixty_minute_fixtures": [
+          {
+            "locale": "en",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.69999998807907,
+              "p95_ms": 378,
+              "max_ms": 378
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 17.399999976158142,
+              "max_ms": 17.5
+            },
+            "save_acknowledgement_ms": 26.299999952316284,
+            "synthetic_answer_ms": 30.5,
+            "stop_to_fixture_capture_off_ms": 1.2000000476837158,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "en",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 344.5999999642372,
+              "p95_ms": 351.5,
+              "max_ms": 351.5
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.69999998807907,
+              "p95_ms": 18.30000001192093,
+              "max_ms": 18.30000001192093
+            },
+            "save_acknowledgement_ms": 28.099999964237213,
+            "synthetic_answer_ms": 28.400000035762787,
+            "stop_to_fixture_capture_off_ms": 1.399999976158142,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.30000001192093,
+              "p95_ms": 374.19999998807907,
+              "max_ms": 374.19999998807907
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 15.699999988079071,
+              "p95_ms": 18,
+              "max_ms": 18.399999976158142
+            },
+            "save_acknowledgement_ms": 27.30000001192093,
+            "synthetic_answer_ms": 30.600000023841858,
+            "stop_to_fixture_capture_off_ms": 2.099999964237213,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.30000001192093,
+              "p95_ms": 350.80000001192093,
+              "max_ms": 350.80000001192093
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 18,
+              "max_ms": 18.19999998807907
+            },
+            "save_acknowledgement_ms": 27.69999998807907,
+            "synthetic_answer_ms": 29.400000035762787,
+            "stop_to_fixture_capture_off_ms": 1.2999999523162842,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          }
+        ],
+        "command_peak_rss_bytes": 300023808,
+        "memory_scope": "time(1) command maximum RSS; not aggregate app/model/browser-process-tree RSS"
+      },
+      "candidate": {
+        "renders": 12,
+        "complete": true,
+        "sixty_minute_fixtures": [
+          {
+            "locale": "en",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.30000001192093,
+              "p95_ms": 350.30000001192093,
+              "max_ms": 350.30000001192093
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.69999998807907,
+              "p95_ms": 16.80000001192093,
+              "max_ms": 16.80000001192093
+            },
+            "save_acknowledgement_ms": 27.5,
+            "synthetic_answer_ms": 31.80000001192093,
+            "stop_to_fixture_capture_off_ms": 1.399999976158142,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "en",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 352.30000001192093,
+              "p95_ms": 375.2000000476837,
+              "max_ms": 375.2000000476837
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.69999998807907,
+              "p95_ms": 18.200000047683716,
+              "max_ms": 18.599999964237213
+            },
+            "save_acknowledgement_ms": 27.599999964237213,
+            "synthetic_answer_ms": 30.69999998807907,
+            "stop_to_fixture_capture_off_ms": 1.4000000357627869,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.5,
+              "p95_ms": 374,
+              "max_ms": 374
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.200000047683716,
+              "p95_ms": 18.200000047683716,
+              "max_ms": 18.69999998807907
+            },
+            "save_acknowledgement_ms": 28,
+            "synthetic_answer_ms": 34.30000001192093,
+            "stop_to_fixture_capture_off_ms": 2,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 347.69999998807907,
+              "p95_ms": 349.39999997615814,
+              "max_ms": 349.39999997615814
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 16.899999976158142,
+              "max_ms": 17
+            },
+            "save_acknowledgement_ms": 28.599999964237213,
+            "synthetic_answer_ms": 35.5,
+            "stop_to_fixture_capture_off_ms": 2.200000047683716,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          }
+        ],
+        "command_peak_rss_bytes": 300269568,
+        "memory_scope": "time(1) command maximum RSS; not aggregate app/model/browser-process-tree RSS"
+      }
+    }
+  },
+  "native": {
+    "complete": true,
+    "personal_team": "B538Q2K76C",
+    "binary_sha256": "8cea3dfc39b80c9fee13ee606d6d7696b1e691275f85f19e2a26c82ffd259118",
+    "os_version": "27.0.1",
+    "native_tauri_app": true,
+    "capture_ipc": "synthetic",
+    "provider_ipc": "synthetic",
+    "actual_hardware_capture": false,
+    "real_call_acceptance": false
+  },
+  "native_screenshots": 16,
+  "native_checks": [
+    {
+      "locale": "en",
+      "appearance": "light",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 373,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 4,
+          "actual_hardware_capture": false
+        }
+      }
+    },
+    {
+      "locale": "en",
+      "appearance": "dark",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 340,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 3,
+          "actual_hardware_capture": false
+        }
+      }
+    },
+    {
+      "locale": "nl",
+      "appearance": "light",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 377,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 3,
+          "actual_hardware_capture": false
+        }
+      }
+    },
+    {
+      "locale": "nl",
+      "appearance": "dark",
+      "checks": {
+        "saved_meeting_settings": {
+          "real_backend_storage": true,
+          "real_settings_return": true,
+          "synthetic_data_only": true
+        },
+        "live_installed": {
+          "native_tauri_window": true,
+          "capture_ipc": "synthetic",
+          "provider_ipc": "synthetic",
+          "actual_audio_capture": false,
+          "actual_provider_generation": false
+        },
+        "concurrency": {
+          "display_only_captions": true,
+          "stable_caption_nodes": true,
+          "preview_update_ms": 342,
+          "same_editor": true,
+          "composition_events_preserved": true,
+          "selection_preserved": true,
+          "frozen_sources": true,
+          "cited_source_and_return": true,
+          "actual_keyboard_ime_acceptance": false,
+          "capture_and_provider_ipc": "synthetic"
+        },
+        "live_settings": {
+          "real_native_settings": true,
+          "same_editor": true,
+          "selection_preserved": true,
+          "capture_control_reachable": true
+        },
+        "hide_finder_reopen": {
+          "same_live_editor": true,
+          "draft_retained": true,
+          "native_close_hidden": true,
+          "finder_reopen_same_pid": true,
+          "same_native_window_id": true,
+          "caption_reopen": true,
+          "interim_excluded_from_finalized_rows": true
+        },
+        "failed_save_stop": {
+          "stop_dispatched_before_save": true,
+          "stop_api_without_editor_blur": true,
+          "finalization_composition_focus_preserved": true,
+          "answer_completed_after_stop": true,
+          "dirty_editor_retained": true,
+          "real_backend_recovery_saved": true,
+          "stop_to_synthetic_capture_off_ms": 4,
+          "actual_hardware_capture": false
+        }
+      }
+    }
+  ],
+  "remaining": [
+    "Real two-track selected-local/Apple recognition and concurrent dictation latency/CPU/aggregate RSS",
+    "Real capture Stop latency, route/echo/device changes under existing audio acceptance",
+    "Physical IME/accessibility, installed Windows/Linux acceptance",
+    "Hosted CI/review/merge; no release/deployment or qualification activation"
+  ],
+  "local_logs": "build/notetaker-2026-11-03/",
+  "review_fixes": [
+    "Apple retiring-analyzer resource admission",
+    "Suppressed microphone packet transition race",
+    "Late callback reviving completed chunk"
+  ]
+}
