@@ -542,7 +542,10 @@ fn failed_http_requests_do_not_echo_content_or_follow_redirects() {
             InferenceCancellation::new(),
         )
         .unwrap_err();
-        assert!(matches!(result, PennelError::Http{status:s,..} if s == status as u16));
+        assert!(
+            matches!(result, PennelError::Http{status:s,..} if s == status as u16),
+            "Expected HTTP {status}, received {result:?}"
+        );
         assert!(!result.to_string().contains("synthetic"));
         mock.assert();
         target.assert();

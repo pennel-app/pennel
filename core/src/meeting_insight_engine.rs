@@ -2617,18 +2617,28 @@ mod tests {
         drop(guard);
         let store = engine.meeting_store();
         let source = store.read_transcript_snapshot(&id).unwrap();
-        let mut rows = source.utterances;
+        let mut rows = source.utterances.clone();
         rows[0].segment.text = "The old commitment was replaced.".into();
         let replacement = rows[0].segment.clone();
         rows[0].metadata.refresh_fingerprints(&replacement);
-        store
+        let replacement = store
             .write_transcript_snapshot(&id, Some(source.revision), &rows)
             .unwrap();
+        assert!(
+            !source_matches(&source, &replacement),
+            "The replacement must invalidate this job's frozen evidence."
+        );
         *release.0.lock().unwrap() = true;
         release.1.notify_all();
         let done = wait_job(&engine, begin["job_id"].as_str().unwrap());
-        assert_eq!(done["state"], "failed");
-        assert!(!store.dir_of(&id).join("insights.json").exists());
+        assert!(
+            matches!(done["state"].as_str(), Some("failed" | "cancelled")),
+            "Replaced evidence must reject the batch regardless of cancellation ordering: {done}"
+        );
+        assert!(
+            !store.dir_of(&id).join("insights.json").exists(),
+            "A terminal rejection must not persist suggestions from replaced evidence: {done}"
+        );
         provider.assert();
     }
 
