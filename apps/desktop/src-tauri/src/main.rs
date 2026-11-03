@@ -1166,6 +1166,7 @@ fn main() {
             insights::claim_insight_edit,
             insights::prepare_insight_insertion,
             insights::reconcile_insight_insertions,
+            insights::resolve_insight_insertion,
             insights::reassociate_insight_source,
             insights::insights_export,
             insights::insight_markdown,

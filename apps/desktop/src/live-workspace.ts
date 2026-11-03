@@ -241,6 +241,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   editor.addEventListener("compositionstart", () => { composing = true; ++inputRevision; clearTimeout(notesTimer); updateReadiness(); });
   editor.addEventListener("compositionend", () => { composing = false; ++inputRevision; notes.edit(editor.value); scheduleSave(); updateReadiness(); });
   editor.addEventListener("input", () => { ++inputRevision; if (insertionReceipt && insertionReceipt.text !== editor.value) insertionReceipt = null; notes.edit(editor.value); if (!composing) scheduleSave(); });
+  editor.addEventListener("select", () => { const selection = `${editor.selectionStart}:${editor.selectionEnd}`; if (selection !== observedSelection) { observedSelection = selection; ++selectionRevision; } });
   editor.addEventListener("blur", () => { if (!composing) void saveNotes().catch(showSaveError); });
   title.addEventListener("input", () => { titleDraft.edit(title.value); clearTimeout(titleTimer); titleTimer = window.setTimeout(() => { void saveTitle().catch(showSaveError); }, 350); });
   title.addEventListener("blur", () => { void saveTitle().catch(showSaveError); });

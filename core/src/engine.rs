@@ -381,7 +381,8 @@ pub struct PennelEngine {
         Mutex<HashMap<String, crate::retranscription::MeetingRetranscriptionStatus>>,
     pub(crate) speaker_jobs:
         Mutex<HashMap<String, Arc<crate::speaker_jobs::SpeakerRecognitionJob>>>,
-    pub(crate) insight_jobs: Mutex<HashMap<String, Arc<crate::meeting_insight_engine::MeetingInsightAnalysisJob>>>,
+    pub(crate) insight_jobs:
+        Mutex<HashMap<String, Arc<crate::meeting_insight_engine::MeetingInsightAnalysisJob>>>,
     pub(crate) insight_library_jobs: Arc<std::sync::atomic::AtomicUsize>,
     library_lease: Mutex<Option<(PathBuf, DirectoryLease)>>,
     /// Held for a whole sync pass and for every vault change, so they never interleave.
@@ -1211,7 +1212,8 @@ impl PennelEngine {
     }
 
     pub fn set_meeting_notes(&self, id: String, text: String) -> Result<(), PennelError> {
-        self.save_owned_meeting_notes(&id,&text,None,None).map(|_|())
+        self.save_owned_meeting_notes(&id, &text, None, None)
+            .map(|_| ())
     }
 
     pub fn meeting_markdown(&self, id: String) -> Option<String> {
@@ -2383,7 +2385,10 @@ impl PennelEngine {
             && (self.has_active_session()
                 || !self.meeting_jobs.lock().unwrap().is_empty()
                 || self.active_speaker_jobs()
-                || self.insight_library_jobs.load(std::sync::atomic::Ordering::Acquire)>0)
+                || self
+                    .insight_library_jobs
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    > 0)
         {
             return Err(PennelError::Storage {
                 message: "the meeting folder can only be changed after the recording is finalized"

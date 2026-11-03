@@ -14,13 +14,28 @@ use crate::{InferenceCancellation, InferenceIdentity, PennelError, utterance_evi
 pub const MAX_INSIGHTS_BYTES: usize = 3_000_000;
 const INSIGHTS_FILE: &str = "insights.json";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InsightKind {
     Action,
     Decision,
     OpenQuestion,
     ChangedCommitment,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InsightExtractionScope {
+    #[default]
+    Passage,
+    ExactSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InsightAssessmentScope {
+    pub utterance_id: String,
+    pub kinds: Vec<InsightKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,8 +138,18 @@ pub struct InsightProcessing {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InsightPriorEvidence {
+    pub kind: InsightKind,
+    pub source: InsightSource,
+    pub target_item_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InsightCandidate {
     pub kind: InsightKind,
+    #[serde(default)]
+    pub extraction_scope: InsightExtractionScope,
     pub commitment: CommitmentState,
     pub text: String,
     pub owner: Option<SupportedInsightDetail>,
@@ -135,6 +160,8 @@ pub struct InsightCandidate {
     pub transcript_digest: String,
     pub processing: InsightProcessing,
     pub related_item_ids: Vec<String>,
+    #[serde(default)]
+    pub prior_evidence: Vec<InsightPriorEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -320,6 +347,19 @@ pub fn insight_dedup_key(candidate: &InsightCandidate) -> String {
     )
 }
 
+fn prior_semantics(candidate: &InsightCandidate) -> Vec<String> {
+    let mut prior: Vec<_> = candidate
+        .prior_evidence
+        .iter()
+        .map(|prior| {
+            serde_json::to_string(&(prior.kind, &prior.source)).expect("primitive prior evidence")
+        })
+        .collect();
+    prior.sort();
+    prior.dedup();
+    prior
+}
+
 fn semantic_key(candidate: &InsightCandidate) -> String {
     hash(
         serde_json::to_string(&(
@@ -331,13 +371,65 @@ fn semantic_key(candidate: &InsightCandidate) -> String {
                 .as_ref()
                 .map(|owner| normalized(&owner.text)),
             candidate.due.as_ref().map(|due| normalized(&due.text)),
+            prior_semantics(candidate),
         ))
         .expect("primitive suggestion meaning")
         .as_bytes(),
     )
 }
 
-fn same_meaning(left: &InsightCandidate, right: &InsightCandidate) -> bool {
+fn unique_prior_evidence(candidate: &InsightCandidate) -> HashMap<String, &InsightPriorEvidence> {
+    candidate
+        .prior_evidence
+        .iter()
+        .map(|prior| {
+            (
+                serde_json::to_string(&(prior.kind, &prior.source))
+                    .expect("primitive prior evidence"),
+                prior,
+            )
+        })
+        .collect::<HashMap<_, _>>()
+}
+
+fn same_prior_evidence(
+    left: &InsightCandidate,
+    right: &InsightCandidate,
+    current: &MeetingTranscriptSnapshot,
+) -> bool {
+    let left = unique_prior_evidence(left);
+    let mut right = unique_prior_evidence(right)
+        .into_values()
+        .map(Some)
+        .collect::<Vec<_>>();
+    if left.len() != right.len() {
+        return false;
+    }
+    for prior in left.into_values() {
+        let matches: Vec<_> = right
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| {
+                candidate.is_some_and(|candidate| {
+                    candidate.kind == prior.kind
+                        && same_source_lineage(&prior.source, &candidate.source, current)
+                })
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if matches.len() != 1 {
+            return false;
+        }
+        right[matches[0]] = None;
+    }
+    true
+}
+
+fn same_meaning(
+    left: &InsightCandidate,
+    right: &InsightCandidate,
+    current: &MeetingTranscriptSnapshot,
+) -> bool {
     left.kind == right.kind
         && left.commitment == right.commitment
         && left.text == right.text
@@ -345,6 +437,7 @@ fn same_meaning(left: &InsightCandidate, right: &InsightCandidate) -> bool {
             == right.owner.as_ref().map(|detail| &detail.text)
         && left.due.as_ref().map(|detail| &detail.text)
             == right.due.as_ref().map(|detail| &detail.text)
+        && same_prior_evidence(left, right, current)
 }
 
 fn primary_source(candidate: &InsightCandidate) -> Option<&InsightSource> {
@@ -405,7 +498,7 @@ fn retained_key(
         .items
         .iter()
         .filter(|item| {
-            if !same_meaning(&item.proposal, candidate) {
+            if !same_meaning(&item.proposal, candidate, current) {
                 return false;
             }
             let (Some(old), Some(new)) =
@@ -448,12 +541,6 @@ fn linked_change(
     candidate: &InsightCandidate,
 ) -> (String, InsightCandidate) {
     let mut candidate = candidate.clone();
-    if matches!(
-        candidate.commitment,
-        CommitmentState::Changed | CommitmentState::Retracted
-    ) {
-        candidate.kind = InsightKind::ChangedCommitment;
-    }
     if !candidate.related_item_ids.contains(&existing.id) {
         candidate.related_item_ids.push(existing.id.clone());
     }
@@ -486,6 +573,97 @@ fn source_shape_valid(source: &InsightSource, uid: &str, cutoff: u64) -> bool {
         && source.end_ms <= cutoff
 }
 
+fn provably_earlier(prior: &InsightSource, event: &InsightSource) -> bool {
+    if prior.meeting_uid != event.meeting_uid {
+        return false;
+    }
+    if prior.utterance_id == event.utterance_id {
+        prior.end_byte <= event.start_byte
+    } else {
+        prior.start_ms < prior.end_ms
+            && event.start_ms < event.end_ms
+            && prior.end_ms <= event.start_ms
+    }
+}
+
+fn compatible_primary_evidence(primary: &InsightSource, quoted: &InsightSource) -> bool {
+    if primary.meeting_uid != quoted.meeting_uid
+        || primary.utterance_id != quoted.utterance_id
+        || primary.source_fingerprint != quoted.source_fingerprint
+        || primary.start_ms != quoted.start_ms
+        || primary.end_ms != quoted.end_ms
+    {
+        return false;
+    }
+    if primary.start_byte <= quoted.start_byte && quoted.end_byte <= primary.end_byte {
+        primary.quote.get(
+            (quoted.start_byte - primary.start_byte) as usize
+                ..(quoted.end_byte - primary.start_byte) as usize,
+        ) == Some(quoted.quote.as_str())
+    } else if quoted.start_byte <= primary.start_byte && primary.end_byte <= quoted.end_byte {
+        quoted.quote.get(
+            (primary.start_byte - quoted.start_byte) as usize
+                ..(primary.end_byte - quoted.start_byte) as usize,
+        ) == Some(primary.quote.as_str())
+    } else {
+        false
+    }
+}
+
+fn resolve_prior_evidence(
+    document: &mut InsightDocument,
+    touched: &HashSet<String>,
+) -> HashSet<String> {
+    let targets: Vec<_> = document
+        .items
+        .iter()
+        .filter_map(|item| {
+            primary_source(&item.proposal)
+                .map(|source| (item.id.clone(), item.kind, source.clone()))
+        })
+        .collect();
+    let mut retained = HashSet::new();
+    for item in &mut document.items {
+        if !touched.contains(&item.id) || item.protected() {
+            continue;
+        }
+        let Some(event) = primary_source(&item.proposal).cloned() else {
+            continue;
+        };
+        let item_id = item.id.clone();
+        let mut resolved = Vec::new();
+        for prior in &mut item.proposal.prior_evidence {
+            prior.target_item_id = None;
+            if !provably_earlier(&prior.source, &event) {
+                continue;
+            }
+            let matches: Vec<_> = targets
+                .iter()
+                .filter(|(id, kind, primary)| {
+                    id != &item_id
+                        && *kind == prior.kind
+                        && compatible_primary_evidence(primary, &prior.source)
+                        && provably_earlier(primary, &event)
+                })
+                .collect();
+            for (id, _, _) in &matches {
+                retained.insert(id.clone());
+            }
+            if matches.len() == 1 {
+                let id = matches[0].0.clone();
+                prior.target_item_id = Some(id.clone());
+                resolved.push(id);
+            }
+        }
+        for id in resolved {
+            if !item.proposal.related_item_ids.contains(&id) {
+                item.proposal.related_item_ids.push(id);
+            }
+        }
+    }
+    retained
+}
+
 fn proposal_valid(candidate: &InsightCandidate, uid: &str) -> bool {
     !candidate.text.trim().is_empty()
         && !candidate.sources.is_empty()
@@ -494,6 +672,10 @@ fn proposal_valid(candidate: &InsightCandidate, uid: &str) -> bool {
             .sources
             .iter()
             .all(|source| source_shape_valid(source, uid, candidate.evidence_cutoff_ms))
+        && candidate.prior_evidence.iter().all(|prior| {
+            source_shape_valid(&prior.source, uid, candidate.evidence_cutoff_ms)
+                && prior.target_item_id.as_ref().is_none_or(|id| valid_id(id))
+        })
         && candidate
             .owner
             .as_ref()
@@ -569,6 +751,7 @@ fn item_source_state(
     let states: Vec<_> = item
         .sources
         .iter()
+        .chain(item.prior_evidence.iter().map(|prior| &prior.source))
         .map(|source| source_state(source, current))
         .collect();
     for state in [
@@ -619,6 +802,79 @@ fn source_compatible(
         })
 }
 
+fn assessment_pairs<'a>(
+    scope: &'a [InsightAssessmentScope],
+    frozen: &MeetingTranscriptSnapshot,
+) -> Result<HashSet<(&'a str, InsightKind)>, PennelError> {
+    let known: HashSet<_> = frozen
+        .utterances
+        .iter()
+        .map(|row| row.metadata.utterance_id.as_str())
+        .collect();
+    let mut pairs = HashSet::new();
+    for assessed in scope {
+        if !known.contains(assessed.utterance_id.as_str()) {
+            return Err(invalid(
+                "The assessed passage does not belong to the frozen transcript.",
+            ));
+        }
+        for kind in &assessed.kinds {
+            pairs.insert((assessed.utterance_id.as_str(), *kind));
+        }
+    }
+    Ok(pairs)
+}
+
+fn single_lineage_aliases(current: &MeetingTranscriptSnapshot) -> HashMap<&str, &MeetingUtterance> {
+    let ids: HashSet<_> = current
+        .utterances
+        .iter()
+        .map(|row| row.metadata.utterance_id.as_str())
+        .collect();
+    let mut counts = HashMap::new();
+    for row in &current.utterances {
+        for old in &row.metadata.lineage {
+            *counts.entry(old.as_str()).or_insert(0usize) += 1;
+        }
+    }
+    current
+        .utterances
+        .iter()
+        .filter_map(|row| {
+            if row.metadata.lineage.len() != 1 {
+                return None;
+            }
+            let old = row.metadata.lineage[0].as_str();
+            (!ids.contains(old) && counts.get(old) == Some(&1)).then_some((old, row))
+        })
+        .collect()
+}
+
+fn item_assessed(
+    item: &InsightItem,
+    pairs: &HashSet<(&str, InsightKind)>,
+    aliases: &HashMap<&str, &MeetingUtterance>,
+) -> bool {
+    let Some(primary) = primary_source(&item.proposal) else {
+        return false;
+    };
+    if pairs.contains(&(primary.utterance_id.as_str(), item.kind)) {
+        return true;
+    }
+    let Some(row) = aliases.get(primary.utterance_id.as_str()) else {
+        return false;
+    };
+    pairs.contains(&(row.metadata.utterance_id.as_str(), item.kind))
+        && row.segment.start_ms == primary.start_ms
+        && row.segment.end_ms == primary.end_ms
+        && !row.segment.failed
+        && row
+            .segment
+            .text
+            .get(primary.start_byte as usize..primary.end_byte as usize)
+            == Some(primary.quote.as_str())
+}
+
 fn document_valid(document: &InsightDocument) -> bool {
     let mut ids = HashSet::new();
     let mut keys = HashSet::new();
@@ -653,6 +909,15 @@ fn document_valid(document: &InsightDocument) -> bool {
         item.related_item_ids
             .iter()
             .all(|id| ids.contains(id) && id != &item.id)
+            && item.prior_evidence.iter().all(|prior| {
+                prior.target_item_id.as_ref().is_none_or(|id| {
+                    id != &item.id
+                        && document
+                            .items
+                            .iter()
+                            .any(|target| target.id == *id && target.kind == prior.kind)
+                })
+            })
     }) && document.insertion_receipts.iter().all(|receipt| {
         valid_id(&receipt.attempt_id)
             && attempts.insert(receipt.attempt_id.clone())
@@ -709,7 +974,7 @@ fn read_document(
     if bytes.len() > MAX_INSIGHTS_BYTES {
         return Ok((InsightStoreStatus::TooLarge, None));
     }
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
         return Ok((InsightStoreStatus::Corrupt, None));
     };
     if value
@@ -718,6 +983,24 @@ fn read_document(
         .is_some_and(|version| version != 1)
     {
         return Ok((InsightStoreStatus::Unsupported, None));
+    }
+    // Initial v1 files held passage-level proposals before the explicit scope tag existed.
+    if value
+        .get("schema_version")
+        .and_then(serde_json::Value::as_u64)
+        == Some(1)
+        && let Some(items) = value
+            .get_mut("items")
+            .and_then(serde_json::Value::as_array_mut)
+    {
+        for item in items {
+            if let Some(item) = item.as_object_mut() {
+                item.entry("extraction_scope")
+                    .or_insert_with(|| serde_json::json!("passage"));
+                item.entry("prior_evidence")
+                    .or_insert_with(|| serde_json::json!([]));
+            }
+        }
     }
     let Ok(document) = serde_json::from_value::<InsightDocument>(value.clone()) else {
         return Ok((InsightStoreStatus::Corrupt, None));
@@ -889,6 +1172,8 @@ impl MeetingStore {
         ))
     }
 
+    /// Compatibility callers declare all four kinds assessed for every frozen centre.
+    #[allow(dead_code)]
     pub fn merge_insight_candidates(
         &self,
         id: &str,
@@ -897,6 +1182,54 @@ impl MeetingStore {
         frozen: &MeetingTranscriptSnapshot,
         cancellation: &InferenceCancellation,
     ) -> Result<InsightSnapshot, PennelError> {
+        let scope: Vec<_> = frozen
+            .utterances
+            .iter()
+            .map(|row| InsightAssessmentScope {
+                utterance_id: row.metadata.utterance_id.clone(),
+                kinds: vec![
+                    InsightKind::Action,
+                    InsightKind::Decision,
+                    InsightKind::OpenQuestion,
+                    InsightKind::ChangedCommitment,
+                ],
+            })
+            .collect();
+        self.merge_scoped_insight_candidates(
+            id,
+            expected_revision,
+            candidates,
+            &scope,
+            frozen,
+            cancellation,
+        )
+    }
+
+    pub fn merge_scoped_insight_candidates(
+        &self,
+        id: &str,
+        expected_revision: u64,
+        candidates: &[InsightCandidate],
+        scope: &[InsightAssessmentScope],
+        frozen: &MeetingTranscriptSnapshot,
+        cancellation: &InferenceCancellation,
+    ) -> Result<InsightSnapshot, PennelError> {
+        if cancellation.is_cancelled() {
+            return Err(PennelError::Cancelled);
+        }
+        let pairs = assessment_pairs(scope, frozen)?;
+        if pairs.is_empty() {
+            if !candidates.is_empty() {
+                return Err(invalid("Suggestions require an assessed passage and kind."));
+            }
+            let existing = self.read_insights(id)?;
+            if existing.meeting_uid != frozen.meeting_uid {
+                return Err(invalid(
+                    "The unchecked source belongs to a different meeting.",
+                ));
+            }
+            return Ok(existing);
+        }
         self.mutate_insights(id, expected_revision, Some(cancellation), |document, current, root| {
             let current = current.ok_or_else(|| invalid("The finalized transcript is unavailable."))?;
             if !source_compatible(frozen, current) { return Err(invalid("The source changed after this analysis began.")); }
@@ -904,9 +1237,11 @@ impl MeetingStore {
             let mut incoming: HashMap<String, InsightCandidate> = HashMap::new();
             for candidate in candidates {
                 if !proposal_valid(candidate, &document.meeting_uid)
+                    || primary_source(candidate).is_none_or(|source|!pairs.contains(&(source.utterance_id.as_str(),candidate.kind)))
                     || candidate.transcript_revision != frozen.revision || candidate.transcript_digest != frozen.transcript_digest
                     || candidate.evidence_cutoff_ms > frozen.utterances.iter().filter(|row| !row.segment.failed).map(|row| row.segment.end_ms).max().unwrap_or(0)
-                    || candidate.sources.iter().any(|source| source_state(source, Some(frozen)) != InsightSourceState::Current)
+                    || candidate.sources.iter().chain(candidate.prior_evidence.iter().map(|prior|&prior.source))
+                        .any(|source| source_state(source, Some(frozen)) != InsightSourceState::Current)
                     || candidate.sources.iter().any(|source| source.end_ms > candidate.evidence_cutoff_ms) {
                     return Err(invalid("A suggestion contains unsupported source, owner or deadline information."));
                 }
@@ -915,32 +1250,42 @@ impl MeetingStore {
                     if semantic_key(previous) != semantic_key(candidate) { return Err(invalid("The analysis returned conflicting suggestions for the same evidence.")); }
                     if previous.evidence_cutoff_ms >= candidate.evidence_cutoff_ms { continue; }
                 }
-                incoming.insert(key, candidate.clone());
+                let mut candidate=candidate.clone();
+                for prior in &mut candidate.prior_evidence {prior.target_item_id=None;}
+                incoming.insert(key, candidate);
             }
             let linked: HashSet<_> = document.items.iter().flat_map(|item| item.related_item_ids.iter().cloned())
+                .chain(document.items.iter().flat_map(|item|item.prior_evidence.iter().filter_map(|prior|prior.target_item_id.clone())))
                 .chain(candidates.iter().flat_map(|candidate| candidate.related_item_ids.iter().cloned()))
                 .chain(document.insertion_receipts.iter().map(|receipt| receipt.item_id.clone())).collect();
             let mut retained:HashSet<_> = incoming.keys().cloned().collect();
             for (key,candidate) in &incoming {
                 if let Some(item) = document.items.iter().find(|item| item.dedup_key == *key)
-                    && item.protected() && semantic_key(&item.proposal) != semantic_key(candidate)
+                    && item.protected() && !same_meaning(&item.proposal,candidate,current)
                     && candidate.evidence_cutoff_ms > item.evidence_cutoff_ms {
                     retained.insert(linked_change(key,item,candidate).0);
                 }
             }
-            document.items.retain(|item| item.protected() || linked.contains(&item.id) || retained.contains(&item.dedup_key));
+            let aliases=single_lineage_aliases(current);
+            let positives:HashSet<_>=candidates.iter().filter_map(|candidate|primary_source(candidate)
+                .map(|source|(source.utterance_id.as_str(),candidate.kind))).collect();
+            // A positive partial extraction does not assert the absence of other events.
+            let retiring:HashSet<_>=document.items.iter().filter(|item|!(item.protected() || linked.contains(&item.id) || retained.contains(&item.dedup_key)
+                || item_assessed(item,&positives,&aliases) || !item_assessed(item,&pairs,&aliases))).map(|item|item.id.clone()).collect();
             let mut incoming: Vec<_> = incoming.into_iter().collect(); incoming.sort_by(|left,right| left.0.cmp(&right.0));
+            let mut touched=HashSet::new();
             for (mut key, mut candidate) in incoming {
                 if let Some(index) = document.items.iter().position(|item| item.dedup_key == key) {
                     let existing = &document.items[index];
                     if existing.protected() {
-                        if semantic_key(&existing.proposal) == semantic_key(&candidate)
+                        if same_meaning(&existing.proposal,&candidate,current)
                             || candidate.evidence_cutoff_ms <= existing.evidence_cutoff_ms { continue; }
                         (key,candidate) = linked_change(&key, existing, &candidate);
                         if let Some(change) = document.items.iter_mut().find(|item| item.dedup_key == key) {
                             if !change.protected() {
                                 change.proposal=candidate;
                                 change.revision=change.revision.checked_add(1).ok_or_else(||invalid("The item revision cannot be advanced."))?;
+                                touched.insert(change.id.clone());
                             }
                             continue;
                         }
@@ -948,13 +1293,18 @@ impl MeetingStore {
                         let item = &mut document.items[index];
                         item.proposal = candidate;
                         item.revision = item.revision.checked_add(1).ok_or_else(|| invalid("The item revision cannot be advanced."))?;
+                        touched.insert(item.id.clone());
                         continue;
                     }
                 }
                 document.items.push(InsightItem { id: uuid::Uuid::now_v7().to_string(), dedup_key: key, revision: 1, proposal: candidate,
                     review_state: InsightReviewState::Proposed, edited_text: None, edit_claim: None, source_state: InsightSourceState::Current,
                     source_history: Vec::new(), source_reassociated: false });
+                touched.insert(document.items.last().expect("newly added item").id.clone());
             }
+            // Resolve only after every new id exists, before retiring unreviewed history.
+            let prior_targets=resolve_prior_evidence(document,&touched);
+            document.items.retain(|item|!retiring.contains(&item.id)||prior_targets.contains(&item.id));
             Ok(())
         })
     }
@@ -1408,6 +1758,7 @@ pub(crate) mod tests {
         let row = &source.utterances[0];
         InsightCandidate {
             kind: InsightKind::Action,
+            extraction_scope: InsightExtractionScope::Passage,
             commitment: CommitmentState::Tentative,
             text: row.segment.text.clone(),
             owner: None,
@@ -1446,6 +1797,7 @@ pub(crate) mod tests {
                 task: "events".into(),
             },
             related_item_ids: Vec::new(),
+            prior_evidence: Vec::new(),
         }
     }
 
@@ -1787,7 +2139,7 @@ pub(crate) mod tests {
             .unwrap();
         let path = store.dir_of(&id).join(INSIGHTS_FILE);
         let bytes = fs::read(&path).unwrap();
-        FAIL_WRITE.with(|flag| flag.set(true));
+        fail_next_insight_write();
         assert!(
             store
                 .merge_insight_candidates(
@@ -2287,6 +2639,827 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn scoped_negative_retires_only_the_assessed_kind_and_abstentions_do_not_write() {
+        let (_directory, store, id, source) = fixture();
+        let mut rows = source.utterances.clone();
+        rows[0].segment.text = "Jan will send it. We approved the draft. Who checks it?".into();
+        let source = store
+            .write_transcript_snapshot(&id, Some(source.revision), &rows)
+            .unwrap();
+        let proposals: Vec<_> = [
+            InsightKind::Action,
+            InsightKind::Decision,
+            InsightKind::OpenQuestion,
+        ]
+        .into_iter()
+        .map(|kind| {
+            let mut proposal = candidate(&source);
+            proposal.kind = kind;
+            proposal
+        })
+        .collect();
+        let first = store
+            .merge_insight_candidates(&id, 0, &proposals, &source, &InferenceCancellation::new())
+            .unwrap();
+        assert_eq!(first.items.len(), 3);
+        let scope = [InsightAssessmentScope {
+            utterance_id: source.utterances[0].metadata.utterance_id.clone(),
+            kinds: vec![InsightKind::Action],
+        }];
+        let assessed = store
+            .merge_scoped_insight_candidates(
+                &id,
+                first.revision,
+                &[],
+                &scope,
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert_eq!(assessed.items.len(), 2);
+        for kind in [InsightKind::Decision, InsightKind::OpenQuestion] {
+            let old = first.items.iter().find(|item| item.kind == kind).unwrap();
+            let retained = assessed
+                .items
+                .iter()
+                .find(|item| item.kind == kind)
+                .unwrap();
+            assert_eq!(old, retained);
+        }
+        let bytes = fs::read(store.dir_of(&id).join(INSIGHTS_FILE)).unwrap();
+        let unchecked = store
+            .merge_scoped_insight_candidates(
+                &id,
+                0,
+                &[],
+                &[],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert_eq!(unchecked, assessed);
+        assert_eq!(
+            fs::read(store.dir_of(&id).join(INSIGHTS_FILE)).unwrap(),
+            bytes
+        );
+    }
+
+    #[test]
+    fn scoped_assessment_allows_context_sources_but_rejects_unassessed_primary_pairs() {
+        let (_directory, store, id, source) = fixture();
+        let mut rows = source.utterances.clone();
+        rows.push(MeetingUtterance::new(
+            Segment {
+                start_ms: 6_000,
+                end_ms: 9_000,
+                speaker: Speaker::Others,
+                text: "Jan confirmed the decision.".into(),
+                failed: false,
+                voice: None,
+            },
+            Some("room_microphone".into()),
+        ));
+        let source = store
+            .write_transcript_snapshot(&id, Some(source.revision), &rows)
+            .unwrap();
+        let mut previous = candidate(&source);
+        previous.kind = InsightKind::Decision;
+        previous.text = source.utterances[1].segment.text.clone();
+        previous.sources = vec![
+            InsightSource::from_utterance(
+                &source.meeting_uid,
+                &source.utterances[1],
+                0,
+                source.utterances[1].segment.text.len() as u32,
+            )
+            .unwrap(),
+        ];
+        let first = store
+            .merge_insight_candidates(&id, 0, &[previous], &source, &InferenceCancellation::new())
+            .unwrap();
+        let mut action = candidate(&source);
+        action.sources.push(
+            InsightSource::from_utterance(
+                &source.meeting_uid,
+                &source.utterances[1],
+                0,
+                source.utterances[1].segment.text.len() as u32,
+            )
+            .unwrap(),
+        );
+        action.owner = Some(SupportedInsightDetail {
+            text: "Jan".into(),
+            source_index: 1,
+            start_byte: 0,
+            end_byte: 3,
+        });
+        let scope = [InsightAssessmentScope {
+            utterance_id: source.utterances[0].metadata.utterance_id.clone(),
+            kinds: vec![InsightKind::Action],
+        }];
+        let next = store
+            .merge_scoped_insight_candidates(
+                &id,
+                first.revision,
+                std::slice::from_ref(&action),
+                &scope,
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert_eq!(next.items.len(), 2);
+        assert!(next.items.iter().any(|item| item.id == first.items[0].id));
+        action.kind = InsightKind::OpenQuestion;
+        let bytes = fs::read(store.dir_of(&id).join(INSIGHTS_FILE)).unwrap();
+        assert!(
+            store
+                .merge_scoped_insight_candidates(
+                    &id,
+                    next.revision,
+                    &[action],
+                    &scope,
+                    &source,
+                    &InferenceCancellation::new()
+                )
+                .is_err()
+        );
+        assert!(
+            store
+                .merge_scoped_insight_candidates(
+                    &id,
+                    next.revision,
+                    &[],
+                    &[InsightAssessmentScope {
+                        utterance_id: uuid::Uuid::now_v7().to_string(),
+                        kinds: vec![InsightKind::Action]
+                    }],
+                    &source,
+                    &InferenceCancellation::new()
+                )
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(store.dir_of(&id).join(INSIGHTS_FILE)).unwrap(),
+            bytes
+        );
+    }
+
+    #[test]
+    fn exact_span_extraction_keeps_multiple_actions_inside_the_same_utterance() {
+        let (_directory, store, id, source) = fixture();
+        let text = "I will send the report. I will book the room.";
+        let mut rows = source.utterances.clone();
+        rows[0].segment.text = text.into();
+        let source = store
+            .write_transcript_snapshot(&id, Some(source.revision), &rows)
+            .unwrap();
+        let split = text.find("I will book").unwrap();
+        let proposals: Vec<_> = [(0, split - 1), (split, text.len())]
+            .into_iter()
+            .map(|(start, end)| {
+                let mut proposal = candidate(&source);
+                proposal.extraction_scope = InsightExtractionScope::ExactSpan;
+                proposal.sources = vec![
+                    InsightSource::from_utterance(
+                        &source.meeting_uid,
+                        &source.utterances[0],
+                        start as u32,
+                        end as u32,
+                    )
+                    .unwrap(),
+                ];
+                proposal.text = proposal.sources[0].quote.clone();
+                proposal
+            })
+            .collect();
+        let scope = [InsightAssessmentScope {
+            utterance_id: source.utterances[0].metadata.utterance_id.clone(),
+            kinds: vec![InsightKind::Action],
+        }];
+        let saved = store
+            .merge_scoped_insight_candidates(
+                &id,
+                0,
+                &proposals,
+                &scope,
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert_eq!(saved.items.len(), 2);
+        assert_ne!(saved.items[0].dedup_key, saved.items[1].dedup_key);
+        assert!(
+            saved
+                .items
+                .iter()
+                .all(|item| item.extraction_scope == InsightExtractionScope::ExactSpan)
+        );
+        let repeated = store
+            .merge_scoped_insight_candidates(
+                &id,
+                saved.revision,
+                &proposals,
+                &scope,
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let ids: HashSet<_> = saved.items.iter().map(|item| &item.id).collect();
+        assert!(repeated.items.iter().all(|item| ids.contains(&item.id)));
+        let partial = store
+            .merge_scoped_insight_candidates(
+                &id,
+                repeated.revision,
+                std::slice::from_ref(&proposals[0]),
+                &scope,
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            partial.items.len(),
+            2,
+            "A positive partial extraction withdrew an unchecked earlier action"
+        );
+        assert!(partial.items.iter().all(|item| ids.contains(&item.id)));
+        let negative = store
+            .merge_scoped_insight_candidates(
+                &id,
+                partial.revision,
+                &[],
+                &scope,
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert!(
+            negative.items.is_empty(),
+            "An explicit assessed negative did not retire unreviewed action candidates"
+        );
+    }
+
+    #[test]
+    fn legacy_passage_scope_defaults_safely_and_keeps_unknown_fields_read_only() {
+        let (_directory, store, id, source) = fixture();
+        store
+            .merge_insight_candidates(
+                &id,
+                0,
+                &[candidate(&source)],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let path = store.dir_of(&id).join(INSIGHTS_FILE);
+        let mut legacy: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(legacy["items"][0]["extraction_scope"], "passage");
+        legacy["items"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("extraction_scope");
+        legacy["items"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("prior_evidence");
+        let bytes = serde_json::to_vec(&legacy).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let read = store.read_insights(&id).unwrap();
+        assert_eq!(read.status, InsightStoreStatus::Ready);
+        assert_eq!(
+            read.items[0].extraction_scope,
+            InsightExtractionScope::Passage
+        );
+        assert!(read.items[0].prior_evidence.is_empty());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        legacy["items"][0]["unknown_future_field"] = serde_json::json!({"keep":"exact"});
+        let bytes = serde_json::to_vec(&legacy).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        assert_eq!(
+            store.read_insights(&id).unwrap().status,
+            InsightStoreStatus::Unsupported
+        );
+        assert!(
+            store
+                .merge_insight_candidates(
+                    &id,
+                    read.revision,
+                    &[candidate(&source)],
+                    &source,
+                    &InferenceCancellation::new()
+                )
+                .is_err()
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn an_unchecked_first_run_creates_no_store_or_processing_revision() {
+        let (_directory, store, id, source) = fixture();
+        let unchecked = store
+            .merge_scoped_insight_candidates(
+                &id,
+                0,
+                &[],
+                &[InsightAssessmentScope {
+                    utterance_id: source.utterances[0].metadata.utterance_id.clone(),
+                    kinds: Vec::new(),
+                }],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert_eq!(unchecked.status, InsightStoreStatus::Missing);
+        assert_eq!(unchecked.revision, 0);
+        assert!(!store.dir_of(&id).join(INSIGHTS_FILE).exists());
+    }
+
+    fn prior_story() -> (
+        tempfile::TempDir,
+        MeetingStore,
+        String,
+        MeetingTranscriptSnapshot,
+        InsightCandidate,
+        InsightCandidate,
+    ) {
+        let (directory, store, id, source) = fixture();
+        let mut rows = source.utterances.clone();
+        rows.push(MeetingUtterance::new(
+            Segment {
+                start_ms: 6_000,
+                end_ms: 9_000,
+                speaker: Speaker::Others,
+                text: "We retract that report commitment.".into(),
+                failed: false,
+                voice: None,
+            },
+            Some("room_microphone".into()),
+        ));
+        let source = store
+            .write_transcript_snapshot(&id, Some(source.revision), &rows)
+            .unwrap();
+        let mut action = candidate(&source);
+        action.commitment = CommitmentState::Confirmed;
+        let mut changed = candidate(&source);
+        changed.kind = InsightKind::ChangedCommitment;
+        changed.commitment = CommitmentState::Retracted;
+        changed.text = source.utterances[1].segment.text.clone();
+        changed.sources = vec![
+            InsightSource::from_utterance(
+                &source.meeting_uid,
+                &source.utterances[1],
+                0,
+                changed.text.len() as u32,
+            )
+            .unwrap(),
+        ];
+        let start = source.utterances[0]
+            .segment
+            .text
+            .find("send the report")
+            .unwrap() as u32;
+        let prior = InsightSource::from_utterance(
+            &source.meeting_uid,
+            &source.utterances[0],
+            start,
+            start + "send the report".len() as u32,
+        )
+        .unwrap();
+        changed.prior_evidence = vec![InsightPriorEvidence {
+            kind: InsightKind::Action,
+            source: prior,
+            target_item_id: None,
+        }];
+        (directory, store, id, source, action, changed)
+    }
+
+    #[test]
+    fn first_atomic_batch_resolves_a_typed_prior_to_another_new_item_independent_of_order() {
+        let (_directory, store, id, source, action, changed) = prior_story();
+        let saved = store
+            .merge_insight_candidates(
+                &id,
+                0,
+                &[changed.clone(), action.clone()],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        assert_eq!(saved.revision, 1);
+        assert_eq!(saved.items.len(), 2);
+        let action_item = saved
+            .items
+            .iter()
+            .find(|item| item.kind == InsightKind::Action)
+            .unwrap();
+        let changed_item = saved
+            .items
+            .iter()
+            .find(|item| item.kind == InsightKind::ChangedCommitment)
+            .unwrap();
+        assert_eq!(
+            changed_item.prior_evidence[0].target_item_id.as_deref(),
+            Some(action_item.id.as_str())
+        );
+        assert!(changed_item.related_item_ids.contains(&action_item.id));
+        let repeated = store
+            .merge_insight_candidates(
+                &id,
+                saved.revision,
+                &[action, changed],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let repeated_item = repeated
+            .items
+            .iter()
+            .find(|item| item.id == changed_item.id)
+            .unwrap();
+        assert_eq!(
+            repeated_item.prior_evidence[0].target_item_id.as_deref(),
+            Some(action_item.id.as_str())
+        );
+    }
+
+    #[test]
+    fn ambiguous_wrong_kind_or_forged_prior_targets_remain_explicitly_unresolved() {
+        for ambiguous in [false, true] {
+            let (_directory, store, id, source, action, mut changed) = prior_story();
+            changed.prior_evidence[0].target_item_id = Some(uuid::Uuid::now_v7().to_string());
+            let mut proposals = vec![action.clone(), changed];
+            if ambiguous {
+                let mut precise = action;
+                precise.extraction_scope = InsightExtractionScope::ExactSpan;
+                precise.sources = vec![proposals[1].prior_evidence[0].source.clone()];
+                precise.text = precise.sources[0].quote.clone();
+                proposals.push(precise);
+            } else {
+                proposals[1].prior_evidence[0].kind = InsightKind::Decision;
+            }
+            let saved = store
+                .merge_insight_candidates(
+                    &id,
+                    0,
+                    &proposals,
+                    &source,
+                    &InferenceCancellation::new(),
+                )
+                .unwrap();
+            let changed = saved
+                .items
+                .iter()
+                .find(|item| item.kind == InsightKind::ChangedCommitment)
+                .unwrap();
+            assert!(changed.prior_evidence[0].target_item_id.is_none());
+            assert_eq!(changed.prior_evidence[0].source.quote, "send the report");
+            assert!(changed.related_item_ids.is_empty());
+        }
+    }
+
+    #[test]
+    fn typed_prior_links_require_safe_chronology_and_revalidate_prior_sources() {
+        for overlap in [false, true] {
+            let (_directory, store, id, source, _, _) = prior_story();
+            let mut rows = source.utterances.clone();
+            if overlap {
+                rows[0].segment.end_ms = 8_000;
+            } else {
+                rows[0].segment.start_ms = 10_000;
+                rows[0].segment.end_ms = 12_000;
+            }
+            let source = store
+                .write_transcript_snapshot(&id, Some(source.revision), &rows)
+                .unwrap();
+            let target_row = source
+                .utterances
+                .iter()
+                .find(|row| row.segment.text.starts_with("Jan"))
+                .unwrap();
+            let event_row = source
+                .utterances
+                .iter()
+                .find(|row| row.segment.text.starts_with("We retract"))
+                .unwrap();
+            let mut action = candidate(&source);
+            action.text = target_row.segment.text.clone();
+            action.sources = vec![
+                InsightSource::from_utterance(
+                    &source.meeting_uid,
+                    target_row,
+                    0,
+                    action.text.len() as u32,
+                )
+                .unwrap(),
+            ];
+            let mut changed = candidate(&source);
+            changed.kind = InsightKind::ChangedCommitment;
+            changed.commitment = CommitmentState::Retracted;
+            changed.text = event_row.segment.text.clone();
+            changed.sources = vec![
+                InsightSource::from_utterance(
+                    &source.meeting_uid,
+                    event_row,
+                    0,
+                    changed.text.len() as u32,
+                )
+                .unwrap(),
+            ];
+            changed.prior_evidence = vec![InsightPriorEvidence {
+                kind: InsightKind::Action,
+                source: action.sources[0].clone(),
+                target_item_id: None,
+            }];
+            let saved = store
+                .merge_insight_candidates(
+                    &id,
+                    0,
+                    &[action, changed],
+                    &source,
+                    &InferenceCancellation::new(),
+                )
+                .unwrap();
+            let event = saved
+                .items
+                .iter()
+                .find(|item| item.kind == InsightKind::ChangedCommitment)
+                .unwrap();
+            assert!(event.prior_evidence[0].target_item_id.is_none());
+        }
+        let (_directory, store, id, source, action, changed) = prior_story();
+        let saved = store
+            .merge_insight_candidates(
+                &id,
+                0,
+                &[action, changed.clone()],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let mut rows = source.utterances.clone();
+        rows[0].segment.text = "Different earlier evidence.".into();
+        let current = store
+            .write_transcript_snapshot(&id, Some(source.revision), &rows)
+            .unwrap();
+        let stale = store.read_insights(&id).unwrap();
+        assert_eq!(
+            stale
+                .items
+                .iter()
+                .find(|item| item.kind == InsightKind::ChangedCommitment)
+                .unwrap()
+                .source_state,
+            InsightSourceState::Stale
+        );
+        let mut wrong = changed;
+        wrong.transcript_revision = current.revision;
+        wrong.transcript_digest = current.transcript_digest.clone();
+        assert!(
+            store
+                .merge_insight_candidates(
+                    &id,
+                    saved.revision,
+                    &[wrong],
+                    &current,
+                    &InferenceCancellation::new()
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn same_utterance_priors_use_exact_byte_order_and_reviewed_links_never_retarget() {
+        let (_directory, store, id, source) = fixture();
+        let text = "We agreed to send the report. We now retract that agreement.";
+        let mut rows = source.utterances.clone();
+        rows[0].segment.text = text.into();
+        rows[0].segment.end_ms = 9_000;
+        let source = store
+            .write_transcript_snapshot(&id, Some(source.revision), &rows)
+            .unwrap();
+        let split = text.find("We now").unwrap();
+        let mut action = candidate(&source);
+        action.commitment = CommitmentState::Confirmed;
+        action.extraction_scope = InsightExtractionScope::ExactSpan;
+        action.sources = vec![
+            InsightSource::from_utterance(
+                &source.meeting_uid,
+                &source.utterances[0],
+                0,
+                (split - 1) as u32,
+            )
+            .unwrap(),
+        ];
+        action.text = action.sources[0].quote.clone();
+        let mut changed = candidate(&source);
+        changed.kind = InsightKind::ChangedCommitment;
+        changed.commitment = CommitmentState::Retracted;
+        changed.extraction_scope = InsightExtractionScope::ExactSpan;
+        changed.sources = vec![
+            InsightSource::from_utterance(
+                &source.meeting_uid,
+                &source.utterances[0],
+                split as u32,
+                text.len() as u32,
+            )
+            .unwrap(),
+        ];
+        changed.text = changed.sources[0].quote.clone();
+        changed.prior_evidence = vec![InsightPriorEvidence {
+            kind: InsightKind::Action,
+            source: action.sources[0].clone(),
+            target_item_id: None,
+        }];
+        let saved = store
+            .merge_insight_candidates(
+                &id,
+                0,
+                &[action.clone(), changed.clone()],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let target = saved
+            .items
+            .iter()
+            .find(|item| item.kind == InsightKind::Action)
+            .unwrap();
+        let event = saved
+            .items
+            .iter()
+            .find(|item| item.kind == InsightKind::ChangedCommitment)
+            .unwrap();
+        assert_eq!(
+            event.prior_evidence[0].target_item_id.as_deref(),
+            Some(target.id.as_str())
+        );
+        let reviewed = store
+            .update_insight_review(
+                &id,
+                saved.revision,
+                &event.id,
+                event.revision,
+                &InsightReviewUpdate {
+                    review_state: Some(InsightReviewState::Accepted),
+                    edited_text: Some("A retained user interpretation.".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let mut broad = action.clone();
+        broad.extraction_scope = InsightExtractionScope::Passage;
+        broad.sources = vec![
+            InsightSource::from_utterance(
+                &source.meeting_uid,
+                &source.utterances[0],
+                0,
+                text.len() as u32,
+            )
+            .unwrap(),
+        ];
+        broad.text = text.into();
+        let again = store
+            .merge_insight_candidates(
+                &id,
+                reviewed.revision,
+                &[broad, action, changed],
+                &source,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let protected = again.items.iter().find(|item| item.id == event.id).unwrap();
+        assert_eq!(protected.prior_evidence, event.prior_evidence);
+        assert_eq!(
+            protected.edited_text.as_deref(),
+            Some("A retained user interpretation.")
+        );
+    }
+
+    #[test]
+    fn dismissed_relations_survive_proven_main_and_prior_aliases_at_a_later_cutoff() {
+        for proven_prior in [true, false] {
+            let (_directory, store, id, source, action, changed) = prior_story();
+            let saved = store
+                .merge_insight_candidates(
+                    &id,
+                    0,
+                    &[action, changed],
+                    &source,
+                    &InferenceCancellation::new(),
+                )
+                .unwrap();
+            let old = saved
+                .items
+                .iter()
+                .find(|item| item.kind == InsightKind::ChangedCommitment)
+                .unwrap();
+            let dismissed = store
+                .update_insight_review(
+                    &id,
+                    saved.revision,
+                    &old.id,
+                    old.revision,
+                    &InsightReviewUpdate {
+                        review_state: Some(InsightReviewState::Dismissed),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let mut rows = source.utterances.clone();
+            for (index, row) in rows.iter_mut().enumerate() {
+                let old = row.metadata.utterance_id.clone();
+                row.metadata.utterance_id = uuid::Uuid::now_v7().to_string();
+                row.metadata.lineage = if index == 1 || proven_prior {
+                    vec![old]
+                } else {
+                    Vec::new()
+                };
+            }
+            rows.push(MeetingUtterance::new(
+                Segment {
+                    start_ms: 10_000,
+                    end_ms: 12_000,
+                    speaker: Speaker::Others,
+                    text: "Unrelated later speech.".into(),
+                    failed: false,
+                    voice: None,
+                },
+                Some("room_microphone".into()),
+            ));
+            let current = store
+                .write_transcript_snapshot(&id, Some(source.revision), &rows)
+                .unwrap();
+            let mut action = candidate(&current);
+            action.commitment = CommitmentState::Confirmed;
+            let mut changed = candidate(&current);
+            changed.kind = InsightKind::ChangedCommitment;
+            changed.commitment = CommitmentState::Retracted;
+            changed.text = current.utterances[1].segment.text.clone();
+            changed.sources = vec![
+                InsightSource::from_utterance(
+                    &current.meeting_uid,
+                    &current.utterances[1],
+                    0,
+                    changed.text.len() as u32,
+                )
+                .unwrap(),
+            ];
+            let start = current.utterances[0]
+                .segment
+                .text
+                .find("send the report")
+                .unwrap() as u32;
+            changed.prior_evidence = vec![InsightPriorEvidence {
+                kind: InsightKind::Action,
+                source: InsightSource::from_utterance(
+                    &current.meeting_uid,
+                    &current.utterances[0],
+                    start,
+                    start + "send the report".len() as u32,
+                )
+                .unwrap(),
+                target_item_id: None,
+            }];
+            let refreshed = store
+                .merge_insight_candidates(
+                    &id,
+                    dismissed.revision,
+                    &[action, changed],
+                    &current,
+                    &InferenceCancellation::new(),
+                )
+                .unwrap();
+            let retained = refreshed
+                .items
+                .iter()
+                .find(|item| item.id == old.id)
+                .unwrap();
+            assert_eq!(retained.review_state, InsightReviewState::Dismissed);
+            assert_eq!(retained.prior_evidence, old.prior_evidence);
+            if proven_prior {
+                assert_eq!(
+                    refreshed
+                        .items
+                        .iter()
+                        .filter(|item| item.kind == InsightKind::ChangedCommitment)
+                        .count(),
+                    1,
+                    "Proven aliases resurrected a dismissed relation at a newer cutoff"
+                );
+            } else {
+                assert!(
+                    refreshed
+                        .items
+                        .iter()
+                        .any(|item| item.kind == InsightKind::ChangedCommitment
+                            && item.review_state == InsightReviewState::Proposed),
+                    "An unproven changed relation was hidden"
+                );
+            }
+        }
+    }
+
     fn accept(store: &MeetingStore, id: &str, snapshot: &InsightSnapshot) -> InsightSnapshot {
         let item = &snapshot.items[0];
         store
@@ -2369,7 +3542,8 @@ pub(crate) mod tests {
             .iter()
             .find(|item| item.review_state == InsightReviewState::Proposed)
             .unwrap();
-        assert_eq!(proposal.kind, InsightKind::ChangedCommitment);
+        assert_eq!(proposal.kind, InsightKind::Action);
+        assert_eq!(proposal.commitment, CommitmentState::Retracted);
         assert_eq!(
             proposal.related_item_ids,
             vec![reviewed.items[0].id.clone()]

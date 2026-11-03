@@ -18,19 +18,24 @@ export interface InsightItem {
   processing: { identity: InsightIdentity; qualification_id: string; language_policy: string; task: string };
   related_item_ids: string[]; review_state: InsightReviewState; edited_text: string | null; edit_claim: string | null;
   source_state: "current" | "stale" | "missing" | "unavailable"; source_history: InsightSource[]; source_reassociated: boolean;
+  extraction_scope?: "passage" | "exact_span";
+  prior_evidence?: { kind: InsightKind; source: InsightSource; target_item_id?: string | null }[];
 }
 export interface InsightInsertionReceipt {
   attempt_id: string; item_id: string; item_revision: number; before_notes_hash: string; intended_notes_hash: string;
   markdown: string; state: "pending" | "acknowledged" | "not_inserted" | "needs_review";
+  manual_resolution?: { state: "acknowledged" | "not_inserted"; notes_hash: string } | null;
 }
 export interface InsightSnapshot {
   meeting_uid: string; revision: number; status: "missing" | "ready" | "unsupported" | "corrupt" | "too_large" | "wrong_meeting";
   items: InsightItem[]; insertion_receipts: InsightInsertionReceipt[];
+  analysis_job?: InsightJob | null;
 }
 export interface InsightAvailability {
   available: boolean; configured: boolean; qualified: boolean; reason_code: string;
   provider_id: string | null; model: string | null; endpoint: string | null; language_policy: string;
   task: string; qualification_id: string | null; use_case: string;
+  extraction_scope?: "passage" | "exact_span"; complete_extraction?: boolean; coverage_notice?: string;
 }
 export interface InsightJob {
   job_id: string; meeting_uid: string; state: "queued" | "running" | "completed" | "cancelled" | "failed";
@@ -44,6 +49,7 @@ export interface InsightInsertionRequest {
   store_revision: number; item_id: string; item_revision: number; attempt_id?: string | null;
   expected_notes: string; intended_notes: string; markdown: string;
 }
+export interface InsightInsertionResolution { store_revision: number; attempt_id: string; decision: "acknowledged" | "not_inserted"; expected_notes: string }
 export interface InsightReassociationRequest {
   store_revision: number; item_id: string; item_revision: number; source_index: number; source: InsightSource;
   evidence_cutoff_ms: number; edit_claim?: string | null;

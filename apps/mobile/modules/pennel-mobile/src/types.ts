@@ -134,6 +134,7 @@ export interface MobileCommandResults {
   'insights.claimEdit': InsightSnapshot;
   'insights.prepareInsertion': InsightInsertionPreparation;
   'insights.reconcile': InsightSnapshot;
+  'insights.resolveInsertion': InsightSnapshot;
   'insights.reassociate': InsightSnapshot;
   'insights.export': string;
   'insights.itemMarkdown': string;

@@ -52,3 +52,57 @@ test("logical cancellation does not admit replacement while the physical worker 
   await model.cancel(); assert.equal(model.canAnalyze, false);
   await model.poll(); assert.equal(model.canAnalyze, true);
 });
+
+test("opening and blurring an unchanged editor does not manufacture a user edit", async () => {
+  let writes = 0;
+  const model = new InsightReviewModel("folder", "meeting", service({ claim: async () => snapshot(2, [{ ...item, revision: 2, edit_claim: "claim" }]),
+    review: async () => { writes++; return snapshot(3, [{ ...item, revision: 3, edited_text: "Original quote" }]); } }));
+  await model.load(); await model.beginEdit("item"); await model.saveEdit("item", false);
+  assert.equal(writes, 0);
+  assert.equal(model.item("item").edited_text, null);
+});
+
+test("flushing a retained note insertion acknowledges the original attempt instead of appending again", async () => {
+  let flushed = false, prepared = 0;
+  const accepted = { ...item, review_state: "accepted" };
+  const model = new InsightReviewModel("folder", "meeting", service({ read: async () => ({ ...snapshot(flushed ? 3 : 1, [accepted]), insertion_receipts: flushed ? [{ item_id: "item", state: "acknowledged" }] : [] }),
+    itemMarkdown: async () => "Accepted Markdown", prepare: async () => { prepared++; throw Error("must reuse receipt"); } }));
+  await model.load();
+  const current = { text: "Existing notes", revision: 1, selection_start: 0, selection_end: 0, selection_revision: 0, composing: false };
+  await model.insert("item", { flush: async () => { flushed = true; return true; }, current: () => current, stage: async () => { throw Error("must not stage twice"); } });
+  assert.equal(prepared, 0);
+  assert.equal(model.getSnapshot().snapshot.insertion_receipts[0].state, "acknowledged");
+});
+
+test("owned busy job metadata is recovered after reload without restarting inference", () => {
+  const model = new InsightReviewModel("folder", "meeting", service());
+  const job = { job_id: "owned-job", meeting_uid: "meeting", revision: 3, state: "running", physical_running: true };
+  model.apply({ ...snapshot(), analysis_job: job });
+  assert.equal(model.getSnapshot().job.job_id, "owned-job");
+  assert.equal(model.analysisBusy, true);
+  model.apply(snapshot(2));
+  assert.equal(model.getSnapshot().job.job_id, "owned-job");
+  model.apply({ ...snapshot(3), analysis_job: { ...job, meeting_uid: "other", revision: 4 } });
+  assert.equal(model.getSnapshot().job.meeting_uid, "meeting");
+});
+
+test("unknown store revisions stay read-only until a fresh owned read confirms recovery", () => {
+  const model = new InsightReviewModel("folder", "meeting", service());
+  model.apply(snapshot(4)); model.apply(snapshot(0, [], "unsupported"));
+  assert.equal(model.getSnapshot().snapshot.status, "unsupported");
+  model.apply(snapshot(5)); assert.equal(model.getSnapshot().snapshot.status, "unsupported");
+  model.apply(snapshot(5), true); assert.equal(model.getSnapshot().snapshot.status, "ready");
+});
+
+test("an older dirty draft cannot silently reclaim and overwrite another saved item revision", async () => {
+  let claims = 0, writes = 0;
+  const model = new InsightReviewModel("folder", "meeting", service({ claim: async () => { claims++; return snapshot(2, [{ ...item, revision: 2, edit_claim: "claim" }]); },
+    review: async () => { writes++; return snapshot(5, [{ ...item, revision: 5, edited_text: "Overwritten" }]); } }));
+  await model.load(); await model.beginEdit("item"); model.edit("item", "Local pending edit");
+  model.getSnapshot().edits.get("item").claim_id = null;
+  model.apply(snapshot(4, [{ ...item, revision: 4, edited_text: "Saved on another device" }]));
+  assert.equal(await model.saveEdit("item"), false);
+  assert.equal(claims, 1); assert.equal(writes, 0);
+  assert.equal(model.item("item").edited_text, "Saved on another device");
+  assert.equal(model.getSnapshot().edits.get("item").text, "Local pending edit");
+});

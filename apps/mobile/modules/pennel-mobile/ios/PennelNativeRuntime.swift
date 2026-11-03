@@ -6,6 +6,11 @@ import Speech
 import UIKit
 import WidgetKit
 
+func keysAfterInsightAdmission<Admission, Keys>(_ admit: () throws -> Admission, keys: () -> Keys) rethrows -> (Admission, Keys) {
+    let admission = try admit()
+    return (admission, keys())
+}
+
 @MainActor
 public final class PennelNativeRuntime {
     public static let shared = PennelNativeRuntime()
@@ -261,7 +266,7 @@ public final class PennelNativeRuntime {
                 try BridgeJSON.encode(BridgeJSON.inferenceVerification(engine.verifyInference(capability: capability, cancellation: cancellation, keys: Keychain.apiKeys())))
             }
         case "inference.cancel": return try BridgeJSON.encode(inferenceRequests.cancel(id: input.required("request_id")))
-        case "insights.read", "insights.availability", "insights.start", "insights.review", "insights.claimEdit", "insights.prepareInsertion", "insights.reconcile", "insights.reassociate", "insights.export", "insights.itemMarkdown":
+        case "insights.read", "insights.availability", "insights.start", "insights.review", "insights.claimEdit", "insights.prepareInsertion", "insights.reconcile", "insights.resolveInsertion", "insights.reassociate", "insights.export", "insights.itemMarkdown":
             let id = try input.required("id")
             let language = input.text("language_policy", default: "unknown")
             let request = try BridgeJSON.encode(input.values["request"] as? [String: Any] ?? [:])
@@ -272,11 +277,14 @@ public final class PennelNativeRuntime {
                 switch method {
                 case "insights.read": return try engine.meetingInsightsJson(id: id)
                 case "insights.availability": return try engine.meetingInsightAvailabilityJson(id: id, languagePolicy: language)
-                case "insights.start": return try engine.beginMeetingInsightAnalysisJson(id: id, languagePolicy: language, keys: Keychain.apiKeys())
+                case "insights.start":
+                    let (admission, keys) = try keysAfterInsightAdmission({ try engine.admitMeetingInsightAnalysis(id: id, languagePolicy: language) }, keys: { Keychain.apiKeys() })
+                    return try engine.beginMeetingInsightAnalysisJson(admission: admission, keys: keys)
                 case "insights.review": return try engine.reviewMeetingInsightJson(id: id, updateJson: request)
                 case "insights.claimEdit": return try engine.claimMeetingInsightEditJson(id: id, requestJson: request)
                 case "insights.prepareInsertion": return try engine.prepareMeetingInsightInsertionJson(id: id, requestJson: request)
                 case "insights.reconcile": return try engine.reconcileMeetingInsightInsertionsJson(id: id, storeRevision: storeRevision)
+                case "insights.resolveInsertion": return try engine.resolveMeetingInsightInsertionJson(id: id, requestJson: request)
                 case "insights.reassociate": return try engine.reassociateMeetingInsightJson(id: id, requestJson: request)
                 case "insights.itemMarkdown": return try BridgeJSON.encode(engine.exportMeetingInsightMarkdown(id: id, itemId: itemId, itemRevision: itemRevision))
                 default: return try BridgeJSON.encode(engine.exportMeetingInsightsMarkdown(id: id))
@@ -539,6 +547,7 @@ public final class PennelNativeRuntime {
         let metadata = BridgeJSON.insightMetadata(value)
         if let id = metadata["job_id"] as? String { insightJobs[id] = metadata }
         else if let uid = metadata["meeting_uid"] as? String, let revision = metadata["revision"] as? NSNumber { insightRevisions[uid] = revision.uint64Value }
+        if let job = value["analysis_job"] as? [String: Any], let id = job["job_id"] as? String { insightJobs[id] = BridgeJSON.insightMetadata(job) }
         while insightJobs.count > 32, let id = insightJobs.keys.sorted().first(where: { insightJobs[$0]?["physical_running"] as? Bool != true }) { insightJobs[id] = nil }
         while insightRevisions.count > 32, let id = insightRevisions.keys.sorted().first { insightRevisions[id] = nil }
     }

@@ -1174,7 +1174,8 @@ impl PennelEngine {
         text: String,
         expected: Option<String>,
     ) -> Result<(), PennelError> {
-        self.save_owned_meeting_notes(&id,&text,expected.as_deref(),None).map(|_|())
+        self.save_owned_meeting_notes(&id, &text, expected.as_deref(), None)
+            .map(|_| ())
     }
 }
 

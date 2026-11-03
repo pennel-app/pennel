@@ -333,5 +333,22 @@
   "insights.job_running": "Definitieve spraak wordt geanalyseerd…",
   "insights.job_completed": "Analyse voltooid. Beoordeel de suggesties.",
   "insights.job_cancelled": "Analyse geannuleerd. Beoordeelde items zijn behouden.",
-  "insights.job_failed": "Analyse mislukt. Beoordeelde items zijn behouden."
+  "insights.job_failed": "Analyse mislukt. Beoordeelde items zijn behouden.",
+  "insights.review_insertion_help": "Controleer de bewaarde notities en de bedoelde invoeging. Je keuze legt de uitkomst vast zonder notitietekst te wijzigen.",
+  "insights.current_notes": "Huidige bewaarde notities",
+  "insights.intended_insertion": "Bedoelde invoeging",
+  "insights.already_in_notes": "Ik heb het in de notities gevonden",
+  "insights.not_in_notes": "Het is niet ingevoegd",
+  "insights.copy_edit": "Bewaarde bewerking kopiëren",
+  "insights.processing_record": "Beoordeling: {language} · {model} · {destination}",
+  "insights.recorded_local": "Lokaal eindpunt ({host})",
+  "insights.scope_passage": "Suggestie voor een passage. Deze bron kan meerdere toezeggingen bevatten.",
+  "insights.partial_coverage": "Suggesties kunnen onvolledig zijn. Controleer het transcript op andere acties, besluiten en vragen.",
+  "insights.connection_settings": "Verbindingsinstellingen",
+  "insights.reason_busy": "Er loopt al een analyse voor deze meeting. Wacht of annuleer je bestaande verzoek.",
+  "insights.related_item": "Gerelateerd beoordeeld item: {text}",
+  "insights.related_unavailable": "Gerelateerd beoordeeld item is niet beschikbaar",
+  "insights.related_statement": "Gerelateerde uitspraak",
+  "insights.link_not_established": "Koppeling niet vastgesteld. Beoordeel deze wijziging aan de hand van de geciteerde bronnen.",
+  "insights.source_link_reviewed": "Bronkoppeling door jou beoordeeld. Vorige koppelingen blijven bewaard."
 }

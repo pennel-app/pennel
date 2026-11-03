@@ -8,7 +8,7 @@ import type { WorkspaceRoute } from "./workspace-state";
 import { localizeUiResponse } from "./ui-response.ts";
 import type { DesktopCommandState, DesktopEnvironment } from "./desktop-chrome-state.ts";
 import type { InsightSnapshot, InsightAvailability, InsightJob, InsightLanguagePolicy, InsightReviewRequest, InsightClaimRequest,
-  InsightInsertionRequest, InsightInsertionPreparation, InsightReassociationRequest } from "../../../assets/contracts/meeting-insights";
+  InsightInsertionRequest, InsightInsertionPreparation, InsightReassociationRequest, InsightInsertionResolution } from "../../../assets/contracts/meeting-insights";
 
 interface PlatformClient {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -723,6 +723,7 @@ export const api = {
   claimInsightEdit: (id: string, request: InsightClaimRequest) => invoke<InsightSnapshot>("claim_insight_edit", { id, request }),
   prepareInsightInsertion: (id: string, request: InsightInsertionRequest) => invoke<InsightInsertionPreparation>("prepare_insight_insertion", { id, request }),
   reconcileInsightInsertions: (id: string, storeRevision: number) => invoke<InsightSnapshot>("reconcile_insight_insertions", { id, storeRevision }),
+  resolveInsightInsertion: (id: string, request: InsightInsertionResolution) => invoke<InsightSnapshot>("resolve_insight_insertion", { id, request }),
   reassociateInsightSource: (id: string, request: InsightReassociationRequest) => invoke<InsightSnapshot>("reassociate_insight_source", { id, request }),
   exportInsights: (id: string) => invoke<string>("insights_export", { id }),
   insightMarkdown: (id: string, itemId: string, itemRevision: number) => invoke<string>("insight_markdown", { id, itemId, itemRevision }),

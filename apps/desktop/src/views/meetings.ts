@@ -16,7 +16,7 @@ import { retranscriptionControl, retranscriptionPercent } from "../meeting-retra
 import { summaryControl } from "../voice-flow-state";
 import { segmentKeys, sameSegment } from "../recording-refresh";
 import { attributionEditable, attributionNoticeKey, segmentAudioAvailable } from "../meeting-source";
-import { reviewedInsights } from "../reviewed-insights";
+import { reviewedInsights, flushReviewedInsights } from "../reviewed-insights";
 import { insightSourceMatches, insertionStillCurrent, utf8Range, type InsightNoteLatch, type InsightSource } from "../../../../assets/contracts/meeting-insights.ts";
 import { liveMeetingWorkspace, retainedMeetingWorkspace, getRetainedMeetingWorkspace, acknowledgeRetainedNotes, flushLiveWorkspaces, finishLiveWorkspace, displayedLiveWorkspaceSession } from "../live-workspace";
 
@@ -63,6 +63,7 @@ async function flushLiveTitle() {
 
 export async function flushMeetingDrafts(includeLiveWorkspaces = true) {
   await persistAll([
+    flushReviewedInsights,
     ...includeLiveWorkspaces ? [flushLiveWorkspaces] : [],
     async () => { await titleQueue.drain(); await flushLiveTitle(); },
     async () => {
@@ -102,29 +103,32 @@ export function finishMeetingDrafts(event: MeetingFinished) {
 
 function editNotes(ctx: Context, draft: MeetingDraft, id: string, rows = 8) {
   const input = h("textarea", { rows, placeholder: l("meetings.notes_placeholder"), "aria-label": l("meetings.your_notes") });
+  const saveError = h("p", { class: "error insight-note-save-error", hidden: true, role: "status" }, l("insights.error_notes_not_saved"));
   input.value = draft.value;
   let timer: number | undefined;
   let composing = false, revision = 0, selectionRevision = 0, selection = "";
+  const observeSelection = () => { const next = `${input.selectionStart}:${input.selectionEnd}`; if (selection !== next) { selection = next; ++selectionRevision; } };
+  input.addEventListener("select", observeSelection);
   input.addEventListener("compositionstart", () => { composing = true; ++revision; window.clearTimeout(timer); });
-  input.addEventListener("compositionend", () => { composing = false; ++revision; draft.edit(input.value); });
+  input.addEventListener("compositionend", () => { composing = false; ++revision; draft.edit(input.value); timer = window.setTimeout(() => { void flush().catch(ctx.report); }, 600); });
   input.addEventListener("input", () => {
     ++revision;
     draft.edit(input.value);
     window.clearTimeout(timer);
-    if (!composing) timer = window.setTimeout(() => { void saveDraft(draft, id).catch(ctx.report); }, 600);
+    if (!composing) timer = window.setTimeout(() => { void flush().catch(ctx.report); }, 600);
   });
-  const flush = () => { window.clearTimeout(timer); return composing ? Promise.reject(new Error(t("meetings.workspace_composing"))) : saveDraft(draft, id); };
+  const flush = async () => { window.clearTimeout(timer); if (composing) throw new Error(t("meetings.workspace_composing")); await saveDraft(draft, id); saveError.hidden = true; };
   ctx.beforeLeave(flush);
   ctx.onFlush(flush);
   input.addEventListener("blur", () => { void flush().catch(ctx.report); });
   ctx.onDispose(() => { void flush().catch(ctx.report); });
-  return { input, flush, current: (): InsightNoteLatch => {
-    const next = `${input.selectionStart}:${input.selectionEnd}`; if (selection !== next) { selection = next; ++selectionRevision; }
+  return { input, error: saveError, flush, current: (): InsightNoteLatch => {
+    observeSelection();
     return { text: draft.value, revision, selection_start: input.selectionStart, selection_end: input.selectionEnd, selection_revision: selectionRevision, composing };
   }, stage: async (value: string, attempt: string, before: InsightNoteLatch): Promise<boolean> => {
     if (composing || !draft.stageInsightInsertion(value, attempt, before.text)) return false;
     ++revision; input.value = value; input.focus({ preventScroll: true }); input.setSelectionRange(before.text.length, value.length);
-    try { await flush(); return true; } catch { return false; }
+    try { await flush(); return true; } catch { saveError.hidden = false; return false; }
   } };
 }
 
@@ -556,7 +560,7 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
       return;
     }
     panel.replaceChildren(detail.summary ? enhanced : detail.notes.trim() ? h("div", { class: "markdown" }, detail.notes) : h("p", { class: "muted" }, l("meetings.empty_summary")));
-    const ownNotes = h("details", { class: "own-notes", open: current.ownNotesOpen ?? !detail.summary }, h("summary", {}, l("meetings.your_notes")), notes.input);
+    const ownNotes = h("details", { class: "own-notes", open: current.ownNotesOpen ?? !detail.summary }, h("summary", {}, l("meetings.your_notes")), notes.input, notes.error);
     ownNotes.addEventListener("toggle", () => { if (ownNotes.isConnected) current.ownNotesOpen = ownNotes.open; });
     panel.append(ownNotes);
   };

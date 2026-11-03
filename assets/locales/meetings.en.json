@@ -333,5 +333,22 @@
   "insights.job_running": "Analyzing finalized speech…",
   "insights.job_completed": "Analysis complete. Review the suggestions.",
   "insights.job_cancelled": "Analysis cancelled. Reviewed items were kept.",
-  "insights.job_failed": "Analysis failed. Reviewed items were kept."
+  "insights.job_failed": "Analysis failed. Reviewed items were kept.",
+  "insights.review_insertion_help": "Inspect the saved notes and intended insertion. Your choice records the outcome without changing any note text.",
+  "insights.current_notes": "Current saved notes",
+  "insights.intended_insertion": "Intended insertion",
+  "insights.already_in_notes": "I found it in the notes",
+  "insights.not_in_notes": "It was not inserted",
+  "insights.copy_edit": "Copy retained edit",
+  "insights.processing_record": "Assessment: {language} · {model} · {destination}",
+  "insights.recorded_local": "Local endpoint ({host})",
+  "insights.scope_passage": "Passage suggestion. This source may contain multiple commitments.",
+  "insights.partial_coverage": "Suggestions may be incomplete. Review the transcript for other actions, decisions and questions.",
+  "insights.connection_settings": "Connection settings",
+  "insights.reason_busy": "Analysis for this meeting is already running. Wait or cancel the owned request.",
+  "insights.related_item": "Related reviewed item: {text}",
+  "insights.related_unavailable": "Related reviewed item is unavailable",
+  "insights.related_statement": "Related statement",
+  "insights.link_not_established": "Link not established. Review this change against its quoted evidence.",
+  "insights.source_link_reviewed": "Source link reviewed by you. Previous links are preserved."
 }

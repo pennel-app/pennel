@@ -1,7 +1,7 @@
 import { InsightDraft, appendInsightMarkdown, insightReceipt, insightText, insightsWritable, insertionStillCurrent,
   type InsightAvailability, type InsightClaimRequest, type InsightInsertionPreparation, type InsightInsertionRequest,
   type InsightItem, type InsightJob, type InsightLanguagePolicy, type InsightNoteLatch, type InsightReassociationRequest,
-  type InsightReviewRequest, type InsightReviewState, type InsightSnapshot } from "./meeting-insights.ts";
+  type InsightReviewRequest, type InsightReviewState, type InsightSnapshot, type InsightInsertionResolution } from "./meeting-insights.ts";
 
 export interface InsightReviewService {
   read(id: string): Promise<InsightSnapshot>;
@@ -13,6 +13,7 @@ export interface InsightReviewService {
   review(id: string, request: InsightReviewRequest): Promise<InsightSnapshot>;
   prepare(id: string, request: InsightInsertionRequest): Promise<InsightInsertionPreparation>;
   reconcile(id: string, storeRevision: number): Promise<InsightSnapshot>;
+  resolve(id: string, request: InsightInsertionResolution): Promise<InsightSnapshot>;
   reassociate(id: string, request: InsightReassociationRequest): Promise<InsightSnapshot>;
   export(id: string): Promise<string>;
   itemMarkdown(id: string, itemId: string, revision: number): Promise<string>;
@@ -61,11 +62,14 @@ export class InsightReviewModel {
   private write<T>(work: () => Promise<T>): Promise<T | undefined> {
     const pending = this.action("write", work); this.pendingWrite = pending; return pending;
   }
-  apply(snapshot: InsightSnapshot) {
+  apply(snapshot: InsightSnapshot, ownedRead = false) {
     if (snapshot.meeting_uid !== this.meetingUid) throw new InsightUiError("wrong_meeting");
-    if (this.state.snapshot && snapshot.revision < this.state.snapshot.revision) return;
+    if (this.state.snapshot && !insightsWritable(this.state.snapshot) && insightsWritable(snapshot) && !ownedRead) return;
+    if (this.state.snapshot && snapshot.revision < this.state.snapshot.revision && insightsWritable(snapshot)) return;
     for (const item of snapshot.items) if (this.state.edits.has(item.id)) this.itemBackups.set(item.id, item);
-    this.changed({ snapshot });
+    const incoming = snapshot.analysis_job, current = this.state.job;
+    const job = incoming && incoming.meeting_uid === this.meetingUid && (!current || current.job_id !== incoming.job_id || incoming.revision >= current.revision) ? incoming : current;
+    this.changed({ snapshot, job });
   }
   item(id: string) { return this.state.snapshot?.items.find(item => item.id === id); }
   get dirty() { return [...this.state.edits.values()].some(edit => edit.dirty); }
@@ -80,7 +84,7 @@ export class InsightReviewModel {
   async load() {
     if (this.state.busy.has("load")) { this.readAgain = true; return; }
     const epoch = ++this.readEpoch;
-    await this.action("load", async () => { const snapshot = await this.service.read(this.id); if (epoch === this.readEpoch) this.apply(snapshot); });
+    await this.action("load", async () => { const snapshot = await this.service.read(this.id); if (epoch === this.readEpoch) this.apply(snapshot, true); });
     if (this.readAgain) { this.readAgain = false; await this.load(); }
   }
   async choosePolicy(policy: InsightLanguagePolicy) {
@@ -135,9 +139,11 @@ export class InsightReviewModel {
   compose(id: string, value: boolean) { const edit = this.state.edits.get(id); if (edit) { edit.composing = value; this.changed(); } }
   async saveEdit(id: string, finish = true) {
     const initial = this.state.edits.get(id); if (!initial || initial.composing || !initial.text.trim() || !insightsWritable(this.state.snapshot)) return false;
+    if (!initial.dirty) { if (finish) await this.cancelEdit(id); return true; }
     return !!await this.write(async () => {
       let item = this.item(id); const edit = this.state.edits.get(id);
       if (!item || !edit || !this.state.snapshot) { if (edit) edit.conflict = true; throw new InsightUiError("edit_conflict"); }
+      if (item.revision !== edit.item_revision) { edit.conflict = true; this.changed(); throw new InsightUiError("edit_conflict"); }
       if (!edit.claim_id) {
         this.apply(await this.service.claim(this.id, { store_revision: this.state.snapshot.revision, item_id: id, item_revision: item.revision }));
         item = this.item(id)!; edit.claim_id = item.edit_claim; edit.item_revision = item.revision;
@@ -146,7 +152,8 @@ export class InsightReviewModel {
       try {
         const snapshot = await this.service.review(this.id, { store_revision: this.state.snapshot!.revision, item_id: id, item_revision: edit.item_revision,
           update: { edited_text: text, edit_claim: edit.claim_id, release_edit_claim: finish } });
-        this.apply(snapshot); const saved = snapshot.items.find(item => item.id === id);
+        this.apply(snapshot); if (!insightsWritable(this.state.snapshot)) throw new InsightUiError("edit_conflict");
+        const saved = snapshot.items.find(item => item.id === id);
         if (!saved) throw new InsightUiError("edit_conflict");
         const unchanged = edit.acknowledge(text, saved.revision, localRevision, finish);
         if (finish && unchanged) { const edits = new Map(this.state.edits); edits.delete(id); this.changed({ edits }); }
@@ -187,6 +194,10 @@ export class InsightReviewModel {
     return !!await this.write(async () => {
       if (!await host.flush()) throw new InsightUiError("notes_not_saved");
       const before = { ...host.current() }; if (before.composing) throw new InsightUiError("notes_changed");
+      this.apply(await this.service.read(this.id), true);
+      if (!insertionStillCurrent(before, host.current())) throw new InsightUiError("notes_changed");
+      const prior = insightReceipt(this.state.snapshot, id);
+      if (prior && prior.state !== "not_inserted" || !insightsWritable(this.state.snapshot) || this.item(id)?.review_state !== "accepted") return false;
       const item = this.item(id)!; const markdown = await this.service.itemMarkdown(this.id, id, item.revision);
       if (!insertionStillCurrent(before, host.current())) throw new InsightUiError("notes_changed");
       const preparation = await this.service.prepare(this.id, { store_revision: this.state.snapshot!.revision, item_id: id,
@@ -195,10 +206,17 @@ export class InsightReviewModel {
       if (!preparation.stage || preparation.intended_notes === null) return false;
       if (!insertionStillCurrent(before, host.current())) throw new InsightUiError("notes_changed");
       if (!await host.stage(preparation.intended_notes, preparation.receipt.attempt_id, before)) throw new InsightUiError("notes_not_saved");
-      this.apply(await this.service.read(this.id)); return true;
+      this.apply(await this.service.read(this.id), true); return true;
     });
   }
   async reconcile() { await this.write(async () => { if (this.state.snapshot) this.apply(await this.service.reconcile(this.id, this.state.snapshot.revision)); }); }
+  async resolveInsertion(attemptId: string, decision: "acknowledged" | "not_inserted", host: InsightNoteHost, inspected: InsightNoteLatch) {
+    await this.write(async () => {
+      const current = host.current();
+      if (!this.state.snapshot || !insertionStillCurrent({ ...inspected, interaction_revision: current.interaction_revision }, current)) throw new InsightUiError("notes_changed");
+      this.apply(await this.service.resolve(this.id, { store_revision: this.state.snapshot.revision, attempt_id: attemptId, decision, expected_notes: inspected.text }));
+    });
+  }
   async reassociate(request: Omit<InsightReassociationRequest, "store_revision">) {
     await this.write(async () => { const item = this.item(request.item_id); if (!item || !this.state.snapshot) return;
       if (item.revision !== request.item_revision) throw new InsightUiError("edit_conflict");
