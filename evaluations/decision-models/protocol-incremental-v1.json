@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "id": "incremental-meeting-v1",
+  "issue": "https://github.com/pennel-app/pennel/issues/96",
+  "languages": [
+    "en",
+    "nl",
+    "mixed"
+  ],
+  "use_cases": [
+    "manual_finished_suggestions",
+    "manual_live_suggestions",
+    "source_assessment",
+    "background_live_suggestions"
+  ],
+  "corpus": {
+    "families_per_split": 10,
+    "split_unit": "meeting_family",
+    "variants": [
+      "clean",
+      "asr"
+    ],
+    "prefix_turns": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      6,
+      8,
+      10
+    ],
+    "policy": "Translations, acoustic-text perturbations, source revisions and every prefix of a related meeting remain in one split."
+  },
+  "source_policy": {
+    "finalized_only": true,
+    "acknowledged_notes_only": true,
+    "future_evidence": "forbidden",
+    "offsets": "Unicode scalar indices in the exact finalized source; timestamps are source ranges, never proportional word allocation",
+    "normalization": "Unicode White_Space collapse, preserving BOM and spoken Unicode"
+  },
+  "event_labels": [
+    "none",
+    "action",
+    "decision",
+    "open_question",
+    "changed_commitment"
+  ],
+  "support_labels": [
+    "supported",
+    "contradicted",
+    "insufficient",
+    "uncertain"
+  ],
+  "answerability_labels": [
+    "answerable",
+    "partial",
+    "absent",
+    "uncertain"
+  ],
+  "calibration": {
+    "fit_split": "calibration",
+    "test_split": "heldout",
+    "minimum_observations": 10,
+    "minimum_classes": 2,
+    "minimum_meeting_groups": 2,
+    "method": "Reuse calibration.py; bind use case, language, authored prompt, ordered labels, route, model/revision, preprocessing and artifact identity. Frozen held-out execution requires a previously fitted calibration artifact."
+  },
+  "acceptance": {
+    "events_macro_f1_min": 0.9,
+    "accepted_item_precision_min": 0.95,
+    "correct_owner_and_final_status_required": true,
+    "source_selective_precision_min": 0.98,
+    "source_coverage_min": 0.5,
+    "local_event_warm_p95_ms_max": 5000,
+    "warm_samples_min": 30,
+    "cold_samples_min": 5,
+    "generated_claim_judgments_min": 10,
+    "end_to_end_macro_f1_min": 0.9,
+    "local_source_warm_p95_ms_max": 750
+  },
+  "tuple_policy": "Measure source-quoted complete items separately from classifier labels. Unknown owner and due phrase remain null. Exact evidence and verbatim owner/due spans are necessary; date normalization is not qualified by this task.",
+  "timeline_policy": "Repeated proposals are deduplicated per prefix; changes/retractions carry final status. User accepted edits and dismissed proposals are scored separately from replaceable proposals. Appended speech never rewrites an earlier cutoff.",
+  "measurement_policy": "Failures and missing calls remain in denominators. Missing latency, CPU, RSS, usage, actual generated-claim judgments or foreground/background resource evidence are unavailable, not zero or passing. UI fixtures, offline replay, inference and native/real-call acceptance are distinct.",
+  "authorization": {
+    "network_inference": false,
+    "model_download_bytes": 0,
+    "hosted_usd": "0.00",
+    "automatic_retries": 0,
+    "fallbacks": false,
+    "policy": "Historical acquisition/spend grants are not reused. This runner replays recordings offline and exports explicit frozen requests; execution requires separately authorized configuration."
+  },
+  "adoption_policy": "Offline and connection fixtures never qualify a model. Emit reviewable candidate records per exact context; only the app-owned reviewed registry can adopt them. Ordinary capture, notes, transcription and generative questions remain independent.",
+  "metrics": "Report component event macro-F1 separately from end-to-end macro-F1, which requires a complete exact source-quoted tuple for a positive event. A minimum 0.90 applies independently to both before qualification."
+}

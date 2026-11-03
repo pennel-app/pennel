@@ -34,6 +34,7 @@ mod meeting_chat;
 mod meeting_evidence;
 mod meeting_index;
 mod meeting_preview;
+mod meeting_qualification;
 mod meeting_recording;
 mod meeting_utterances;
 mod meetings;
@@ -111,6 +112,12 @@ pub use meeting_evidence::{
     utterance_evidence_revision,
 };
 pub use meeting_index::{Passage, PassageKind};
+pub use meeting_qualification::{
+    MeetingActualInference, MeetingAnalysisAvailability, MeetingAnalysisUseCase,
+    MeetingConfiguredInference, MeetingQualificationContext, MeetingQualificationError,
+    MeetingQualificationEvidence, MeetingQualificationMetrics, MeetingQualificationRecord,
+    MeetingQualificationRegistry, MeetingQualificationRequest, QualifiedMeetingAnalysis,
+};
 pub use meeting_preview::{
     MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode, MeetingPreviewSnapshot,
     MeetingPreviewState, MeetingTrackPreview,
