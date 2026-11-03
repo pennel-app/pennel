@@ -37,3 +37,13 @@ The supplied damaged recording was processed separately outside the repository. 
 
 
 Local verification on 28 October 2026: `make core`, `make test` and `make app` passed (605 core tests, 5 ignored; retained Mac Swift suites also passed). The shared desktop frontend built and passed 185 tests; `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml` passed 205 tests. Core/desktop formatting and Clippy with warnings denied, 39 packaging checks and 93 Mac platform Swift tests passed. `scripts/build-desktop-preview.sh` produced the final preview app and DMG; signature/integrity checks are separate from notarization or device acceptance. The [mobile validation record](mobile.md#recording-provenance-validation--28-october-2026) covers clean/repeated generation, simulator tests and unsigned Release builds. No Windows/Linux CI run or physical Bluetooth acceptance is claimed.
+
+## Canonical speaker metadata
+
+The speaker-turn candidate keeps `transcript.md` readable and adds root-level `transcript.meta.json` with immutable hash-named metadata parts of at most one MiB. These text files travel through existing encrypted text sync. The manifest binds the meeting UID, exact Markdown digest, revision and every part hash; readers apply richer data only when the complete generation agrees.
+
+Canonical utterances retain IDs, source IDs, actual start/end times, exact authoritative text, timed text spans and attribution/correction provenance. Physical sources are `microphone`, `system_audio` and `room_microphone`; the older immutable `system` alias remains readable. Ambiguous legacy provenance stays unknown. Inferred person labels never select an audio track.
+
+The legacy Segment/Markdown projection loses richer attribution meaning. Its Me/Others labels do not prove who spoke or which archive a relabelled row came from. Current UI, cited questions, summaries, exports and playback use the verified canonical snapshot. Unparsed legacy text and unknown/corrupt metadata are retained; uncertain remapping requires review.
+
+Snapshot and speaker/retranscription journals recover text, names and metadata together. Private ownership metadata permits pruning only proven unreferenced generated parts after successful commit, with complete backup and sync-conflict references protected. Embeddings, voiceprint internals, diagnostic context and raw capture data are not included in portable attribution metadata. See [the candidate's evidence and remaining gates](evidence/speaker-turns-22.md).
