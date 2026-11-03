@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
@@ -85,6 +86,8 @@ impl StoredJob {
 struct Progress {
     preview: PreviewDisplay,
     segments: Vec<Segment>,
+    metadata: HashMap<(usize, u64), crate::UtteranceMetadata>,
+    metadata_revision: u64,
     dictations: Vec<(u64, u64)>,
     pending: u32,
     unpersisted: Vec<Job>,
@@ -97,6 +100,32 @@ struct Progress {
 }
 
 impl Progress {
+    fn canonical(&mut self, segments: &[Segment]) -> Vec<crate::MeetingUtterance> {
+        segments
+            .iter()
+            .map(|segment| {
+                let metadata = self
+                    .metadata
+                    .entry((index(segment.speaker), segment.start_ms))
+                    .or_insert_with(|| {
+                        crate::UtteranceMetadata::new(
+                            segment,
+                            Some(physical_source_id(segment.speaker).into()),
+                        )
+                    });
+                let mut metadata = metadata.clone();
+                if segment.failed || segment.text.is_empty() {
+                    metadata.spans.clear();
+                    metadata.refresh_fingerprints(segment);
+                }
+                crate::MeetingUtterance {
+                    segment: segment.clone(),
+                    metadata,
+                }
+            })
+            .collect()
+    }
+
     fn visible(&self) -> Vec<Segment> {
         filter_segments(&self.segments, &self.dictations)
             .into_iter()
@@ -176,10 +205,13 @@ fn commit_progress(
     id: &str,
     progress: &Mutex<Progress>,
 ) -> Result<(), PennelError> {
-    let (segments, cleanup, revision, dictations) = {
-        let progress = progress.lock().unwrap();
+    let (rows, metadata_revision, cleanup, revision, dictations) = {
+        let mut progress = progress.lock().unwrap();
+        let segments = progress.persisted();
+        let rows = progress.canonical(&segments);
         (
-            progress.persisted(),
+            rows,
+            progress.metadata_revision,
             progress.cleanup.clone(),
             progress.revision,
             progress.dictations.clone(),
@@ -188,7 +220,25 @@ fn commit_progress(
     if !dictations.is_empty() {
         retry_storage(|| store.write_dictation_intervals(id, &dictations))?;
     }
-    retry_storage(|| store.write_transcript(id, &segments))?;
+    let saved = retry_storage(|| {
+        store
+            .write_transcript_snapshot(id, Some(metadata_revision), &rows)
+            .or_else(|error| {
+                let current = store.read_transcript_snapshot(id)?;
+                let intended: Vec<_> = rows
+                    .iter()
+                    .filter(|row| row.segment.failed || !row.segment.text.trim().is_empty())
+                    .cloned()
+                    .collect();
+                if current.metadata_status == crate::TranscriptMetadataStatus::Valid
+                    && current.utterances == intended
+                {
+                    Ok(current)
+                } else {
+                    Err(error)
+                }
+            })
+    })?;
     if let Err(error) = retry_storage(|| store.cleanup_committed_audio(id)) {
         progress.lock().unwrap().persistence_error = Some(format!(
             "The text is saved, but recovery audio could not be cleaned up: {error}"
@@ -199,6 +249,7 @@ fn commit_progress(
         .filter(|path| path.try_exists().is_ok_and(|exists| !exists))
         .collect();
     let mut progress = progress.lock().unwrap();
+    progress.metadata_revision = saved.revision;
     progress.cleanup.retain(|path| !removed.contains(path));
     if progress.revision == revision {
         progress.dirty = false;
@@ -210,6 +261,7 @@ fn commit_progress(
 #[derive(uniffi::Object)]
 pub struct MeetingSession {
     id: String,
+    meeting_uid: String,
     store: MeetingStore,
     recognition: MeetingRecognition,
     preview_vocabulary: Vec<String>,
@@ -236,6 +288,14 @@ fn index(speaker: Speaker) -> usize {
     match speaker {
         Speaker::Me => 0,
         Speaker::Others => 1,
+    }
+}
+
+fn physical_source_id(speaker: Speaker) -> &'static str {
+    match speaker {
+        Speaker::Me => "microphone",
+        Speaker::Others if cfg!(target_os = "ios") => "room_microphone",
+        Speaker::Others => "system_audio",
     }
 }
 
@@ -371,12 +431,12 @@ impl MeetingSession {
             let mut paused = false;
             for job in stored_receiver {
                 let attempted = !paused && !worker_terminal.load(Ordering::SeqCst);
-                let segment = match if attempted {
+                let (segment, spans) = match if attempted {
                     transcribe_job(&engine, &settings, &keys, &job, &worker_terminal)
                 } else {
-                    Ok(job.failed())
+                    Ok((job.failed(), Vec::new()))
                 } {
-                    Ok(segment) => {
+                    Ok((segment, spans)) => {
                         if attempted {
                             failed_chunks = if segment.failed { failed_chunks + 1 } else { 0 };
                             if failed_chunks >= 2 {
@@ -386,11 +446,11 @@ impl MeetingSession {
                                 );
                             }
                         }
-                        segment
+                        (segment, spans)
                     }
                     Err(error) => {
                         storage_failure(&worker_progress, &worker_terminal, &error);
-                        job.failed()
+                        (job.failed(), Vec::new())
                     }
                 };
                 {
@@ -401,6 +461,14 @@ impl MeetingSession {
                     if !segment.failed {
                         progress.cleanup.push(job.path);
                     }
+                    let mut metadata = crate::UtteranceMetadata::new(
+                        &segment,
+                        Some(physical_source_id(segment.speaker).into()),
+                    );
+                    metadata.spans = spans;
+                    progress
+                        .metadata
+                        .insert((index(segment.speaker), segment.start_ms), metadata);
                     progress.segments.push(segment);
                     progress.segments.sort_by_key(|segment| segment.start_ms);
                     progress.changed();
@@ -413,6 +481,7 @@ impl MeetingSession {
             }
         });
         Arc::new(Self {
+            meeting_uid: store.uid_of(&id).unwrap_or_else(|| id.clone()),
             id,
             store,
             recognition,
@@ -615,31 +684,50 @@ fn transcribe_job(
     keys: &ApiKeys,
     job: &StoredJob,
     terminal: &AtomicBool,
-) -> Result<Segment, PennelError> {
+) -> Result<(Segment, Vec<crate::TimedTextSpan>), PennelError> {
     let wav = std::fs::read(&job.path).map_err(PennelError::storage)?;
     let mut result = Err(PennelError::NotFound);
     for _ in 0..ATTEMPTS {
         if terminal.load(Ordering::SeqCst) {
             break;
         }
-        result = engine.stt(settings, &settings.meeting_stt, &wav, keys);
+        result = engine.stt_meeting(settings, &wav, keys);
         if result.is_ok() {
             break;
         }
     }
     let mut segment = job.failed();
-    if let Ok(text) = result {
+    let mut spans = Vec::new();
+    if let Ok(transcript) = result {
         segment.failed = false;
-        segment.text = if is_hallucination(&text) {
+        segment.text = if is_hallucination(&transcript.text) {
             String::new()
         } else {
-            text
+            spans = transcript
+                .spans
+                .into_iter()
+                .map(|span| {
+                    crate::TimedTextSpan(
+                        span.start_byte,
+                        span.end_byte,
+                        job.start_ms.saturating_add(span.start_ms),
+                        job.start_ms.saturating_add(span.end_ms),
+                    )
+                })
+                .collect();
+            transcript.text
         };
     }
-    Ok(segment)
+    Ok((segment, spans))
 }
 
 impl MeetingSession {
+    pub fn utterance_snapshot(&self) -> (u64, Vec<crate::MeetingUtterance>) {
+        let mut progress = self.progress.lock().unwrap();
+        let visible = progress.visible();
+        (progress.revision, progress.canonical(&visible))
+    }
+
     pub fn transcript_revision(&self) -> u64 {
         self.progress.lock().unwrap().revision
     }
@@ -695,6 +783,26 @@ impl MeetingSession {
 
 #[uniffi::export]
 impl MeetingSession {
+    pub fn transcript_snapshot_json(&self) -> Result<String, PennelError> {
+        let (revision, rows, preview) = {
+            let mut progress = self.progress.lock().unwrap();
+            let visible = progress.visible();
+            (
+                progress.revision,
+                progress.canonical(&visible),
+                progress.preview.snapshot(progress.revision),
+            )
+        };
+        serde_json::to_string(&serde_json::json!({
+            "meeting_uid": self.meeting_uid,
+            "revision": revision,
+            "metadata_status": "valid",
+            "transcript": crate::transcript_projection::rows(&rows)?,
+            "preview": preview,
+        }))
+        .map_err(PennelError::storage)
+    }
+
     pub fn preview_snapshot(&self) -> MeetingPreviewSnapshot {
         let progress = self.progress.lock().unwrap();
         progress.preview.snapshot(progress.revision)
@@ -1812,6 +1920,7 @@ mod tests {
             .unwrap();
         let (sender, _receiver) = mpsc::sync_channel(INGRESS_CAPACITY);
         let session = MeetingSession {
+            meeting_uid: store.uid_of(&id).unwrap(),
             id,
             store,
             preview_vocabulary: Vec::new(),

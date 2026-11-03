@@ -22,6 +22,43 @@ enum BridgeJSON {
         ["start_ms": value.startMs, "end_ms": value.endMs, "speaker": value.speaker == .me ? "me" : "others",
          "text": value.text, "failed": value.failed, "voice": optional(value.voice)]
     }
+    static func transcriptProjection(_ text: String) throws -> [String: Any] {
+        let value = try object(text)
+        guard let uid = value["meeting_uid"] as? String, !uid.isEmpty,
+              value["revision"] is NSNumber, value["metadata_status"] is String,
+              value["transcript"] is [[String: Any]] else {
+            throw PennelBridgeError("invalid_response", "The transcript snapshot could not be read.")
+        }
+        return value
+    }
+    static func utteranceAudioProjection(_ text: String) throws -> (speaker: Speaker, sourceID: String, startMs: UInt64) {
+        let value = try object(text)
+        guard let source = value["source"] as? String,
+              let sourceID = value["source_id"] as? String, !sourceID.isEmpty,
+              let start = value["start_ms"] as? NSNumber,
+              start.doubleValue.isFinite, start.doubleValue >= 0,
+              start.doubleValue.rounded(.towardZero) == start.doubleValue,
+              start.doubleValue < Double(UInt64.max) else {
+            throw PennelBridgeError("invalid_response", "The utterance audio source could not be read.")
+        }
+        let speaker: Speaker
+        switch source {
+        case "me": speaker = .me
+        case "others": speaker = .others
+        default: throw PennelBridgeError("invalid_response", "Unknown physical audio source.")
+        }
+        return (speaker, sourceID, start.uint64Value)
+    }
+    static func audioTrack(_ track: MeetingAudioTrack) -> [String: Any] {
+        var value: [String: Any] = ["speaker": track.speaker == .me ? "me" : "others", "available": track.available]
+        switch track.relativePath {
+        case "audio/microphone.m4a": value["source_id"] = "microphone"
+        case "audio/system.m4a": value["source_id"] = "system_audio"
+        case "audio/room.m4a": value["source_id"] = "room_microphone"
+        default: break
+        }
+        return value
+    }
     static func meeting(_ value: MeetingInfo) -> [String: Any] {
         ["id": value.id, "title": value.title, "start_iso": value.startIso,
          "duration_min": value.durationMin, "has_summary": value.hasSummary]
@@ -36,8 +73,14 @@ enum BridgeJSON {
     }
     static func passage(_ value: Passage) -> [String: Any] {
         let kind: String = switch value.kind { case .notes: "notes"; case .transcript: "transcript"; case .summary: "summary" }
-        return ["meeting_id": value.meetingId, "title": value.title, "start_iso": value.startIso,
-                "kind": kind, "start_ms": optional(value.startMs), "text": value.text, "snippet": value.snippet]
+        var result: [String: Any] = ["meeting_id": value.meetingId, "title": value.title, "start_iso": value.startIso,
+                                    "kind": kind, "start_ms": optional(value.startMs), "text": value.text, "snippet": value.snippet]
+        if let uid = value.meetingUid { result["meeting_uid"] = uid }
+        if !value.utteranceIds.isEmpty {
+            result["utterance_ids"] = value.utteranceIds
+            result["utterance_fingerprints"] = value.utteranceFingerprints
+        }
+        return result
     }
     static func answer(_ value: MeetingAnswer) -> [String: Any] {
         ["text": value.text, "citations": value.citations.map { ["number": $0.number, "passage": passage($0.passage)] }]
@@ -146,6 +189,70 @@ struct PennelBridgeError: LocalizedError, Sendable {
     let message: String
     init(_ code: String, _ message: String) { self.code = code; self.message = message }
     var errorDescription: String? { message }
+}
+
+@MainActor
+final class NativeTranscriptProjectionCache {
+    private struct Request: Sendable {
+        let key: String
+        let revision: UInt64
+        let load: @Sendable () throws -> String
+    }
+    // The parsed JSON tree is immutable; only the owning main actor publishes its value copies.
+    private struct Projection: @unchecked Sendable {
+        let value: [String: Any]
+        let revision: UInt64
+        init(_ text: String) throws {
+            value = try BridgeJSON.transcriptProjection(text)
+            guard let number = value["revision"] as? NSNumber else { throw PennelBridgeError("invalid_response", "The transcript revision is unavailable.") }
+            revision = number.uint64Value
+        }
+    }
+    private var wanted: Request?
+    private var cached: (key: String, projection: Projection)?
+    private var failed: (key: String, revision: UInt64)?
+    private var running = false
+    private var changed: (@MainActor () -> Void)?
+
+    func value(key: String, revision: UInt64, load: @escaping @Sendable () throws -> String, changed: @escaping @MainActor () -> Void) -> [String: Any]? {
+        if wanted?.key != key { cached = nil; failed = nil }
+        wanted = Request(key: key, revision: revision, load: load)
+        self.changed = changed
+        startLatest()
+        return cached?.key == key ? cached?.projection.value : nil
+    }
+
+    func clear() {
+        wanted = nil
+        cached = nil
+        failed = nil
+    }
+
+    private func startLatest() {
+        guard !running, let request = wanted,
+              !(cached?.key == request.key && (cached?.projection.revision ?? 0) >= request.revision),
+              !(failed?.key == request.key && failed?.revision == request.revision) else { return }
+        running = true
+        Task {
+            let result = await Task.detached(priority: .utility) { Result { try Projection(request.load()) } }.value
+            running = false
+            if wanted?.key == request.key {
+                switch result {
+                case .success(let projection):
+                    if projection.revision < request.revision {
+                        failed = (request.key, request.revision)
+                    } else if cached?.key != request.key || (cached?.projection.revision ?? 0) <= projection.revision {
+                        cached = (request.key, projection)
+                        failed = nil
+                        changed?()
+                    }
+                case .failure:
+                    failed = (request.key, request.revision)
+                }
+            }
+            startLatest()
+        }
+    }
 }
 
 struct BridgePayload: @unchecked Sendable {

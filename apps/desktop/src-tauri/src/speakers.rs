@@ -55,26 +55,25 @@ pub fn meeting_tracks(dir: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
     )
 }
 
-/// Decodes the system track first and the microphone track only when the core would split it, so
-/// a long call never holds both tracks in memory.
+/// The core requests and processes one physical track at a time before applying their shared result.
 pub fn recognize(shared: &Shared, id: &str, dir: &Path) -> Result<SpeakerRecognition, String> {
     let (microphone, system) = meeting_tracks(dir);
     if microphone.is_none() && system.is_none() {
         return Err("This meeting no longer has saved audio.".into());
     }
-    let decode = |path: Option<PathBuf>| {
-        path.map(|path| crate::platform_audio::decode_audio(&path))
-            .transpose()
-    };
-    let system = decode(system)?;
-    let microphone = if shared.engine.wants_microphone_track(system.as_deref()) {
-        decode(microphone)?
-    } else {
-        None
-    };
     shared
         .engine
-        .recognize_speakers(id.to_owned(), microphone, system)
+        .recognize_speakers_lazy(id.to_owned(), |source| {
+            let path = match source {
+                pennel_core::Speaker::Me => microphone.as_ref(),
+                pennel_core::Speaker::Others => system.as_ref(),
+            };
+            path.map(|path| {
+                crate::platform_audio::decode_audio(path)
+                    .map_err(|message| PennelError::InvalidResponse { message })
+            })
+            .transpose()
+        })
         .map_err(speaker_error)
 }
 
@@ -204,6 +203,28 @@ pub fn cancel_enrollment() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speaker_preflight_rejects_a_missing_meeting_before_decoding_either_archive() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().join("preview"));
+        let directory = root.path().join("unregistered-audio");
+        std::fs::create_dir_all(directory.join("audio")).unwrap();
+        std::fs::write(
+            directory.join("audio/microphone.m4a"),
+            b"owned invalid audio fixture",
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("audio/system.m4a"),
+            b"owned invalid audio fixture",
+        )
+        .unwrap();
+        assert_eq!(
+            recognize(&shared, "missing-owned-meeting", &directory).unwrap_err(),
+            speaker_error(PennelError::NotFound)
+        );
+    }
 
     #[test]
     fn tracks_are_found_inside_the_meeting_folder_only() {

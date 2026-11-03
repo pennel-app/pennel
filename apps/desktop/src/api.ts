@@ -346,11 +346,23 @@ export interface Segment {
   text: string;
   failed: boolean;
   voice: number | null;
+  utterance_id?: string | null;
+  source_id?: MeetingAudioSource | null;
+  source_fingerprint?: string | null;
+  attribution?: SpeakerAttribution | null;
+  attribution_revision?: number;
+  correction_review_required?: boolean;
+  confirmed_speaker_name?: string | null;
 }
+
+export type MeetingAudioSource = "microphone" | "system_audio" | "system" | "room_microphone";
+export interface SpeakerAttribution { kind: "unknown" | "single" | "mixed" | "overlap"; voices: number[]; self_voice?: boolean }
+export type TranscriptMetadataStatus = "valid" | "absent" | "pending" | "stale" | "unsupported" | "corrupt";
 
 export interface MeetingStatus {
   meeting_uid?: string | null;
   transcript_revision?: number;
+  metadata_status?: TranscriptMetadataStatus;
   preview?: MeetingPreviewSnapshot | null;
   recognition?: { provider_kind: ProviderKind | null; provider_name: string; model: string; language: string | null };
   recording: boolean;
@@ -440,6 +452,9 @@ export interface LiveQuestionRequest {
 }
 
 export interface MeetingDetail {
+  meeting_uid?: string;
+  metadata_status?: TranscriptMetadataStatus;
+  revision?: number;
   info: MeetingInfo | null;
   notes: string;
   summary: string | null;
@@ -447,7 +462,7 @@ export interface MeetingDetail {
   speakers: { voice: number; name: string }[];
   dir: string;
   attendees: string[];
-  audio_tracks: { speaker: Speaker; available: boolean }[];
+  audio_tracks: { speaker: Speaker; source_id?: MeetingAudioSource | null; available: boolean }[];
   summary_outdated: boolean;
   retranscription_plan: MeetingRetranscriptionPlan;
   retranscription_status: MeetingRetranscriptionStatus | null;
@@ -487,6 +502,9 @@ export interface Passage {
   start_ms: number | null;
   text: string;
   snippet: string;
+  meeting_uid?: string | null;
+  utterance_ids?: string[];
+  utterance_fingerprints?: string[];
 }
 
 export interface LibrarySearch {
@@ -692,6 +710,8 @@ export const api = {
   copyText: (text: string, html: string | null = null) => invoke<void>("copy_text", { text, html }),
   playMeetingAudio: (id: string, speaker: Speaker, startMs: number) =>
     invoke<void>("play_meeting_audio", { id, speaker, startMs }),
+  playMeetingUtteranceAudio: (id: string, utteranceId: string) =>
+    invoke<void>("play_meeting_utterance_audio", { id, utteranceId }),
   stopAudio: () => invoke<void>("stop_audio"),
   recordPrompt: () => invoke<RecordPrompt | null>("record_prompt"),
   answerRecordPrompt: (answer: "yes" | "no" | "never", promptId: number) =>

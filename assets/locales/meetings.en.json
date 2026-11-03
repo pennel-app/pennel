@@ -196,5 +196,19 @@
   "meetings.captions_busy": "Live captions are paused while speech is processed.",
   "meetings.captions_failed": "Live captions are unavailable. Finalized transcription continues.",
   "meetings.captions_unsupported": "This provider returns completed chunks of 15–30 seconds.",
-  "meetings.captions_stopped": "Live captions have stopped."
+  "meetings.captions_stopped": "Live captions have stopped.",
+  "meetings.attribution_unknown": "Unknown speaker",
+  "meetings.attribution_mixed": "Mixed speakers",
+  "meetings.attribution_overlap": "Overlapping speakers",
+  "meetings.attribution_metadata_absent": "Detailed speaker timing is unavailable for this older transcript.",
+  "meetings.attribution_metadata_pending": "Speaker attribution is being saved. The transcript remains available.",
+  "meetings.attribution_metadata_stale": "Speaker timing no longer matches this transcript. Review attribution before relying on the labels.",
+  "meetings.attribution_metadata_unsupported": "This speaker information uses a newer format. Update Pennel to review it.",
+  "meetings.attribution_metadata_corrupt": "Speaker timing could not be read. The original transcript is kept.",
+  "meetings.attribution_source_microphone": "Microphone",
+  "meetings.attribution_source_system": "Computer audio",
+  "meetings.attribution_source_room_microphone": "Room microphone",
+  "meetings.attribution_source_system_audio": "Computer audio",
+  "meetings.attribution_correction_review": "Speaker correction needs review.",
+  "meetings.passage_audio_unavailable": "The audio source for this passage is unavailable."
 }

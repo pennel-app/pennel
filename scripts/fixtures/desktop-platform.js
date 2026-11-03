@@ -41,6 +41,11 @@
     { start_ms: 8000, end_ms: 14000, speaker: "me", text: "Ik bevestig de volgende afspraak.", failed: false, voice: null },
     { start_ms: 14000, end_ms: 21000, speaker: "others", text: "Dan zet ik het voorstel nog vandaag in de map.", failed: false, voice: 2 },
   ];
+  const richUtterance = (segment, index) => ({ ...segment, utterance_id: segment.utterance_id || `qa-utterance-${index}`,
+    source_id: segment.source_id || (segment.speaker === "me" ? "microphone" : "system"),
+    attribution: segment.attribution || (segment.voice == null ? { kind: "unknown", voices: [] } : { kind: "single", voices: [segment.voice] }), attribution_revision: segment.attribution_revision || 1 });
+  if (options.rich_utterances) transcript.forEach((segment, index) => Object.assign(segment, richUtterance(segment, index),
+    options.rich_attribution_states ? { attribution: { kind: ["overlap", "unknown", "mixed"][index], voices: index === 1 ? [] : [1, 2] } } : {}));
   const available = () => ({ status: "available", reason: null });
   const providers = [
     { id: "local", kind: "local", name: "Lokaal", base_url: "" },
@@ -216,10 +221,16 @@
   const previewSnapshot = () => ({ session_id: `preview-${liveSession}`, revision: previewRevision,
     transcript_revision: transcriptRevision, tracks: clone(previewTracks) });
   let activeMeetingId = meetingId;
+  let metadataStatus = options.metadata_status || "valid";
+  let playbackRequest = null;
   const retainedMeetings = new Map();
-  const storedTranscript = segments => segments.map(segment => ({ ...segment, end_ms: segment.start_ms,
+  const storedTranscript = segments => segments.map(segment => segment.utterance_id ? clone(segment) : ({ ...segment, end_ms: segment.start_ms,
     text: segment.text.trim().replace(/\p{White_Space}+/gu, " "), voice: segment.speaker === "others" ? segment.voice ?? null : null }));
   const fingerprint = async text => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))), byte => byte.toString(16).padStart(2, "0")).join("");
+  const evidenceValue = segment => segment.utterance_id
+    ? [segment.utterance_id, segment.source_id ?? null, segment.start_ms, segment.end_ms, segment.failed ? "" : segment.text.split(/\p{White_Space}+/u).filter(Boolean).join(" "), segment.failed]
+    : [segment.start_ms, segment.speaker, segment.text.trim().replace(/\p{White_Space}+/gu, " "), segment.failed, segment.speaker === "others" ? segment.voice ?? null : null];
+  const refreshFingerprints = () => Promise.all(transcript.filter(segment => segment.utterance_id).map(async segment => { segment.source_fingerprint = await fingerprint(JSON.stringify(evidenceValue(segment))); }));
   const completeLiveQuestion = (requestId, force = false) => {
     const request = liveRequests.get(requestId);
     if (!request || !force && (request.cancelled || request.completed)) return false;
@@ -242,6 +253,7 @@
       transcription_warning: paused ? "Transcriptie is tijdelijk gepauzeerd. Je audio en herstelbestanden blijven lokaal bewaard." : null,
       terminal_error: storageError ? "De opname is gestopt omdat bewaren niet lukt." : null, can_retry_persistence: storageError,
       pending: storageError ? 1 : paused ? 3 : 0, transcript_revision: retained ? transcriptRevision : 0,
+      ...(retained && options.rich_utterances ? { metadata_status: metadataStatus } : {}),
       ...(retained && options.live_captions ? { preview: previewSnapshot() } : {}),
       ...(includeContent ? { notes, transcript: retained ? clone(transcript) : [] } : {}),
       ...(retained ? { recognition: { provider_kind: "local", provider_name: "Lokaal", model: settings.meeting_stt.model, language: "nl" } } : {}),
@@ -250,6 +262,7 @@
 
   async function invoke(command, args = {}) {
     calls.push(command);
+    if (options.rich_utterances && ["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings"].includes(command)) await refreshFingerprints();
     switch (command) {
       case "desktop_environment": return {
         material: options.native_material || "unavailable",
@@ -458,8 +471,9 @@
           const base = `${segment.speaker}:${segment.start_ms}`;
           const count = occurrences.get(base) || 0; occurrences.set(base, count + 1);
           if (segment.failed || !segment.text.trim()) continue;
-          anchors.push({ passage: passage("transcript", segment.start_ms, `${segment.speaker === "me" ? "Ik" : "Anderen"}: ${segment.text}`),
-            segment_keys: [`${base}:${count}`], segment_fingerprints: [await fingerprint(JSON.stringify([segment.start_ms, segment.speaker, segment.text.trim().replace(/\p{White_Space}+/gu, " "), segment.failed, segment.speaker === "others" ? segment.voice ?? null : null]))],
+          anchors.push({ passage: { ...passage("transcript", segment.start_ms, `${segment.speaker === "me" ? "Ik" : "Anderen"}: ${segment.text}`),
+              ...(segment.utterance_id ? { meeting_uid: meetingUid, utterance_ids: [segment.utterance_id], utterance_fingerprints: [segment.source_fingerprint] } : {}) },
+            segment_keys: [segment.utterance_id ? `utterance:${segment.utterance_id}` : `${base}:${count}`], segment_fingerprints: [await fingerprint(JSON.stringify(evidenceValue(segment)))],
             notes_start: null, notes_end: null, source_text: segment.text });
         }
         let notesOffset = 0;
@@ -493,11 +507,19 @@
         emit("meeting-updated", null); return null;
       }
       case "meetings": return options.empty ? [] : clone(library);
-      case "meeting_detail": return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? notes, summary, transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", available: !!options.saved_audio }, { speaker: "others", available: !!options.saved_audio }],
+      case "meeting_detail": return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? notes, summary, transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", source_id: "microphone", available: !!options.saved_audio }, { speaker: "others", source_id: "system", available: !!options.saved_audio }],
+        ...(options.rich_utterances ? { meeting_uid: meetingUid, metadata_status: metadataStatus, revision: transcriptRevision } : {}),
         summary_outdated: summaryOutdated, retranscription_status: clone(retranscriptionStatus),
         retranscription_plan: { recognition: frozenMeetingRecognition(), available: !!options.saved_audio && !retranscriptionStatus?.running && frozenMeetingRecognition().provider_kind === "local", reason: options.saved_audio ? null : "Er is geen bewaarde audio om opnieuw te transcriberen." } };
       case "search_library": return { meetings: options.empty ? [] : clone(library), passages: [] };
-      case "ask_meetings": return { text: "De planning wordt maandag afgerond. Jij bevestigt de volgende afspraak.", citations: [{ number: 1, passage: { meeting_id: meetingId, title: "Projectoverleg", start_iso: meeting.start_iso, kind: "transcript", start_ms: 0, text: transcript[0].text, snippet: transcript[0].text } }] };
+      case "ask_meetings": return { text: "De planning wordt maandag afgerond. Jij bevestigt de volgende afspraak.", citations: [{ number: 1, passage: { meeting_id: meetingId, title: "Projectoverleg", start_iso: meeting.start_iso, kind: "transcript", start_ms: 0, text: transcript[0].text, snippet: transcript[0].text,
+        ...(transcript[0].utterance_id ? { meeting_uid: meetingUid, utterance_ids: [transcript[0].utterance_id], utterance_fingerprints: [transcript[0].source_fingerprint] } : {}) } }] };
+      case "play_meeting_utterance_audio": {
+        const utterance = transcript.find(segment => segment.utterance_id === args.utteranceId);
+        if (!utterance?.source_id || !options.saved_audio) throw new Error("Synthetic utterance audio is unavailable");
+        playbackRequest = { ...clone(args), source_id: utterance.source_id, start_ms: utterance.start_ms };
+        return null;
+      }
       case "meeting_templates": return [["algemeen", "General"], ["een-op-een", "One-to-one"], ["klantgesprek", "Client meeting"], ["standup", "Standup"]].map(([id, name]) => ({ id, name, builtin: true, customized: false }));
       case "template_source": return "Focus on what was discussed and agreed.\n\n## Summary\n## Decisions\n## Action items\n";
       case "mark_lines": return summary.split("\n").filter(Boolean).map(text => ({ text, mine: false }));
@@ -612,7 +634,9 @@
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
   globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace,
-    workspace: { append: segment => { transcript.push(clone(segment)); transcriptRevision++; },
+    workspace: { append: segment => { transcript.push(options.rich_utterances ? richUtterance(clone(segment), transcript.length) : clone(segment)); transcriptRevision++; },
+      attribution: (index, update) => { Object.assign(transcript[index], clone(update)); transcript[index].attribution_revision = (transcript[index].attribution_revision || 0) + 1; transcriptRevision++; },
+      metadata: state => { metadataStatus = state; }, playback: () => clone(playbackRequest),
       preview: (source, update) => {
         const track = previewTracks.find(track => track.source === source);
         if (!track) throw new Error("Unknown synthetic preview source");

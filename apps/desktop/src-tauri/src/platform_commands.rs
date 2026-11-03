@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 #[cfg(not(target_os = "macos"))]
@@ -123,6 +123,69 @@ pub async fn play_meeting_audio(
         if !path.starts_with(&dir) {
             return Err("Audio track is outside the meeting folder".into());
         }
+        crate::platform_audio::play(&path, start_ms)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[derive(Deserialize)]
+struct UtteranceAudioProjection {
+    source: pennel_core::Speaker,
+    source_id: String,
+    start_ms: u64,
+}
+
+fn utterance_audio_projection(value: &str) -> Result<UtteranceAudioProjection, String> {
+    serde_json::from_str(value).map_err(|_| "The utterance audio source could not be read.".into())
+}
+
+fn utterance_audio_path(
+    engine: &pennel_core::PennelEngine,
+    id: &str,
+    target: UtteranceAudioProjection,
+) -> Result<(std::path::PathBuf, u64), String> {
+    let dir = crate::commands::checked_meeting_dir(engine, id)?;
+    let track = engine
+        .meeting_audio_tracks(id.to_owned())
+        .into_iter()
+        .find(|track| {
+            let source_id = match track.source {
+                pennel_core::RecordingSource::Microphone => "microphone",
+                pennel_core::RecordingSource::SystemAudio => "system_audio",
+                pennel_core::RecordingSource::RoomMicrophone => "room_microphone",
+            };
+            track.available
+                && track.speaker == target.source
+                && (source_id == target.source_id
+                    || (source_id == "system_audio" && target.source_id == "system"))
+        })
+        .ok_or("This utterance no longer has saved audio for its physical source.")?;
+    let path = dir
+        .join(track.relative_path)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    if !path.starts_with(&dir) {
+        return Err("Audio track is outside the meeting folder".into());
+    }
+    Ok((path, target.start_ms))
+}
+
+#[tauri::command]
+pub async fn play_meeting_utterance_audio(
+    id: String,
+    utterance_id: String,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<(), String> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _job = crate::meeting_runtime::LibraryJob::new(&shared)?;
+        let value = shared
+            .engine
+            .meeting_utterance_audio_json(id.clone(), utterance_id)
+            .map_err(|error| error.to_string())?;
+        let (path, start_ms) =
+            utterance_audio_path(&shared.engine, &id, utterance_audio_projection(&value)?)?;
         crate::platform_audio::play(&path, start_ms)
     })
     .await
@@ -506,4 +569,73 @@ pub async fn install_update(app: AppHandle, shared: State<'_, Arc<Shared>>) -> R
     }
     update.install(bytes).map_err(|error| error.to_string())?;
     app.restart();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utterance_playback_uses_the_physical_source_even_when_the_person_label_differs() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().join("preview"));
+        let session = shared
+            .engine
+            .clone()
+            .start_meeting(
+                "Owned audio sources".into(),
+                pennel_core::ApiKeys {
+                    by_provider: Default::default(),
+                },
+            )
+            .unwrap();
+        session.stop().unwrap();
+        let directory = std::path::PathBuf::from(session.dir());
+        std::fs::create_dir_all(directory.join("audio")).unwrap();
+        std::fs::write(
+            directory.join("audio/microphone.m4a"),
+            b"owned microphone fixture",
+        )
+        .unwrap();
+        std::fs::write(directory.join("audio/system.m4a"), b"owned system fixture").unwrap();
+        let target = utterance_audio_projection(r#"{"source":"me","source_id":"microphone","start_ms":1350,"speaker":"others","voice":8}"#).unwrap();
+        let (path, start) = utterance_audio_path(&shared.engine, &session.id(), target).unwrap();
+        assert_eq!(
+            path,
+            directory
+                .join("audio/microphone.m4a")
+                .canonicalize()
+                .unwrap()
+        );
+        assert_eq!(start, 1350);
+        let contradictory = utterance_audio_projection(
+            r#"{"source":"others","source_id":"microphone","start_ms":1350}"#,
+        )
+        .unwrap();
+        assert!(utterance_audio_path(&shared.engine, &session.id(), contradictory).is_err());
+        assert!(utterance_audio_projection(r#"{"speaker":"others","start_ms":1350}"#).is_err());
+    }
+
+    #[test]
+    fn durable_playback_refuses_a_legacy_row_without_a_verified_utterance_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().join("preview"));
+        let session = shared
+            .engine
+            .clone()
+            .start_meeting(
+                "Legacy audio fixture".into(),
+                pennel_core::ApiKeys {
+                    by_provider: Default::default(),
+                },
+            )
+            .unwrap();
+        session.stop().unwrap();
+        assert!(
+            shared
+                .engine
+                .meeting_utterance_audio_json(session.id(), "unverified-legacy-id".into())
+                .is_err()
+        );
+    }
 }

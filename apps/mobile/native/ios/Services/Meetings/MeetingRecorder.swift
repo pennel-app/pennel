@@ -54,8 +54,17 @@ final class AACArchive: MeetingArchiving {
 }
 
 extension PennelEngine {
-    func meetingArchiveURL(id: String, speaker: Speaker) -> URL? {
-        guard let track = meetingAudioTracks(id: id).first(where: { $0.speaker == speaker && $0.available }) else { return nil }
+    func meetingArchiveURL(id: String, speaker: Speaker, sourceID: String? = nil) -> URL? {
+        guard let track = meetingAudioTracks(id: id).first(where: {
+            guard $0.speaker == speaker && $0.available else { return false }
+            guard let sourceID else { return true }
+            let physical: String = switch $0.source {
+            case .microphone: "microphone"
+            case .systemAudio: "system_audio"
+            case .roomMicrophone: "room_microphone"
+            }
+            return physical == sourceID || (physical == "system_audio" && sourceID == "system")
+        }) else { return nil }
         let root = URL(fileURLWithPath: meetingDir(id: id)).resolvingSymlinksInPath()
         let url = root.appendingPathComponent(track.relativePath).resolvingSymlinksInPath()
         guard url.path.hasPrefix(root.path + "/"),

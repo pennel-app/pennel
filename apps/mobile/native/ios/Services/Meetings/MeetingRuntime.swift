@@ -138,6 +138,11 @@ final class MeetingRuntime: DictationMeetingHook {
     /// The recording one and the one whose final save failed: sync must leave both alone.
     var unfinalisedMeetingIds: [String] { [activeMeetingId, retainedId].compactMap { $0 } }
 
+    func transcriptSnapshotSession(id: String? = nil) -> MeetingSession? {
+        let current = session ?? retained
+        return id == nil || current?.id() == id ? current : nil
+    }
+
     @ObservationIgnored var onFinished: (@MainActor (MeetingFinish) -> Void)?
     /// After a later write to a finished meeting (the automatic summary).
     @ObservationIgnored var onUpdated: (@MainActor (String) -> Void)?

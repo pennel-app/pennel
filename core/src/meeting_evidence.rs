@@ -4,6 +4,103 @@ use sha2::{Digest, Sha256};
 
 use crate::{Passage, PassageKind, Segment, Speaker};
 
+enum UtteranceSpeakerLabel {
+    Name(String),
+    Number(u32),
+    SelfVoice,
+    Unknown,
+    NeedsReview,
+    Mixed,
+    Overlap,
+}
+
+fn utterance_speaker_identity(
+    row: &crate::MeetingUtterance,
+    names: &[crate::SpeakerName],
+) -> UtteranceSpeakerLabel {
+    let manual = row.metadata.manual.as_ref().filter(|manual| {
+        !manual.review_required && manual.source_fingerprint == row.metadata.source_fingerprint
+    });
+    if let Some(name) = manual
+        .and_then(|manual| manual.name.as_deref())
+        .filter(|name| !name.trim().is_empty())
+    {
+        return UtteranceSpeakerLabel::Name(name.into());
+    }
+    if (row.metadata.manual.is_some() && manual.is_none())
+        || !row.metadata.unresolved_manual.is_empty()
+    {
+        return UtteranceSpeakerLabel::NeedsReview;
+    }
+    let voice = manual.and_then(|manual| manual.voice).or_else(|| {
+        (row.metadata.attribution.kind == crate::AttributionKind::Single
+            && row.metadata.attribution.voices.len() == 1)
+            .then(|| row.metadata.attribution.voices[0])
+    });
+    if let Some(voice) = voice {
+        return names
+            .iter()
+            .find(|name| name.voice == voice)
+            .map(|name| UtteranceSpeakerLabel::Name(name.name.clone()))
+            .unwrap_or(UtteranceSpeakerLabel::Number(voice));
+    }
+    if row.metadata.attribution.kind == crate::AttributionKind::Single
+        && row.metadata.attribution.self_voice
+    {
+        return UtteranceSpeakerLabel::SelfVoice;
+    }
+    match row.metadata.attribution.kind {
+        crate::AttributionKind::Mixed => UtteranceSpeakerLabel::Mixed,
+        crate::AttributionKind::Overlap => UtteranceSpeakerLabel::Overlap,
+        _ => UtteranceSpeakerLabel::Unknown,
+    }
+}
+
+pub(crate) fn utterance_speaker_label(
+    row: &crate::MeetingUtterance,
+    names: &[crate::SpeakerName],
+) -> String {
+    match utterance_speaker_identity(row, names) {
+        UtteranceSpeakerLabel::Name(name) => name,
+        UtteranceSpeakerLabel::Number(voice) => format!("Speaker {voice}"),
+        UtteranceSpeakerLabel::SelfVoice => "Me".into(),
+        UtteranceSpeakerLabel::Unknown => "Unknown speaker".into(),
+        UtteranceSpeakerLabel::NeedsReview => "Unknown speaker (correction needs review)".into(),
+        UtteranceSpeakerLabel::Mixed => "Mixed speakers".into(),
+        UtteranceSpeakerLabel::Overlap => "Overlapping speakers".into(),
+    }
+}
+
+pub(crate) fn localized_utterance_speaker_label(
+    row: &crate::MeetingUtterance,
+    names: &[crate::SpeakerName],
+    language: crate::InterfaceLanguage,
+) -> String {
+    let key = match utterance_speaker_identity(row, names) {
+        UtteranceSpeakerLabel::Name(name) => return name,
+        UtteranceSpeakerLabel::Number(voice) => {
+            return crate::ui_text(
+                language,
+                "meetings.speaker_number",
+                &[("number", &voice.to_string())],
+            );
+        }
+        UtteranceSpeakerLabel::SelfVoice => "meetings.speaker_me",
+        UtteranceSpeakerLabel::Unknown => "meetings.attribution_unknown",
+        UtteranceSpeakerLabel::NeedsReview => {
+            return format!(
+                "{} ({})",
+                crate::ui_text(language, "meetings.attribution_unknown", &[]),
+                crate::ui_text(language, "meetings.attribution_correction_review", &[])
+                    .trim_end_matches('.')
+            );
+        }
+        UtteranceSpeakerLabel::Mixed => "meetings.attribution_mixed",
+        UtteranceSpeakerLabel::Overlap => "meetings.attribution_overlap",
+    };
+    crate::ui_text(language, key, &[])
+}
+
 /// Desktop request evidence; this is deliberately independent of the persisted/UniFFI records.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MeetingSourceAnchor {
@@ -47,6 +144,29 @@ pub fn segment_evidence_revision(segment: &Segment) -> String {
             text,
             segment.failed,
             voice
+        ])
+        .to_string(),
+    )
+}
+
+pub fn utterance_evidence_revision(row: &crate::MeetingUtterance) -> String {
+    let text = if row.segment.failed {
+        String::new()
+    } else {
+        row.segment
+            .text
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    evidence_revision(
+        &serde_json::json!([
+            row.metadata.utterance_id,
+            row.metadata.source_id,
+            row.segment.start_ms,
+            row.segment.end_ms,
+            text,
+            row.segment.failed
         ])
         .to_string(),
     )
@@ -111,6 +231,9 @@ impl MeetingEvidence {
             start_ms,
             snippet: text.chars().take(180).collect(),
             text,
+            meeting_uid: None,
+            utterance_ids: Vec::new(),
+            utterance_fingerprints: Vec::new(),
         };
         let mut included_through_ms = 0;
         for segment in segments {
@@ -172,6 +295,69 @@ impl MeetingEvidence {
         }
     }
 
+    pub fn new_with_utterances(
+        uid: &str,
+        title: &str,
+        start_iso: &str,
+        notes: &str,
+        rows: &[crate::MeetingUtterance],
+        names: &[crate::SpeakerName],
+    ) -> Result<Self, crate::PennelError> {
+        let mut identities = std::collections::HashSet::new();
+        if uid.trim().is_empty()
+            || rows.iter().any(|row| {
+                row.metadata.utterance_id.trim().is_empty()
+                    || !identities.insert(row.metadata.utterance_id.as_str())
+            })
+        {
+            return Err(crate::PennelError::InvalidResponse {
+                message: "The question's utterance sources are ambiguous; it was not sent.".into(),
+            });
+        }
+        let mut result = Self::new(uid, title, start_iso, notes, &[]);
+        for anchor in &mut result.anchors {
+            anchor.passage.meeting_uid = Some(uid.into());
+        }
+        let mut anchors = Vec::new();
+        for row in rows
+            .iter()
+            .filter(|row| !row.segment.failed && !row.segment.text.trim().is_empty())
+        {
+            result.included_through_ms = result.included_through_ms.max(row.segment.end_ms);
+            let label = utterance_speaker_label(row, names);
+            let fingerprint = utterance_evidence_revision(row);
+            for (_, text) in parts(&row.segment.text) {
+                let labeled = format!("{label}: {text}");
+                anchors.push(MeetingSourceAnchor {
+                    passage: Passage {
+                        meeting_id: uid.into(),
+                        title: title.into(),
+                        start_iso: start_iso.into(),
+                        kind: PassageKind::Transcript,
+                        start_ms: Some(row.segment.start_ms),
+                        snippet: labeled.chars().take(180).collect(),
+                        text: labeled,
+                        meeting_uid: Some(uid.into()),
+                        utterance_ids: vec![row.metadata.utterance_id.clone()],
+                        utterance_fingerprints: vec![fingerprint.clone()],
+                    },
+                    segment_keys: vec![format!("utterance:{}", row.metadata.utterance_id)],
+                    segment_fingerprints: vec![fingerprint.clone()],
+                    notes_start: None,
+                    notes_end: None,
+                    source_text: text.into(),
+                });
+            }
+        }
+        anchors.extend(result.anchors);
+        result.sources = anchors
+            .iter()
+            .map(|anchor| anchor.passage.clone())
+            .collect();
+        result.anchors = anchors;
+        Ok(result)
+    }
+
     pub fn selected_sources(&self, question: &str, apple: bool) -> Vec<Passage> {
         let size = self
             .sources
@@ -220,6 +406,124 @@ mod tests {
             failed: false,
             voice: None,
         }
+    }
+
+    #[test]
+    fn canonical_anchors_survive_attribution_changes_but_not_source_edits() {
+        let mut row = crate::MeetingUtterance::new(
+            segment("Ik stuur de offerte morgen.", 1_250),
+            Some("microphone".into()),
+        );
+        row.metadata.attribution = crate::AutomaticAttribution {
+            kind: crate::AttributionKind::Single,
+            voices: vec![1],
+            turns: vec![],
+            self_voice: false,
+        };
+        let before =
+            MeetingEvidence::new_with_utterances("uid", "M", "", "", &[row.clone()], &[]).unwrap();
+        row.segment.speaker = Speaker::Others;
+        row.segment.voice = Some(2);
+        row.metadata.attribution.voices = vec![2];
+        row.metadata.attribution_revision += 1;
+        let after =
+            MeetingEvidence::new_with_utterances("uid", "Renamed", "", "", &[row.clone()], &[])
+                .unwrap();
+        assert_eq!(
+            before.anchors[0].segment_keys,
+            vec![format!("utterance:{}", row.metadata.utterance_id)]
+        );
+        assert_eq!(
+            before.anchors[0].segment_keys,
+            after.anchors[0].segment_keys
+        );
+        assert_eq!(
+            before.anchors[0].segment_fingerprints,
+            after.anchors[0].segment_fingerprints
+        );
+        assert_eq!(
+            after.sources[0].utterance_ids,
+            vec![row.metadata.utterance_id.clone()]
+        );
+        assert_eq!(after.sources[0].meeting_uid.as_deref(), Some("uid"));
+        row.segment.text.push_str(" Changed.");
+        let changed =
+            MeetingEvidence::new_with_utterances("uid", "M", "", "", &[row], &[]).unwrap();
+        assert_ne!(
+            before.anchors[0].segment_fingerprints,
+            changed.anchors[0].segment_fingerprints
+        );
+        assert!(before.anchors_for_sources(&changed.sources).is_err());
+    }
+
+    #[test]
+    fn canonical_sources_preserve_unicode_uncertainty_and_valid_manual_names() {
+        let text = "😀 één échte zin\u{0085}met\u{a0}ruimte. ".repeat(40);
+        let mut row = crate::MeetingUtterance::new(segment(&text, 100), Some("microphone".into()));
+        for (kind, expected) in [
+            (crate::AttributionKind::Unknown, "Unknown speaker"),
+            (crate::AttributionKind::Mixed, "Mixed speakers"),
+            (crate::AttributionKind::Overlap, "Overlapping speakers"),
+        ] {
+            row.metadata.attribution.kind = kind;
+            let evidence = MeetingEvidence::new_with_utterances(
+                "uid",
+                "M",
+                "",
+                "😀 notes",
+                &[row.clone()],
+                &[],
+            )
+            .unwrap();
+            assert!(evidence.sources[0].text.starts_with(expected));
+            assert_eq!(
+                evidence
+                    .anchors
+                    .iter()
+                    .filter(|anchor| anchor.passage.kind == PassageKind::Transcript)
+                    .map(|anchor| anchor.source_text.as_str())
+                    .collect::<String>(),
+                text
+            );
+        }
+        row.metadata.manual = Some(crate::ManualCorrection {
+            name: Some("Ada".into()),
+            voice: Some(3),
+            source_fingerprint: row.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let corrected =
+            MeetingEvidence::new_with_utterances("uid", "M", "", "", &[row.clone()], &[]).unwrap();
+        assert!(corrected.sources[0].text.starts_with("Ada:"));
+        row.metadata.manual.as_mut().unwrap().source_fingerprint = "different-source".into();
+        assert_eq!(
+            utterance_speaker_label(&row, &[]),
+            "Unknown speaker (correction needs review)"
+        );
+        row.metadata.manual.as_mut().unwrap().review_required = true;
+        let uncertain =
+            MeetingEvidence::new_with_utterances("uid", "M", "", "", &[row], &[]).unwrap();
+        assert!(!uncertain.sources[0].text.starts_with("Ada:"));
+    }
+
+    #[test]
+    fn canonical_evidence_refuses_ambiguous_duplicate_utterance_ids() {
+        let row = crate::MeetingUtterance::new(segment("Ja.", 100), Some("microphone".into()));
+        assert!(
+            MeetingEvidence::new_with_utterances("uid", "M", "", "", &[row.clone(), row], &[])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn enrolled_self_attribution_is_explicit_and_never_inferred_from_the_track() {
+        let mut row = crate::MeetingUtterance::new(segment("Ja.", 100), Some("microphone".into()));
+        assert_eq!(utterance_speaker_label(&row, &[]), "Unknown speaker");
+        row.metadata.attribution.kind = crate::AttributionKind::Single;
+        row.metadata.attribution.self_voice = true;
+        row.segment.speaker = Speaker::Others;
+        row.metadata.source_id = Some("system_audio".into());
+        assert_eq!(utterance_speaker_label(&row, &[]), "Me");
     }
 
     #[test]
@@ -342,8 +646,20 @@ mod tests {
         store.write_transcript(&id, &[live.clone()]).unwrap();
         let stored = store.read_transcript(&id);
         assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].end_ms, stored[0].start_ms);
+        assert_eq!(stored[0].end_ms, live.end_ms);
         assert_eq!(stored[0].text, "Alpha Beta Gamma Delta");
+        let canonical = store.read_transcript_snapshot(&id).unwrap();
+        assert_eq!(canonical.utterances[0].segment.text, live.text);
+        let canonical_evidence = MeetingEvidence::new_with_utterances(
+            &canonical.meeting_uid,
+            "M",
+            "",
+            "",
+            &canonical.utterances,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(canonical_evidence.anchors[0].source_text, live.text);
         assert_eq!(
             segment_evidence_revision(&stored[0]),
             frozen.anchors[0].segment_fingerprints[0]

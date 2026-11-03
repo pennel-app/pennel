@@ -13,6 +13,9 @@ pub(crate) use transcribe_cpp::CancelToken;
 use transcribe_cpp::{Feature, Model, RunOptions, Session};
 
 use crate::error::PennelError;
+#[cfg(feature = "local-models")]
+use crate::speech_result::SpeechTimingKind;
+use crate::speech_result::SpeechTranscript;
 
 #[cfg(feature = "local-models")]
 struct Loaded {
@@ -111,7 +114,7 @@ fn run(
     vocabulary: &[String],
     cancel: Option<&CancelToken>,
     require_complete: bool,
-) -> Result<String, PennelError> {
+) -> Result<SpeechTranscript, PennelError> {
     if cancel.is_some_and(CancelToken::is_cancelled) {
         return Err(PennelError::Cancelled);
     }
@@ -131,23 +134,101 @@ fn run(
     if cancel.is_some_and(CancelToken::is_cancelled) {
         return Err(PennelError::Cancelled);
     }
-    transcript_text(result, require_complete)
+    transcript_result(
+        result,
+        require_complete,
+        (samples.len() as u64)
+            .saturating_mul(1_000)
+            .div_ceil(16_000),
+    )
 }
 
-#[cfg(feature = "local-models")]
+#[cfg(all(feature = "local-models", test))]
 fn transcript_text(
     result: Result<transcribe_cpp::Transcript, transcribe_cpp::Error>,
     require_complete: bool,
 ) -> Result<String, PennelError> {
+    transcript_result(result, require_complete, u64::MAX).map(|result| result.text)
+}
+
+#[cfg(feature = "local-models")]
+fn transcript_result(
+    result: Result<transcribe_cpp::Transcript, transcribe_cpp::Error>,
+    require_complete: bool,
+    audio_duration_ms: u64,
+) -> Result<SpeechTranscript, PennelError> {
     match result {
-        Ok(transcript) => Ok(transcript.text.trim().to_owned()),
+        Ok(transcript) => Ok(retain_timing(&transcript, audio_duration_ms)),
         Err(error) => match error.partial() {
             Some(partial) if !require_complete && !partial.text.trim().is_empty() => {
-                Ok(partial.text.trim().to_owned())
+                Ok(retain_timing(partial, audio_duration_ms))
             }
             _ => Err(engine_error(error)),
         },
     }
+}
+
+#[cfg(feature = "local-models")]
+fn retain_timing(native: &transcribe_cpp::Transcript, audio_duration_ms: u64) -> SpeechTranscript {
+    use transcribe_cpp::TimestampKind;
+    if matches!(
+        native.timestamp_kind,
+        TimestampKind::None | TimestampKind::Auto
+    ) {
+        return SpeechTranscript::plain(native.text.trim());
+    }
+    let candidates = [
+        (
+            SpeechTimingKind::Token,
+            native
+                .tokens
+                .iter()
+                .map(|part| (part.text.clone(), part.t0_ms, part.t1_ms))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            SpeechTimingKind::Word,
+            native
+                .words
+                .iter()
+                .map(|part| (part.text.clone(), part.t0_ms, part.t1_ms))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            SpeechTimingKind::Segment,
+            native
+                .segments
+                .iter()
+                .map(|part| (part.text.clone(), part.t0_ms, part.t1_ms))
+                .collect::<Vec<_>>(),
+        ),
+    ];
+    for (kind, parts) in candidates {
+        if (kind == SpeechTimingKind::Token && native.timestamp_kind != TimestampKind::Token)
+            || (kind == SpeechTimingKind::Word
+                && !matches!(
+                    native.timestamp_kind,
+                    TimestampKind::Word | TimestampKind::Token
+                ))
+        {
+            continue;
+        }
+        let parts: Option<Vec<_>> = parts
+            .into_iter()
+            .map(|(text, start, end)| {
+                Some((text, u64::try_from(start).ok()?, u64::try_from(end).ok()?))
+            })
+            .collect();
+        if let Some(parts) = parts {
+            let result =
+                SpeechTranscript::from_parts(native.text.clone(), &parts, kind, audio_duration_ms)
+                    .trimmed();
+            if !result.spans.is_empty() {
+                return result;
+            }
+        }
+    }
+    SpeechTranscript::plain(native.text.trim())
 }
 
 /// Only passes options the loaded model can use: an unsupported language falls back to autodetect,
@@ -210,9 +291,14 @@ impl LocalEngine {
         vocabulary: &[String],
     ) -> Result<String, PennelError> {
         self.transcribe_result(model_path, samples, language, vocabulary, false)
+            .map(|result| result.text)
     }
 
     /// Replacing an existing transcript requires successful inference through end-of-stream.
+    #[allow(
+        dead_code,
+        reason = "Retained text-only compatibility projection over complete recognition"
+    )]
     pub(crate) fn transcribe_complete(
         &self,
         model_path: &Path,
@@ -220,6 +306,27 @@ impl LocalEngine {
         language: Option<&str>,
         vocabulary: &[String],
     ) -> Result<String, PennelError> {
+        self.transcribe_result(model_path, samples, language, vocabulary, true)
+            .map(|result| result.text)
+    }
+
+    pub(crate) fn transcribe_timed(
+        &self,
+        model_path: &Path,
+        samples: &[f32],
+        language: Option<&str>,
+        vocabulary: &[String],
+    ) -> Result<SpeechTranscript, PennelError> {
+        self.transcribe_result(model_path, samples, language, vocabulary, false)
+    }
+
+    pub(crate) fn transcribe_complete_timed(
+        &self,
+        model_path: &Path,
+        samples: &[f32],
+        language: Option<&str>,
+        vocabulary: &[String],
+    ) -> Result<SpeechTranscript, PennelError> {
         self.transcribe_result(model_path, samples, language, vocabulary, true)
     }
 
@@ -230,7 +337,7 @@ impl LocalEngine {
         language: Option<&str>,
         vocabulary: &[String],
         require_complete: bool,
-    ) -> Result<String, PennelError> {
+    ) -> Result<SpeechTranscript, PennelError> {
         self.authoritative.fetch_add(1, Ordering::SeqCst);
         let _demand = SpeechDemand(&self.authoritative);
         if let Some(preview) = self.preview_cancel.lock().unwrap().take() {
@@ -270,7 +377,8 @@ impl LocalEngine {
             Err(TryLockError::Poisoned(error)) => error.into_inner(),
         };
         let model = loaded_model(&mut loaded, model_path)?;
-        run(model, samples, language, vocabulary, Some(cancel), false).map(Some)
+        run(model, samples, language, vocabulary, Some(cancel), false)
+            .map(|result| Some(result.text))
     }
 
     pub(crate) fn preview_warm(
@@ -302,7 +410,8 @@ impl LocalEngine {
             cancel.cancel();
             return Err(PennelError::Cancelled);
         }
-        let result = run(model, samples, language, vocabulary, Some(cancel), false).map(Some);
+        let result = run(model, samples, language, vocabulary, Some(cancel), false)
+            .map(|result| Some(result.text));
         self.preview_cancel.lock().unwrap().take();
         result
     }
@@ -329,6 +438,10 @@ impl LocalEngine {
         Err(PennelError::local_models_unavailable())
     }
 
+    #[allow(
+        dead_code,
+        reason = "Retained text-only compatibility projection without local models"
+    )]
     pub(crate) fn transcribe_complete(
         &self,
         model_path: &Path,
@@ -337,6 +450,27 @@ impl LocalEngine {
         vocabulary: &[String],
     ) -> Result<String, PennelError> {
         self.transcribe(model_path, samples, language, vocabulary)
+    }
+
+    pub(crate) fn transcribe_timed(
+        &self,
+        model_path: &Path,
+        samples: &[f32],
+        language: Option<&str>,
+        vocabulary: &[String],
+    ) -> Result<SpeechTranscript, PennelError> {
+        self.transcribe(model_path, samples, language, vocabulary)
+            .map(SpeechTranscript::plain)
+    }
+
+    pub(crate) fn transcribe_complete_timed(
+        &self,
+        model_path: &Path,
+        samples: &[f32],
+        language: Option<&str>,
+        vocabulary: &[String],
+    ) -> Result<SpeechTranscript, PennelError> {
+        self.transcribe_timed(model_path, samples, language, vocabulary)
     }
 
     pub(crate) fn preview(
@@ -433,6 +567,107 @@ mod tests {
                 true
             ),
             Ok("volledige zin".into())
+        );
+    }
+
+    #[cfg(feature = "local-models")]
+    #[test]
+    fn native_word_timing_is_retained_without_another_inference() {
+        let native = transcribe_cpp::Transcript {
+            text: " café ja. ".into(),
+            timestamp_kind: transcribe_cpp::TimestampKind::Word,
+            words: vec![
+                transcribe_cpp::Word {
+                    t0_ms: 100,
+                    t1_ms: 500,
+                    text: "café".into(),
+                    ..Default::default()
+                },
+                transcribe_cpp::Word {
+                    t0_ms: 550,
+                    t1_ms: 900,
+                    text: "ja.".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let timed = transcript_result(Ok(native), true, 1000).unwrap();
+        assert_eq!(timed.text, "café ja.");
+        assert_eq!(timed.spans.len(), 2);
+        assert_eq!(timed.spans[0].start_ms, 100);
+        assert_eq!(timed.spans[1].end_ms, 900);
+    }
+
+    #[cfg(feature = "local-models")]
+    #[test]
+    fn segment_only_native_results_never_claim_word_timing() {
+        let native = transcribe_cpp::Transcript {
+            text: "Hallo, café.".into(),
+            timestamp_kind: transcribe_cpp::TimestampKind::Segment,
+            segments: vec![transcribe_cpp::Segment {
+                t0_ms: 100,
+                t1_ms: 900,
+                text: "Hallo, café.".into(),
+                ..Default::default()
+            }],
+            words: vec![transcribe_cpp::Word {
+                t0_ms: 100,
+                t1_ms: 900,
+                text: "Hallo, café.".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let result = transcript_result(Ok(native), true, 1000).unwrap();
+        assert_eq!(result.timing_kind, SpeechTimingKind::Segment);
+        assert_eq!(result.spans.len(), 1);
+    }
+
+    #[cfg(feature = "local-models")]
+    #[test]
+    fn unreliable_word_mapping_falls_back_to_actual_segment_then_exact_text() {
+        let mut native = transcribe_cpp::Transcript {
+            text: "Hallo, café.".into(),
+            timestamp_kind: transcribe_cpp::TimestampKind::Word,
+            words: vec![transcribe_cpp::Word {
+                t0_ms: 0,
+                t1_ms: 900,
+                text: "Hallo café".into(),
+                ..Default::default()
+            }],
+            segments: vec![transcribe_cpp::Segment {
+                t0_ms: 0,
+                t1_ms: 900,
+                text: "Hallo, café.".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let result = transcript_result(Ok(native.clone()), true, 1000).unwrap();
+        assert_eq!(result.text, native.text);
+        assert_eq!(result.timing_kind, SpeechTimingKind::Segment);
+        native.segments[0].t0_ms = -1;
+        assert_eq!(
+            transcript_result(Ok(native), true, 1000).unwrap(),
+            SpeechTranscript::plain("Hallo, café.")
+        );
+    }
+
+    #[cfg(feature = "local-models")]
+    #[test]
+    fn timed_complete_recognition_rejects_partial_native_output() {
+        let error = || transcribe_cpp::Error::OutputTruncated {
+            message: "truncated".into(),
+            partial: Some(Box::new(transcribe_cpp::Transcript {
+                text: " café ".into(),
+                ..Default::default()
+            })),
+        };
+        assert!(transcript_result(Err(error()), true, 1000).is_err());
+        assert_eq!(
+            transcript_result(Err(error()), false, 1000).unwrap().text,
+            "café"
         );
     }
 

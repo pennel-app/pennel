@@ -82,6 +82,22 @@ test("row identity handles simultaneous tracks and duplicate timestamps without 
   }
 });
 
+test("durable utterance row identity survives attribution and label revisions", () => {
+  const utterance = { ...segment, utterance_id: "u-one", source_id: "microphone", attribution: { kind: "unknown", voices: [] }, attribution_revision: 1 };
+  const changed = { ...utterance, speaker: "me", voice: 2, attribution: { kind: "single", voices: [2] }, attribution_revision: 2 };
+  assert.deepEqual(segmentKeys([utterance]), ["utterance:u-one"]);
+  assert.deepEqual(segmentKeys([changed]), ["utterance:u-one"]);
+  assert.equal(sameSegment(utterance, changed), false);
+  assert.equal(sameSegment(changed, { ...changed, source_id: "system" }), false);
+  assert.equal(sameSegment(changed, { ...changed, attribution_revision: 3 }), false);
+});
+
+test("duplicate untrusted utterance IDs cannot collapse two transcript rows", () => {
+  const values = [{ ...segment, utterance_id: "duplicate" }, { ...segment, utterance_id: "duplicate", text: "Another exact turn" }];
+  assert.equal(new Set(segmentKeys(values)).size, 2);
+  assert.ok(segmentKeys(values).every(key => key !== "utterance:duplicate"));
+});
+
 test("stable UID and session permit a folder rename without replacing the transcript", async () => {
   const initial = snapshot(1, { meeting_uid: "uid" });
   const refresh = new RecordingRefresh(initial);

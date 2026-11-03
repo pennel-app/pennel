@@ -9,7 +9,10 @@ function currentPreview(previous: MeetingStatus["preview"], incoming: MeetingSta
 
 export function segmentKeys(segments: Segment[]): string[] {
   const occurrences = new Map<string, number>();
+  const identities = new Map<string, number>();
+  for (const segment of segments) if (segment.utterance_id) identities.set(segment.utterance_id, (identities.get(segment.utterance_id) ?? 0) + 1);
   return segments.map((segment) => {
+    if (segment.utterance_id && identities.get(segment.utterance_id) === 1) return `utterance:${segment.utterance_id}`;
     const base = `${segment.speaker}:${segment.start_ms}`;
     const occurrence = occurrences.get(base) ?? 0;
     occurrences.set(base, occurrence + 1);
@@ -19,7 +22,12 @@ export function segmentKeys(segments: Segment[]): string[] {
 
 export function sameSegment(left: Segment, right: Segment): boolean {
   return left.start_ms === right.start_ms && left.end_ms === right.end_ms && left.speaker === right.speaker
-    && left.text === right.text && left.failed === right.failed && left.voice === right.voice;
+    && left.text === right.text && left.failed === right.failed && left.voice === right.voice
+    && left.utterance_id === right.utterance_id && left.source_id === right.source_id
+    && left.attribution_revision === right.attribution_revision
+    && left.correction_review_required === right.correction_review_required
+    && left.confirmed_speaker_name === right.confirmed_speaker_name
+    && JSON.stringify(left.attribution ?? null) === JSON.stringify(right.attribution ?? null);
 }
 
 /** Keeps lightweight clock/health updates independent of transcript reads. */

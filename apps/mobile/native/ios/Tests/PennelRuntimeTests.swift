@@ -91,8 +91,57 @@ private final class DelayedAvailability: @unchecked Sendable {
     }
 }
 
+private final class DelayedTranscriptProjection: @unchecked Sendable {
+    private let lock = NSLock()
+    private var invocations = 0
+    let release = DispatchSemaphore(value: 0)
+    let revision: UInt64
+    var calls: Int { lock.withLock { invocations } }
+    init(revision: UInt64) { self.revision = revision }
+    func load() throws -> String {
+        lock.withLock { invocations += 1 }
+        guard release.wait(timeout: .now() + 5) == .success else { throw PennelBridgeError("fixture_timeout", "Synthetic transcript projection timed out.") }
+        return "{\"meeting_uid\":\"owned-meeting\",\"revision\":\(revision),\"metadata_status\":\"valid\",\"transcript\":[]}"
+    }
+}
+
+@MainActor
+private func waitForTranscriptProjection(_ predicate: () -> Bool) async throws {
+    let deadline = Date().addingTimeInterval(5)
+    while !predicate() {
+        guard Date() < deadline else { throw PennelBridgeError("fixture_timeout", "Synthetic transcript projection did not finish.") }
+        try await Task.sleep(for: .milliseconds(1))
+    }
+}
+
 @Suite("Expo native runtime", .serialized)
 struct PennelRuntimeTests {
+    @MainActor @Test func transcriptProjectionCacheCoalescesSessionsAndRetainsTheActualEvidenceRevision() async throws {
+        let cache = NativeTranscriptProjectionCache()
+        let old = DelayedTranscriptProjection(revision: 1)
+        let current = DelayedTranscriptProjection(revision: 5)
+        var publications = 0
+        #expect(cache.value(key: "old-session", revision: 1, load: { try old.load() }, changed: { publications += 1 }) == nil)
+        try await waitForTranscriptProjection { old.calls == 1 }
+        #expect(cache.value(key: "current-session", revision: 5, load: { try current.load() }, changed: { publications += 1 }) == nil)
+        #expect(current.calls == 0)
+        old.release.signal()
+        try await waitForTranscriptProjection { current.calls == 1 }
+        #expect(publications == 0)
+        current.release.signal()
+        try await waitForTranscriptProjection { publications == 1 }
+        let next = DelayedTranscriptProjection(revision: 6)
+        let retained = cache.value(key: "current-session", revision: 6, load: { try next.load() }, changed: { publications += 1 })
+        #expect((retained?["revision"] as? NSNumber)?.uint64Value == 5)
+        try await waitForTranscriptProjection { next.calls == 1 }
+        next.release.signal()
+        try await waitForTranscriptProjection { publications == 2 }
+        let latest = cache.value(key: "current-session", revision: 6, load: { try next.load() }, changed: { publications += 1 })
+        #expect((latest?["revision"] as? NSNumber)?.uint64Value == 6)
+        #expect(next.calls == 1)
+        cache.clear()
+    }
+
     @MainActor @Test func keyboardPreparesItsRunnerAtRecordingStartAndCancelsBeforeRecognition() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pennel-cleanup-keyboard-\(UUID().uuidString)")
         let store = HandoffStore(directory: directory)
@@ -403,6 +452,9 @@ struct PennelRuntimeTests {
         let room = root.appendingPathComponent(track.relativePath)
         try Data([1, 2, 3]).write(to: room)
         #expect(engine.meetingArchiveURL(id: id, speaker: .others) == room.resolvingSymlinksInPath())
+        #expect(engine.meetingArchiveURL(id: id, speaker: .others, sourceID: "room_microphone") == room.resolvingSymlinksInPath())
+        #expect(engine.meetingArchiveURL(id: id, speaker: .others, sourceID: "system_audio") == nil)
+        #expect(engine.meetingArchiveURL(id: id, speaker: .me, sourceID: "room_microphone") == nil)
         try session.stop()
         try engine.finishMeetingRecording(id: id, durationMs: 1_234, complete: true)
         #expect(try engine.meetingRecordingMetadata(id: id)?.durationMs == 1_234)
@@ -414,6 +466,54 @@ struct PennelRuntimeTests {
         try Data([1, 2, 3]).write(to: legacyURL)
         #expect(engine.meetingArchiveURL(id: legacyID, speaker: .others) == legacyURL.resolvingSymlinksInPath())
         #expect(try engine.meetingRecordingMetadata(id: legacyID) == nil)
+    }
+
+    @Test func transcriptProjectionPreservesDurableSourcesAndReadableUnavailableMetadata() throws {
+        let row: [String: Any] = ["start_ms": 400, "end_ms": 700, "speaker": "others", "text": "Ja, zeker.", "failed": false,
+                                  "voice": 3, "utterance_id": "turn-1", "source_id": "microphone", "source_fingerprint": "source-fingerprint",
+                                  "attribution": ["kind": "overlap", "voices": [2, 3]], "attribution_revision": 4]
+        let encoded = try BridgeJSON.encode(["meeting_uid": "meeting-uid", "revision": 7, "metadata_status": "valid", "transcript": [row]])
+        let projected = try BridgeJSON.transcriptProjection(encoded)
+        #expect(projected["meeting_uid"] as? String == "meeting-uid")
+        let transcript = try #require(projected["transcript"] as? [[String: Any]])
+        #expect(try BridgeJSON.encode(transcript[0]) == BridgeJSON.encode(row))
+        for status in ["absent", "pending", "stale", "unsupported", "corrupt"] {
+            let unavailable = try BridgeJSON.transcriptProjection(BridgeJSON.encode(["meeting_uid": "legacy", "revision": 0, "metadata_status": status,
+                                                                                   "transcript": [["text": "Legacy line.", "speaker": "others"]]]))
+            #expect(unavailable["metadata_status"] as? String == status)
+            #expect((unavailable["transcript"] as? [[String: Any]])?.first?["text"] as? String == "Legacy line.")
+        }
+        do { _ = try BridgeJSON.transcriptProjection("{\"meeting_uid\":\"legacy\"}"); Issue.record("Malformed transcript became an empty success.") }
+        catch let error as PennelBridgeError { #expect(error.code == "invalid_response") }
+    }
+
+    @Test func utterancePlaybackProjectionUsesPhysicalSourceAndRejectsMissingIdentity() throws {
+        let target = try BridgeJSON.utteranceAudioProjection("{\"source\":\"me\",\"source_id\":\"microphone\",\"start_ms\":1250,\"speaker\":\"others\",\"voice\":8}")
+        #expect(target.speaker == .me)
+        #expect(target.sourceID == "microphone")
+        #expect(target.startMs == 1250)
+        for malformed in ["{\"speaker\":\"others\",\"start_ms\":1250}", "{\"source\":\"me\",\"source_id\":\"microphone\",\"start_ms\":-1}", "{\"source\":\"me\",\"source_id\":\"microphone\",\"start_ms\":0.5}"] {
+            do { _ = try BridgeJSON.utteranceAudioProjection(malformed); Issue.record("Unverified audio source accepted.") }
+            catch let error as PennelBridgeError { #expect(error.code == "invalid_response") }
+        }
+    }
+
+    @Test func citedPassageProjectionRetainsDurableAnchorsAndTheLegacyWireShape() {
+        let passage = Passage(meetingId: "folder-id", title: "Owned meeting", startIso: "2026-11-03T10:00:00Z", kind: .transcript,
+                              startMs: 1250, text: "Ja, zeker.", snippet: "Ja, zeker.", meetingUid: "stable-uid",
+                              utteranceIds: ["turn-1"], utteranceFingerprints: ["source-fingerprint"])
+        let value = BridgeJSON.passage(passage)
+        #expect(value["meeting_uid"] as? String == "stable-uid")
+        #expect(value["utterance_ids"] as? [String] == ["turn-1"])
+        #expect(value["utterance_fingerprints"] as? [String] == ["source-fingerprint"])
+        let legacy = Passage(meetingId: "legacy-folder", title: "Legacy meeting", startIso: "2026-11-03T10:00:00Z", kind: .transcript,
+                             startMs: 1000, text: "Legacy line.", snippet: "Legacy line.", meetingUid: nil,
+                             utteranceIds: [], utteranceFingerprints: [])
+        let original = BridgeJSON.passage(legacy)
+        #expect(original["meeting_uid"] == nil)
+        #expect(original["utterance_ids"] == nil)
+        #expect(original["utterance_fingerprints"] == nil)
+        #expect(original["text"] as? String == "Legacy line.")
     }
 
     @MainActor @Test func staleRetryCannotSaveAnotherRecording() async throws {

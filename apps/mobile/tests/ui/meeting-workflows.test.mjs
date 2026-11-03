@@ -115,3 +115,42 @@ test('separate core passages may start on different tracks at the same timestamp
   assert.equal(resolveSource(token, detail, 200).changed, false);
   assert.equal(resolveSource(token, detail, 200).transcriptIndex, 1);
 });
+
+test('durable mobile sources survive speaker changes and meeting folder renames', () => {
+  const segment = { utterance_id: 'u-one', source_id: 'microphone', source_fingerprint: 'a'.repeat(64), start_ms: 500,
+    end_ms: 1200, speaker: 'others', voice: 2, failed: false, text: 'A verified decision.' };
+  const detail = { info: { id: 'renamed-folder' }, meeting_uid: 'stable-meeting', metadata_status: 'valid', speakers: [{ voice: 2, name: 'New name' }], transcript: [segment] };
+  const passage = { meeting_id: 'old-folder', meeting_uid: 'stable-meeting', title: 'Owned fixture', kind: 'transcript', start_ms: 500,
+    text: 'Earlier name: A verified decision.', utterance_ids: ['u-one'], utterance_fingerprints: ['a'.repeat(64)] };
+  const token = rememberSource(passage, 100);
+  assert.equal(resolveSource(token, detail, 200).changed, false);
+  assert.equal(resolveSource(token, { ...detail, transcript: [{ ...segment, speaker: 'me', voice: null }] }, 200).transcriptIndex, 0);
+  for (const change of [{ meeting_uid: 'another-meeting' }, { metadata_status: 'stale' }, { metadata_status: 'unsupported' },
+    { transcript: [{ ...segment, source_fingerprint: 'b'.repeat(64) }] }, { transcript: [{ ...segment, utterance_id: 'replacement' }] },
+    { transcript: [segment, segment] }]) {
+    assert.equal(resolveSource(token, { ...detail, ...change }, 200).changed, true);
+  }
+});
+
+test('a durable source never falls back to identical words on a different utterance', () => {
+  const detail = { info: { id: 'same-folder' }, meeting_uid: 'stable-meeting', metadata_status: 'valid', speakers: [], transcript: [
+    { utterance_id: 'different-utterance', source_fingerprint: 'a'.repeat(64), start_ms: 500, end_ms: 1200, speaker: 'others', voice: null, failed: false, text: 'Repeated words.' },
+  ] };
+  const passage = { meeting_id: detail.info.id, meeting_uid: detail.meeting_uid, kind: 'transcript', start_ms: 500, text: 'Anderen: Repeated words.',
+    utterance_ids: ['missing-utterance'], utterance_fingerprints: ['a'.repeat(64)] };
+  const resolved = resolveSource(rememberSource(passage, 100), detail, 200);
+  assert.equal(resolved.changed, true);
+  assert.equal(resolved.passage.text, passage.text);
+});
+
+test('remembering a durable citation freezes its source identity arrays and quoted text', () => {
+  const segment = { utterance_id: 'original', source_fingerprint: 'a'.repeat(64), start_ms: 0, end_ms: 1000, text: 'Original words.' };
+  const detail = { info: { id: 'meeting' }, meeting_uid: 'uid', metadata_status: 'valid', transcript: [segment] };
+  const passage = { meeting_id: 'meeting', meeting_uid: 'uid', kind: 'transcript', start_ms: 0, text: 'Frozen original words.',
+    utterance_ids: ['original'], utterance_fingerprints: ['a'.repeat(64)] };
+  const token = rememberSource(passage, 100);
+  passage.text = 'Later words'; passage.utterance_ids[0] = 'later'; passage.utterance_fingerprints[0] = 'b'.repeat(64);
+  const resolved = resolveSource(token, detail, 200);
+  assert.equal(resolved.changed, false);
+  assert.equal(resolved.passage.text, 'Frozen original words.');
+});

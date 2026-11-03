@@ -94,6 +94,15 @@ unsafe extern "C" {
         sink: TextSink,
         context: *mut c_void,
     );
+    fn pennel_mac_transcribe_timed(
+        samples: *const f32,
+        count: usize,
+        rate: u32,
+        language: *const c_char,
+        vocabulary: *const c_char,
+        sink: TextSink,
+        context: *mut c_void,
+    );
     fn pennel_mac_speech_preview_start(
         language: *const c_char,
         sink: TextSink,
@@ -818,6 +827,61 @@ pub fn transcribe(
     .map(|text| text.unwrap_or_default())
 }
 
+pub fn transcribe_timed(
+    samples: &[f32],
+    rate: u32,
+    language: Option<&str>,
+    vocabulary: &[String],
+) -> Result<pennel_core::SpeechTranscript, String> {
+    if rate == 0 {
+        return Err("No usable audio".into());
+    }
+    let language = language.map(c_string).transpose()?;
+    let vocabulary =
+        c_string(&serde_json::to_string(vocabulary).map_err(|_| "Invalid speech vocabulary")?)?;
+    let json = wait_text(|sink, context| unsafe {
+        pennel_mac_transcribe_timed(
+            samples.as_ptr(),
+            samples.len(),
+            rate,
+            language
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            vocabulary.as_ptr(),
+            sink,
+            context,
+        )
+    })?
+    .ok_or("Apple Dictation returned no result")?;
+    decode_timed_transcript(
+        &json,
+        (samples.len() as u64)
+            .saturating_mul(1_000)
+            .div_ceil(u64::from(rate)),
+    )
+}
+
+fn decode_timed_transcript(
+    json: &str,
+    audio_duration_ms: u64,
+) -> Result<pennel_core::SpeechTranscript, String> {
+    let value: Value = serde_json::from_str(json).map_err(|_| "Invalid timed speech result")?;
+    let text = value
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or("Invalid timed speech result")?
+        .to_owned();
+    let result = serde_json::from_value::<pennel_core::SpeechTranscript>(value)
+        .unwrap_or_else(|_| pennel_core::SpeechTranscript::plain(text));
+    Ok(pennel_core::SpeechTranscript::validated(
+        result.text,
+        result.spans,
+        result.timing_kind,
+        audio_duration_ms,
+    )
+    .trimmed())
+}
+
 pub fn language_model_complete(
     messages: Vec<pennel_core::LanguageModelMessage>,
     timeout_secs: u64,
@@ -936,6 +1000,33 @@ mod tests {
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn authoritative_timing_does_not_change_text_or_add_a_chunk_offset() {
+        let result = decode_timed_transcript(
+            r#"{"text":" café ja. ","timing_kind":"word","spans":[{"start_byte":0,"end_byte":6,"start_ms":100,"end_ms":400},{"start_byte":6,"end_byte":11,"start_ms":450,"end_ms":900}]}"#,
+            1000,
+        )
+        .unwrap();
+        assert_eq!(result.text, "café ja.");
+        assert_eq!(result.spans.len(), 2);
+        assert_eq!(result.spans[0].start_ms, 100);
+        assert_eq!(result.spans[1].end_ms, 900);
+    }
+
+    #[test]
+    fn malformed_timing_retains_complete_authoritative_text() {
+        for spans in [
+            r#"[{"start_byte":0,"end_byte":4,"start_ms":0,"end_ms":500}]"#,
+            r#"[{"start_byte":-1,"end_byte":5,"start_ms":0,"end_ms":500}]"#,
+        ] {
+            let json = format!(r#"{{"text":"café","timing_kind":"word","spans":{spans}}}"#);
+            assert_eq!(
+                decode_timed_transcript(&json, 1000).unwrap(),
+                pennel_core::SpeechTranscript::plain("café")
+            );
+        }
     }
 
     #[test]

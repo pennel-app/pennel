@@ -4,17 +4,19 @@ use std::path::Path;
 use rusqlite::{Connection, params};
 
 use crate::error::PennelError;
-use crate::meetings::{MeetingInfo, MeetingStore, Segment, SpeakerName, speaker_label};
+#[cfg(test)]
+use crate::meetings::Segment;
+use crate::meetings::{MeetingInfo, MeetingStore, SpeakerName, speaker_label};
 
 const PASSAGE_CHARS: usize = 600;
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 const FILES: [(&str, PassageKind); 3] = [
     ("notes.md", PassageKind::Notes),
     ("transcript.md", PassageKind::Transcript),
     ("meeting.md", PassageKind::Summary),
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PassageKind {
     Notes,
@@ -31,7 +33,7 @@ impl PassageKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize, serde::Deserialize)]
 pub struct Passage {
     pub meeting_id: String,
     pub title: String,
@@ -40,6 +42,12 @@ pub struct Passage {
     pub start_ms: Option<u64>,
     pub text: String,
     pub snippet: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meeting_uid: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub utterance_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub utterance_fingerprints: Vec<String>,
 }
 
 /// Full-text mirror of the Markdown meetings; the files stay the source of truth.
@@ -105,6 +113,7 @@ fn pack(pieces: impl IntoIterator<Item = (Option<u64>, String)>) -> Vec<(Option<
     passages
 }
 
+#[cfg(test)]
 fn transcript_passages(segments: &[Segment], names: &[SpeakerName]) -> Vec<(Option<u64>, String)> {
     pack(
         segments
@@ -128,6 +137,100 @@ fn text_passages(text: &str) -> Vec<(Option<u64>, String)> {
     )
 }
 
+struct IndexedPassage {
+    start: Option<u64>,
+    text: String,
+    utterance_ids: Vec<String>,
+    utterance_fingerprints: Vec<String>,
+}
+
+fn canonical_transcript_passages(
+    snapshot: &crate::MeetingTranscriptSnapshot,
+    names: &[SpeakerName],
+) -> Vec<IndexedPassage> {
+    let mut passages: Vec<IndexedPassage> = Vec::new();
+    for row in snapshot
+        .utterances
+        .iter()
+        .filter(|row| !row.segment.failed && !row.segment.text.trim().is_empty())
+    {
+        let label = if snapshot.metadata_status == crate::TranscriptMetadataStatus::Absent {
+            speaker_label(&row.segment, names)
+        } else {
+            crate::meeting_evidence::utterance_speaker_label(row, names)
+        };
+        let fingerprint = crate::utterance_evidence_revision(row);
+        for part in split_long(&format!("{label}: {}", row.segment.text.trim())) {
+            if let Some(last) = passages
+                .last_mut()
+                .filter(|last| last.text.len() + part.len() < PASSAGE_CHARS)
+            {
+                last.text.push('\n');
+                last.text.push_str(&part);
+                if !last.utterance_ids.contains(&row.metadata.utterance_id) {
+                    last.utterance_ids.push(row.metadata.utterance_id.clone());
+                    last.utterance_fingerprints.push(fingerprint.clone());
+                }
+            } else {
+                passages.push(IndexedPassage {
+                    start: Some(row.segment.start_ms),
+                    text: part,
+                    utterance_ids: vec![row.metadata.utterance_id.clone()],
+                    utterance_fingerprints: vec![fingerprint.clone()],
+                });
+            }
+        }
+    }
+    passages
+}
+
+fn transcript_source_stamp(store: &MeetingStore, id: &str) -> Result<String, PennelError> {
+    let root = store.dir_of(id);
+    let mut stamps = Vec::new();
+    for subdirectory in ["", "failed"] {
+        let directory = root.join(subdirectory);
+        let metadata = match std::fs::symlink_metadata(&directory) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(PennelError::storage(error)),
+        };
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            continue;
+        }
+        for entry in std::fs::read_dir(directory).map_err(PennelError::storage)? {
+            let entry = entry.map_err(PennelError::storage)?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let relevant = if subdirectory.is_empty() {
+                name == crate::meeting_utterances::MANIFEST
+                    || name == crate::meeting_utterances::SNAPSHOT_JOURNAL
+                    || (name.starts_with("transcript.meta.") && name.ends_with(".json"))
+            } else {
+                name.ends_with(".wav")
+            };
+            if relevant {
+                let metadata =
+                    std::fs::symlink_metadata(entry.path()).map_err(PennelError::storage)?;
+                let modified = metadata
+                    .modified()
+                    .map_err(PennelError::storage)?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(PennelError::storage)?
+                    .as_nanos();
+                stamps.push((
+                    format!("{subdirectory}/{name}"),
+                    modified,
+                    metadata.len(),
+                    metadata.file_type().is_symlink(),
+                ));
+            }
+        }
+    }
+    stamps.sort();
+    serde_json::to_string(&stamps)
+        .map(|value| crate::evidence_revision(&value))
+        .map_err(PennelError::storage)
+}
+
 impl MeetingIndex {
     pub fn open(path: &Path) -> Result<Self, PennelError> {
         let conn = Connection::open(path).map_err(db)?;
@@ -143,9 +246,11 @@ impl MeetingIndex {
         conn.execute_batch(&format!(
             "CREATE TABLE IF NOT EXISTS files (
                 meeting_id TEXT NOT NULL, name TEXT NOT NULL, mtime INTEGER NOT NULL, len INTEGER NOT NULL,
+                source_revision TEXT NOT NULL,
                 PRIMARY KEY (meeting_id, name));
              CREATE TABLE IF NOT EXISTS chunks (
-                id INTEGER PRIMARY KEY, meeting_id TEXT NOT NULL, name TEXT NOT NULL, start_ms INTEGER, text TEXT NOT NULL);
+                id INTEGER PRIMARY KEY, meeting_id TEXT NOT NULL, name TEXT NOT NULL, start_ms INTEGER, text TEXT NOT NULL,
+                meeting_uid TEXT, utterance_ids TEXT NOT NULL, utterance_fingerprints TEXT NOT NULL);
              CREATE INDEX IF NOT EXISTS chunks_file ON chunks (meeting_id, name);
              CREATE VIRTUAL TABLE IF NOT EXISTS passages USING fts5(
                 text, content = 'chunks', content_rowid = 'id', tokenize = 'unicode61 remove_diacritics 2');
@@ -163,18 +268,20 @@ impl MeetingIndex {
         let meetings: Vec<String> = store.list().into_iter().map(|m| m.id).collect();
         let present: std::collections::HashSet<&String> = meetings.iter().collect();
         let tx = self.conn.transaction().map_err(db)?;
-        let known: Vec<(String, String, i64, i64)> = {
+        let known: Vec<(String, String, i64, i64, String)> = {
             let mut stmt = tx
-                .prepare("SELECT meeting_id, name, mtime, len FROM files")
+                .prepare("SELECT meeting_id, name, mtime, len, source_revision FROM files")
                 .map_err(db)?;
-            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-                .map_err(db)?
-                .collect::<Result<_, _>>()
-                .map_err(db)?
+            stmt.query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .map_err(db)?
+            .collect::<Result<_, _>>()
+            .map_err(db)?
         };
-        let known: HashMap<(String, String), (i64, i64)> = known
+        let known: HashMap<(String, String), (i64, i64, String)> = known
             .into_iter()
-            .map(|(id, name, mtime, len)| ((id, name), (mtime, len)))
+            .map(|(id, name, mtime, len, revision)| ((id, name), (mtime, len, revision)))
             .collect();
 
         for (id, name) in known.keys() {
@@ -195,8 +302,9 @@ impl MeetingIndex {
             store
                 .file_stamp(id, name)
                 .map(|(mtime, len)| (mtime, len as i64))
-                .as_ref()
-                == known.get(&(id.clone(), name.to_owned()))
+                == known
+                    .get(&(id.clone(), name.to_owned()))
+                    .map(|(mtime, len, _)| (*mtime, *len))
         };
         for id in &meetings {
             // Speaker names live in meeting.md, so renaming a voice re-labels the transcript passages too.
@@ -205,33 +313,71 @@ impl MeetingIndex {
                 let Some((mtime, len)) = store.file_stamp(id, name) else {
                     continue;
                 };
-                if unchanged(id, name) && !(kind == PassageKind::Transcript && names_changed) {
+                let source_revision = if kind == PassageKind::Transcript {
+                    transcript_source_stamp(store, id)?
+                } else {
+                    String::new()
+                };
+                if unchanged(id, name)
+                    && !(kind == PassageKind::Transcript && names_changed)
+                    && known
+                        .get(&(id.clone(), name.to_owned()))
+                        .is_some_and(|(_, _, revision)| revision == &source_revision)
+                {
                     continue;
                 }
+                let snapshot = (kind == PassageKind::Transcript)
+                    .then(|| store.read_transcript_snapshot(id))
+                    .transpose()?;
                 let passages = match kind {
-                    PassageKind::Transcript => {
-                        transcript_passages(&store.read_transcript(id), &store.speaker_names(id))
-                    }
-                    PassageKind::Notes => text_passages(&store.read_notes(id)),
+                    PassageKind::Transcript => canonical_transcript_passages(
+                        snapshot.as_ref().expect("transcript snapshot"),
+                        &store.speaker_names(id),
+                    ),
+                    PassageKind::Notes => text_passages(&store.read_notes(id))
+                        .into_iter()
+                        .map(|(start, text)| IndexedPassage {
+                            start,
+                            text,
+                            utterance_ids: Vec::new(),
+                            utterance_fingerprints: Vec::new(),
+                        })
+                        .collect(),
                     PassageKind::Summary => {
                         text_passages(&store.read_meeting(id).unwrap_or_default())
+                            .into_iter()
+                            .map(|(start, text)| IndexedPassage {
+                                start,
+                                text,
+                                utterance_ids: Vec::new(),
+                                utterance_fingerprints: Vec::new(),
+                            })
+                            .collect()
                     }
                 };
+                let uid = snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.meeting_uid.clone())
+                    .or_else(|| store.uid_of(id));
                 tx.execute(
                     "DELETE FROM chunks WHERE meeting_id = ?1 AND name = ?2",
                     params![id, name],
                 )
                 .map_err(db)?;
-                for (start, text) in passages {
+                for passage in passages {
+                    let ids = serde_json::to_string(&passage.utterance_ids)
+                        .map_err(PennelError::storage)?;
+                    let fingerprints = serde_json::to_string(&passage.utterance_fingerprints)
+                        .map_err(PennelError::storage)?;
                     tx.execute(
-                        "INSERT INTO chunks (meeting_id, name, start_ms, text) VALUES (?1, ?2, ?3, ?4)",
-                        params![id, name, start.map(|ms| ms as i64), text],
+                        "INSERT INTO chunks (meeting_id, name, start_ms, text, meeting_uid, utterance_ids, utterance_fingerprints) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        params![id, name, passage.start.map(|ms| ms as i64), passage.text, uid, ids, fingerprints],
                     )
                     .map_err(db)?;
                 }
                 tx.execute(
-                    "INSERT OR REPLACE INTO files (meeting_id, name, mtime, len) VALUES (?1, ?2, ?3, ?4)",
-                    params![id, name, mtime, len as i64],
+                    "INSERT OR REPLACE INTO files (meeting_id, name, mtime, len, source_revision) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![id, name, mtime, len as i64, source_revision],
                 )
                 .map_err(db)?;
             }
@@ -276,7 +422,7 @@ impl MeetingIndex {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT c.meeting_id, c.name, c.start_ms, c.text, snippet(passages, 0, '«', '»', '…', 12)
+                "SELECT c.meeting_id, c.name, c.start_ms, c.text, snippet(passages, 0, '«', '»', '…', 12), c.meeting_uid, c.utterance_ids, c.utterance_fingerprints
                  FROM passages JOIN chunks c ON c.id = passages.rowid
                  WHERE passages MATCH ?1 AND (?2 IS NULL OR c.meeting_id = ?2)
                  ORDER BY bm25(passages) LIMIT ?3",
@@ -303,14 +449,14 @@ impl MeetingIndex {
             .conn
             .prepare(
                 "WITH hits AS (
-                    SELECT c.meeting_id, c.name, c.start_ms, c.text,
+                    SELECT c.meeting_id, c.name, c.start_ms, c.text, c.meeting_uid, c.utterance_ids, c.utterance_fingerprints,
                            snippet(passages, 0, '«', '»', '…', 12) AS snippet, bm25(passages) AS rank
                     FROM passages JOIN chunks c ON c.id = passages.rowid WHERE passages MATCH ?1),
                  ranked AS (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY meeting_id ORDER BY rank) AS position,
                            MIN(rank) OVER (PARTITION BY meeting_id) AS best
                     FROM hits)
-                 SELECT meeting_id, name, start_ms, text, snippet FROM ranked
+                 SELECT meeting_id, name, start_ms, text, snippet, meeting_uid, utterance_ids, utterance_fingerprints FROM ranked
                  WHERE position <= ?2 ORDER BY best, meeting_id, position",
             )
             .map_err(db)?;
@@ -334,7 +480,7 @@ impl MeetingIndex {
         let mut out = Vec::new();
         let mut stmt = self
             .conn
-            .prepare("SELECT meeting_id, name, start_ms, text, '' FROM chunks WHERE meeting_id = ?1 ORDER BY id")
+            .prepare("SELECT meeting_id, name, start_ms, text, '', meeting_uid, utterance_ids, utterance_fingerprints FROM chunks WHERE meeting_id = ?1 ORDER BY id")
             .map_err(db)?;
         for id in order {
             let rows: Vec<RawRow> = stmt
@@ -352,35 +498,99 @@ impl MeetingIndex {
     }
 }
 
-type RawRow = (String, String, Option<i64>, String, String);
+type RawRow = (
+    String,
+    String,
+    Option<i64>,
+    String,
+    String,
+    Option<String>,
+    String,
+    String,
+);
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<RawRow> {
-    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+    Ok((
+        r.get(0)?,
+        r.get(1)?,
+        r.get(2)?,
+        r.get(3)?,
+        r.get(4)?,
+        r.get(5)?,
+        r.get(6)?,
+        r.get(7)?,
+    ))
 }
 
 fn resolve(store: &MeetingStore, rows: Vec<RawRow>) -> Result<Vec<Passage>, PennelError> {
     let mut infos: HashMap<String, Option<MeetingInfo>> = HashMap::new();
+    let mut snapshots: HashMap<String, Option<crate::MeetingTranscriptSnapshot>> = HashMap::new();
     Ok(rows
         .into_iter()
-        .filter_map(|(id, name, start, text, snippet)| {
-            let info = infos
-                .entry(id.clone())
-                .or_insert_with(|| store.info(&id))
-                .clone()?;
-            Some(Passage {
-                meeting_id: id,
-                title: info.title,
-                start_iso: info.start_iso,
-                kind: PassageKind::from_file(&name)?,
-                start_ms: start.map(|ms| ms as u64),
-                snippet: if snippet.is_empty() {
-                    text.chars().take(160).collect()
-                } else {
-                    snippet
-                },
-                text,
-            })
-        })
+        .filter_map(
+            |(id, name, start, text, snippet, meeting_uid, ids, fingerprints)| {
+                let info = infos
+                    .entry(id.clone())
+                    .or_insert_with(|| store.info(&id))
+                    .clone()?;
+                let utterance_ids: Vec<String> = serde_json::from_str(&ids).ok()?;
+                let utterance_fingerprints: Vec<String> =
+                    serde_json::from_str(&fingerprints).ok()?;
+                let kind = PassageKind::from_file(&name)?;
+                if kind != PassageKind::Transcript
+                    && meeting_uid.is_some()
+                    && meeting_uid != store.uid_of(&id)
+                {
+                    return None;
+                }
+                if !utterance_ids.is_empty() {
+                    let snapshot = snapshots
+                        .entry(id.clone())
+                        .or_insert_with(|| store.read_transcript_snapshot(&id).ok())
+                        .as_ref()?;
+                    if kind != PassageKind::Transcript
+                        || meeting_uid.as_deref() != Some(snapshot.meeting_uid.as_str())
+                        || utterance_ids.len() != utterance_fingerprints.len()
+                        || utterance_ids
+                            .iter()
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            != utterance_ids.len()
+                        || !utterance_ids.iter().zip(&utterance_fingerprints).all(
+                            |(id, fingerprint)| {
+                                let mut matching = snapshot
+                                    .utterances
+                                    .iter()
+                                    .filter(|row| row.metadata.utterance_id == *id);
+                                matching.next().is_some_and(|row| {
+                                    crate::utterance_evidence_revision(row) == *fingerprint
+                                }) && matching.next().is_none()
+                            },
+                        )
+                    {
+                        return None;
+                    }
+                } else if !utterance_fingerprints.is_empty() {
+                    return None;
+                }
+                Some(Passage {
+                    meeting_id: id,
+                    title: info.title,
+                    start_iso: info.start_iso,
+                    kind,
+                    start_ms: start.map(|ms| ms as u64),
+                    snippet: if snippet.is_empty() {
+                        text.chars().take(160).collect()
+                    } else {
+                        snippet
+                    },
+                    text,
+                    meeting_uid,
+                    utterance_ids,
+                    utterance_fingerprints,
+                })
+            },
+        )
         .collect())
 }
 
@@ -450,6 +660,182 @@ mod tests {
             hits[0].snippet.contains("«Parakeet»"),
             "{}",
             hits[0].snippet
+        );
+    }
+
+    #[test]
+    fn canonical_index_bindings_survive_label_changes_and_reject_changed_sources() {
+        let mut f = fixture();
+        let id = meeting(&f.store, "Owned bindings", 9);
+        let mut row = crate::MeetingUtterance::new(
+            segment(1_250, "The deliverable is ready."),
+            Some("microphone".into()),
+        );
+        row.segment.voice = Some(1);
+        row.metadata.attribution = crate::AutomaticAttribution {
+            kind: crate::AttributionKind::Single,
+            voices: vec![1],
+            turns: vec![],
+            self_voice: false,
+        };
+        let before = f
+            .store
+            .write_transcript_snapshot(&id, None, std::slice::from_ref(&row))
+            .unwrap();
+        f.index.sync(&f.store).unwrap();
+        let first = f
+            .index
+            .search(&f.store, "deliverable", None, 10)
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            first.meeting_uid.as_deref(),
+            Some(before.meeting_uid.as_str())
+        );
+        assert_eq!(first.utterance_ids, vec![row.metadata.utterance_id.clone()]);
+        assert_eq!(
+            first.utterance_fingerprints,
+            vec![crate::utterance_evidence_revision(&row)]
+        );
+        row.segment.voice = Some(2);
+        row.metadata.attribution.voices = vec![2];
+        row.metadata.attribution_revision += 1;
+        f.store
+            .write_transcript_snapshot(&id, Some(before.revision), &[row])
+            .unwrap();
+        f.index.sync(&f.store).unwrap();
+        let relabeled = f
+            .index
+            .search(&f.store, "deliverable", None, 10)
+            .unwrap()
+            .remove(0);
+        assert_eq!(first.utterance_ids, relabeled.utterance_ids);
+        assert_eq!(
+            first.utterance_fingerprints,
+            relabeled.utterance_fingerprints
+        );
+        assert_ne!(first.text, relabeled.text);
+        std::fs::write(
+            f.store.dir_of(&id).join("transcript.md"),
+            "[00:01.250] **Anderen 2:** A changed source.\n",
+        )
+        .unwrap();
+        assert!(
+            f.index
+                .search(&f.store, "deliverable", None, 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn indexed_passages_keep_every_distinct_utterance_and_legacy_json_stays_readable() {
+        let mut f = fixture();
+        let id = meeting(&f.store, "Owned turns", 9);
+        let rows = ["😀 Één ja.", "Ja.", "Nee."]
+            .into_iter()
+            .map(|text| {
+                crate::MeetingUtterance::new(segment(100, text), Some("system_audio".into()))
+            })
+            .collect::<Vec<_>>();
+        f.store.write_transcript_snapshot(&id, None, &rows).unwrap();
+        f.index.sync(&f.store).unwrap();
+        let passages = f.index.recent(&f.store, Some(&id), u32::MAX).unwrap();
+        let transcript = passages
+            .iter()
+            .filter(|passage| passage.kind == PassageKind::Transcript)
+            .collect::<Vec<_>>();
+        let ids = transcript
+            .iter()
+            .flat_map(|passage| passage.utterance_ids.iter())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            ids,
+            rows.iter().map(|row| &row.metadata.utterance_id).collect()
+        );
+        let legacy: Passage = serde_json::from_value(serde_json::json!({"meeting_id":"legacy", "title":"M", "start_iso":"", "kind":"transcript", "start_ms":0, "text":"Old source", "snippet":""})).unwrap();
+        assert!(legacy.meeting_uid.is_none());
+        assert!(legacy.utterance_ids.is_empty());
+        assert!(
+            serde_json::to_value(legacy)
+                .unwrap()
+                .get("utterance_ids")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn cached_passages_never_retarget_a_new_meeting_reusing_the_same_folder() {
+        let mut f = fixture();
+        let id = meeting(&f.store, "Reusable title", 9);
+        f.store
+            .write_notes(&id, "A former meeting secret.")
+            .unwrap();
+        f.index.sync(&f.store).unwrap();
+        f.store.delete(&id).unwrap();
+        let replacement = meeting(&f.store, "Reusable title", 9);
+        assert_eq!(replacement, id);
+        f.store
+            .write_notes(&replacement, "Different current notes.")
+            .unwrap();
+        assert!(
+            f.index
+                .search(&f.store, "former", None, 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn partial_metadata_sync_reindexes_when_the_missing_part_arrives() {
+        let mut f = fixture();
+        let id = meeting(&f.store, "Owned partial sync", 9);
+        let row = crate::MeetingUtterance::new(
+            segment(500, "A portable commitment."),
+            Some("microphone".into()),
+        );
+        f.store
+            .write_transcript_snapshot(&id, None, std::slice::from_ref(&row))
+            .unwrap();
+        f.index.sync(&f.store).unwrap();
+        let original = f
+            .index
+            .search(&f.store, "portable", None, 10)
+            .unwrap()
+            .remove(0);
+        let part = std::fs::read_dir(f.store.dir_of(&id))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("transcript.meta.")
+                    && path.file_name().unwrap() != "transcript.meta.json"
+            })
+            .unwrap();
+        let bytes = std::fs::read(&part).unwrap();
+        std::fs::remove_file(&part).unwrap();
+        f.index.sync(&f.store).unwrap();
+        let pending = f
+            .index
+            .search(&f.store, "portable", None, 10)
+            .unwrap()
+            .remove(0);
+        assert_ne!(pending.utterance_ids, original.utterance_ids);
+        assert!(pending.text.starts_with("Unknown speaker:"));
+        std::fs::write(&part, bytes).unwrap();
+        f.index.sync(&f.store).unwrap();
+        let restored = f
+            .index
+            .search(&f.store, "portable", None, 10)
+            .unwrap()
+            .remove(0);
+        assert_eq!(restored.utterance_ids, original.utterance_ids);
+        assert_eq!(
+            restored.utterance_fingerprints,
+            original.utterance_fingerprints
         );
     }
 

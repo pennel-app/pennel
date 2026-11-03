@@ -5,6 +5,9 @@ export interface MeetingSourceTarget {
   kind: "notes" | "summary" | "transcript";
   start_ms: number | null;
   text: string;
+  meeting_uid?: string | null;
+  utterance_ids?: string[];
+  utterance_fingerprints?: string[];
 }
 export interface WorkspaceRoute {
   section: WorkspaceSection;
@@ -74,6 +77,18 @@ export function parseWorkspaceRoute(value: unknown): WorkspaceRoute | null {
     if (!["notes", "summary", "transcript"].includes(String(candidate.kind)) || typeof candidate.text !== "string" || !candidate.text.trim()) return null;
     if (candidate.start_ms !== null && !(typeof candidate.start_ms === "number" && Number.isFinite(candidate.start_ms) && candidate.start_ms >= 0)) return null;
     source = { kind: candidate.kind as MeetingSourceTarget["kind"], start_ms: candidate.start_ms as number | null, text: candidate.text };
+    if (candidate.meeting_uid != null) {
+      if (typeof candidate.meeting_uid !== "string" || !candidate.meeting_uid.trim()) return null;
+      source.meeting_uid = candidate.meeting_uid;
+    }
+    if (candidate.utterance_ids != null || candidate.utterance_fingerprints != null) {
+      const ids = candidate.utterance_ids;
+      const fingerprints = candidate.utterance_fingerprints;
+      if (source.kind !== "transcript" || !source.meeting_uid || !Array.isArray(ids) || !ids.length || !ids.every(id => typeof id === "string" && id.trim())
+        || new Set(ids).size !== ids.length || !Array.isArray(fingerprints) || fingerprints.length !== ids.length
+        || !fingerprints.every(fingerprint => typeof fingerprint === "string" && /^[a-f0-9]{64}$/.test(fingerprint))) return null;
+      source.utterance_ids = [...ids]; source.utterance_fingerprints = [...fingerprints];
+    }
   }
   return workspaceRoute(section, section === "settings" && tab === "meetings" ? "meeting-settings" : tab, id, jump, source);
 }

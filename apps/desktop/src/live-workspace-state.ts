@@ -39,7 +39,8 @@ export class LiveStatusEpoch {
   accepts(revision: number) { return revision === this.revision; }
 }
 
-export function segmentEvidenceValue(segment: { start_ms: number; speaker: string; text: string; failed: boolean; voice: number | null }) {
+export function segmentEvidenceValue(segment: { start_ms: number; end_ms?: number; speaker: string; text: string; failed: boolean; voice: number | null; utterance_id?: string | null; source_id?: string | null }) {
   const text = segment.failed ? "" : segment.text.split(/\p{White_Space}+/u).filter(Boolean).join(" ");
+  if (segment.utterance_id) return [segment.utterance_id, segment.source_id ?? null, segment.start_ms, segment.end_ms, text, segment.failed];
   return [segment.start_ms, segment.speaker, text, segment.failed, segment.speaker === "others" ? segment.voice ?? null : null];
 }

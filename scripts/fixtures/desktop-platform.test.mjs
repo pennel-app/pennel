@@ -82,6 +82,35 @@ test("two-track preview fixtures stay out of question evidence and reconcile onl
   assert.equal(JSON.stringify(await api.invoke("meeting_detail", { id: status.id })).includes("sentinel"), false);
 });
 
+test("durable fixture sources keep identity and content fingerprints through attribution revisions", async () => {
+  const context = fixture("speaker-turns-live", { configured_text_provider: true, live_question_manual: true });
+  const api = context.__PENNEL_PLATFORM__;
+  const control = context.__PENNEL_FIXTURE__.workspace;
+  const before = await api.invoke("meeting_status");
+  assert.ok(before.transcript[0].utterance_id);
+  const snapshot = await api.invoke("begin_live_question", { requestId: "durable-source", meetingUid: before.meeting_uid, sessionId: before.session_id,
+    expectedNotesText: before.notes, question: "Where is the exact source?", history: [] });
+  assert.equal(snapshot.anchors[0].segment_keys[0], `utterance:${before.transcript[0].utterance_id}`);
+  control.attribution(0, { speaker: "me", voice: 3, attribution: { kind: "single", voices: [3] } });
+  const after = await api.invoke("meeting_status");
+  assert.equal(after.transcript[0].utterance_id, before.transcript[0].utterance_id);
+  assert.equal(after.transcript[0].source_id, before.transcript[0].source_id);
+  assert.equal(after.transcript[0].source_fingerprint, before.transcript[0].source_fingerprint);
+  assert.equal(snapshot.anchors[0].segment_fingerprints[0], before.transcript[0].source_fingerprint);
+});
+
+test("rich fixture fingerprints preserve BOM while collapsing only Unicode White_Space", async () => {
+  const context = fixture("speaker-turns-live", { configured_text_provider: true, live_question_manual: true });
+  const control = context.__PENNEL_FIXTURE__.workspace;
+  control.replaceTranscript([{ utterance_id: "u-bom", source_id: "microphone", start_ms: 0, end_ms: 1000, speaker: "others", voice: null,
+    failed: false, text: "\u00a0\ufeffalpha\u2003beta\n😀\ufeff\u00a0" }]);
+  const status = await context.__PENNEL_PLATFORM__.invoke("meeting_status");
+  const tuple = ["u-bom", "microphone", 0, 1000, "\ufeffalpha beta 😀\ufeff", false];
+  const expected = Buffer.from(await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(tuple)))).toString("hex");
+  assert.equal(expected, "8a1840c80592f1692d9de9405f944333752b7b3fbb8e3d9674b03ceea425ff96");
+  assert.equal(status.transcript[0].source_fingerprint, expected);
+});
+
 test("saved-audio retranscription reports local progress and marks the summary outdated", async () => {
   const context=fixture("meeting-transcript",{saved_audio:true});
   const client=context.__PENNEL_PLATFORM__;

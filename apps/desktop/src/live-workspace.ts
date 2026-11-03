@@ -8,6 +8,7 @@ import { LivePaneState, LiveRequestState, LiveStatusEpoch, segmentEvidenceValue,
 import { languageModelConfigured } from "./presentation";
 import { speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
+import { attributionNoticeKey } from "./meeting-source";
 import type { Context } from "./main";
 
 interface Turn {
@@ -105,7 +106,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   const titleWrites = new SerialQueue();
   const refresh = new RecordingRefresh(initial);
   const turns: Turn[] = [];
-  const rows = new Map<string, { element: HTMLElement; body: HTMLElement; speaker: HTMLElement; segment: Segment }>();
+  const rows = new Map<string, { element: HTMLElement; body: HTMLElement; speaker: HTMLElement; correction: HTMLElement; segment: Segment }>();
   const root = h("article", { class: "live-workspace live-recording", "data-session-id": session, "data-meeting-uid": uid });
   const title = textField({ class: "live-title", "aria-label": l("meetings.meeting_title_label") });
   const clock = h("span", { class: "live-clock" });
@@ -165,6 +166,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   const follow = controlButton({ class: "btn compact live-follow", hidden: true, onclick: () => { following = true; follow.hidden = true; scrollLive(); } }, l("meetings.workspace_follow"));
   const transcriptOutput = h("div", { class: "live-transcript", tabindex: 0, "aria-label": l("meetings.workspace_transcript") });
   const transcriptEmpty = h("p", { class: "muted" }, l("meetings.empty_transcript"));
+  const attributionNotice = h("p", { class: "help live-attribution-notice", hidden: true });
   transcriptOutput.append(transcriptEmpty);
   const captionOutput = h("div", { class: "live-captions", hidden: true, role: "region", tabindex: 0, "aria-label": l("meetings.captions_title") });
   const captionRows = new Map<Speaker, { element: HTMLElement; state: HTMLElement; body: HTMLElement }>();
@@ -177,7 +179,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     captionRows.set(source, { element, state, body });
     captionOutput.append(element);
   }
-  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, h("p", { class: "help" }, l("meetings.workspace_cadence")), follow), transcriptOutput, captionOutput);
+  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, h("p", { class: "help" }, l("meetings.workspace_cadence")), follow), attributionNotice, transcriptOutput, captionOutput);
   const history = h("div", { class: "live-question-history chat-history", tabindex: 0, "aria-label": l("meetings.workspace_questions") });
   const question = h("textarea", { class: "live-question-input", rows: 2, "aria-label": l("meetings.your_question"), placeholder: l("meetings.ask_placeholder_this") });
   const submit = controlButton({ class: "btn primary live-question-submit", onclick: () => { void ask(); } }, l("meetings.ask"));
@@ -373,6 +375,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     if (next.can_retry_persistence && !recovery.childElementCount) recovery.append(h("p", { class: "error" }, localizeBackendText(next.persistence_error ?? next.terminal_error ?? "")), controlButton({ class: "btn", onclick: async () => { try { await flush(); await api.retryMeetingPersistence(session); } catch (error) { showSaveError(error); } } }, l("common.retry")));
     if (preview && !composing && previewValue !== notes.value) { const position = notePreview.scrollTop; notePreview.replaceChildren(markdown(notes.value)); notePreview.scrollTop = position; previewValue = notes.value; }
     updateTranscript(next.transcript);
+    const metadataNotice = attributionNoticeKey(next.metadata_status);
+    attributionNotice.textContent = metadataNotice ? t(metadataNotice) : "";
+    attributionNotice.hidden = !metadataNotice;
     updateCaptions(next);
   }
   function updateCaptions(next: MeetingStatus) {
@@ -411,14 +416,20 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       if (!row) {
         const body = h("div", { class: "transcript-copy" }, segment.failed ? l("meetings.transcription_failed") : segment.text);
         const speaker = h("span", { class: "speaker" }, speakerUiLabel(segment));
-        const element = h("div", { class: "transcript-line", "data-segment-key": key, "data-start-ms": segment.start_ms }, h("span", { class: "transcript-stamp" }, formatClock(segment.start_ms / 1000)), speaker, body);
-        row = { element, body, speaker, segment };
+        const correction = h("p", { class: "help transcript-correction-review", hidden: !segment.correction_review_required }, l("meetings.attribution_correction_review"));
+        const element = h("div", { class: "transcript-line", "data-segment-key": key, "data-start-ms": segment.start_ms, "data-source-id": segment.source_id ?? "" }, h("span", { class: "transcript-stamp" }, formatClock(segment.start_ms / 1000)), speaker, body, correction);
+        row = { element, body, speaker, correction, segment };
         rows.set(key, row);
       } else if (!sameSegment(row.segment, segment)) {
         if (row.segment.text !== segment.text || row.segment.failed !== segment.failed) row.body.textContent = segment.failed ? t("meetings.transcription_failed") : segment.text;
-        if (row.segment.speaker !== segment.speaker || row.segment.voice !== segment.voice) row.speaker.textContent = String(speakerUiLabel(segment));
         row.segment = segment;
       }
+      const label = String(speakerUiLabel(segment));
+      if (row.speaker.textContent !== label) row.speaker.textContent = label;
+      row.speaker.title = label;
+      row.correction.hidden = !segment.correction_review_required;
+      row.element.dataset.sourceId = segment.source_id ?? "";
+      row.element.title = segment.source_id ? t(`meetings.attribution_source_${segment.source_id}`) : "";
       if (before !== row.element) transcriptOutput.insertBefore(row.element, before);
       before = row.element.nextElementSibling;
     }
@@ -448,7 +459,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     const detail = await api.meetingDetail(id);
     if (!statusEpoch.accepts(epoch) || owner.id !== id) return;
     finalized = true;
-    updateStatus({ ...status, id: owner.id, busy: false, recording: false, phase: "idle", pending: 0, notes: detail.notes, transcript: detail.transcript, title: detail.info?.title ?? status.title });
+    updateStatus({ ...status, id: owner.id, busy: false, recording: false, phase: "idle", pending: 0, notes: detail.notes, transcript: detail.transcript,
+      metadata_status: detail.metadata_status, title: detail.info?.title ?? status.title });
   }
   async function stopCapture() {
     statusEpoch.invalidate();

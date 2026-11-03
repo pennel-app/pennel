@@ -54,3 +54,20 @@ test("evidence identity survives persisted Markdown timestamps and whitespace", 
   assert.notDeepEqual(segmentEvidenceValue(live), segmentEvidenceValue({ ...stored, text: "Different" }));
   assert.deepEqual(segmentEvidenceValue({ ...live, speaker: "me", voice: 10 }), [1200, "me", "First second third", false, null]);
 });
+
+test("durable source evidence excludes mutable speaker attribution but retains source timing and text", () => {
+  const utterance = { utterance_id: "u-one", source_id: "microphone", start_ms: 1200, end_ms: 3500,
+    speaker: "others", text: " First\n second\u0085third \t", voice: 2, failed: false };
+  const value = segmentEvidenceValue(utterance);
+  assert.deepEqual(value, ["u-one", "microphone", 1200, 3500, "First second third", false]);
+  assert.deepEqual(value, segmentEvidenceValue({ ...utterance, speaker: "me", voice: null }));
+  for (const change of [{ source_id: "system" }, { start_ms: 1400 }, { end_ms: 3600 }, { text: "Changed words" }, { utterance_id: "u-two" }]) {
+    assert.notDeepEqual(value, segmentEvidenceValue({ ...utterance, ...change }));
+  }
+});
+
+test("rich evidence uses Rust Unicode White_Space boundaries and preserves literal BOM characters", () => {
+  const utterance = { utterance_id: "u-bom", source_id: "microphone", start_ms: 0, end_ms: 1000,
+    speaker: "others", voice: null, failed: false, text: "\u00a0\ufeffalpha\u2003beta\n😀\ufeff\u00a0" };
+  assert.deepEqual(segmentEvidenceValue(utterance), ["u-bom", "microphone", 0, 1000, "\ufeffalpha beta 😀\ufeff", false]);
+});

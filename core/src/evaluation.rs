@@ -371,6 +371,12 @@ struct InputPassage {
     text: String,
     #[serde(default)]
     snippet: String,
+    #[serde(default)]
+    meeting_uid: Option<String>,
+    #[serde(default)]
+    utterance_ids: Vec<String>,
+    #[serde(default)]
+    utterance_fingerprints: Vec<String>,
 }
 
 fn parse_citations(input: Value) -> Result<Value, &'static str> {
@@ -391,6 +397,9 @@ fn parse_citations(input: Value) -> Result<Value, &'static str> {
             start_ms: source.start_ms,
             text: source.text,
             snippet: source.snippet,
+            meeting_uid: source.meeting_uid,
+            utterance_ids: source.utterance_ids,
+            utterance_fingerprints: source.utterance_fingerprints,
         });
     }
     let citations = cited(text(&input, "answer")?, &passages);

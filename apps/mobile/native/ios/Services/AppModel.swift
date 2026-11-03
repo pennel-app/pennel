@@ -53,7 +53,9 @@ final class AppModel {
     }
 
     private func registerSystemProviders() {
-        engine.setSystemTranscriber(transcriber: AppleSpeechTranscriber())
+        let speech = AppleSpeechTranscriber()
+        engine.setSystemTranscriber(transcriber: speech)
+        engine.setTimedSystemTranscriber(transcriber: speech)
         engine.setSystemLanguageModel(model: AppleIntelligenceModel())
     }
 

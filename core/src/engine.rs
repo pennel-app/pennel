@@ -22,7 +22,7 @@ use crate::local_engine::LocalEngine;
 use crate::meeting_chat::{ChatTurn, MeetingAnswer};
 use crate::meeting_index::{MeetingIndex, Passage};
 use crate::meetings::SpeakerName;
-use crate::meetings::{MeetingInfo, MeetingStore, Segment};
+use crate::meetings::{MeetingInfo, MeetingStore, Segment, Speaker};
 use crate::models::{CancelFlag, DownloadListener, LocalModel, ModelState, ModelStore};
 use crate::provider::{
     ProviderAccount, ProviderConfig, ProviderKind, ProviderTask, requires_key, supports,
@@ -142,6 +142,7 @@ pub struct PennelEngine {
     local: LocalEngine,
     index: Mutex<Option<MeetingIndex>>,
     system_stt: RwLock<Option<Arc<dyn SystemTranscriber>>>,
+    timed_system_stt: RwLock<Option<Arc<dyn crate::TimedSystemTranscriber>>>,
     system_llm: RwLock<Option<Arc<dyn SystemLanguageModel>>>,
     secrets: RwLock<Option<Arc<dyn SecretStore>>>,
     cloud_session: Mutex<Option<Arc<Session>>>,
@@ -343,6 +344,14 @@ impl PennelEngine {
     /// Lets the app plug in the OS's on-device recognizer (Apple's dictation model) as a provider.
     pub fn set_system_transcriber(&self, transcriber: Arc<dyn SystemTranscriber>) {
         *self.system_stt.write().unwrap() = Some(transcriber);
+        *self.timed_system_stt.write().unwrap() = None;
+    }
+
+    pub fn set_timed_system_transcriber(
+        &self,
+        transcriber: Arc<dyn crate::TimedSystemTranscriber>,
+    ) {
+        *self.timed_system_stt.write().unwrap() = Some(transcriber);
     }
 
     pub fn set_secret_store(&self, store: Arc<dyn SecretStore>) -> Result<(), PennelError> {
@@ -988,6 +997,48 @@ impl PennelEngine {
         self.meeting_store().read_transcript(&id)
     }
 
+    pub fn meeting_transcript_snapshot_json(&self, id: String) -> Result<String, PennelError> {
+        let snapshot = self.meeting_store().read_transcript_snapshot(&id)?;
+        serde_json::to_string(&serde_json::json!({
+            "meeting_uid": snapshot.meeting_uid,
+            "revision": snapshot.revision,
+            "metadata_status": snapshot.metadata_status,
+            "transcript": crate::transcript_projection::rows(&snapshot.utterances)?,
+        }))
+        .map_err(PennelError::storage)
+    }
+
+    pub fn meeting_utterance_audio_json(
+        &self,
+        id: String,
+        utterance_id: String,
+    ) -> Result<String, PennelError> {
+        let snapshot = self.meeting_store().read_transcript_snapshot(&id)?;
+        if !matches!(
+            snapshot.metadata_status,
+            crate::TranscriptMetadataStatus::Valid | crate::TranscriptMetadataStatus::Absent
+        ) {
+            return Err(PennelError::InvalidResponse { message: "The transcript's source metadata is unavailable. Choose an audio track explicitly.".into() });
+        }
+        let row = snapshot
+            .utterances
+            .iter()
+            .find(|row| row.metadata.utterance_id == utterance_id)
+            .ok_or(PennelError::NotFound)?;
+        let source =
+            match row.metadata.source_id.as_deref() {
+                Some("microphone") => Speaker::Me,
+                Some("system" | "system_audio" | "room_microphone") => Speaker::Others,
+                _ => return Err(PennelError::InvalidResponse {
+                    message:
+                        "The physical audio source is unknown. Choose an audio track explicitly."
+                            .into(),
+                }),
+            };
+        serde_json::to_string(&serde_json::json!({"source":source,"source_id":row.metadata.source_id,"start_ms":row.segment.start_ms}))
+            .map_err(PennelError::storage)
+    }
+
     pub fn meeting_dir(&self, id: String) -> String {
         self.meeting_store()
             .dir_of(&id)
@@ -1043,25 +1094,64 @@ impl PennelEngine {
         let _edit = self.edit_meeting(&id)?;
         let store = self.meeting_store();
         let settings = self.settings();
-        let mut segments = store.read_transcript(&id);
+        let snapshot = store.read_transcript_snapshot(&id)?;
+        if !matches!(
+            snapshot.metadata_status,
+            crate::TranscriptMetadataStatus::Valid | crate::TranscriptMetadataStatus::Absent
+        ) {
+            return Err(PennelError::Storage {
+                message: "Restore the transcript's source metadata before retrying recognition."
+                    .into(),
+            });
+        }
+        let mut rows = snapshot.utterances;
         let mut recovered = 0;
-        for segment in segments.iter_mut().filter(|s| s.failed) {
+        for row in rows.iter_mut().filter(|row| row.segment.failed) {
+            let segment = &mut row.segment;
             let path =
                 crate::session::failed_path(&store.dir_of(&id), segment.speaker, segment.start_ms);
             let Ok(wav) = std::fs::read(&path) else {
                 continue;
             };
-            if let Ok(text) = self.stt(&settings, &settings.meeting_stt, &wav, &keys) {
-                segment.text = if is_hallucination(&text) {
+            if let Ok(transcript) = self.stt_meeting(&settings, &wav, &keys) {
+                if let Some((samples, rate)) = decode_wav(&wav) {
+                    segment.end_ms = segment
+                        .start_ms
+                        .saturating_add(samples.len() as u64 * 1_000 / u64::from(rate.max(1)));
+                }
+                let retained = !is_hallucination(&transcript.text);
+                segment.text = if !retained {
                     String::new()
                 } else {
-                    text
+                    transcript.text
                 };
                 segment.failed = false;
+                row.metadata.spans = if retained {
+                    transcript
+                        .spans
+                        .into_iter()
+                        .map(|span| {
+                            crate::TimedTextSpan(
+                                span.start_byte,
+                                span.end_byte,
+                                segment.start_ms.saturating_add(span.start_ms),
+                                segment.start_ms.saturating_add(span.end_ms),
+                            )
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                row.metadata.refresh_fingerprints(segment);
+                if let Some(manual) = row.metadata.manual.as_mut()
+                    && manual.source_fingerprint != row.metadata.source_fingerprint
+                {
+                    manual.review_required = true;
+                }
                 recovered += 1;
             }
         }
-        store.write_transcript(&id, &segments)?;
+        store.write_transcript_snapshot(&id, Some(snapshot.revision), &rows)?;
         store.restore_recovery_duration(&id)?;
         let _ = store.cleanup_committed_audio(&id);
         Ok(recovered)
@@ -1076,7 +1166,7 @@ impl PennelEngine {
     ) -> Result<String, PennelError> {
         use crate::summary::{
             BLOCK_CHARS, MAP_REDUCE_ABOVE, blocks, chunk_messages, summary_messages,
-            transcript_text,
+            transcript_snapshot_text,
         };
         const SUMMARY_TIMEOUT_SECS: u64 = 180;
 
@@ -1086,7 +1176,10 @@ impl PennelEngine {
         let store = self.meeting_store();
         let info = store.info(&id).ok_or(PennelError::NotFound)?;
         let notes = store.read_notes(&id);
-        let transcript = transcript_text(&store.read_transcript(&id), &store.speaker_names(&id));
+        let transcript = transcript_snapshot_text(
+            &store.read_transcript_snapshot(&id)?,
+            &store.speaker_names(&id),
+        );
         if transcript.trim().is_empty() && notes.trim().is_empty() {
             return Err(PennelError::NoSpeech);
         }
@@ -1694,6 +1787,13 @@ impl PennelEngine {
         self.meeting_store().uid_of(&id)
     }
 
+    pub fn meeting_utterance_snapshot(
+        &self,
+        id: String,
+    ) -> Result<crate::MeetingTranscriptSnapshot, PennelError> {
+        self.meeting_store().read_transcript_snapshot(&id)
+    }
+
     pub fn meeting_id_for_uid(&self, uid: &str) -> Option<String> {
         let store = self.meeting_store();
         store
@@ -2183,6 +2283,7 @@ impl PennelEngine {
             local: LocalEngine::default(),
             index: Mutex::new(index),
             system_stt: RwLock::new(None),
+            timed_system_stt: RwLock::new(None),
             system_llm: RwLock::new(None),
             secrets: RwLock::new(None),
             cloud_session: Mutex::new(None),
@@ -2458,6 +2559,71 @@ impl PennelEngine {
         })
     }
 
+    pub(crate) fn stt_meeting(
+        &self,
+        settings: &Settings,
+        wav: &[u8],
+        keys: &ApiKeys,
+    ) -> Result<crate::SpeechTranscript, PennelError> {
+        let (account, model) = settings
+            .resolve(&settings.meeting_stt)
+            .ok_or(PennelError::NotFound)?;
+        if account.kind == ProviderKind::Local {
+            crate::local_engine::ensure_available()?;
+            let path = self
+                .models
+                .path(&model)
+                .ok_or(PennelError::ModelNotDownloaded)?;
+            let (samples, _) = decode_wav(wav).ok_or(PennelError::InvalidResponse {
+                message: "bad audio".into(),
+            })?;
+            return self.local.transcribe_timed(
+                &path,
+                &samples,
+                settings.language.as_deref(),
+                &capped_terms(&settings.dictionary, MAX_PROMPT_CHARS),
+            );
+        }
+        if account.kind == ProviderKind::AppleSpeech {
+            let timed = self.timed_system_stt.read().unwrap().clone();
+            if let Some(transcriber) = timed {
+                let (samples, rate) = decode_wav(wav).ok_or(PennelError::InvalidResponse {
+                    message: "bad audio".into(),
+                })?;
+                let duration = samples.len() as u64 * 1_000 / u64::from(rate.max(1));
+                let result = transcriber.transcribe_timed(
+                    samples,
+                    rate,
+                    settings.language.clone(),
+                    crate::system_stt::bounded_vocabulary(&settings.dictionary),
+                )?;
+                return Ok(crate::SpeechTranscript::validated(
+                    result.text,
+                    result.spans,
+                    result.timing_kind,
+                    duration,
+                )
+                .trimmed());
+            }
+        }
+        self.stt(settings, &settings.meeting_stt, wav, keys)
+            .map(crate::SpeechTranscript::plain)
+    }
+
+    pub(crate) fn transcribe_complete_local_timed(
+        &self,
+        settings: &Settings,
+        model_path: &Path,
+        samples: &[f32],
+    ) -> Result<crate::SpeechTranscript, PennelError> {
+        self.local.transcribe_complete_timed(
+            model_path,
+            samples,
+            settings.language.as_deref(),
+            &capped_terms(&settings.dictionary, MAX_PROMPT_CHARS),
+        )
+    }
+
     pub(crate) fn preview_local(
         &self,
         settings: &Settings,
@@ -2515,6 +2681,10 @@ impl PennelEngine {
         }
     }
 
+    #[allow(
+        dead_code,
+        reason = "Retain the text-only complete-recognition compatibility projection."
+    )]
     pub(crate) fn transcribe_complete_local(
         &self,
         settings: &Settings,
@@ -4066,12 +4236,14 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, encode_wav(&speech(), 16_000)).unwrap();
         let transcript = store.dir_of(&id).join("transcript.md");
+        let previous_transcript = std::fs::read(&transcript).unwrap();
         std::fs::remove_file(&transcript).unwrap();
         std::fs::create_dir(&transcript).unwrap();
-        let recognition = stt(&mut server, "De herstelde zin.").expect(2);
+        let recognition = stt(&mut server, "De herstelde zin.").expect(1);
         assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
         assert!(path.exists());
         std::fs::remove_dir(&transcript).unwrap();
+        std::fs::write(&transcript, previous_transcript).unwrap();
         assert_eq!(engine.retranscribe_failed(id.clone(), keys()).unwrap(), 1);
         assert!(!path.exists());
         assert_eq!(store.read_transcript(&id)[0].text, "De herstelde zin.");
@@ -4409,6 +4581,9 @@ mod tests {
             start_ms: Some(1_000),
             text: "Earlier evidence".into(),
             snippet: String::new(),
+            meeting_uid: None,
+            utterance_ids: Vec::new(),
+            utterance_fingerprints: Vec::new(),
         }];
         let request = engine
             .prepare_meeting_question("What happened?".into(), vec![], sources.clone(), keys())

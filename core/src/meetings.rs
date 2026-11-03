@@ -1,19 +1,54 @@
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::SystemTime;
 
 use chrono::{DateTime, Local};
 
 use crate::error::PennelError;
+use crate::meeting_utterances::{self, MeetingTranscriptSnapshot, MeetingUtterance};
 
 const TITLE_MAX: usize = 60;
 const FAILED_MARK: &str = "_(transcriptie mislukt)_";
-const REPLACEMENT_JOURNAL: &str = ".pennel-retranscription-pending.json";
-const TRANSCRIPT_BACKUPS: &str = ".pennel-transcript-backups";
-// Readers must see matching text, speaker names and recovery chunks during the short commit.
-static REPLACEMENT_GATE: Mutex<()> = Mutex::new(());
+pub(crate) const REPLACEMENT_JOURNAL: &str = ".pennel-retranscription-pending.json";
+pub(crate) const TRANSCRIPT_BACKUPS: &str = ".pennel-transcript-backups";
+#[derive(Clone, Hash, PartialEq, Eq)]
+enum ReplacementKey {
+    Path(PathBuf),
+    Uid(PathBuf, String),
+}
+
+// Keep one meeting atomic without making unrelated libraries wait for its metadata or fsyncs.
+fn replacement_gate(root: &Path) -> Arc<Mutex<()>> {
+    static GATES: OnceLock<Mutex<std::collections::HashMap<ReplacementKey, Weak<Mutex<()>>>>> =
+        OnceLock::new();
+    let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let path_key = ReplacementKey::Path(canonical.clone());
+    let uid_key = fs::read_to_string(canonical.join("meeting.md"))
+        .ok()
+        .and_then(|text| parse_meeting(&text).map(|(front, _)| front.uid))
+        .filter(|uid| valid_uid(uid))
+        .map(|uid| {
+            ReplacementKey::Uid(canonical.parent().unwrap_or(&canonical).to_path_buf(), uid)
+        });
+    let mut gates = GATES
+        .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    gates.retain(|_, gate| gate.strong_count() > 0);
+    let gate = uid_key
+        .as_ref()
+        .and_then(|key| gates.get(key))
+        .and_then(Weak::upgrade)
+        .or_else(|| gates.get(&path_key).and_then(Weak::upgrade))
+        .unwrap_or_else(|| Arc::new(Mutex::new(())));
+    gates.insert(path_key, Arc::downgrade(&gate));
+    if let Some(uid_key) = uid_key {
+        gates.insert(uid_key, Arc::downgrade(&gate));
+    }
+    gate
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PendingReplacement {
@@ -46,7 +81,7 @@ impl PendingReplacement {
     }
 }
 
-fn sync_directory(path: &Path) -> Result<(), PennelError> {
+pub(crate) fn sync_directory(path: &Path) -> Result<(), PennelError> {
     #[cfg(unix)]
     fs::File::open(path)
         .and_then(|directory| directory.sync_all())
@@ -68,6 +103,7 @@ fn rollback_replacement(root: &Path, pending: &PendingReplacement) -> Result<(),
     let transcript = fs::read(backup.join("transcript.md")).map_err(PennelError::storage)?;
     durable_write(&root.join("meeting.md"), &metadata)?;
     durable_write(&root.join("transcript.md"), &transcript)?;
+    meeting_utterances::restore_metadata(root, &backup)?;
     crate::meeting_recording::restore_recording_metadata(root, &backup)?;
     if pending.had_failed {
         let saved = backup.join("failed");
@@ -512,9 +548,8 @@ impl MeetingStore {
     }
 
     fn read_file(&self, id: &str, name: &str) -> String {
-        let _gate = REPLACEMENT_GATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
         std::fs::read_to_string(self.dir_of(id).join(name)).unwrap_or_default()
     }
 
@@ -575,9 +610,8 @@ impl MeetingStore {
     }
 
     pub(crate) fn transcript_fingerprint(&self, id: &str) -> Result<String, PennelError> {
-        let _gate = REPLACEMENT_GATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
         use sha2::{Digest, Sha256};
         let bytes = match fs::read(self.dir_of(id).join("transcript.md")) {
             Ok(bytes) => bytes,
@@ -617,6 +651,7 @@ impl MeetingStore {
         }
     }
 
+    #[allow(dead_code)] // Retained for callers of the text-only replacement contract.
     pub(crate) fn replace_retranscribed(
         &self,
         id: &str,
@@ -624,7 +659,7 @@ impl MeetingStore {
         names: &[SpeakerName],
         tracks: &[Speaker],
     ) -> Result<PathBuf, PennelError> {
-        self.replace_transcript(id, segments, names, tracks, true)
+        self.replace_transcript(id, segments, names, tracks, true, None)
     }
 
     pub(crate) fn replace_speaker_labels(
@@ -634,7 +669,29 @@ impl MeetingStore {
         names: &[SpeakerName],
         tracks: &[Speaker],
     ) -> Result<PathBuf, PennelError> {
-        self.replace_transcript(id, segments, names, tracks, false)
+        self.replace_transcript(id, segments, names, tracks, false, None)
+    }
+
+    pub(crate) fn replace_speaker_utterances(
+        &self,
+        id: &str,
+        utterances: &[MeetingUtterance],
+        names: &[SpeakerName],
+        tracks: &[Speaker],
+    ) -> Result<PathBuf, PennelError> {
+        let segments: Vec<_> = utterances.iter().map(|row| row.segment.clone()).collect();
+        self.replace_transcript(id, &segments, names, tracks, false, Some(utterances))
+    }
+
+    pub(crate) fn replace_retranscribed_utterances(
+        &self,
+        id: &str,
+        utterances: &[MeetingUtterance],
+        names: &[SpeakerName],
+        tracks: &[Speaker],
+    ) -> Result<PathBuf, PennelError> {
+        let segments: Vec<_> = utterances.iter().map(|row| row.segment.clone()).collect();
+        self.replace_transcript(id, &segments, names, tracks, true, Some(utterances))
     }
 
     fn replace_transcript(
@@ -644,12 +701,15 @@ impl MeetingStore {
         names: &[SpeakerName],
         tracks: &[Speaker],
         move_failed_audio: bool,
+        utterances: Option<&[MeetingUtterance]>,
     ) -> Result<PathBuf, PennelError> {
-        let _gate = REPLACEMENT_GATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let legacy_source = self.unique_legacy_source(id);
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
         let root = self.dir_of(id);
-        if root.join(REPLACEMENT_JOURNAL).exists() {
+        if root.join(REPLACEMENT_JOURNAL).exists()
+            || root.join(meeting_utterances::SNAPSHOT_JOURNAL).exists()
+        {
             return Err(PennelError::storage(
                 "Recovery could not be completed. The previous transcript is in the local recovery folder.",
             ));
@@ -666,6 +726,21 @@ impl MeetingStore {
         let metadata = fs::read(root.join("meeting.md")).map_err(PennelError::storage)?;
         let (mut front, body) =
             parse_meeting(&String::from_utf8_lossy(&metadata)).ok_or(PennelError::NotFound)?;
+        refuse_unparsed(&original)?;
+        let original_uid = if valid_uid(&front.uid) {
+            front.uid.clone()
+        } else {
+            format!(
+                "legacy-{}",
+                &meeting_utterances::digest(id.as_bytes())[..32]
+            )
+        };
+        let mut previous = snapshot_from_text(&root, &original_uid, &original);
+        establish_legacy_source(&mut previous, legacy_source);
+        meeting_utterances::assert_writable(&previous)?;
+        if !valid_uid(&front.uid) {
+            front.uid = uuid::Uuid::now_v7().to_string();
+        }
         set_names(&mut front, names);
         set_transcript_tracks(&mut front, tracks);
         front
@@ -677,7 +752,22 @@ impl MeetingStore {
         let replacement_metadata = render_meeting(&front, &body);
         let mut sorted = segments.to_vec();
         sorted.sort_by_key(|segment| segment.start_ms);
+        let mut rows = match utterances {
+            Some(rows) => rows.to_vec(),
+            None => meeting_utterances::reconcile(&previous, &sorted)?,
+        };
+        rows.sort_by_key(|row| row.segment.start_ms);
+        meeting_utterances::refresh_for_update(&previous, &mut rows)?;
+        sorted = rows.iter().map(|row| row.segment.clone()).collect();
         let replacement_transcript = render_transcript(&sorted);
+        let replacement_attribution = meeting_utterances::prepare_metadata(
+            &front.uid,
+            previous.revision.checked_add(1).ok_or_else(|| {
+                PennelError::storage("The transcript revision cannot be advanced.")
+            })?,
+            replacement_transcript.as_bytes(),
+            &rows,
+        )?;
         let backups = root.join(TRANSCRIPT_BACKUPS);
         if fs::symlink_metadata(&backups).is_ok_and(|entry| entry.file_type().is_symlink()) {
             return Err(PennelError::storage(
@@ -701,7 +791,9 @@ impl MeetingStore {
         }
         durable_write(&backup.join("transcript.md"), &original)?;
         durable_write(&backup.join("meeting.md"), &metadata)?;
+        meeting_utterances::backup_metadata(&root, &backup)?;
         crate::meeting_recording::backup_recording_metadata(&root, &backup)?;
+        meeting_utterances::install_parts(&root, &replacement_attribution)?;
         let journal = serde_json::to_vec(&pending).map_err(PennelError::storage)?;
         durable_write(&backup.join("replacement.json"), &journal)?;
         sync_directory(&backups)?;
@@ -719,7 +811,8 @@ impl MeetingStore {
             durable_write(
                 &root.join("transcript.md"),
                 replacement_transcript.as_bytes(),
-            )
+            )?;
+            meeting_utterances::install_manifest(&root, &replacement_attribution)
         })();
         if let Err(error) = result {
             if rollback_replacement(&root, &pending).is_err() {
@@ -737,9 +830,8 @@ impl MeetingStore {
         id: &str,
         backup: &Path,
     ) -> Result<(), PennelError> {
-        let _gate = REPLACEMENT_GATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
         let root = self.dir_of(id);
         let journal = fs::read(backup.join("replacement.json")).map_err(PennelError::storage)?;
         let pending: PendingReplacement =
@@ -754,17 +846,16 @@ impl MeetingStore {
     }
 
     pub(crate) fn finish_retranscription(&self, id: &str) -> Result<(), PennelError> {
-        let _gate = REPLACEMENT_GATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        clear_replacement_journal(&self.dir_of(id))
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+        let root = self.dir_of(id);
+        clear_replacement_journal(&root)?;
+        let _ = meeting_utterances::prune_owned_parts(&root);
+        Ok(())
     }
 
     /// Called only while acquiring the library lease, before reads, indexing or sync.
     pub(crate) fn recover_retranscriptions(&self) -> Result<(), PennelError> {
-        let _gate = REPLACEMENT_GATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
         let entries = match fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -776,6 +867,9 @@ impl MeetingStore {
                 continue;
             }
             let root = entry.path();
+            let gate = replacement_gate(&root);
+            let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+            meeting_utterances::recover_snapshot(&root)?;
             let journal = match fs::read(root.join(REPLACEMENT_JOURNAL)) {
                 Ok(bytes) => bytes,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
@@ -792,12 +886,22 @@ impl MeetingStore {
         self.read_file(id, "notes.md")
     }
 
+    #[allow(dead_code)] // Text-only compatibility callers retain this projection.
     pub fn write_transcript(&self, id: &str, segments: &[Segment]) -> Result<(), PennelError> {
+        let legacy_source = self.unique_legacy_source(id);
+        let (original_uid, uid) = self.transcript_write_uid(id)?;
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+        let root = self.dir_of(id);
+        let original = transcript_bytes(&root)?;
+        refuse_unparsed(&original)?;
+        let mut previous = snapshot_from_text(&root, &original_uid, &original);
+        establish_legacy_source(&mut previous, legacy_source);
+        meeting_utterances::assert_writable(&previous)?;
         let mut sorted = segments.to_vec();
         // Empty successful lines are completion markers for intentionally filtered audio. Keep them
         // while cleanup is pending, so a crash cannot resurrect a private dictation as a failed chunk.
-        for previous in self
-            .read_file(id, "transcript.md")
+        for previous in String::from_utf8_lossy(&original)
             .lines()
             .filter_map(parse_segment)
             .filter(|segment| !segment.failed && segment.text.trim().is_empty())
@@ -812,8 +916,187 @@ impl MeetingStore {
             }
         }
         sorted.sort_by_key(|s| s.start_ms);
-        let body = render_transcript(&sorted);
-        self.write_file(id, "transcript.md", &body)
+        let rows = meeting_utterances::reconcile(&previous, &sorted)?;
+        self.write_snapshot_locked(id, &uid, &previous, rows)
+            .map(|_| ())
+    }
+
+    pub fn read_transcript_snapshot(
+        &self,
+        id: &str,
+    ) -> Result<MeetingTranscriptSnapshot, PennelError> {
+        let legacy_source = self.unique_legacy_source(id);
+        // Existing meetings without an id remain readable without a read-side migration.
+        let uid = self.uid_of(id).unwrap_or_else(|| legacy_meeting_uid(id));
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+        let root = self.dir_of(id);
+        if !root.is_dir() {
+            return Err(PennelError::NotFound);
+        }
+        let original = transcript_bytes(&root)?;
+        let mut snapshot = snapshot_from_text(&root, &uid, &original);
+        establish_legacy_source(&mut snapshot, legacy_source);
+        self.add_recovery_utterances(id, &mut snapshot);
+        snapshot
+            .utterances
+            .retain(|row| row.segment.failed || !row.segment.text.trim().is_empty());
+        snapshot.utterances.sort_by_key(|row| row.segment.start_ms);
+        Ok(snapshot)
+    }
+
+    pub fn write_transcript_snapshot(
+        &self,
+        id: &str,
+        expected_revision: Option<u64>,
+        rows: &[MeetingUtterance],
+    ) -> Result<MeetingTranscriptSnapshot, PennelError> {
+        let legacy_source = self.unique_legacy_source(id);
+        let (original_uid, uid) = self.transcript_write_uid(id)?;
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+        let root = self.dir_of(id);
+        let original = transcript_bytes(&root)?;
+        refuse_unparsed(&original)?;
+        let mut previous = snapshot_from_text(&root, &original_uid, &original);
+        establish_legacy_source(&mut previous, legacy_source);
+        meeting_utterances::assert_writable(&previous)?;
+        if expected_revision.is_some_and(|revision| revision != previous.revision) {
+            return Err(PennelError::storage(
+                "The transcript changed before this edit could be saved.",
+            ));
+        }
+        let mut rows = rows.to_vec();
+        // Completion markers remain durable until their recovery audio has been removed.
+        for row in &previous.utterances {
+            if !row.segment.failed
+                && row.segment.text.trim().is_empty()
+                && crate::session::failed_path(&root, row.segment.speaker, row.segment.start_ms)
+                    .exists()
+                && !rows
+                    .iter()
+                    .any(|candidate| candidate.metadata.utterance_id == row.metadata.utterance_id)
+            {
+                rows.push(row.clone());
+            }
+        }
+        self.write_snapshot_locked(id, &uid, &previous, rows)
+    }
+
+    fn write_snapshot_locked(
+        &self,
+        id: &str,
+        uid: &str,
+        previous: &MeetingTranscriptSnapshot,
+        mut rows: Vec<MeetingUtterance>,
+    ) -> Result<MeetingTranscriptSnapshot, PennelError> {
+        let root = self.dir_of(id);
+        if root.join(REPLACEMENT_JOURNAL).exists() {
+            return Err(PennelError::storage(
+                "The previous transcript replacement needs recovery before saving.",
+            ));
+        }
+        meeting_utterances::refresh_for_update(previous, &mut rows)?;
+        rows.sort_by_key(|row| row.segment.start_ms);
+        let segments: Vec<_> = rows.iter().map(|row| row.segment.clone()).collect();
+        let text = render_transcript(&segments);
+        let metadata = meeting_utterances::prepare_metadata(
+            uid,
+            previous.revision.checked_add(1).ok_or_else(|| {
+                PennelError::storage("The transcript revision cannot be advanced.")
+            })?,
+            text.as_bytes(),
+            &rows,
+        )?;
+        meeting_utterances::commit_snapshot(&root, text.as_bytes(), &metadata)?;
+        let mut snapshot = snapshot_from_text(&root, uid, text.as_bytes());
+        snapshot
+            .utterances
+            .retain(|row| row.segment.failed || !row.segment.text.trim().is_empty());
+        Ok(snapshot)
+    }
+
+    fn add_recovery_utterances(&self, id: &str, snapshot: &mut MeetingTranscriptSnapshot) {
+        let root = self.dir_of(id);
+        if let Ok(entries) = fs::read_dir(root.join("failed")) {
+            for entry in entries.filter_map(Result::ok) {
+                if !entry.file_type().is_ok_and(|kind| kind.is_file())
+                    || entry.path().extension().and_then(|value| value.to_str()) != Some("wav")
+                {
+                    continue;
+                }
+                let Some(recovered) = recovery_audio(&entry.path()) else {
+                    continue;
+                };
+                let source = match recovered.speaker {
+                    Speaker::Me => "microphone",
+                    Speaker::Others if root.join("audio/room.m4a").exists() => "room_microphone",
+                    Speaker::Others => "system_audio",
+                };
+                if let Some(existing) = snapshot.utterances.iter_mut().find(|row| {
+                    row.segment.start_ms == recovered.start_ms
+                        && (row.metadata.source_id.as_deref() == Some(source)
+                            || source == "system_audio"
+                                && row.metadata.source_id.as_deref() == Some("system")
+                            || row.metadata.source_id.is_none()
+                                && (row.segment.voice.is_none() || row.segment.failed)
+                                && row.segment.speaker == recovered.speaker)
+                }) {
+                    if existing.segment.end_ms == existing.segment.start_ms
+                        || existing.metadata.source_id.is_none()
+                            && existing.metadata.spans.is_empty()
+                            && recovered.end_ms > existing.segment.end_ms
+                    {
+                        existing.segment.end_ms = recovered.end_ms;
+                        existing.metadata.refresh_fingerprints(&existing.segment);
+                    }
+                } else {
+                    let raw = entry.file_name().to_string_lossy().into_owned();
+                    let mut row = meeting_utterances::legacy_utterance(
+                        &snapshot.meeting_uid,
+                        &raw,
+                        0,
+                        recovered,
+                    );
+                    row.metadata.source_id = Some(source.into());
+                    row.metadata.refresh_fingerprints(&row.segment);
+                    snapshot.utterances.push(row);
+                }
+            }
+        }
+    }
+
+    fn transcript_write_uid(&self, id: &str) -> Result<(String, String), PennelError> {
+        if let Some(uid) = self.uid_of(id) {
+            return Ok((uid.clone(), uid));
+        }
+        let original_uid = legacy_meeting_uid(id);
+        {
+            let gate = replacement_gate(&self.dir_of(id));
+            let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+            let root = self.dir_of(id);
+            let bytes = transcript_bytes(&root)?;
+            refuse_unparsed(&bytes)?;
+            meeting_utterances::assert_writable(&snapshot_from_text(&root, &original_uid, &bytes))?;
+        }
+        Ok((original_uid, self.ensure_uid(id)?))
+    }
+
+    fn unique_legacy_source(&self, id: &str) -> Option<String> {
+        let Ok(tracks) = self.audio_tracks(id) else {
+            return None;
+        };
+        if tracks.len() != 1 || !tracks[0].available {
+            return None;
+        }
+        Some(
+            match tracks[0].source {
+                crate::meeting_recording::RecordingSource::Microphone => "microphone",
+                crate::meeting_recording::RecordingSource::SystemAudio => "system_audio",
+                crate::meeting_recording::RecordingSource::RoomMicrophone => "room_microphone",
+            }
+            .into(),
+        )
     }
 
     /// Number of non-empty transcript lines that did not parse; rewriting the transcript would drop them.
@@ -825,36 +1108,23 @@ impl MeetingStore {
     }
 
     pub fn read_transcript(&self, id: &str) -> Vec<Segment> {
-        let _gate = REPLACEMENT_GATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let mut segments: Vec<_> = fs::read_to_string(self.dir_of(id).join("transcript.md"))
+        self.read_transcript_snapshot(id)
+            .map(|snapshot| {
+                snapshot
+                    .utterances
+                    .into_iter()
+                    .map(|row| {
+                        let mut segment = row.segment;
+                        segment.text = segment
+                            .text
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        segment
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
-            .lines()
-            .filter_map(parse_segment)
-            .collect();
-        if let Ok(entries) = fs::read_dir(self.dir_of(id).join("failed")) {
-            for entry in entries.filter_map(Result::ok) {
-                if !entry.file_type().is_ok_and(|kind| kind.is_file())
-                    || entry.path().extension().and_then(|value| value.to_str()) != Some("wav")
-                {
-                    continue;
-                }
-                let Some(recovered) = recovery_audio(&entry.path()) else {
-                    continue;
-                };
-                if let Some(existing) = segments.iter_mut().find(|segment| {
-                    segment.speaker == recovered.speaker && segment.start_ms == recovered.start_ms
-                }) {
-                    existing.end_ms = recovered.end_ms;
-                } else {
-                    segments.push(recovered);
-                }
-            }
-        }
-        segments.retain(|segment| segment.failed || !segment.text.trim().is_empty());
-        segments.sort_by_key(|segment| segment.start_ms);
-        segments
     }
 
     pub(crate) fn restore_recovery_duration(&self, id: &str) -> Result<(), PennelError> {
@@ -1000,7 +1270,36 @@ impl MeetingStore {
             voice,
             name: name.to_owned(),
         });
-        self.set_speaker_names(id, &names)
+        let mut snapshot = self.read_transcript_snapshot(id)?;
+        if snapshot
+            .utterances
+            .iter()
+            .any(|row| row.segment.voice == Some(voice))
+        {
+            let clean = sanitize_speaker(name);
+            for row in &mut snapshot.utterances {
+                if row.segment.voice == Some(voice) {
+                    row.metadata.manual = Some(crate::meeting_utterances::ManualCorrection {
+                        name: (!clean.is_empty()).then(|| clean.clone()),
+                        voice: Some(voice),
+                        source_fingerprint: row.metadata.source_fingerprint.clone(),
+                        review_required: false,
+                    });
+                    row.metadata.attribution_revision =
+                        row.metadata.attribution_revision.saturating_add(1);
+                }
+            }
+            let tracks = self.transcript_tracks(id)?.unwrap_or_default();
+            let backup =
+                self.replace_speaker_utterances(id, &snapshot.utterances, &names, &tracks)?;
+            if let Err(error) = self.finish_retranscription(id) {
+                self.restore_retranscription(id, &backup)?;
+                return Err(error);
+            }
+            Ok(())
+        } else {
+            self.set_speaker_names(id, &names)
+        }
     }
 
     /// Replaces every voice name; empty names and voices outside [`VOICES`] are dropped.
@@ -1165,6 +1464,64 @@ pub(crate) fn render_transcript(segments: &[Segment]) -> String {
         .collect()
 }
 
+fn transcript_bytes(root: &Path) -> Result<Vec<u8>, PennelError> {
+    match fs::read(root.join("transcript.md")) {
+        Ok(bytes) => Ok(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(PennelError::storage(error)),
+    }
+}
+
+fn legacy_meeting_uid(id: &str) -> String {
+    format!(
+        "legacy-{}",
+        &meeting_utterances::digest(id.as_bytes())[..32]
+    )
+}
+
+fn establish_legacy_source(snapshot: &mut MeetingTranscriptSnapshot, source: Option<String>) {
+    if snapshot.metadata_status != crate::meeting_utterances::TranscriptMetadataStatus::Absent {
+        return;
+    }
+    let Some(source) = source else {
+        return;
+    };
+    for row in &mut snapshot.utterances {
+        row.metadata.source_id = Some(source.clone());
+        row.metadata.refresh_fingerprints(&row.segment);
+    }
+}
+
+fn refuse_unparsed(bytes: &[u8]) -> Result<(), PennelError> {
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        PennelError::storage("The transcript contains unreadable text; the original file was kept.")
+    })?;
+    if text
+        .lines()
+        .any(|line| !line.trim().is_empty() && parse_segment(line).is_none())
+    {
+        return Err(PennelError::storage(
+            "The transcript contains unrecognized lines. Keep the original text before changing attribution.",
+        ));
+    }
+    Ok(())
+}
+
+fn snapshot_from_text(root: &Path, uid: &str, bytes: &[u8]) -> MeetingTranscriptSnapshot {
+    let mut occurrences = std::collections::HashMap::new();
+    let fallback = String::from_utf8_lossy(bytes)
+        .lines()
+        .filter_map(|line| {
+            let segment = parse_segment(line)?;
+            let occurrence = occurrences.entry(line.to_owned()).or_insert(0);
+            let row = meeting_utterances::legacy_utterance(uid, line, *occurrence, segment);
+            *occurrence += 1;
+            Some(row)
+        })
+        .collect();
+    meeting_utterances::load_snapshot(root, uid, bytes, fallback)
+}
+
 fn set_names(front: &mut Frontmatter, names: &[SpeakerName]) {
     let mut names: Vec<SpeakerName> = names
         .iter()
@@ -1312,6 +1669,34 @@ fn parse_segment(line: &str) -> Option<Segment> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn meeting_storage_gates_do_not_block_other_meetings_and_survive_folder_rename() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let a = store.create("First independent meeting", start()).unwrap();
+        let b = store.create("Second independent meeting", start()).unwrap();
+        let gate = replacement_gate(&store.dir_of(&a));
+        let held = gate.lock().unwrap();
+        let (sent, received) = std::sync::mpsc::channel();
+        let other_root = directory.path().to_owned();
+        let worker = std::thread::spawn(move || {
+            let result = MeetingStore::new(&other_root)
+                .write_transcript(&b, &[seg(0, Speaker::Others, "Independent final speech.")]);
+            sent.send(result).unwrap();
+        });
+        received
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("Another meeting waited for unrelated metadata storage")
+            .unwrap();
+        drop(held);
+        worker.join().unwrap();
+        let renamed = store.rename(&a, "Renamed same meeting").unwrap();
+        assert!(Arc::ptr_eq(
+            &gate,
+            &replacement_gate(&store.dir_of(&renamed))
+        ));
+    }
 
     #[test]
     fn queued_recovery_audio_is_discovered_after_restart_without_a_transcript() {

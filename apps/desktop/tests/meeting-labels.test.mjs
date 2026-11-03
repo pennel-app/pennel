@@ -29,6 +29,25 @@ test("remembered speaker names remain verbatim in both interfaces", () => {
   }
 });
 
+test("rich attribution never turns a physical microphone into a person", () => {
+  for (const [language, unknown, mixed, overlap] of [["en", "Unknown speaker", "Mixed speakers", "Overlapping speakers"], ["nl", "Onbekende spreker", "Meerdere sprekers", "Overlappende sprekers"]]) {
+    setInterfaceLanguage(language);
+    const microphone = { speaker: "me", voice: null, source_id: "microphone", attribution: { kind: "unknown", voices: [] } };
+    assert.equal(speakerLabel(microphone), unknown);
+    assert.equal(String(speakerUiLabel(microphone)), unknown);
+    assert.equal(speakerLabel({ ...microphone, attribution: { kind: "mixed", voices: [1, 2] } }), mixed);
+    assert.equal(speakerLabel({ ...microphone, attribution: { kind: "overlap", voices: [1, 2] } }), overlap);
+    assert.equal(speakerLabel({ ...microphone, attribution: { kind: "single", voices: [2] } }, { speakers: [{ voice: 2, name: "Noor" }] }), "Noor");
+    assert.equal(speakerLabel({ ...microphone, confirmed_speaker_name: "Samenvatting {number}" }), "Samenvatting {number}");
+    assert.equal(String(speakerUiLabel({ ...microphone, confirmed_speaker_name: "Samenvatting {number}" })), "Samenvatting {number}");
+    const self = { ...microphone, speaker: "others", source_id: "system_audio", attribution: { kind: "single", voices: [], self_voice: true } };
+    assert.equal(speakerLabel(self), language === "en" ? "Me" : "Ik");
+    assert.equal(speakerLabel({ ...self, confirmed_speaker_name: "Noor" }), "Noor");
+    assert.equal(speakerLabel({ ...self, attribution: { kind: "unknown", voices: [], self_voice: true } }), unknown);
+  }
+  setInterfaceLanguage("en");
+});
+
 test("only uncustomized built-in template names are translated", () => {
   const original = { id: "algemeen", name: "Algemeen", builtin: true, customized: false };
   const label = templateUiLabel(original);

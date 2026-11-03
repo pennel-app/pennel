@@ -165,20 +165,21 @@ fn capture_evidence(
                 return Err("The meeting source is no longer available.".into());
             }
             let notes = verify_notes(shared, &id, expected_notes)?;
-            let (revision, transcript) = session.transcript_snapshot();
+            let (revision, transcript) = session.utterance_snapshot();
             let info = shared
                 .engine
                 .meeting_info(id.clone())
                 .ok_or("The meeting source is no longer available.")?;
             let names = shared.engine.meeting_speakers(id.clone());
-            let evidence = MeetingEvidence::new_with_speakers(
+            let evidence = MeetingEvidence::new_with_utterances(
                 &identity.meeting_uid,
                 &info.title,
                 &info.start_iso,
                 &notes,
                 &transcript,
                 &names,
-            );
+            )
+            .map_err(|error| error.to_string())?;
             verify_notes(shared, &id, expected_notes)?;
             Ok((evidence, revision, session.pending()))
         });
@@ -201,7 +202,10 @@ fn capture_evidence(
         .meeting_id_for_uid(&identity.meeting_uid)
         .ok_or("The meeting source is no longer available.")?;
     let notes = verify_notes(shared, &id, expected_notes)?;
-    let transcript = shared.engine.meeting_transcript(id.clone());
+    let transcript = shared
+        .engine
+        .meeting_utterance_snapshot(id.clone())
+        .map_err(|error| error.to_string())?;
     let info = shared
         .engine
         .meeting_info(id.clone())
@@ -211,19 +215,27 @@ fn capture_evidence(
     }
     verify_notes(shared, &id, expected_notes)?;
     let revision = pennel_core::evidence_revision(
-        &serde_json::to_string(&transcript).map_err(|_| "The meeting source is unavailable.")?,
+        &serde_json::to_string(
+            &transcript
+                .utterances
+                .iter()
+                .map(pennel_core::utterance_evidence_revision)
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|_| "The meeting source is unavailable.")?,
     );
     // Twelve hex digits retain exact integer representation in the JavaScript bridge.
     let revision = u64::from_str_radix(&revision[..12], 16).unwrap();
     Ok((
-        MeetingEvidence::new_with_speakers(
+        MeetingEvidence::new_with_utterances(
             &identity.meeting_uid,
             &info.title,
             &info.start_iso,
             &notes,
-            &transcript,
+            &transcript.utterances,
             &shared.engine.meeting_speakers(id),
-        ),
+        )
+        .map_err(|error| error.to_string())?,
         revision,
         0,
     ))
@@ -346,6 +358,124 @@ mod tests {
             meeting_uid: uid.into(),
             session_id: session.into(),
         }
+    }
+
+    #[test]
+    fn canonical_question_anchors_survive_stop_and_exclude_provisional_captions() {
+        struct Speech;
+        impl pennel_core::SystemTranscriber for Speech {
+            fn transcribe(
+                &self,
+                _: Vec<f32>,
+                _: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> std::result::Result<String, pennel_core::PennelError> {
+                Ok("Een echte bron voor de vraag.".into())
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        let mut settings = shared.engine.settings();
+        let provider = pennel_core::new_account(
+            pennel_core::ProviderKind::AppleSpeech,
+            settings.providers.clone(),
+        );
+        settings.meeting_stt = pennel_core::ModelChoice {
+            provider_id: provider.id.clone(),
+            model: "dictation".into(),
+        };
+        settings.providers.push(provider);
+        shared.engine.update_settings(settings).unwrap();
+        shared.engine.set_system_transcriber(Arc::new(Speech));
+        let session = shared
+            .engine
+            .clone()
+            .start_meeting(
+                "Owned question anchor".into(),
+                pennel_core::ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        session.set_notes("Saved note".into()).unwrap();
+        let uid = shared.engine.meeting_uid(session.id()).unwrap();
+        let token = shared.recording.lock().unwrap().begin(None).unwrap();
+        shared.recording.lock().unwrap().recording(&token).unwrap();
+        *shared.meeting_context.lock().unwrap() = Some(crate::meeting_runtime::MeetingContext {
+            token: token.clone(),
+            uid: uid.clone(),
+            session: session.clone(),
+            notes_gate: Arc::new(std::sync::Mutex::new(true)),
+            title: "Owned question anchor".into(),
+            started: std::time::Instant::now(),
+            duration_secs: None,
+            pending_recording_finish: None,
+            system_audio: false,
+            heard_system_audio: false,
+            audio_warning: None,
+            consent_copied: false,
+        });
+        let samples = (0..16_000)
+            .map(|index| (index as f32 * 0.1).sin() * 0.2)
+            .collect();
+        session
+            .push_audio_at(pennel_core::Speaker::Me, 0, samples)
+            .unwrap();
+        let preview = session.preview_snapshot();
+        assert!(session.publish_preview(
+            preview.session_id,
+            pennel_core::Speaker::Me,
+            preview.tracks[0].epoch,
+            0,
+            0,
+            1_000,
+            "PROVISIONAL_NOT_EVIDENCE".into()
+        ));
+        let identity = identity("owned-question", &uid, &token);
+        let (before, _, _) = capture_evidence(&shared, &identity, "Saved note").unwrap();
+        assert_eq!(before.included_through_ms, 0);
+        assert!(
+            before
+                .sources
+                .iter()
+                .all(|source| !source.text.contains("PROVISIONAL_NOT_EVIDENCE"))
+        );
+        session.stop().unwrap();
+        let (active, _, _) = capture_evidence(&shared, &identity, "Saved note").unwrap();
+        let source = active
+            .anchors
+            .iter()
+            .find(|anchor| anchor.passage.kind == pennel_core::PassageKind::Transcript)
+            .unwrap();
+        assert!(source.segment_keys[0].starts_with("utterance:"));
+        assert_eq!(source.passage.meeting_uid.as_deref(), Some(uid.as_str()));
+        assert_eq!(
+            source.passage.utterance_fingerprints,
+            source.segment_fingerprints
+        );
+        assert_eq!(active.included_through_ms, 1_000);
+        shared.recording.lock().unwrap().stopping(&token).unwrap();
+        shared.recording.lock().unwrap().finalizing(&token).unwrap();
+        shared.recording.lock().unwrap().complete(&token).unwrap();
+        *shared.meeting_context.lock().unwrap() = None;
+        let (finished, _, _) = capture_evidence(&shared, &identity, "Saved note").unwrap();
+        let final_source = finished
+            .anchors
+            .iter()
+            .find(|anchor| anchor.passage.kind == pennel_core::PassageKind::Transcript)
+            .unwrap();
+        assert_eq!(source.segment_keys, final_source.segment_keys);
+        assert_eq!(
+            source.segment_fingerprints,
+            final_source.segment_fingerprints
+        );
+        assert!(
+            finished
+                .sources
+                .iter()
+                .all(|source| !source.text.contains("PROVISIONAL_NOT_EVIDENCE"))
+        );
     }
 
     #[test]
