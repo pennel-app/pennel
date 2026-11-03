@@ -1,0 +1,838 @@
+{
+  "schema_version": 1,
+  "phase": 57,
+  "date": "2026-11-03",
+  "implementation_revision": "6179331",
+  "baseline_revision": "340d02ead696f2b821a664a218dc42738a184df8",
+  "stack_base": {
+    "pr": "https://github.com/pennel-app/pennel/pull/131",
+    "revision": "748e01707e2474eaf70a5c284a60e3a71bd1cd5e"
+  },
+  "scope": "Explicit finished-meeting analysis admission, sole portable insights.json store, desktop and Expo/iPhone review, guarded note insertion, separate source-linked accepted export. Live97/background remain unavailable.",
+  "qualification": {
+    "registry": "assets/qualifications/meeting-assistance.json",
+    "adopted_records": 0,
+    "real_decision_model_requests": 0,
+    "live_suggestions_enabled": false,
+    "background_enabled": false
+  },
+  "checks": {
+    "core_default": {
+      "passed": 974,
+      "ignored": 7
+    },
+    "core_lean": {
+      "passed": 957,
+      "ignored": 5
+    },
+    "core_evaluation": {
+      "passed": 10
+    },
+    "keyboard": {
+      "passed": 17
+    },
+    "speaker_onnx": {
+      "passed": 15,
+      "ignored": 1
+    },
+    "desktop_frontend": {
+      "passed": 291,
+      "production_build": "passed"
+    },
+    "desktop_backend": {
+      "passed": 258
+    },
+    "core_release": "passed",
+    "strict_clippy": [
+      "core default",
+      "core lean",
+      "core evaluation",
+      "desktop all targets",
+      "speaker ONNX all targets",
+      "keyboard all targets"
+    ],
+    "formatting": "passed",
+    "macos_swift": {
+      "passed": 139
+    },
+    "mobile_ui": {
+      "passed": 121
+    },
+    "mobile_types": "passed",
+    "mobile_plugins": {
+      "passed": 17
+    },
+    "mobile_widgets": {
+      "passed": 7
+    },
+    "mobile_helpers": {
+      "passed": 116
+    },
+    "mobile_prebuild": {
+      "clean_and_repeated_non_clean": "passed",
+      "pod_checks": 6,
+      "generation_inputs_unchanged_after_export_presentation_fix": true
+    },
+    "mobile_hosted": {
+      "passed": 171,
+      "failed": 0,
+      "skipped": 0,
+      "signing": "ad hoc, explicit empty team"
+    },
+    "mobile_release": "simulator and iPhoneOS arm64 passed sequentially against rebuilt current Rust library",
+    "theme": "passed",
+    "packaging": {
+      "passed": 61
+    },
+    "fixture_helpers": {
+      "passed": 34
+    },
+    "offline_evaluation": {
+      "passed": 287,
+      "cases": 4500,
+      "candidates": 12,
+      "adopted": 0,
+      "report_sha256": "1353118da9078e934fd700c00ffccb8d51f09aed63efcbcf68f66ec44bacb895"
+    }
+  },
+  "native_mac": {
+    "source_revision": "6179331",
+    "binary_sha256": "bdf2d80974519ac63306754608f27d2c2a7d17a8d44f5bad7196448c27a3e97e",
+    "personal_team": "B538Q2K76C",
+    "personal_signing_sha1": "26AD2732047AB5E2F5CB1B239B71806C54EB3026",
+    "strict_signature": "passed",
+    "groups": [
+      {
+        "locale": "en",
+        "appearance": "light",
+        "checks": {
+          "open": {
+            "real_core_read": true,
+            "canonical_source_validation": true,
+            "source_metadata_status": "absent",
+            "qualification_unavailable": [
+              {
+                "language_policy": "unknown",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "en",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "nl",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "mixed",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              }
+            ],
+            "find_disabled": true,
+            "actual_capture": false,
+            "actual_provider_generation": false
+          },
+          "minimum_scroll": {
+            "cards_reachable": true,
+            "reading_scroll": 321
+          },
+          "review": {
+            "accepted": true,
+            "edited_exactly": true,
+            "durable_edit_claim": true,
+            "composition_events_and_selection_preserved": true,
+            "actual_keyboard_ime_acceptance": false,
+            "dismissed": true,
+            "dismissed_reopen": true,
+            "notes_unchanged_before_explicit_insertion": true
+          },
+          "source": {
+            "exact_quote": true,
+            "durable_row_key": true,
+            "utf8_prefix_exercised": true,
+            "review_scroll": [
+              0,
+              70
+            ]
+          },
+          "insert_export": {
+            "source_return_focus_and_scroll": true,
+            "ordinary_notes_writer": true,
+            "receipt_acknowledged": true,
+            "personal_notes_prefix_preserved": true,
+            "repeated_click_blocked": true,
+            "accepted_only_markdown_export": true,
+            "exact_user_edited_receipt_markdown": true,
+            "edited_export_body_verbatim": true,
+            "source_quote_and_timestamp_exported": true,
+            "find_still_disabled": true,
+            "ipc_observer_verified": true,
+            "observed_ipc_commands": [
+              "capture_snapshot",
+              "claim_insight_edit",
+              "desktop_environment",
+              "insight_markdown",
+              "insights_availability",
+              "insights_export",
+              "insights_snapshot",
+              "meeting_detail",
+              "meeting_runtime_status",
+              "meetings",
+              "prepare_insight_insertion",
+              "review_insight",
+              "save_meeting_notes"
+            ]
+          },
+          "disk_acknowledgement": true,
+          "restart": {
+            "process_restart": true,
+            "accepted_edit_retained": true,
+            "dismissed_retained": true,
+            "acknowledged_receipt_retained": true,
+            "notes_retained": true,
+            "duplicate_insertion_still_blocked": true,
+            "find_disabled": true
+          },
+          "settings_unchanged": true
+        }
+      },
+      {
+        "locale": "en",
+        "appearance": "dark",
+        "checks": {
+          "open": {
+            "real_core_read": true,
+            "canonical_source_validation": true,
+            "source_metadata_status": "absent",
+            "qualification_unavailable": [
+              {
+                "language_policy": "unknown",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "en",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "nl",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "mixed",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              }
+            ],
+            "find_disabled": true,
+            "actual_capture": false,
+            "actual_provider_generation": false
+          },
+          "minimum_scroll": {
+            "cards_reachable": true,
+            "reading_scroll": 321
+          },
+          "review": {
+            "accepted": true,
+            "edited_exactly": true,
+            "durable_edit_claim": true,
+            "composition_events_and_selection_preserved": true,
+            "actual_keyboard_ime_acceptance": false,
+            "dismissed": true,
+            "dismissed_reopen": true,
+            "notes_unchanged_before_explicit_insertion": true
+          },
+          "source": {
+            "exact_quote": true,
+            "durable_row_key": true,
+            "utf8_prefix_exercised": true,
+            "review_scroll": [
+              0,
+              70
+            ]
+          },
+          "insert_export": {
+            "source_return_focus_and_scroll": true,
+            "ordinary_notes_writer": true,
+            "receipt_acknowledged": true,
+            "personal_notes_prefix_preserved": true,
+            "repeated_click_blocked": true,
+            "accepted_only_markdown_export": true,
+            "exact_user_edited_receipt_markdown": true,
+            "edited_export_body_verbatim": true,
+            "source_quote_and_timestamp_exported": true,
+            "find_still_disabled": true,
+            "ipc_observer_verified": true,
+            "observed_ipc_commands": [
+              "capture_snapshot",
+              "claim_insight_edit",
+              "desktop_environment",
+              "insight_markdown",
+              "insights_availability",
+              "insights_export",
+              "insights_snapshot",
+              "meeting_detail",
+              "meeting_runtime_status",
+              "meetings",
+              "prepare_insight_insertion",
+              "review_insight",
+              "save_meeting_notes"
+            ]
+          },
+          "disk_acknowledgement": true,
+          "restart": {
+            "process_restart": true,
+            "accepted_edit_retained": true,
+            "dismissed_retained": true,
+            "acknowledged_receipt_retained": true,
+            "notes_retained": true,
+            "duplicate_insertion_still_blocked": true,
+            "find_disabled": true
+          },
+          "settings_unchanged": true
+        }
+      },
+      {
+        "locale": "nl",
+        "appearance": "light",
+        "checks": {
+          "open": {
+            "real_core_read": true,
+            "canonical_source_validation": true,
+            "source_metadata_status": "absent",
+            "qualification_unavailable": [
+              {
+                "language_policy": "unknown",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "en",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "nl",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "mixed",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              }
+            ],
+            "find_disabled": true,
+            "actual_capture": false,
+            "actual_provider_generation": false
+          },
+          "minimum_scroll": {
+            "cards_reachable": true,
+            "reading_scroll": 339
+          },
+          "review": {
+            "accepted": true,
+            "edited_exactly": true,
+            "durable_edit_claim": true,
+            "composition_events_and_selection_preserved": true,
+            "actual_keyboard_ime_acceptance": false,
+            "dismissed": true,
+            "dismissed_reopen": true,
+            "notes_unchanged_before_explicit_insertion": true
+          },
+          "source": {
+            "exact_quote": true,
+            "durable_row_key": true,
+            "utf8_prefix_exercised": true,
+            "review_scroll": [
+              0,
+              70
+            ]
+          },
+          "insert_export": {
+            "source_return_focus_and_scroll": true,
+            "ordinary_notes_writer": true,
+            "receipt_acknowledged": true,
+            "personal_notes_prefix_preserved": true,
+            "repeated_click_blocked": true,
+            "accepted_only_markdown_export": true,
+            "exact_user_edited_receipt_markdown": true,
+            "edited_export_body_verbatim": true,
+            "source_quote_and_timestamp_exported": true,
+            "find_still_disabled": true,
+            "ipc_observer_verified": true,
+            "observed_ipc_commands": [
+              "capture_snapshot",
+              "claim_insight_edit",
+              "desktop_environment",
+              "insight_markdown",
+              "insights_availability",
+              "insights_export",
+              "insights_snapshot",
+              "meeting_detail",
+              "meeting_runtime_status",
+              "meetings",
+              "prepare_insight_insertion",
+              "review_insight",
+              "save_meeting_notes"
+            ]
+          },
+          "disk_acknowledgement": true,
+          "restart": {
+            "process_restart": true,
+            "accepted_edit_retained": true,
+            "dismissed_retained": true,
+            "acknowledged_receipt_retained": true,
+            "notes_retained": true,
+            "duplicate_insertion_still_blocked": true,
+            "find_disabled": true
+          },
+          "settings_unchanged": true
+        }
+      },
+      {
+        "locale": "nl",
+        "appearance": "dark",
+        "checks": {
+          "open": {
+            "real_core_read": true,
+            "canonical_source_validation": true,
+            "source_metadata_status": "absent",
+            "qualification_unavailable": [
+              {
+                "language_policy": "unknown",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "en",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "nl",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              },
+              {
+                "language_policy": "mixed",
+                "available": false,
+                "qualified": false,
+                "reason_code": "unconfigured"
+              }
+            ],
+            "find_disabled": true,
+            "actual_capture": false,
+            "actual_provider_generation": false
+          },
+          "minimum_scroll": {
+            "cards_reachable": true,
+            "reading_scroll": 339
+          },
+          "review": {
+            "accepted": true,
+            "edited_exactly": true,
+            "durable_edit_claim": true,
+            "composition_events_and_selection_preserved": true,
+            "actual_keyboard_ime_acceptance": false,
+            "dismissed": true,
+            "dismissed_reopen": true,
+            "notes_unchanged_before_explicit_insertion": true
+          },
+          "source": {
+            "exact_quote": true,
+            "durable_row_key": true,
+            "utf8_prefix_exercised": true,
+            "review_scroll": [
+              0,
+              70
+            ]
+          },
+          "insert_export": {
+            "source_return_focus_and_scroll": true,
+            "ordinary_notes_writer": true,
+            "receipt_acknowledged": true,
+            "personal_notes_prefix_preserved": true,
+            "repeated_click_blocked": true,
+            "accepted_only_markdown_export": true,
+            "exact_user_edited_receipt_markdown": true,
+            "edited_export_body_verbatim": true,
+            "source_quote_and_timestamp_exported": true,
+            "find_still_disabled": true,
+            "ipc_observer_verified": true,
+            "observed_ipc_commands": [
+              "capture_snapshot",
+              "claim_insight_edit",
+              "desktop_environment",
+              "insight_markdown",
+              "insights_availability",
+              "insights_export",
+              "insights_snapshot",
+              "meeting_detail",
+              "meeting_runtime_status",
+              "meetings",
+              "prepare_insight_insertion",
+              "review_insight",
+              "save_meeting_notes"
+            ]
+          },
+          "disk_acknowledgement": true,
+          "restart": {
+            "process_restart": true,
+            "accepted_edit_retained": true,
+            "dismissed_retained": true,
+            "acknowledged_receipt_retained": true,
+            "notes_retained": true,
+            "duplicate_insertion_still_blocked": true,
+            "find_disabled": true
+          },
+          "settings_unchanged": true
+        }
+      }
+    ],
+    "owned_screenshots": 20,
+    "actual_core_ipc": true,
+    "ipc_mocks": false,
+    "review_data": "Owned synthetic data seeded against actual canonical legacy Markdown row IDs/fingerprints; metadata absent, no acoustic timing claim.",
+    "actual_capture": false,
+    "actual_provider_generation": false,
+    "clipboard_click_exercised": false,
+    "evidence_path": "build/issue57/native-reviewed-insights-final4"
+  },
+  "mobile_artifacts": {
+    "manifest": {
+      "schema": 1,
+      "revision": "6179331a668b7fd7b5ef29c0ff521715e77d6939",
+      "core_sha256": "7c9aea63eeab3ec4225caac48c27483515b7fef5d40fdb3b7b6472eee502b8b2",
+      "bindings_sha256": "b23d9e4f215be3ef3510d1d22a532c49568b8d8e5b085d8257b014e02e952b79",
+      "features": [],
+      "targets": [
+        "aarch64-apple-ios",
+        "aarch64-apple-ios-sim"
+      ]
+    },
+    "bindings_unchanged_after_pure_export_fix": true,
+    "products": [
+      {
+        "platform": "iphonesimulator",
+        "identifier": "app.pennel.ios.preview",
+        "architectures": "arm64",
+        "executable_sha256": "c9ba9dbfeb11c7c21a6aac59451e0cc99dcc7846828e92dc9cd01cdffa4e8181",
+        "info_sha256": "15b5a0fe24dbbc37f7445ea1f37db68bb39c73c7c7524dfcdadaffec0eafdeba",
+        "signing": "CODE_SIGNING_ALLOWED=NO",
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphonesimulator/Pennel.app"
+      },
+      {
+        "platform": "iphoneos",
+        "identifier": "app.pennel.ios.preview",
+        "architectures": "arm64",
+        "executable_sha256": "f8ef01a78fd67b5394b63f0352d74c3db7b4d0df37197d2b2ca56296c245ef4b",
+        "info_sha256": "7d16dece9479b1d0030b1822beb5b297aa4ba99850486b651d830bad41f35277",
+        "signing": "CODE_SIGNING_ALLOWED=NO",
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphoneos/Pennel.app"
+      }
+    ],
+    "current_native_test_summary": {
+      "passedTests": 171,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 171,
+      "result": "Passed"
+    }
+  },
+  "browser": {
+    "workflow_renders": 64,
+    "selected_question_scope_renders": 12,
+    "matched_baseline_renders": 12,
+    "locales": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "minimum": [
+      760,
+      520
+    ],
+    "enlarged_text": "passed",
+    "actual_capture": false,
+    "actual_provider_generation": false
+  },
+  "matched_browser_comparison": {
+    "baseline_revision": "340d02ead696f2b821a664a218dc42738a184df8",
+    "candidate_source_revision": "598d461",
+    "same_scenarios": [
+      "live-workspace-long-session",
+      "live-workspace-concurrent",
+      "live-workspace-stop-save-error"
+    ],
+    "actual_audio_capture": false,
+    "actual_provider_generation": false,
+    "runs": {
+      "baseline": {
+        "renders": 12,
+        "complete": true,
+        "sixty_minute_fixtures": [
+          {
+            "locale": "en",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.69999998807907,
+              "p95_ms": 378,
+              "max_ms": 378
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 17.399999976158142,
+              "max_ms": 17.5
+            },
+            "save_acknowledgement_ms": 26.299999952316284,
+            "synthetic_answer_ms": 30.5,
+            "stop_to_fixture_capture_off_ms": 1.2000000476837158,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "en",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 344.5999999642372,
+              "p95_ms": 351.5,
+              "max_ms": 351.5
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.69999998807907,
+              "p95_ms": 18.30000001192093,
+              "max_ms": 18.30000001192093
+            },
+            "save_acknowledgement_ms": 28.099999964237213,
+            "synthetic_answer_ms": 28.400000035762787,
+            "stop_to_fixture_capture_off_ms": 1.399999976158142,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.30000001192093,
+              "p95_ms": 374.19999998807907,
+              "max_ms": 374.19999998807907
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 15.699999988079071,
+              "p95_ms": 18,
+              "max_ms": 18.399999976158142
+            },
+            "save_acknowledgement_ms": 27.30000001192093,
+            "synthetic_answer_ms": 30.600000023841858,
+            "stop_to_fixture_capture_off_ms": 2.099999964237213,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 348.30000001192093,
+              "p95_ms": 350.80000001192093,
+              "max_ms": 350.80000001192093
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 18,
+              "max_ms": 18.19999998807907
+            },
+            "save_acknowledgement_ms": 27.69999998807907,
+            "synthetic_answer_ms": 29.400000035762787,
+            "stop_to_fixture_capture_off_ms": 1.2999999523162842,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          }
+        ],
+        "command_peak_rss_bytes": 300023808,
+        "memory_scope": "time(1) command maximum RSS; not aggregate app/model/browser-process-tree RSS"
+      },
+      "current": {
+        "renders": 12,
+        "complete": true,
+        "sixty_minute_fixtures": [
+          {
+            "locale": "en",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 337.69999998807907,
+              "p95_ms": 366.89999997615814,
+              "max_ms": 366.89999997615814
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 16.80000001192093,
+              "max_ms": 16.899999976158142
+            },
+            "save_acknowledgement_ms": 26.600000023841858,
+            "synthetic_answer_ms": 29.799999952316284,
+            "stop_to_fixture_capture_off_ms": 2.800000011920929,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "en",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 364.80000001192093,
+              "p95_ms": 365.89999997615814,
+              "max_ms": 365.89999997615814
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.69999998807907,
+              "p95_ms": 17.599999964237213,
+              "max_ms": 17.600000023841858
+            },
+            "save_acknowledgement_ms": 26.600000023841858,
+            "synthetic_answer_ms": 29.599999964237213,
+            "stop_to_fixture_capture_off_ms": 2.600000023841858,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "light",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 338.89999997615814,
+              "p95_ms": 366.30000001192093,
+              "max_ms": 366.30000001192093
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 17.400000035762787,
+              "max_ms": 17.599999964237213
+            },
+            "save_acknowledgement_ms": 27.30000001192093,
+            "synthetic_answer_ms": 30.30000001192093,
+            "stop_to_fixture_capture_off_ms": 2.699999988079071,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          },
+          {
+            "locale": "nl",
+            "appearance": "dark",
+            "transcript_duration_ms": 3600000,
+            "finalized_rows_added": 240,
+            "finalized_commit_to_render": {
+              "samples": 5,
+              "median_ms": 338.19999998807907,
+              "p95_ms": 340.0999999642372,
+              "max_ms": 340.0999999642372
+            },
+            "input_to_next_frame": {
+              "samples": 50,
+              "median_ms": 16.600000023841858,
+              "p95_ms": 16.900000035762787,
+              "max_ms": 17.100000023841858
+            },
+            "save_acknowledgement_ms": 26.399999976158142,
+            "synthetic_answer_ms": 29.80000001192093,
+            "stop_to_fixture_capture_off_ms": 2.599999964237213,
+            "actual_audio_capture": false,
+            "actual_provider_generation": false,
+            "accelerated_fixture": true,
+            "syntheticOnly": true
+          }
+        ],
+        "command_peak_rss_bytes": 303595520,
+        "memory_scope": "/usr/bin/time command maximum, not aggregate app/browser/model memory"
+      }
+    },
+    "limitation": "Accelerated owned browser fixtures on the same machine; baseline retained from #17, current run amid native builds. No acoustic, hardware, quality or resource qualification."
+  },
+  "owned_speech_comparison": {
+    "receipt": "notetaker-owned-comparison-2026-11-03/receipt.json",
+    "summary": "notetaker-owned-comparison-2026-11-03/summary.md",
+    "local_engine_source_matches_measured_candidate": true,
+    "actual_physical_inferences": 39,
+    "hosted_requests": 0,
+    "model_downloads": 0,
+    "qualification_passed": false
+  },
+  "review": {
+    "store_and_pipeline": "Independently reviewed; prior-lineage/cancellation/admission fixes approved.",
+    "exporter": "Independent narrow review approved exact edited body, separate source provenance and unchanged insertion receipts."
+  },
+  "retained_prior_candidates": "build/issue57/retained-pre-exporter contains APFS-cloned Mac/iOS apps, dSYMs and mobile Rust/bindings; prior xcresults and failed helper runs preserved.",
+  "limitations": [
+    "Production exact-context quality/calibration/resource qualification remains empty.",
+    "No real decision model, hosted generation, silent model acquisition, provider substitution or paid spending.",
+    "No real-call, Dutch/Flemish/mixed acoustic quality, live-speaker quality or app-wide resource qualification.",
+    "Synthetic IME events do not establish physical keyboard/IME/accessibility acceptance.",
+    "No physical iPhone signed upgrade, keyboard cold start, Cloud deployment or App Review acceptance.",
+    "No installed Windows/Linux acceptance, merge, release or deployment.",
+    "Markdown links reference transcript.md relative to the meeting folder; no deep-link handler or Markdown row anchor is claimed.",
+    "Native export API and enabled UI were verified; native system clipboard click was not exercised."
+  ]
+}

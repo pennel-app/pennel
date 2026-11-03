@@ -46,13 +46,15 @@ await until(()=>document.querySelectorAll('.insight-card').length===4,'The real 
 const snapshot=await real('insights_snapshot',{id});
 assert(snapshot.status==='ready'&&snapshot.items.every(item=>item.source_state==='current'),
  'The seeded source anchors were not validated by the real core: '+JSON.stringify({status:snapshot.status,sources:snapshot.items.map(item=>item.source_state)}));
-const original=window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
 const qa={id,uid:snapshot.meeting_uid,root:document.querySelector('.insight-review'),
  items:snapshot.items.map(item=>item.id),beforeNotes:(await real('meeting_detail',{id})).notes,
- commands:[],revised:__REVISED__,real:original};
+ commands:[],revised:__REVISED__};
 window.__PENNEL_NATIVE57__=qa;
-window.__TAURI_INTERNALS__.invoke=(command,args,options)=>{
- qa.commands.push(command);return original(command,args,options);
+const originalFetch=window.fetch.bind(window);
+window.fetch=(resource,options)=>{
+ const url=new URL(typeof resource==='string'?resource:resource instanceof Request?resource.url:String(resource),location.href);
+ if(url.protocol==='ipc:')qa.commands.push(decodeURIComponent(url.pathname.slice(1)));
+ return originalFetch(resource,options);
 };
 assert(qa.root.querySelector('.insight-find').disabled,'Opening review enabled unqualified analysis.');
 const availability=[];
@@ -161,12 +163,14 @@ const sourceExport=markdown.includes(snapshot.items[0].sources[0].quote)&&markdo
 assert(!root.querySelector('.insight-export').disabled,'Accepted Markdown export is unavailable in native UI.');
 assert(root.querySelector('.insight-find').disabled,'Native review or note insertion qualified analysis.');
 const forbidden=['begin_insights_analysis','start_meeting','download_model','set_key','save_settings','start_voice_enrollment'];
+for(const command of ['review_insight','claim_insight_edit','save_meeting_notes','insights_export'])
+ assert(qa.commands.includes(command),'The native IPC observer did not observe '+command+'.');
 assert(!qa.commands.some(command=>forbidden.includes(command)),'Review changed analysis, capture, models, credentials or settings.');
 return {source_return_focus_and_scroll:true,ordinary_notes_writer:true,receipt_acknowledged:true,
  personal_notes_prefix_preserved:true,repeated_click_blocked:true,accepted_only_markdown_export:true,
  exact_user_edited_receipt_markdown:true,edited_export_body_verbatim:true,
  source_quote_and_timestamp_exported:sourceExport,find_still_disabled:true,
- observed_ui_commands:[...new Set(qa.commands)].sort(),snapshot,notes,markdown};
+ ipc_observer_verified:true,observed_ipc_commands:[...new Set(qa.commands)].sort(),snapshot,notes,markdown};
 """
 
 
