@@ -308,6 +308,12 @@
   const insightWrite = (id, revision) => { const value = insightStore(id); if (!["missing", "ready"].includes(value.status) || value.revision !== revision) throw Error("Reviewed items changed. Refresh before saving."); return value; };
   const insightItem = (store, id, revision) => { const item = store.items.find(item => item.id === id); if (!item || item.revision !== revision) throw Error("This item changed. Refresh before saving."); return item; };
   const itemMarkdown = item => item.edited_text !== null ? item.edited_text : `${item.text}\n\n${item.sources.map(source => `> [${Math.floor(source.start_ms / 60000)}:${String(Math.floor(source.start_ms / 1000) % 60).padStart(2, "0")}] ${source.quote}\n`).join("")}`;
+  const exportMarkdown = item => {
+    const clock = ms => `${String(Math.floor(ms / 60000)).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+    const destination = item.processing.identity.endpoint.match(/^https:\/\/([a-zA-Z0-9.:[\]-]+)(?:\/|$)/)?.[1] || "unavailable";
+    const evidence = item.sources.map(source => `Meeting UID: \`${source.meeting_uid}\`\n\nUtterance: \`${source.utterance_id}\`\n\nEvidence revision: \`${source.source_fingerprint}\`\n\nUtterance range: [${clock(source.start_ms)}]–[${clock(source.end_ms)}] (${source.start_ms}–${source.end_ms} ms)\n\n> [${clock(source.start_ms)}] ${source.quote.replaceAll("\n", "\n> ")}`).join("\n\n");
+    return `${item.edited_text ?? item.text}\n\n---\n\n**Source evidence (original transcript)**\n\nMeeting file: [Transcript](transcript.md).\n\nEvidence cutoff: [${clock(item.evidence_cutoff_ms)}] (${item.evidence_cutoff_ms} ms)\n\nProcessing destination: \`${destination}\`\n\nSource status: ${item.source_state}\n\n${evidence}`;
+  };
   const insightSave = store => { store.status = "ready"; store.revision++; insightMetadata(store); };
   async function insightCommand(command, args) {
     const request = args.request || {};
@@ -330,7 +336,7 @@
       }
       item.revision++; insightSave(store); return insightRead(args.id);
     }
-    if (command === "insights_export") return insightStore(args.id).items.filter(item => item.review_state === "accepted").map(itemMarkdown).join("\n");
+    if (command === "insights_export") return insightRead(args.id).items.filter(item => item.review_state === "accepted").map(exportMarkdown).join("\n");
     if (command === "insight_markdown") { const item = insightItem(insightStore(args.id), args.itemId, args.itemRevision); if (item.review_state !== "accepted") throw Error("Accept this item first."); return itemMarkdown(item); }
     if (command === "prepare_insight_insertion") {
       if (options.insight_prepare_delay_ms) await new Promise(resolve => setTimeout(resolve, options.insight_prepare_delay_ms));

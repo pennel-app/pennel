@@ -1413,7 +1413,7 @@ impl MeetingStore {
             .items
             .iter()
             .filter(|item| item.review_state == InsightReviewState::Accepted)
-            .map(insight_item_markdown)
+            .map(insight_export_markdown)
             .collect::<Vec<_>>()
             .join("\n\n"))
     }
@@ -1706,6 +1706,73 @@ fn resolve_receipt(receipt: &InsightInsertionReceipt, notes_hash: &str) -> Insig
     } else {
         InsightInsertionState::NeedsReview
     }
+}
+
+fn insight_export_destination(identity: &InferenceIdentity) -> String {
+    let Ok((_, local)) = crate::inference::validate_origin(&identity.endpoint) else {
+        return "unavailable".into();
+    };
+    let Ok(uri) = identity.endpoint.parse::<ureq::http::Uri>() else {
+        return "unavailable".into();
+    };
+    let Some(authority) = uri
+        .authority()
+        .map(|authority| authority.as_str())
+        .filter(|authority| {
+            authority
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b".:-[]".contains(&byte))
+        })
+    else {
+        return "unavailable".into();
+    };
+    if local {
+        format!("local service at `{authority}`")
+    } else {
+        format!("`{authority}`")
+    }
+}
+
+fn insight_export_markdown(item: &InsightItem) -> String {
+    let mut output = item.display_text().to_owned();
+    output.push_str("\n\n---\n\n**Source evidence (original transcript)**\n\n");
+    output.push_str("Meeting file: [Transcript](transcript.md). References below identify the frozen utterances.\n\n");
+    output.push_str(&format!(
+        "Evidence cutoff: [{}] ({} ms)\n\nProcessing destination: {}\n\nSource status: {}",
+        crate::meetings::timestamp(item.evidence_cutoff_ms),
+        item.evidence_cutoff_ms,
+        insight_export_destination(&item.processing.identity),
+        match item.source_state {
+            InsightSourceState::Current => "current",
+            InsightSourceState::Stale => "stale; transcript changed, frozen evidence retained",
+            InsightSourceState::Missing =>
+                "missing; source anchor no longer exists, frozen evidence retained",
+            InsightSourceState::Unavailable =>
+                "unavailable; source could not be revalidated, frozen evidence retained",
+        },
+    ));
+    for (index, source) in item.sources.iter().enumerate() {
+        let meeting_uid = if valid_id(&source.meeting_uid) {
+            &source.meeting_uid
+        } else {
+            "unavailable"
+        };
+        output.push_str(&format!(
+            "\n\n**Source {}**\n\nMeeting UID: `{meeting_uid}`\n\nUtterance: `{}`\n\nUTF-8 bytes: {}..{}\n\nEvidence revision: `{}`\n\nUtterance range: [{}]–[{}] ({}–{} ms)\n\n> [{}] ",
+            index + 1,
+            source.utterance_id,
+            source.start_byte,
+            source.end_byte,
+            source.source_fingerprint,
+            crate::meetings::timestamp(source.start_ms),
+            crate::meetings::timestamp(source.end_ms),
+            source.start_ms,
+            source.end_ms,
+            crate::meetings::timestamp(source.start_ms),
+        ));
+        output.push_str(&source.quote.replace('\n', "\n> "));
+    }
+    output
 }
 
 pub fn insight_item_markdown(item: &InsightItem) -> String {
@@ -2527,7 +2594,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn edited_markdown_does_not_append_contradictory_original_owner_or_deadline_assertions() {
+    fn edited_markdown_keeps_exact_note_staging_and_exports_separate_original_evidence() {
         let (_directory, store, id, source) = fixture();
         let mut proposal = candidate(&source);
         proposal.owner = Some(SupportedInsightDetail {
@@ -2561,13 +2628,129 @@ pub(crate) mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(store.export_insights_markdown(&id).unwrap(), edited);
+        assert_eq!(insight_item_markdown(&reviewed.items[0]), edited);
+        let exported = store.export_insights_markdown(&id).unwrap();
+        let provenance = exported.strip_prefix(edited).unwrap();
+        assert!(provenance.starts_with("\n\n---\n\n**Source evidence (original transcript)**"));
+        assert!(provenance.contains("[Transcript](transcript.md)"));
+        assert!(!provenance.contains("[Metadata](transcript.meta.json)"));
+        assert!(provenance.contains(&format!("Meeting UID: `{}`", source.meeting_uid)));
+        assert!(provenance.contains(&format!(
+            "Utterance: `{}`",
+            source.utterances[0].metadata.utterance_id
+        )));
+        assert!(provenance.contains(&format!(
+            "Evidence revision: `{}`",
+            utterance_evidence_revision(&source.utterances[0])
+        )));
+        assert!(provenance.contains(&format!("> [00:01] {}", source.utterances[0].segment.text)));
+        assert!(provenance.contains("Evidence cutoff: [00:05] (5000 ms)"));
+        assert!(provenance.contains("Processing destination: local service at `127.0.0.1:9000`"));
+        assert!(provenance.contains("Source status: current"));
+        assert!(!provenance.contains("Owner: Jan"));
+        assert!(!provenance.contains("Due: Friday"));
+        assert!(!exported.contains("pennel://"));
         assert_eq!(reviewed.items[0].owner.as_ref().unwrap().text, "Jan");
         assert_eq!(reviewed.items[0].due.as_ref().unwrap().text, "Friday");
         assert_eq!(
             reviewed.items[0].sources[0].quote,
             source.utterances[0].segment.text
         );
+        let request = InsightInsertionRequest {
+            attempt_id: uuid::Uuid::now_v7().to_string(),
+            item_id: reviewed.items[0].id.clone(),
+            item_revision: reviewed.items[0].revision,
+            before_notes_hash: hash(b""),
+            intended_notes: edited.into(),
+            markdown: insight_item_markdown(&reviewed.items[0]),
+        };
+        let prepared = store
+            .prepare_insight_insertion(&id, reviewed.revision, &request)
+            .unwrap();
+        assert!(prepared.stage);
+        assert_eq!(prepared.intended_notes.as_deref(), Some(edited));
+        assert_eq!(prepared.receipt.markdown, edited);
+        assert_eq!(
+            prepared.receipt.intended_notes_hash,
+            hash(edited.as_bytes())
+        );
+        store.write_notes(&id, edited).unwrap();
+        let done = store
+            .acknowledge_insight_insertion(
+                &id,
+                prepared.snapshot.revision,
+                &request.attempt_id,
+                &hash(edited.as_bytes()),
+            )
+            .unwrap();
+        assert_eq!(
+            done.insertion_receipts[0].state,
+            InsightInsertionState::Acknowledged
+        );
+        assert_eq!(store.read_notes(&id), edited);
+        assert!(
+            !store
+                .prepare_insight_insertion(&id, done.revision, &request)
+                .unwrap()
+                .stage
+        );
+        assert_eq!(store.export_insights_markdown(&id).unwrap(), exported);
+    }
+
+    #[test]
+    fn accepted_export_retains_frozen_stale_sources_and_sanitizes_processing_destinations() {
+        for (endpoint, expected_destination) in [
+            (
+                "https://review.example:8443/private-route",
+                "`review.example:8443`",
+            ),
+            (
+                "https://user:private-credential@review.example/private-route?private-query",
+                "unavailable",
+            ),
+            ("file:///private-route", "unavailable"),
+        ] {
+            let (_directory, store, id, source) = fixture();
+            let mut proposal = candidate(&source);
+            proposal.processing.identity.endpoint = endpoint.into();
+            let first = store
+                .merge_insight_candidates(
+                    &id,
+                    0,
+                    &[proposal],
+                    &source,
+                    &InferenceCancellation::new(),
+                )
+                .unwrap();
+            let edited = "My accepted **exact** edit.\n";
+            store
+                .update_insight_review(
+                    &id,
+                    first.revision,
+                    &first.items[0].id,
+                    first.items[0].revision,
+                    &InsightReviewUpdate {
+                        review_state: Some(InsightReviewState::Accepted),
+                        edited_text: Some(edited.into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let mut changed = source.utterances.clone();
+            changed[0].segment.text = "The revised source is different.".into();
+            store
+                .write_transcript_snapshot(&id, Some(source.revision), &changed)
+                .unwrap();
+            let exported = store.export_insights_markdown(&id).unwrap();
+            assert!(exported.starts_with(edited));
+            assert!(exported.contains(&format!("> [00:01] {}", source.utterances[0].segment.text)));
+            assert!(exported.contains("Source status: stale"));
+            assert!(exported.contains("frozen evidence retained"));
+            assert!(exported.contains(&format!("Processing destination: {expected_destination}")));
+            for private in ["private-route", "private-credential", "private-query"] {
+                assert!(!exported.contains(private));
+            }
+        }
     }
 
     #[test]

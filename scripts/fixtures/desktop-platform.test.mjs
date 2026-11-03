@@ -7,6 +7,24 @@ import { visualModels } from "./model-catalog.mjs";
 
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
+
+test("accepted review export retains provenance while note staging keeps the exact edit", async () => {
+  const context = fixture("insights-review-flow");
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("insights_snapshot", { id }), item = before.items[0];
+  const edited = "- [ ] The user's exact **edited** Markdown.\n";
+  const reviewed = await api.invoke("review_insight", { id, request: { store_revision: before.revision,
+    item_id: item.id, item_revision: item.revision, update: { review_state: "accepted", edited_text: edited } } });
+  const note = await api.invoke("insight_markdown", { id, itemId: item.id, itemRevision: reviewed.items[0].revision });
+  assert.equal(note, edited);
+  const exported = await api.invoke("insights_export", { id });
+  assert.ok(exported.startsWith(edited));
+  assert.ok(exported.includes("[Transcript](transcript.md)"));
+  assert.ok(exported.includes(item.sources[0].quote));
+  assert.ok(exported.includes("Evidence cutoff:"));
+  assert.ok(exported.includes("decision.example.invalid"));
+  assert.equal(await api.invoke("insight_markdown", { id, itemId: item.id, itemRevision: reviewed.items[0].revision }), edited);
+});
 function fixture(name, overrides = {}, storage) {
   const item = cases.find(item => item.name === name);
   const context = vm.createContext({ location: { hostname: "127.0.0.1" }, structuredClone, queueMicrotask, setTimeout, clearTimeout, TextEncoder, crypto: webcrypto, localStorage: storage,
