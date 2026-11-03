@@ -191,12 +191,19 @@ struct PhysicalAttachments {
     )>,
 }
 
+struct MeetingInferenceBinding {
+    configured: crate::MeetingConfiguredInference,
+    credential_epoch: u64,
+    account_epoch: u64,
+}
+
 #[derive(uniffi::Object)]
 pub struct InferenceCancellation {
     cancelled: AtomicBool,
     parents: Vec<Arc<InferenceCancellation>>,
     schedule: Option<InferenceSchedule>,
     physical: Mutex<PhysicalAttachments>,
+    meeting: Option<MeetingInferenceBinding>,
 }
 
 impl std::fmt::Debug for InferenceCancellation {
@@ -252,6 +259,7 @@ impl InferenceCancellation {
                 deadline: None,
             }),
             physical: Mutex::default(),
+            meeting: None,
         })
     }
 
@@ -261,6 +269,30 @@ impl InferenceCancellation {
         deadline: std::time::Instant,
     ) -> Arc<Self> {
         Self::linked(vec![parent], priority, deadline)
+    }
+
+    pub(crate) fn for_meeting_analysis(
+        parent: Arc<Self>,
+        priority: crate::InferencePriority,
+        deadline: std::time::Instant,
+        configured: crate::MeetingConfiguredInference,
+        credential_epoch: u64,
+        account_epoch: u64,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            cancelled: AtomicBool::new(false),
+            parents: vec![parent],
+            schedule: Some(InferenceSchedule {
+                priority,
+                deadline: Some(deadline),
+            }),
+            physical: Mutex::default(),
+            meeting: Some(MeetingInferenceBinding {
+                configured,
+                credential_epoch,
+                account_epoch,
+            }),
+        })
     }
 
     pub(crate) fn linked(
@@ -276,6 +308,7 @@ impl InferenceCancellation {
                 deadline: Some(deadline),
             }),
             physical: Mutex::default(),
+            meeting: None,
         })
     }
 
@@ -284,6 +317,30 @@ impl InferenceCancellation {
             .map_or(crate::InferencePriority::ExplicitAnalysis, |schedule| {
                 schedule.priority
             })
+    }
+
+    pub(crate) fn has_meeting_binding(&self) -> bool {
+        self.meeting.is_some()
+            || self
+                .parents
+                .iter()
+                .any(|parent| parent.has_meeting_binding())
+    }
+
+    pub(crate) fn matches_meeting_binding(
+        &self,
+        configured: &crate::MeetingConfiguredInference,
+        credential_epoch: u64,
+        account_epoch: u64,
+    ) -> bool {
+        self.meeting.as_ref().is_none_or(|binding| {
+            binding.configured == *configured
+                && binding.credential_epoch == credential_epoch
+                && (configured.protocol != InferenceProtocol::PennelCloud
+                    || binding.account_epoch == account_epoch)
+        }) && self.parents.iter().all(|parent| {
+            parent.matches_meeting_binding(configured, credential_epoch, account_epoch)
+        })
     }
 
     pub(crate) fn effective_deadline(&self, deadline: std::time::Instant) -> std::time::Instant {
@@ -296,7 +353,7 @@ impl InferenceCancellation {
         })
     }
 
-    /// Keep this guard through logical work; only actual workers take strong attachment references.
+    /// The token retains weak references; actual workers hold their own references until exit.
     pub fn retain_until_physical_exit(
         self: &Arc<Self>,
         retained: Arc<dyn Send + Sync>,
@@ -373,6 +430,7 @@ impl InferenceCancellation {
             parents: Vec::new(),
             schedule: None,
             physical: Mutex::default(),
+            meeting: None,
         })
     }
     pub fn cancel(&self) {
@@ -863,9 +921,9 @@ fn run_with_pool<T: Send + 'static>(
     operation: impl FnOnce(std::time::Instant) -> Result<T, PennelError> + Send + 'static,
 ) -> Result<T, PennelError> {
     let deadline = cancellation.effective_deadline(deadline);
+    let permit = pool.acquire(cancellation.priority(), &cancellation, deadline)?;
     let retained = cancellation.physical_retentions();
     let observers = cancellation.physical_observers();
-    let permit = pool.acquire(cancellation.priority(), &cancellation, deadline)?;
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     let worker_cancellation = cancellation.clone();
     std::thread::Builder::new()

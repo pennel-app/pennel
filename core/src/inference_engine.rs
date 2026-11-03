@@ -237,6 +237,63 @@ mod tests {
     }
 
     #[test]
+    fn scheduled_meeting_decisions_reject_changed_setup_before_transport_even_without_early_registration()
+     {
+        for change in 0..4 {
+            let mut server = mockito::Server::new();
+            let (_dir, engine, keys) = configured(&server, InferenceProtocol::Perplexity);
+            let configured = engine.meeting_analysis_configuration().unwrap().1;
+            let cancellation = InferenceCancellation::for_meeting_analysis(
+                InferenceCancellation::new(),
+                crate::InferencePriority::ExplicitAnalysis,
+                std::time::Instant::now() + std::time::Duration::from_secs(10),
+                configured,
+                engine.inference_epoch(),
+                0,
+            );
+            if change == 2 {
+                let mutation = engine.begin_inference_mutation();
+                mutation.release();
+            } else {
+                let mut settings = engine.settings();
+                match change {
+                    0 => settings.decision.as_mut().unwrap().model = "different-model".into(),
+                    1 => {
+                        settings
+                            .providers
+                            .iter_mut()
+                            .find(|provider| provider.id == "typed-fixture")
+                            .unwrap()
+                            .base_url = format!("{}/changed", server.url())
+                    }
+                    _ => settings.decision.as_mut().unwrap().max_input_bytes -= 1,
+                }
+                engine.update_settings(settings).unwrap();
+            }
+            let never = server.mock("POST", Matcher::Any).expect(0).create();
+            let result = engine.decide(
+                DecisionRequest {
+                    state: "Owned frozen content.".into(),
+                    questions: vec![DecisionQuestion {
+                        id: "sample".into(),
+                        kind: DecisionQuestionKind::Binary,
+                        instructions: "Does the owned sample contain text?".into(),
+                        options: vec![],
+                    }],
+                },
+                cancellation,
+                keys,
+            );
+            assert_eq!(
+                result,
+                Err(PennelError::Cancelled),
+                "processing setup change {change}"
+            );
+            never.assert();
+        }
+    }
+
+    #[test]
     fn missing_configuration_and_cancellation_never_enable_a_provider() {
         let dir = tempfile::tempdir().unwrap();
         let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
@@ -885,6 +942,23 @@ impl PennelEngine {
             cancellation: &cancellation,
         };
         let (config, account) = self.inference_selection(capability)?;
+        if cancellation.has_meeting_binding() {
+            let current = self
+                .meeting_analysis_configuration()
+                .map(|(_, configured)| configured);
+            let epoch = self.inference_epoch();
+            let account_epoch = if config.protocol == InferenceProtocol::PennelCloud {
+                self.cloud_account_epoch()
+            } else {
+                0
+            };
+            if !current.is_ok_and(|configured| {
+                cancellation.matches_meeting_binding(&configured, epoch, account_epoch)
+            }) {
+                cancellation.cancel();
+                return Err(PennelError::Cancelled);
+            }
+        }
         inference::validate_decision_request(&config, &request)?;
         let managed = self.managed_inference(&account)?;
         let result = if let Some(managed) = managed.as_ref() {

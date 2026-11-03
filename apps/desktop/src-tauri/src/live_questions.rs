@@ -484,6 +484,14 @@ mod tests {
         shared.recording.lock().unwrap().stopping(&token).unwrap();
         shared.recording.lock().unwrap().finalizing(&token).unwrap();
         shared.recording.lock().unwrap().complete(&token).unwrap();
+        assert!(response_session_current(&shared, &identity));
+        let mut replaced = shared.meeting_context.lock().unwrap().take().unwrap();
+        assert!(response_session_current(&shared, &identity));
+        replaced.token = "replacement-session".into();
+        *shared.meeting_context.lock().unwrap() = Some(replaced);
+        assert!(!response_session_current(&shared, &identity));
+        shared.meeting_context.lock().unwrap().as_mut().unwrap().uid = "different-meeting".into();
+        assert!(response_session_current(&shared, &identity));
         *shared.meeting_context.lock().unwrap() = None;
         let (finished, _, _) = capture_evidence(&shared, &identity, "Saved note").unwrap();
         let final_source = finished

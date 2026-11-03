@@ -574,6 +574,7 @@ pub struct ReadyMeetingAnalysis<T> {
 struct PendingAnalysis<T> {
     snapshot: ScheduledMeetingSnapshot<T>,
     ticket: u64,
+    configured: crate::MeetingConfiguredInference,
 }
 
 struct ActiveAnalysis {
@@ -589,7 +590,19 @@ struct MeetingQueue<T> {
     active: Option<ActiveAnalysis>,
     pending: Option<PendingAnalysis<T>>,
     last_started: Option<Instant>,
+    last_snapshot: Option<(String, u64)>,
+    requires_reenable: bool,
     status: MeetingAnalysisStatus,
+}
+
+impl<T> MeetingQueue<T> {
+    fn pause_reason(&self) -> Option<&'static str> {
+        if self.requires_reenable && self.hints.enabled {
+            Some("setup_changed")
+        } else {
+            self.hints.background_reason()
+        }
+    }
 }
 
 struct SchedulerState<T> {
@@ -633,7 +646,7 @@ impl<T: Send + 'static> InferencePhysicalObserver for AnalysisRun<T> {
                 .as_ref()
                 .is_some_and(|active| active.id == self.id)
             || self.priority == InferencePriority::BackgroundAnalysis
-                && meeting.hints.background_reason().is_some()
+                && meeting.pause_reason().is_some()
         {
             return Err(PennelError::Cancelled);
         }
@@ -647,6 +660,12 @@ impl<T: Send + 'static> InferencePhysicalObserver for AnalysisRun<T> {
                 return Err(PennelError::Cancelled);
             }
             meeting.last_started = Some(now);
+            meeting.last_snapshot = Some((
+                self.identity.source_fingerprint.clone(),
+                self.identity.included_through_ms,
+            ));
+        }
+        if first {
             meeting.status.started_batches += 1;
         }
         meeting.active.as_mut().unwrap().physical += 1;
@@ -792,9 +811,14 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
         if !state.meetings.contains_key(&identity.meeting_uid)
             && state.meetings.len() >= MAX_MEETINGS
         {
-            state
-                .meetings
-                .retain(|_, meeting| meeting.active.is_some() || meeting.pending.is_some());
+            state.meetings.retain(|_, meeting| {
+                meeting.active.is_some()
+                    || meeting.pending.is_some()
+                    || meeting.hints.enabled
+                    || meeting.last_started.is_some_and(|last| {
+                        (self.inner.clock)().saturating_duration_since(last) < BACKGROUND_INTERVAL
+                    })
+            });
             if state.meetings.len() >= MAX_MEETINGS {
                 return Err(MeetingAnalysisScheduleError::Busy);
             }
@@ -808,9 +832,25 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
                 active: None,
                 pending: None,
                 last_started: None,
+                last_snapshot: None,
+                requires_reenable: false,
                 status: empty_status(),
             });
         let replaced = !meeting.identity.same_binding(&identity);
+        let setup_changed = meeting.identity.processing_fingerprint
+            != identity.processing_fingerprint
+            || meeting.identity.account_epoch != identity.account_epoch
+            || meeting.identity.credential_epoch != identity.credential_epoch
+            || meeting.identity.session_id != identity.session_id;
+        if setup_changed {
+            meeting.requires_reenable = true;
+        }
+        if !hints.enabled {
+            meeting.requires_reenable = false;
+        }
+        if hints.enabled && !meeting.hints.enabled {
+            meeting.last_snapshot = None;
+        }
         if replaced {
             if let Some(active) = &meeting.active {
                 active.cancellation.cancel();
@@ -819,7 +859,7 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
         }
         meeting.identity = identity;
         meeting.hints = hints;
-        if let Some(reason) = hints.background_reason() {
+        if let Some(reason) = meeting.pause_reason() {
             meeting.pending = None;
             if let Some(active) = meeting
                 .active
@@ -844,9 +884,17 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
         deadline: Instant,
         parent: Arc<InferenceCancellation>,
         priority: InferencePriority,
+        configured: &crate::MeetingConfiguredInference,
         state: &mut SchedulerState<T>,
     ) -> MeetingAnalysisAdmission {
-        let cancellation = InferenceCancellation::scheduled(parent, priority, deadline);
+        let cancellation = InferenceCancellation::for_meeting_analysis(
+            parent,
+            priority,
+            deadline,
+            configured.clone(),
+            identity.credential_epoch,
+            identity.account_epoch,
+        );
         let id = state.next_id;
         state.next_id = state.next_id.wrapping_add(1);
         let meeting = state.meetings.get_mut(&identity.meeting_uid).unwrap();
@@ -944,6 +992,7 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
             deadline,
             parent,
             InferencePriority::ExplicitAnalysis,
+            &qualification.record().context.request.configured,
             &mut state,
         ))
     }
@@ -986,12 +1035,22 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
             meeting.pending = None;
             return Err(MeetingAnalysisScheduleError::Expired);
         }
-        if let Some(reason) = meeting.hints.background_reason() {
+        if let Some(reason) = meeting.pause_reason() {
             meeting.pending = None;
             meeting.status.state = MeetingAnalysisState::Paused;
             meeting.status.reason_code = reason.into();
             meeting.status.revision += 1;
             return Err(MeetingAnalysisScheduleError::Unavailable);
+        }
+        if meeting
+            .last_snapshot
+            .as_ref()
+            .is_some_and(|(fingerprint, cutoff)| {
+                *fingerprint == snapshot.identity.source_fingerprint
+                    && *cutoff == snapshot.identity.included_through_ms
+            })
+        {
+            return Ok(());
         }
         let ticket = if let Some(previous) = &meeting.pending {
             meeting.status.replaced_snapshots += 1;
@@ -999,7 +1058,17 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
         } else {
             ticket
         };
-        meeting.pending = Some(PendingAnalysis { snapshot, ticket });
+        meeting.pending = Some(PendingAnalysis {
+            snapshot,
+            ticket,
+            configured: qualification
+                .unwrap()
+                .record()
+                .context
+                .request
+                .configured
+                .clone(),
+        });
         meeting.status.revision += 1;
         Ok(())
     }
@@ -1036,7 +1105,7 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
             .meetings
             .iter()
             .filter(|(_, meeting)| {
-                meeting.hints.background_reason().is_none()
+                meeting.pause_reason().is_none()
                     && meeting.last_started.is_none_or(|last| {
                         now.saturating_duration_since(last) >= BACKGROUND_INTERVAL
                     })
@@ -1055,6 +1124,7 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
             pending.snapshot.deadline,
             InferenceCancellation::new(),
             InferencePriority::BackgroundAnalysis,
+            &pending.configured,
             &mut state,
         );
         Some(ReadyMeetingAnalysis {
@@ -1126,6 +1196,16 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
         {
             status.state = MeetingAnalysisState::Cancelled;
             status.reason_code = "cancelled".into();
+        } else if meeting.active.is_none() && meeting.pending.is_some() {
+            status.state = MeetingAnalysisState::Busy;
+            status.reason_code = if meeting.last_started.is_some_and(|last| {
+                (self.inner.clock)().saturating_duration_since(last) < BACKGROUND_INTERVAL
+            }) {
+                "rate_limited"
+            } else {
+                "queued"
+            }
+            .into();
         }
         status
     }
@@ -1360,10 +1440,13 @@ mod tests {
         let context = identity(&proof);
         queue.update_context(context.clone(), hints()).unwrap();
         let offer = |value| {
+            let mut appended = context.clone();
+            appended.source_fingerprint = format!("{value:064x}");
+            appended.included_through_ms += value as u64 * 1_000;
             queue
                 .offer_background(
                     ScheduledMeetingSnapshot {
-                        identity: context.clone(),
+                        identity: appended,
                         payload: value,
                         deadline: now + Duration::from_secs(600),
                     },
@@ -1409,6 +1492,103 @@ mod tests {
         drop(newest);
         assert_eq!(queue.status(&context.meeting_uid).started_batches, 3);
         assert!(queue.take_background(*clock.lock().unwrap()).is_none());
+    }
+
+    #[test]
+    fn background_does_not_retry_an_unchanged_failed_snapshot_without_new_consent() {
+        let now = Instant::now();
+        let clock = Arc::new(Mutex::new(now));
+        let captured = clock.clone();
+        let queue = MeetingAnalysisCoordinator::with_resources(
+            Arc::new(move || *captured.lock().unwrap()),
+            Arc::new(PhysicalInferencePool::default()),
+        );
+        let proof = qualified(MeetingAnalysisUseCase::BackgroundLiveSuggestions);
+        let context = identity(&proof);
+        queue.update_context(context.clone(), hints()).unwrap();
+        let offer = || {
+            queue
+                .offer_background(
+                    ScheduledMeetingSnapshot {
+                        identity: context.clone(),
+                        payload: (),
+                        deadline: now + Duration::from_secs(600),
+                    },
+                    Some(&proof),
+                    *clock.lock().unwrap(),
+                )
+                .unwrap()
+        };
+        offer();
+        let ready = queue.take_background(now).unwrap();
+        ready.admission.observer.starting().unwrap();
+        ready
+            .admission
+            .observer
+            .finished(InferenceWorkerOutcome::Failed);
+        drop(ready);
+        *clock.lock().unwrap() = now + Duration::from_secs(61);
+        offer();
+        assert!(!queue.status(&context.meeting_uid).pending);
+        assert!(queue.take_background(*clock.lock().unwrap()).is_none());
+        let mut disabled = hints();
+        disabled.enabled = false;
+        queue
+            .update_resources(&context.meeting_uid, disabled)
+            .unwrap();
+        queue
+            .update_resources(&context.meeting_uid, hints())
+            .unwrap();
+        offer();
+        let resumed_at = *clock.lock().unwrap();
+        assert!(queue.take_background(resumed_at).is_some());
+    }
+
+    #[test]
+    fn saving_changed_processing_setup_does_not_reenable_background_transmission() {
+        let queue = queue();
+        let proof = qualified(MeetingAnalysisUseCase::BackgroundLiveSuggestions);
+        let now = Instant::now();
+        let mut context = identity(&proof);
+        queue.update_context(context.clone(), hints()).unwrap();
+        context.credential_epoch += 1;
+        queue.update_context(context.clone(), hints()).unwrap();
+        assert_eq!(
+            queue.offer_background(
+                ScheduledMeetingSnapshot {
+                    identity: context.clone(),
+                    payload: (),
+                    deadline: now + Duration::from_secs(30)
+                },
+                Some(&proof),
+                now
+            ),
+            Err(MeetingAnalysisScheduleError::Unavailable)
+        );
+        assert_eq!(
+            queue.status(&context.meeting_uid).reason_code,
+            "setup_changed"
+        );
+        let mut disabled = hints();
+        disabled.enabled = false;
+        queue
+            .update_resources(&context.meeting_uid, disabled)
+            .unwrap();
+        queue
+            .update_resources(&context.meeting_uid, hints())
+            .unwrap();
+        queue
+            .offer_background(
+                ScheduledMeetingSnapshot {
+                    identity: context.clone(),
+                    payload: (),
+                    deadline: now + Duration::from_secs(30),
+                },
+                Some(&proof),
+                now,
+            )
+            .unwrap();
+        assert!(queue.take_background(now).is_some());
     }
 
     #[test]
@@ -1553,7 +1733,9 @@ mod tests {
         for value in 0..100 {
             let mut next = context.clone();
             next.meeting_uid = format!("owned-{value}");
-            queue.update_context(next, hints()).unwrap();
+            let mut idle = hints();
+            idle.enabled = false;
+            queue.update_context(next, idle).unwrap();
         }
         assert!(queue.inner.state.lock().unwrap().meetings.len() <= MAX_MEETINGS);
     }
@@ -1610,6 +1792,7 @@ mod tests {
             finished.send(output).unwrap();
         });
         seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(queue.status(&context.meeting_uid).started_batches, 1);
         cancellation.cancel();
         assert_eq!(
             result.recv_timeout(Duration::from_secs(5)).unwrap(),
@@ -1743,6 +1926,47 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    #[test]
+    fn scheduled_transport_keeps_its_original_deadline_while_waiting_for_capacity() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let pool = Arc::new(PhysicalInferencePool::default());
+        let first = pool
+            .try_acquire(
+                InferencePriority::ForegroundQuestion,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let second = pool
+            .try_acquire(
+                InferencePriority::ForegroundQuestion,
+                &InferenceCancellation::new(),
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_millis(20);
+        let cancellation = InferenceCancellation::scheduled(
+            InferenceCancellation::new(),
+            InferencePriority::ExplicitAnalysis,
+            deadline,
+        );
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let started = Instant::now();
+        let result = crate::inference::run_cancelled_in_pool(
+            &pool,
+            cancellation,
+            Instant::now() + Duration::from_secs(10),
+            move |_| {
+                observed.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        drop(first);
+        drop(second);
     }
 
     #[test]
