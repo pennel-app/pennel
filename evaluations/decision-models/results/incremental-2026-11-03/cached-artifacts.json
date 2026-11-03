@@ -1,0 +1,142 @@
+[
+  {
+    "artifact_bytes": 320418847,
+    "artifact_sha256": "97a9c878e5afd44fc6d4daa0f31ca89a410c6c397605b08b671c0a880f7c4a9d",
+    "identity": {
+      "files": {
+        "config.json": {
+          "sha256": "d8496b9d3d12d9d8d3dedfed36810781d8d091025deda8ebd01ba8ae6494500e",
+          "size": 2595
+        },
+        "model.safetensors": {
+          "sha256": "2cafa4eced2630f1e949d46ded617f6bf70b702c60249b5fc487029099865a00",
+          "size": 286004020
+        },
+        "special_tokens_map.json": {
+          "sha256": "6e3204c5a4004719c185007a745d1940471a6fb02521cfa0a00306dbb6bc5903",
+          "size": 1051
+        },
+        "tokenizer.json": {
+          "sha256": "c34bc875fad3336b9159ed3c24d64ce319a00d56edc9ff873c046a37e1c5e0de",
+          "size": 34364000
+        },
+        "tokenizer_config.json": {
+          "sha256": "548d38dab71ad1110e1fc13a134f0c4d3c9cd2694302d02e2dc5606fb74da0d4",
+          "size": 47181
+        }
+      },
+      "precision": "float32",
+      "repo": "knowledgator/gliclass-multilang-edge",
+      "revision": "d16c08ef70547514081952104e6fc3d190d9ee39"
+    },
+    "model": "gliclass-multilingual",
+    "reason": null,
+    "status": "available"
+  },
+  {
+    "artifact_bytes": 1165502491,
+    "artifact_sha256": "4658dbfcb6383d319b06c2b91f8efefeb7cdce1097b781acceaece4ad68a964f",
+    "identity": {
+      "files": {
+        "config.json": {
+          "sha256": "aa29cd584316b61b0bfed94d03ee1cfdaf28b46a37686293742929c49b8bd2f7",
+          "size": 4106
+        },
+        "encoder_config/config.json": {
+          "sha256": "d0ebbcb8b458e285a39e12cc315cbaf3d1c6f631e7281e6b22dd5b4071183f83",
+          "size": 858
+        },
+        "model.safetensors": {
+          "sha256": "9efe0f88c99f2aa794452e9559dc60e98d60d9fa2bf1b60cf2710411b6da5b4e",
+          "size": 1149461028
+        },
+        "tokenizer.json": {
+          "sha256": "c62446df87ae18ec98b133f8f84fc449a07cc89bbf8ef192a4cb5f9c53777a7a",
+          "size": 16035853
+        },
+        "tokenizer_config.json": {
+          "sha256": "fd4a31dc2f1f17e31638c5f0e783b81cdb2fbe6bddd116a8d9e5d50d78148cf1",
+          "size": 646
+        }
+      },
+      "precision": "float32",
+      "repo": "fastino/GLiNER2.5-multi-Decide",
+      "revision": "e173bca1f0c4217d7a55b3b0c705d5ece8a0218d"
+    },
+    "model": "gliner-multilingual",
+    "reason": null,
+    "status": "available"
+  },
+  {
+    "artifact_bytes": 629087675,
+    "artifact_sha256": "aa257fbfb42dff15465efbc48a7674717dd5d9abdf4d795ee5d744e027c70b36",
+    "identity": {
+      "files": {
+        "config.json": {
+          "sha256": "995730781d157e147c13ccdfe0eb20a0875c486b6c4de8c97f0bbd845549dbc0",
+          "size": 1494
+        },
+        "custom_code/configuration.py": {
+          "sha256": "3411088045ffb8a9a0aa9936eae275896b39983a2ee5b08f091b44e6289e4fe4",
+          "size": 7127
+        },
+        "custom_code/modeling.py": {
+          "sha256": "374670b416fcc82f081c9cd28b5fd61c2bd91bbe18eb4798fcc48a81f9c250a0",
+          "size": 59023
+        },
+        "model.safetensors": {
+          "sha256": "10ebaa49322dd7e01a13a91c49810939e3f91f231aceaa47fdf0cab3083954f6",
+          "size": 611934706
+        },
+        "special_tokens_map.json": {
+          "sha256": "8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835",
+          "size": 964
+        },
+        "tokenizer.json": {
+          "sha256": "d6f76fe13d42f80dcee0cb86a1aeb5f14f8909bb8a8782f7a4a4ad76697ef164",
+          "size": 17083021
+        },
+        "tokenizer_config.json": {
+          "sha256": "6f00514620aff01ba8b7291b2394e98daca5be264cb743805232d9ae27494b2a",
+          "size": 1340
+        }
+      },
+      "precision": "float32",
+      "repo": "Alibaba-NLP/gte-multilingual-reranker-base",
+      "revision": "8215cf04918ba6f7b6a62bb44238ce2953d8831c"
+    },
+    "model": "gte-reranker",
+    "reason": null,
+    "status": "available"
+  },
+  {
+    "artifact_bytes": 655257408,
+    "artifact_sha256": "275b76a4c5f2b981c4f9b00ab1ecfda5a950760df5a8811284623c2c254f3d17",
+    "identity": {
+      "files": {
+        "config.json": {
+          "sha256": "773d286cb19734471d1984a546d8348784223dcc40b11e37155972e4a0e4ea59",
+          "size": 4406
+        },
+        "onnx/model_q8.onnx": {
+          "sha256": "78e4bfd4e271417a79b95a9690109f54190bc70bd57453f715f9b06522591b42",
+          "size": 646912031
+        },
+        "onnx/tokenizer.json": {
+          "sha256": "fac3bf8dbdea44df6c0dd296ca81ca058710c69abdb8d69905d5c26d4dccf66a",
+          "size": 8340434
+        },
+        "onnx/tokenizer_config.json": {
+          "sha256": "944805e46b57a437b3766c2e0a3a357a1cba013aba1164df2f6e0cab12603fa0",
+          "size": 537
+        }
+      },
+      "precision": "int8",
+      "repo": "knowledgator/gliclass-v4-edge",
+      "revision": "885af1af8a07edf4ed34df83ca0d995ed8201283"
+    },
+    "model": "gliclass-v4-q8",
+    "reason": null,
+    "status": "available"
+  }
+]

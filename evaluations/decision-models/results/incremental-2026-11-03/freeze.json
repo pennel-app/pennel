@@ -1,0 +1,52 @@
+{
+  "base_protocol_sha256": "e3f50103a77924026a694a47ebab87b3dcd73a365011c9ee9a42bf94879da043",
+  "calibration_artifact": null,
+  "calibration_inputs_sha256": null,
+  "configuration": {
+    "actual": {
+      "artifact_sha256": "851c278d6e724e22559e22bbf7a9da9cb3102cbb66950e6b125982c271edbb02",
+      "model": "owned-fixture",
+      "provider": "owned-fixture",
+      "revision": "incremental-fixture-v1"
+    },
+    "configured": {
+      "endpoint": "offline://owned-fixtures",
+      "expected_model": "owned-fixture",
+      "max_input_bytes": 16000,
+      "model": "owned-fixture",
+      "protocol": "offline_fixture",
+      "timeout_secs": 30,
+      "upstream": null
+    },
+    "grouping": "one-prefix-independent-questions",
+    "precision": "fixture",
+    "preprocessing": {
+      "context": "complete-prefix-or-refuse",
+      "finalized_only": true,
+      "notes": "acknowledged-at-cutoff",
+      "version": 1
+    },
+    "resource_profile": {
+      "hardware": "unmeasured",
+      "mode": "offline_fixture"
+    }
+  },
+  "corpus_sha256": "18bf5d5c07ee362459f4906a6165543a62c3a9cf50419eed4ff2994848fed7f4",
+  "freeze_sha256": "eadcec1b22284a19a00c702d34fea70d58cc0272f0a437861bef235910dbc4f3",
+  "label_order_sha256": "33a63ce0b1c3fcb808068eedcd310447651846330be4f02df451d7e0da35e2ea",
+  "preprocessing_sha256": "b760ad558d725e3fcc57920d9d9f01c900c76c3247ce159147efd9e22b3f3fcf",
+  "prompt_sha256": "b660c85fbaa659aa914e6cc83aacfcff46030b04c5fbc1c71593dca26a3ff4bf",
+  "protocol_id": "incremental-meeting-v1",
+  "protocol_sha256": "2919ebd46f06740b6515b6ead3b666db78b664a0d0c514eb9364199f6f61bcd8",
+  "resource_profile_sha256": "874b0dcdca9025cf56244aa6e0eece1bb500b429edde6a8094f08c4674777bb5",
+  "schema_sha256": "9776beb47f2a23249f7f782835db06c72090794087080d2ce3acaafb8ac3cfe7",
+  "schema_version": 1,
+  "source_sha256": {
+    "calibration.py": "af2ba3806a3f46a89c7b00c68ff9ac1a75847958fe0fe4ec6681fe0bc468c515",
+    "incremental.py": "deb1bcf007b3fd7c12a3292a352e5c1a631043d5cb83220b44febf33849c6ffc",
+    "incremental_corpus.py": "f04269651daebf915c40aa8e7294925e04d22d4ef9cda5f43a133e44b5fae779",
+    "metrics.py": "b4e5821c5f9a6163733a1f1c73c98f26391b6e960d2977185c3d51e4f0e1a9c9"
+  },
+  "split_sha256": "03a46a0e4009627a91916ecb2e36056d8450d31644f8b2d0031bf4fce5f4dc1a",
+  "stage": "offline_replay"
+}

@@ -327,3 +327,101 @@ python3 evaluations/decision-models/followup.py --offline \
   --replay evaluations/decision-models/results/followup-2026-10-28/supplement-local \
   --output build/decision-model-evaluation/replay-local-suggestions
 ```
+
+## Incremental prefix qualification — #96
+
+`evaluations/decision-models/incremental.py` is the separate, versioned prefix experiment.
+It preserves every historical protocol and result. The owned corpus contains 30 split-disjoint
+meeting families, English/Dutch/mixed translations and two linked text variants per meeting.
+The ASR variant is an authored text perturbation, not a measurement of natural recorded ASR.
+Eight finalized cutoffs per stream produce 4,500 scheduled cases. Related translations,
+perturbations and prefixes remain in the same development/calibration/held-out family.
+
+The four use cases are independent: finished-meeting suggestions, explicit live suggestions,
+source assessment, and background live suggestions. Finished-meeting cases use the terminal
+snapshot; the other cases use only sources available at each cutoff. Provisional hypotheses,
+future notes, later answers and later retractions cannot become earlier evidence. Input requests
+include the meeting/session, finalized source IDs, exact text/revisions/fingerprints, timestamps,
+acknowledged notes and cutoff. The exported `decision_request` uses #54's typed choice contract;
+a bounded classifier result alone does not establish complete-item extraction.
+
+Replay owned fixtures without credentials, model loading, downloads or network requests:
+
+```sh
+python3 -B -m unittest discover -s evaluations/decision-models/tests -p 'test_incremental*.py'
+python3 -B evaluations/decision-models/incremental.py --offline \
+  --output build/decision-model-evaluation/incremental-fixtures
+python3 -B evaluations/decision-models/incremental.py \
+  --freeze build/decision-model-evaluation/incremental-fixtures/freeze.json \
+  --predictions build/decision-model-evaluation/incremental-fixtures/predictions.jsonl \
+  --output build/decision-model-evaluation/incremental-replay
+```
+
+The replay reproduces counts, fits, gates, report hashes and candidate-record bindings. Perfect
+fixture predictions remain `offline_fixture` evidence with **zero adopted records**. Historical
+point passes and successful connection samples cannot change that outcome. Diagnostics print
+only counts/hashes/status; the synthetic source corpus belongs in explicit evaluation artifacts.
+
+For a separately authorized inference experiment, provide an explicit configuration containing
+`configured` (protocol, endpoint, model, expected model, upstream, input bound, timeout), `actual`
+(expected model/revision/provider/artifact hash), precision, grouping, preprocessing and resource
+profile. No credential values or secret-bearing endpoint query strings belong in this file.
+Export calibration requests first. Feed the recorded JSONL results back with `--calibrate`; that
+writes a new freeze containing the fitted artifact and calibration-input hash. Measured held-out
+request export is refused until this stage has completed:
+
+```sh
+python3 -B evaluations/decision-models/incremental.py --configuration CONFIG.json \
+  --requests calibration --output build/incremental-calibration
+python3 -B evaluations/decision-models/incremental.py \
+  --freeze build/incremental-calibration/freeze.json --predictions CALIBRATION.jsonl \
+  --calibrate --output build/incremental-heldout
+python3 -B evaluations/decision-models/incremental.py \
+  --freeze build/incremental-heldout/freeze.json --requests heldout \
+  --output build/incremental-heldout
+```
+
+These commands export or replay data; they execute no inference. Each prediction is linked to its
+exact case/input/freeze hash, actual identity and execution-evidence class. Duplicate/unlinked
+responses fail closed. Oversized requests are explicitly refused without truncation. A changed
+model alias, route, expected model, input bound, timeout, label order, prompt, schema, preprocessing,
+calibration artifact or resource profile needs a new exact-context freeze.
+
+The report keeps event classification separate from complete source-quoted item quality. It
+scores owners, verbatim due phrases, exact anchors, duplicates, missed items, final status,
+retractions and retained user review state independently. Unknown fields stay null. Positive
+end-to-end event credit requires a complete supported tuple; both component and end-to-end
+macro-F1 must reach 0.90, with accepted-item precision at least 0.95 and supported owner/final
+status. Source support and answerability retain separate 0.98 selective-precision / 0.50 coverage
+gates. Deadline normalization, candidate recall and reranking remain separate, unmeasured stages.
+
+The fixture claim is application-authored. Source-assessment adoption additionally requires
+frozen actual generated-response text/claim bounds and exact review hashes supplied through an
+explicit `--corpus` file; missing/pending judgments remain unavailable. Classifying a fixture
+claim cannot become a whole-answer correctness claim. Calibration reuses the existing machinery:
+at least ten observations, two classes and two meeting families per exact context, fitting on
+calibration only and preserving genuine distributions rather than confidence/logit substitutes.
+
+Latency uses the existing type-7 p50/p95 implementation and discloses sample counts. CPU, RSS,
+executed requests, usage/cost and recording impact are unavailable unless actually measured.
+Local warm p95 is bounded at five seconds for events and 750 ms for source assessment. Live
+use requires separate foreground-impact acceptance; background additionally requires resource
+acceptance. UI fixture timings do not supply those measurements.
+
+`candidate-records.json` uses the shared schema-version-1 Rust qualification contract. It is an
+input to review, never an adoption write: the app-owned registry remains empty until exact
+inference, quality, calibration, identity and runtime gates are satisfied. The chosen generative
+model remains responsible for readable answers. The new protocol authorizes no hosted spend,
+artifact acquisition, retries, fallback, continuous transmission or production-default changes.
+
+Existing cached artifacts can be audited independently, without loading or acquiring models:
+
+```sh
+python3 -B evaluations/decision-models/incremental.py \
+  --verify-cached-model gliclass-multilingual --verify-cached-model gliner-multilingual \
+  --verify-cached-model gte-reranker --verify-cached-model gliclass-v4-q8 \
+  --output build/incremental-artifact-audit
+```
+
+An available Q8 graph still does not establish reference-parity quality. Keep unavailable
+inference, natural-ASR transfer, generated-claim, native/resource and real-call evidence explicit.
