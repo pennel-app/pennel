@@ -56,3 +56,20 @@ Mobile changes also require the mobile workspace's type, unit, generation and na
 - Conventional Commits; small, focused commits.
 - Comments only for non-obvious intent, constraints or workarounds.
 - Tests first for logic (Rust unit tests in `core/`, Rust/TS tests in `apps/desktop`).
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in `pennel-app/pennel`, following Pennel's roadmap workflow.
+See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels.
+See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` and `docs/adr/`, created when needed.
+See `docs/agents/domain.md`.
