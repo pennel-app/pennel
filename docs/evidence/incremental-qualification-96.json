@@ -90,7 +90,7 @@
     },
     {
       "name": "packaging",
-      "command": "python3 -B -m unittest discover -s scripts/tests -p test_desktop_*.py",
+      "command": "python3 -B -m unittest discover -s scripts/tests -p 'test_desktop_*.py'",
       "result": "passed",
       "log": "build/issue96/packaging-tests.log",
       "log_sha256": "be49dde4a399b998992178624645c3686173c26b3deb2c95ba35c40553cd3e7e",
