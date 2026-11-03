@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "issue": 96,
+  "parent": 94,
+  "date": "2026-11-03",
+  "baseline": "340d02ead696f2b821a664a218dc42738a184df8",
+  "depends_on_pr": 129,
+  "code_candidate": "d31286f61401690eee3046e0e0eef8d2a05bcea9",
+  "core_source_sha256": "b56e4da0544c7cd9fe49e45a947cddb5a1290c07dffb9ece2a17cc1315db328a",
+  "verification_ancestry": {
+    "initial_default_suite": "3dde3179d71c187562ad0e2f39870d611e601b0a",
+    "format_and_remaining_checks": "403736d9e1189ef9eea68516f399c82451fcfca0",
+    "rebased_onto": "9ef8dcfb6d0c39b558af399b8d2e817c435c8759",
+    "product_sources_identical_after_rebase": true,
+    "rebased_change": "upstream documentation/evidence only"
+  },
+  "checks": [
+    {
+      "name": "core_default_tests",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --lib",
+      "result": "passed",
+      "log": "build/issue96/core-default-tests.log",
+      "log_sha256": "46b1f3cf3329f71f8d917fdf77567acb6af38d76a63e0cbab9a5b990def97e3e",
+      "passed": 890,
+      "failed": 0,
+      "ignored": 7
+    },
+    {
+      "name": "core_lean_tests",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib",
+      "result": "passed",
+      "log": "build/issue96/core-lean-tests.log",
+      "log_sha256": "6dca24eda0b973de263e4bdfb9f33b43e630a5ad0edc2803b83b21583418b9be",
+      "passed": 873,
+      "failed": 0,
+      "ignored": 5
+    },
+    {
+      "name": "core_release",
+      "command": "make core",
+      "result": "passed",
+      "log": "build/issue96/core-release.log",
+      "log_sha256": "5d60ecfaa9856a125257424a56927da69135eda4bcd10d7c99421eb4aa155633"
+    },
+    {
+      "name": "core_lean_library",
+      "command": "scripts/with-toolchain.sh cargo build --manifest-path core/Cargo.toml --no-default-features --lib",
+      "result": "passed",
+      "log": "build/issue96/core-lean-build.log",
+      "log_sha256": "3f7f8ce7a6ae22134e0127841953e8a222c4bcf17c6d7f635ae4dec183a34da8"
+    },
+    {
+      "name": "core_format",
+      "command": "scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check",
+      "result": "passed",
+      "log": "build/issue96/core-format.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "core_clippy_default",
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings",
+      "result": "passed",
+      "log": "build/issue96/core-clippy-default.log",
+      "log_sha256": "d6874bda40fd41e38201c2c806423b5c30e4c7e2544f1e0d5a2f27601a6ab369"
+    },
+    {
+      "name": "core_clippy_lean",
+      "command": "scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --no-default-features --lib --tests -- -D warnings",
+      "result": "passed",
+      "log": "build/issue96/core-clippy-lean.log",
+      "log_sha256": "4cdb8fa7b33361fd6f1380479f375ee9d41411e7694a69eb8df66ce786c401cc"
+    },
+    {
+      "name": "keyboard",
+      "command": "scripts/with-toolchain.sh cargo test --manifest-path core/keyboard/Cargo.toml",
+      "result": "passed",
+      "log": "build/issue96/keyboard-tests.log",
+      "log_sha256": "e129ccd0f1e4d353dde5a4ad9e03e0f91f03adedd1a1a6b10cc17cfe37781fda",
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "name": "python_evaluation",
+      "command": "python3 -B -m unittest discover -s evaluations/decision-models/tests -v",
+      "result": "passed",
+      "log": "build/issue96/python-evaluation-tests.log",
+      "log_sha256": "30fa1af2e2a5e583823693b81b9fce7d661fbe01f3a0e55be8a5814625bdabf3",
+      "passed": 287
+    },
+    {
+      "name": "packaging",
+      "command": "python3 -B -m unittest discover -s scripts/tests -p test_desktop_*.py",
+      "result": "passed",
+      "log": "build/issue96/packaging-tests.log",
+      "log_sha256": "be49dde4a399b998992178624645c3686173c26b3deb2c95ba35c40553cd3e7e",
+      "passed": 61
+    },
+    {
+      "name": "theme",
+      "command": "python3 scripts/generate-theme.py --check",
+      "result": "passed",
+      "log": "build/issue96/theme.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "incremental_offline",
+      "command": "python3 -B evaluations/decision-models/incremental.py --offline --output build/issue96/offline",
+      "result": "passed",
+      "log": "build/issue96/offline.log",
+      "log_sha256": "e4ac533918be1e494a1cd15474996e5ae6ee898e74e80bebce0724bb80a4300f"
+    },
+    {
+      "name": "incremental_replay",
+      "command": "python3 -B evaluations/decision-models/incremental.py --freeze build/issue96/offline/freeze.json --predictions build/issue96/offline/predictions.jsonl --output build/issue96/replay",
+      "result": "passed",
+      "log": "build/issue96/replay.log",
+      "log_sha256": "e4ac533918be1e494a1cd15474996e5ae6ee898e74e80bebce0724bb80a4300f"
+    },
+    {
+      "name": "cached_artifacts",
+      "command": "python3 -B evaluations/decision-models/incremental.py --verify-cached-model gliclass-multilingual --verify-cached-model gliner-multilingual --verify-cached-model gte-reranker --verify-cached-model gliclass-v4-q8 --output build/issue96/cached-artifacts",
+      "result": "passed",
+      "log": "build/issue96/cached-artifacts.log",
+      "log_sha256": "691ab8100200482f59afb6378e72a793b9003af85dbcd5a8bf81ec5c9cf955c8"
+    },
+    {
+      "name": "swift_generation",
+      "command": "cd core && ../scripts/with-toolchain.sh cargo run --quiet --no-default-features --bin uniffi-bindgen -- generate --library target/debug/libpennel_core.dylib --language swift --out-dir ../build/issue96/bindings",
+      "result": "passed",
+      "log": "build/issue96/swift-generation.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "swift_typecheck",
+      "command": "xcrun swiftc -typecheck -I build/issue96/bindings/headers build/issue96/bindings/pennel_core.swift",
+      "result": "passed",
+      "log": "build/issue96/swift-typecheck.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "swift_probe_build",
+      "command": "xcrun swiftc -I build/issue96/bindings/headers -L core/target/debug -lpennel_core -Xlinker -rpath -Xlinker \"$PWD/core/target/debug\" build/issue96/bindings/pennel_core.swift scripts/verify-meeting-analysis-bindings.swift -o build/issue96/qualification-bindings-probe",
+      "result": "passed",
+      "log": "build/issue96/qualification-probe-build.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "swift_abi_runtime",
+      "command": "build/issue96/qualification-bindings-probe build/issue96 evaluations/decision-models/fixtures/incremental-qualification-record-v1.json",
+      "result": "passed",
+      "log": "build/issue96/qualification-probe.log",
+      "log_sha256": "83a898e7ef9f3c46a43e9d9cfd7a6cb60ecf71228780881f937997673511a536"
+    }
+  ],
+  "offline_replay": {
+    "prefixes": 1440,
+    "scheduled_cases": 4500,
+    "observed_cases": 4500,
+    "missing_cases": 0,
+    "identity_mismatch_cases": 0,
+    "report_byte_identical": true,
+    "candidate_records": 12,
+    "qualified_records": 0,
+    "adopted_records": 0,
+    "report_sha256": "1353118da9078e934fd700c00ffccb8d51f09aed63efcbcf68f66ec44bacb895",
+    "freeze_sha256": "eadcec1b22284a19a00c702d34fea70d58cc0272f0a437861bef235910dbc4f3",
+    "calibration_sha256": "d24f5be744fc7411776f8321857b2737b3f50e5562aceb130ceee7e30bae0698",
+    "protocol_sha256": "2919ebd46f06740b6515b6ead3b666db78b664a0d0c514eb9364199f6f61bcd8",
+    "base_protocol_sha256": "e3f50103a77924026a694a47ebab87b3dcd73a365011c9ee9a42bf94879da043",
+    "corpus_sha256": "18bf5d5c07ee362459f4906a6165543a62c3a9cf50419eed4ff2994848fed7f4",
+    "split_sha256": "03a46a0e4009627a91916ecb2e36056d8450d31644f8b2d0031bf4fce5f4dc1a",
+    "mode": "offline_fixture",
+    "inference_executed": false
+  },
+  "cached_artifact_audit": {
+    "downloads": 0,
+    "models_loaded": 0,
+    "inference_executed": false,
+    "artifacts": [
+      {
+        "model": "gliclass-multilingual",
+        "artifact_sha256": "97a9c878e5afd44fc6d4daa0f31ca89a410c6c397605b08b671c0a880f7c4a9d",
+        "artifact_bytes": 320418847,
+        "status": "available"
+      },
+      {
+        "model": "gliner-multilingual",
+        "artifact_sha256": "4658dbfcb6383d319b06c2b91f8efefeb7cdce1097b781acceaece4ad68a964f",
+        "artifact_bytes": 1165502491,
+        "status": "available"
+      },
+      {
+        "model": "gte-reranker",
+        "artifact_sha256": "aa257fbfb42dff15465efbc48a7674717dd5d9abdf4d795ee5d744e027c70b36",
+        "artifact_bytes": 629087675,
+        "status": "available"
+      },
+      {
+        "model": "gliclass-v4-q8",
+        "artifact_sha256": "275b76a4c5f2b981c4f9b00ab1ecfda5a950760df5a8811284623c2c254f3d17",
+        "artifact_bytes": 655257408,
+        "status": "available"
+      }
+    ]
+  },
+  "recorded_artifacts": [
+    {
+      "path": "evaluations/decision-models/results/incremental-2026-11-03/README.md",
+      "bytes": 1474,
+      "sha256": "b46f52c6988708f13a21dfb7919b9a66fec87ef0c1847a027471e1a0c17bd7d3"
+    },
+    {
+      "path": "evaluations/decision-models/results/incremental-2026-11-03/cached-artifacts.json",
+      "bytes": 4900,
+      "sha256": "16801f23f57097c7cd3b63821718bba87a725f5b7a7ca73df8afdd900f07b3a3"
+    },
+    {
+      "path": "evaluations/decision-models/results/incremental-2026-11-03/candidate-records.json.gz",
+      "bytes": 2163,
+      "sha256": "052070fd20f7ae91739777d62ea287fac2526e5a1a3b13349227cf640e3afd5f"
+    },
+    {
+      "path": "evaluations/decision-models/results/incremental-2026-11-03/freeze.json",
+      "bytes": 2313,
+      "sha256": "c5e0e11d20df9bd62e26ab238d8ddd730f5ce447d783816588b8a1ad041aa941"
+    },
+    {
+      "path": "evaluations/decision-models/results/incremental-2026-11-03/report.json.gz",
+      "bytes": 29819,
+      "sha256": "e57de8bdee06d0568950d8b28b8aa2bb8d96c2347932aafee7e3b303fb253e1d"
+    }
+  ],
+  "matching_host_swift": {
+    "bindings_sha256": "21cc5211e7bc31b0607fd228e46b0e980dd219501c11cf9793b978bafb576222",
+    "probe_source_sha256": "d845708b9841f1f8953244581221900fe51953d971452bfaa72cce615a52d98a",
+    "runtime": {
+      "abi_runtime": "passed",
+      "available": false,
+      "configured": false,
+      "profile": "isolated-preview",
+      "qualified": false,
+      "reason_code": "unconfigured"
+    },
+    "native_app_or_device_acceptance": false
+  },
+  "independent_review": {
+    "reviewer": "caption_review",
+    "scope": "bounded static review of qualification contract and incremental eligibility; no P1/P2 findings",
+    "ran_tests_or_models": false
+  },
+  "eligibility": {
+    "production_adopted_records": 0,
+    "manual_suggestions_qualified": false,
+    "source_assessment_qualified": false,
+    "background_qualified": false,
+    "issue_97_activation_gate_met": false
+  },
+  "remaining_gates": [
+    "actual prefix model predictions and generated-response claim judgments",
+    "natural recorded ASR and acoustic transfer",
+    "candidate recall, reranking, deadline normalization",
+    "model latency, CPU, aggregate RSS, actual inference usage and cost",
+    "foreground responsiveness and Stop/transcription impact",
+    "background resource acceptance",
+    "exact-head mobile CNG, hosted native and simulator/device builds (upstream #99 and downstream #57 are distinct evidence)",
+    "CI, merge, signed hardware, installed Windows/Linux and deployment acceptance"
+  ],
+  "privacy": "Only owned synthetic fixtures and an isolated Preview ABI profile; no model load/download/inference, credential lookup, provider change or paid request."
+}
