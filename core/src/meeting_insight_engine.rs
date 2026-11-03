@@ -1758,7 +1758,11 @@ impl PennelEngine {
                 "The notes changed after insertion was prepared; review them before saving.",
             ));
         }
-        store.validate_insight_note_write(id, attempt_id, text)?;
+        if !store.validate_insight_note_write(id, attempt_id, text)? {
+            return Err(invalid(
+                "The note content does not match the prepared insertion. Keep the current draft and review the insertion.",
+            ));
+        }
         store.write_notes(id, text)?;
         // The ordinary notes acknowledgement remains true if optional receipt persistence fails.
         Ok(Some(
@@ -2428,6 +2432,103 @@ mod tests {
             .set_meeting_notes(id.clone(), "Ordinary notes still save.".into())
             .unwrap();
         assert_eq!(engine.meeting_notes(id), "Ordinary notes still save.");
+    }
+
+    #[test]
+    fn receipt_bound_note_writes_reject_unprepared_text_without_mutating_saved_state() {
+        for already_saved in [false, true] {
+            for mobile in [false, true] {
+                let server = mockito::Server::new();
+                let (_directory, engine, id, _) = configured_engine(&server);
+                let (item, item_revision, store_revision) = accepted_item(&engine, &id);
+                let before = engine.meeting_notes(id.clone());
+                let markdown = engine
+                    .export_meeting_insight_markdown(id.clone(), item.clone(), item_revision)
+                    .unwrap();
+                let intended = format!("{before}\n\n{markdown}");
+                let prepared: serde_json::Value = serde_json::from_str(
+                    &engine
+                        .prepare_meeting_insight_insertion_json(
+                            id.clone(),
+                            serde_json::json!({
+                                "store_revision": store_revision,
+                                "item_id": item,
+                                "item_revision": item_revision,
+                                "expected_notes": before,
+                                "intended_notes": intended,
+                                "markdown": markdown,
+                            })
+                            .to_string(),
+                        )
+                        .unwrap(),
+                )
+                .unwrap();
+                let attempt = prepared["receipt"]["attempt_id"].as_str().unwrap();
+                let store = engine.meeting_store();
+                if already_saved {
+                    store.write_notes(&id, &intended).unwrap();
+                }
+                let root = store.dir_of(&id);
+                let notes = std::fs::read(root.join("notes.md")).unwrap();
+                let insights = std::fs::read(root.join("insights.json")).unwrap();
+                let acknowledged = String::from_utf8(notes.clone()).unwrap();
+                let unprepared = format!("{intended}\n\nUnprepared replacement.");
+                let rejected = if mobile {
+                    engine.mobile_set_meeting_notes_with_insight_receipt(
+                        id.clone(),
+                        unprepared,
+                        Some(acknowledged.clone()),
+                        attempt.into(),
+                    )
+                } else {
+                    engine.set_meeting_notes_with_insight_receipt(
+                        id.clone(),
+                        unprepared,
+                        attempt.into(),
+                    )
+                };
+                assert!(
+                    rejected.is_err(),
+                    "A receipt authorized unprepared text: mobile={mobile}, already_saved={already_saved}"
+                );
+                assert_eq!(std::fs::read(root.join("notes.md")).unwrap(), notes);
+                assert_eq!(std::fs::read(root.join("insights.json")).unwrap(), insights);
+
+                let saved = if mobile {
+                    engine.mobile_set_meeting_notes_with_insight_receipt(
+                        id.clone(),
+                        intended.clone(),
+                        Some(acknowledged),
+                        attempt.into(),
+                    )
+                } else {
+                    engine.set_meeting_notes_with_insight_receipt(
+                        id.clone(),
+                        intended.clone(),
+                        attempt.into(),
+                    )
+                }
+                .unwrap();
+                let saved: serde_json::Value = serde_json::from_str(&saved).unwrap();
+                assert_eq!(saved["notes_saved"], true);
+                assert_eq!(saved["insertion_receipts"][0]["state"], "acknowledged");
+                assert_eq!(engine.meeting_notes(id.clone()), intended);
+                let acknowledged_store = std::fs::read(root.join("insights.json")).unwrap();
+                let repeated = engine
+                    .save_owned_meeting_notes(&id, &intended, None, Some(attempt))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    repeated.insertion_receipts[0].state,
+                    InsightInsertionState::Acknowledged
+                );
+                assert_eq!(engine.meeting_notes(id), intended);
+                assert_eq!(
+                    std::fs::read(root.join("insights.json")).unwrap(),
+                    acknowledged_store
+                );
+            }
+        }
     }
 
     #[test]
