@@ -5715,7 +5715,38 @@ mod tests {
     #[test]
     fn ordinary_dictation_cleanup_uses_speech_priority_while_optional_work_is_busy() {
         use std::sync::mpsc;
-        use std::time::Duration;
+        use std::time::{Duration, Instant};
+        const ISOLATED: &str = "PENNEL_TEST_ISOLATED_DICTATION_PRIORITY";
+        if std::env::var_os(ISOLATED).is_none() {
+            // Other speech fixtures legitimately preempt optional work before its closure starts.
+            let test_name = std::thread::current().name().unwrap().to_owned();
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", &test_name, "--test-threads=1", "--nocapture"])
+                .env(ISOLATED, "1")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(50);
+            let timed_out = loop {
+                if child.try_wait().unwrap().is_some() {
+                    break false;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    break true;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                !timed_out && output.status.success(),
+                "isolated priority fixture failed (timed out: {timed_out}):\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            return;
+        }
         let _physical_gate = crate::meeting_scheduler::physical_test_gate();
         let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
         let engine = engine(&dir, &server, DictationMode::Clean);
@@ -5736,7 +5767,13 @@ mod tests {
                 },
             )
         });
-        seen.recv_timeout(Duration::from_secs(10)).unwrap();
+        if let Err(error) = seen.recv_timeout(Duration::from_secs(10)) {
+            panic!(
+                "optional worker did not start: {error:?}; cancelled: {}; result: {:?}",
+                optional.is_cancelled(),
+                handle.join().unwrap()
+            );
+        }
         engine.begin_meeting_preview_priority();
         let result = engine.dictate(request(speech(), None));
         engine.end_meeting_preview_priority();
