@@ -111,6 +111,22 @@ test("rich fixture fingerprints preserve BOM while collapsing only Unicode White
   assert.equal(status.transcript[0].source_fingerprint, expected);
 });
 
+test("live speaker fixtures require explicit session selection and reset off for the next meeting", async () => {
+  const context = fixture("live-speakers-controls", { configured_text_provider: true, live_question_manual: true });
+  const api = context.__PENNEL_PLATFORM__;
+  const control = context.__PENNEL_FIXTURE__.workspace;
+  const before = await api.invoke("meeting_status");
+  assert.equal(before.live_speaker_attribution.enabled, false);
+  assert.equal(before.live_speaker_attribution.destination, "local");
+  const enabled = await api.invoke("set_live_speaker_attribution", { sessionId: before.session_id, enabled: true });
+  assert.equal(enabled.enabled, true);
+  assert.equal(context.__PENNEL_FIXTURE__.calls.includes("save_settings"), false);
+  const next = control.restart();
+  assert.equal((await api.invoke("meeting_status")).live_speaker_attribution.enabled, false);
+  await assert.rejects(api.invoke("set_live_speaker_attribution", { sessionId: before.session_id, enabled: true }));
+  assert.notEqual(next.session_id, before.session_id);
+});
+
 test("saved-audio retranscription reports local progress and marks the summary outdated", async () => {
   const context=fixture("meeting-transcript",{saved_audio:true});
   const client=context.__PENNEL_PLATFORM__;

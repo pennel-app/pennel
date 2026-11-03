@@ -26,6 +26,7 @@ mod inference;
 mod inference_engine;
 mod keyboard_writing;
 mod live_dictation;
+mod live_speakers;
 mod llm;
 mod local_engine;
 mod localization;
@@ -95,6 +96,10 @@ pub use inference_engine::{InferenceAvailability, InferenceMutation, InferenceVe
 pub use keyboard_writing::{KeyboardRewriteAction, KeyboardWritingJob};
 pub use live_dictation::{
     DictationPreviewMode, DictationPreviewObserver, DictationPreviewUpdate, LiveDictationSession,
+};
+pub use live_speakers::{
+    LiveSpeakerMemory, LiveSpeakerMetrics, LiveSpeakerObserver, LiveSpeakerState,
+    LiveSpeakerStatus, LiveSpeakerUpdate, LiveSpeakerWorker,
 };
 pub use localization::{
     InterfaceLanguage, InterfaceLanguagePreference, localize_ui_text, resolve_interface_language,

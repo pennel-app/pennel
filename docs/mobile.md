@@ -119,6 +119,12 @@ CI runs these same three configurations sequentially and publishes phase timing 
 
 For development, use `npm start` from `apps/mobile` and an installed development build. `npm run device:hub` also runs without Metro for Release-candidate QA; follow the [assigned-device workflow](mobile-device-hub.md). Default configuration uses preview identifiers and credentials. Production identity requires explicit `PENNEL_VARIANT=production`; its signed in-place upgrade has not been accepted.
 
+### Provisional speaker metadata — 3 November 2026
+
+The [#99 candidate receipt](evidence/live-speakers-99.md) records iPhone transcript rendering of provisional speaker estimates, preserving durable sources, manual names and readonly unsupported metadata. This adds review compatibility; live local speaker inference remains unavailable on iPhone. Verification uses `make mobile-test`, `make mobile-prebuild`, `make mobile-native-test`, then `npm --prefix apps/mobile run build:ios` and `PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios` sequentially. Large native commands run through `/Users/landerparren/.local/bin/worktree-storage run --`. Exact logs and counts are in the [JSON receipt](evidence/live-speakers-99.json).
+
+Simulator tests and unsigned builds do not establish signed-phone, physical keyboard/IME, acoustic quality, resource, Cloud deployment or store acceptance. Those gates retain their existing owners; preview/production identifiers and credentials stay isolated.
+
 ## Historical verification receipts
 
 The dated records below preserve the commands and paths used before shell retirement. Removed targets and legacy paths are historical, not current reproduction instructions; use [Build and verification](#build-and-verification) above. The [pre-retirement iOS sources](https://github.com/pennel-app/pennel/tree/e6f02b2cd178b541dcbfcdb46125336c762dbf07/apps/ios) and [Mac sources](https://github.com/pennel-app/pennel/tree/e6f02b2cd178b541dcbfcdb46125336c762dbf07/apps/macos) remain available at the recorded base revision. Counts and outcomes below apply only to their stated candidates.

@@ -167,6 +167,34 @@ pub fn set_title(shared: &Shared, title: String, session_id: &str) -> Result<(),
     Ok(())
 }
 
+pub fn set_live_speaker_attribution(
+    shared: &Shared,
+    session_id: &str,
+    enabled: bool,
+) -> Result<String, String> {
+    let session = {
+        let lifecycle = shared.recording.lock().unwrap();
+        let state = lifecycle.snapshot();
+        if state.session_id.as_deref() != Some(session_id)
+            || (enabled && state.phase != RecordingPhase::Recording)
+        {
+            return Err("This recording session is no longer active.".into());
+        }
+        shared
+            .meeting_context
+            .lock()
+            .unwrap()
+            .as_ref()
+            .filter(|context| context.token == session_id)
+            .map(|context| context.session.clone())
+            .ok_or("This recording session is no longer active.")?
+    };
+    // Activation can prepare local models; notes and capture retain their independent lifetimes.
+    session
+        .set_live_speaker_attribution(enabled)
+        .map_err(|error| error.to_string())
+}
+
 fn rename_after_recording(
     engine: &pennel_core::PennelEngine,
     id: String,
@@ -930,6 +958,82 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
+
+    #[test]
+    fn live_speaker_controls_reject_stale_and_stopping_sessions_without_changing_settings() {
+        let (_root, shared, session, token) = recording();
+        let before = shared.settings();
+        assert!(set_live_speaker_attribution(&shared, "previous-recording", true).is_err());
+        assert_eq!(shared.settings(), before);
+        shared.recording.lock().unwrap().stopping(&token).unwrap();
+        assert!(set_live_speaker_attribution(&shared, &token, true).is_err());
+        let disabled: serde_json::Value =
+            serde_json::from_str(&set_live_speaker_attribution(&shared, &token, false).unwrap())
+                .unwrap();
+        assert_eq!(disabled["enabled"], false);
+        assert_eq!(shared.settings(), before);
+        assert_eq!(
+            shared.engine.meeting_notes(session.id()),
+            "Een bewaarde afspraak."
+        );
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn unavailable_live_speaker_setup_never_waits_for_the_notes_gate_or_substitutes_a_route() {
+        let (_root, shared, session, token) = recording();
+        let mut settings = shared.settings();
+        settings.speaker_recognition = pennel_core::SpeakerRecognitionMode::Cloud;
+        shared.engine.update_settings(settings.clone()).unwrap();
+        let gate = shared
+            .meeting_context
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .notes_gate
+            .clone();
+        let writing = gate.lock().unwrap();
+        let request_shared = shared.clone();
+        let (finished, completion) = std::sync::mpsc::channel();
+        let request = std::thread::spawn(move || {
+            finished
+                .send(set_live_speaker_attribution(&request_shared, &token, true))
+                .unwrap()
+        });
+        let result = completion
+            .recv_timeout(Duration::from_secs(2))
+            .expect("optional setup must not wait for note persistence")
+            .unwrap();
+        let status: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(status["enabled"], false);
+        assert_eq!(status["available"], false);
+        assert_eq!(status["reason_code"], "local_required");
+        assert_eq!(shared.settings(), settings);
+        drop(writing);
+        request.join().unwrap();
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn capture_quiescence_closes_live_speaker_publication_before_transcript_finalization() {
+        let (_root, shared, session, _token) = recording();
+        let quiescent = Arc::new(AtomicBool::new(false));
+        let mut recorder =
+            MeetingRecorder::testing(session.clone(), shared.engine.clone(), quiescent.clone());
+        recorder.quiesce();
+        assert!(quiescent.load(Ordering::SeqCst));
+        assert!(!session.is_finalized());
+        let status: serde_json::Value =
+            serde_json::from_str(&session.live_speaker_status_json().unwrap()).unwrap();
+        assert_eq!(status["state"], "stopped");
+        assert_eq!(status["enabled"], false);
+        assert_eq!(
+            session.clone().set_live_speaker_attribution(true),
+            Err(pennel_core::PennelError::Cancelled)
+        );
+        session.stop().unwrap();
+    }
 
     #[test]
     fn finalizing_snapshot_reads_closed_notes_and_holds_off_folder_rename() {

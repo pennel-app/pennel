@@ -356,13 +356,23 @@ export interface Segment {
 }
 
 export type MeetingAudioSource = "microphone" | "system_audio" | "system" | "room_microphone";
-export interface SpeakerAttribution { kind: "unknown" | "single" | "mixed" | "overlap"; voices: number[]; self_voice?: boolean }
+export interface SpeakerAttribution { kind: "unknown" | "single" | "mixed" | "overlap"; voices: number[]; self_voice?: boolean; provisional?: boolean }
 export type TranscriptMetadataStatus = "valid" | "absent" | "pending" | "stale" | "unsupported" | "corrupt";
+export interface LiveSpeakerAttributionStatus {
+  enabled: boolean;
+  available: boolean;
+  state: "off" | "warming" | "running" | "busy" | "paused" | "unavailable" | "failed" | "stopped";
+  reason_code?: "local_required" | "models_missing" | "unsupported" | "configuration_changed" | "foreground_work" | "busy" | "paused" | "failed" | "stopped" | null;
+  revision: number;
+  model?: string | null;
+  destination: "local" | null;
+}
 
 export interface MeetingStatus {
   meeting_uid?: string | null;
   transcript_revision?: number;
   metadata_status?: TranscriptMetadataStatus;
+  live_speaker_attribution?: LiveSpeakerAttributionStatus | null;
   preview?: MeetingPreviewSnapshot | null;
   recognition?: { provider_kind: ProviderKind | null; provider_name: string; model: string; language: string | null };
   recording: boolean;
@@ -766,6 +776,8 @@ export const api = {
   openLog: () => invoke<void>("open_log"),
   openPath: (path: string) => invoke<void>("open_path", { path }),
   meetingStatus: () => invoke<MeetingStatus>("meeting_status"),
+  setLiveSpeakerAttribution: (sessionId: string, enabled: boolean) =>
+    invoke<LiveSpeakerAttributionStatus>("set_live_speaker_attribution", { sessionId, enabled }),
   meetingRuntimeStatus: () => invoke<MeetingRuntimeStatus>("meeting_runtime_status"),
   startMeeting: (title: string) => invoke<string>("start_meeting", { title }),
   stopMeeting: (sessionId?: string) => invoke<void>("stop_meeting", sessionId ? { sessionId } : undefined),

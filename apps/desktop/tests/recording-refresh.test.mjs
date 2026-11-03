@@ -148,3 +148,33 @@ test("older, incompatible and foreign preview snapshots cannot replace the curre
     assert.equal(next.preview.session_id, "preview-session");
   }
 });
+
+test("a delayed full snapshot cannot roll finalized utterance or live attribution revisions backwards", async () => {
+  const initial = snapshot(3, { transcript: [{ ...segment, utterance_id: "stable", attribution_revision: 4 }] });
+  const refresh = new RecordingRefresh(initial);
+  const stale = await refresh.refresh(metadata(4), async () => snapshot(2, { transcript: [{ ...segment, utterance_id: "stable", attribution_revision: 1 }] }));
+  assert.equal(stale, null);
+  const next = await refresh.refresh(metadata(3), () => { throw Error("unexpected read"); });
+  assert.equal(next.transcript[0].attribution_revision, 4);
+});
+
+test("provisional attribution becomes final without changing durable row or source identity", () => {
+  const provisional = { ...segment, utterance_id: "stable", source_id: "microphone", attribution_revision: 1,
+    attribution: { kind: "single", voices: [2], provisional: true } };
+  const final = { ...provisional, attribution_revision: 2, attribution: { ...provisional.attribution, provisional: false } };
+  assert.deepEqual(segmentKeys([provisional]), segmentKeys([final]));
+  assert.equal(sameSegment(provisional, final), false);
+});
+
+test("lightweight live-speaker revisions never trigger a transcript read or roll back acknowledged state", async () => {
+  const live = revision => ({ enabled: true, available: true, state: "running", reason_code: null, revision, model: "Owned models", destination: "local" });
+  const initial = snapshot(1, { live_speaker_attribution: live(3) });
+  const refresh = new RecordingRefresh(initial);
+  const next = await refresh.refresh(metadata(1, { live_speaker_attribution: live(4) }), () => { throw Error("unexpected read"); });
+  assert.equal(next.transcript, initial.transcript);
+  assert.equal(next.live_speaker_attribution.revision, 4);
+  const stale = await refresh.refresh(metadata(1, { live_speaker_attribution: live(2) }), () => { throw Error("unexpected read"); });
+  assert.equal(stale.live_speaker_attribution.revision, 4);
+  const full = await refresh.refresh(metadata(2, { live_speaker_attribution: live(5) }), async () => snapshot(2, { live_speaker_attribution: live(3) }));
+  assert.equal(full.live_speaker_attribution.revision, 5);
+});

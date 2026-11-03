@@ -457,6 +457,46 @@ mod tests {
     }
 
     #[test]
+    fn exported_live_estimates_are_localized_and_manual_confirmation_stays_confirmed() {
+        let (_dir, store, id) = store();
+        let mut row = crate::MeetingUtterance::new(
+            segment(0, Speaker::Me, "Finalized speech", false),
+            Some("microphone".into()),
+        );
+        row.metadata.attribution.kind = crate::AttributionKind::Single;
+        row.metadata.attribution.voices = vec![1];
+        row.metadata.attribution.provisional = true;
+        store
+            .write_transcript_snapshot(&id, None, std::slice::from_ref(&row))
+            .unwrap();
+        let english = export_markdown_for_language(&store, &id, true, InterfaceLanguage::English)
+            .unwrap()
+            .1;
+        let dutch = export_markdown_for_language(&store, &id, true, InterfaceLanguage::Dutch)
+            .unwrap()
+            .1;
+        assert!(english.contains("Speaker 1 (Provisional):** Finalized speech"));
+        assert!(dutch.contains("Anderen 1 (Voorlopig):** Finalized speech"));
+        row.metadata.manual = Some(crate::ManualCorrection {
+            name: Some("Ada".into()),
+            voice: None,
+            source_fingerprint: row.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        store
+            .write_transcript_snapshot(&id, None, std::slice::from_ref(&row))
+            .unwrap();
+        for language in [InterfaceLanguage::English, InterfaceLanguage::Dutch] {
+            let exported = export_markdown_for_language(&store, &id, true, language)
+                .unwrap()
+                .1;
+            assert!(exported.contains("Ada:** Finalized speech"));
+            assert!(!exported.contains("(Provisional)"));
+            assert!(!exported.contains("(Voorlopig)"));
+        }
+    }
+
+    #[test]
     fn legacy_absent_metadata_exports_preserve_saved_labels_without_creating_a_sidecar() {
         let (_dir, store, id) = store();
         std::fs::write(

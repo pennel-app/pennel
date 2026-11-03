@@ -91,55 +91,127 @@ private final class DelayedAvailability: @unchecked Sendable {
     }
 }
 
+private final class TranscriptProjectionActivity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = 0
+    private var peak = 0
+    var count: Int { lock.withLock { active } }
+    var maximum: Int { lock.withLock { peak } }
+    func enter() { lock.withLock { active += 1; peak = max(peak, active) } }
+    func leave() { lock.withLock { active -= 1 } }
+}
+
 private final class DelayedTranscriptProjection: @unchecked Sendable {
     private let lock = NSLock()
+    private let condition = NSCondition()
+    private let entered: AsyncStream<Void>
+    private let enteredContinuation: AsyncStream<Void>.Continuation
+    private let activity: TranscriptProjectionActivity
     private var invocations = 0
-    let release = DispatchSemaphore(value: 0)
+    private var released = false
     let revision: UInt64
     var calls: Int { lock.withLock { invocations } }
-    init(revision: UInt64) { self.revision = revision }
+    init(revision: UInt64, activity: TranscriptProjectionActivity) {
+        self.revision = revision
+        self.activity = activity
+        (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+    }
+    func waitUntilEntered() async throws {
+        var iterator = entered.makeAsyncIterator()
+        guard await iterator.next() != nil else {
+            throw PennelBridgeError("fixture_timeout", "Synthetic transcript projection entry was interrupted.")
+        }
+    }
+    func release() {
+        condition.lock()
+        released = true
+        condition.broadcast()
+        condition.unlock()
+    }
+    func finish() {
+        release()
+        enteredContinuation.finish()
+    }
     func load() throws -> String {
+        activity.enter()
+        defer { activity.leave() }
         lock.withLock { invocations += 1 }
-        guard release.wait(timeout: .now() + 5) == .success else { throw PennelBridgeError("fixture_timeout", "Synthetic transcript projection timed out.") }
+        enteredContinuation.yield(())
+        enteredContinuation.finish()
+        condition.lock()
+        while !released { condition.wait() }
+        condition.unlock()
         return "{\"meeting_uid\":\"owned-meeting\",\"revision\":\(revision),\"metadata_status\":\"valid\",\"transcript\":[]}"
     }
 }
 
-@MainActor
-private func waitForTranscriptProjection(_ predicate: () -> Bool) async throws {
-    let deadline = Date().addingTimeInterval(5)
-    while !predicate() {
-        guard Date() < deadline else { throw PennelBridgeError("fixture_timeout", "Synthetic transcript projection did not finish.") }
-        try await Task.sleep(for: .milliseconds(1))
+private final class TranscriptProjectionWatchdog: @unchecked Sendable {
+    private let lock = NSLock()
+    private let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "pennel.test.transcript-projection-watchdog"))
+    private let projections: [DelayedTranscriptProjection]
+    private let publications: AsyncStream<Int>.Continuation
+    private var outcome: Bool?
+    var timedOut: Bool { lock.withLock { outcome == true } }
+
+    init(projections: [DelayedTranscriptProjection], publications: AsyncStream<Int>.Continuation) {
+        self.projections = projections
+        self.publications = publications
+        // A leaked fixture handshake must release its physical worker even when the main actor is busy.
+        timer.schedule(deadline: .now() + 120)
+        timer.setEventHandler { [weak self] in self?.finish(timedOut: true) }
+        timer.resume()
     }
+    func finish(timedOut: Bool = false) {
+        let close = lock.withLock {
+            guard outcome == nil else { return false }
+            outcome = timedOut
+            return true
+        }
+        guard close else { return }
+        timer.cancel()
+        projections.forEach { $0.finish() }
+        publications.finish()
+    }
+    deinit { finish() }
 }
 
 @Suite("Expo native runtime", .serialized)
 struct PennelRuntimeTests {
     @MainActor @Test func transcriptProjectionCacheCoalescesSessionsAndRetainsTheActualEvidenceRevision() async throws {
         let cache = NativeTranscriptProjectionCache()
-        let old = DelayedTranscriptProjection(revision: 1)
-        let current = DelayedTranscriptProjection(revision: 5)
+        let activity = TranscriptProjectionActivity()
+        let old = DelayedTranscriptProjection(revision: 1, activity: activity)
+        let current = DelayedTranscriptProjection(revision: 5, activity: activity)
+        let next = DelayedTranscriptProjection(revision: 6, activity: activity)
+        let (publicationEvents, publicationContinuation) = AsyncStream<Int>.makeStream()
+        var publicationIterator = publicationEvents.makeAsyncIterator()
+        let watchdog = TranscriptProjectionWatchdog(projections: [old, current, next], publications: publicationContinuation)
+        defer { cache.clear(); watchdog.finish() }
         var publications = 0
-        #expect(cache.value(key: "old-session", revision: 1, load: { try old.load() }, changed: { publications += 1 }) == nil)
-        try await waitForTranscriptProjection { old.calls == 1 }
-        #expect(cache.value(key: "current-session", revision: 5, load: { try current.load() }, changed: { publications += 1 }) == nil)
+        let changed: @MainActor () -> Void = { publications += 1; publicationContinuation.yield(publications) }
+        #expect(cache.value(key: "old-session", revision: 1, load: { try old.load() }, changed: changed) == nil)
+        try await old.waitUntilEntered()
+        #expect(old.calls == 1)
+        #expect(cache.value(key: "current-session", revision: 5, load: { try current.load() }, changed: changed) == nil)
         #expect(current.calls == 0)
-        old.release.signal()
-        try await waitForTranscriptProjection { current.calls == 1 }
+        old.release()
+        try await current.waitUntilEntered()
+        #expect(current.calls == 1)
         #expect(publications == 0)
-        current.release.signal()
-        try await waitForTranscriptProjection { publications == 1 }
-        let next = DelayedTranscriptProjection(revision: 6)
-        let retained = cache.value(key: "current-session", revision: 6, load: { try next.load() }, changed: { publications += 1 })
+        current.release()
+        #expect(await publicationIterator.next() == 1)
+        let retained = cache.value(key: "current-session", revision: 6, load: { try next.load() }, changed: changed)
         #expect((retained?["revision"] as? NSNumber)?.uint64Value == 5)
-        try await waitForTranscriptProjection { next.calls == 1 }
-        next.release.signal()
-        try await waitForTranscriptProjection { publications == 2 }
-        let latest = cache.value(key: "current-session", revision: 6, load: { try next.load() }, changed: { publications += 1 })
+        try await next.waitUntilEntered()
+        next.release()
+        #expect(await publicationIterator.next() == 2)
+        let latest = cache.value(key: "current-session", revision: 6, load: { try next.load() }, changed: changed)
         #expect((latest?["revision"] as? NSNumber)?.uint64Value == 6)
         #expect(next.calls == 1)
-        cache.clear()
+        #expect(publications == 2)
+        #expect(activity.maximum == 1)
+        #expect(activity.count == 0)
+        #expect(!watchdog.timedOut)
     }
 
     @MainActor @Test func keyboardPreparesItsRunnerAtRecordingStartAndCancelsBeforeRecognition() async throws {

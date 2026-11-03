@@ -7,6 +7,10 @@ function currentPreview(previous: MeetingStatus["preview"], incoming: MeetingSta
   return incoming;
 }
 
+function currentLiveSpeakers(previous: MeetingStatus["live_speaker_attribution"], incoming: MeetingStatus["live_speaker_attribution"]): MeetingStatus["live_speaker_attribution"] {
+  return !incoming || previous && incoming.revision < previous.revision ? previous : incoming;
+}
+
 export function segmentKeys(segments: Segment[]): string[] {
   const occurrences = new Map<string, number>();
   const identities = new Map<string, number>();
@@ -49,7 +53,8 @@ export class RecordingRefresh {
     if (currentRevision !== undefined && runtime.transcript_revision <= currentRevision) {
       const preview = runtime.transcript_revision === currentRevision
         ? currentPreview(this.value.preview, runtime.preview, currentRevision) : this.value.preview;
-      this.value = { ...this.value, ...runtime, preview, transcript_revision: currentRevision };
+      const liveSpeakers = currentLiveSpeakers(this.value.live_speaker_attribution, runtime.live_speaker_attribution);
+      this.value = { ...this.value, ...runtime, preview, live_speaker_attribution: liveSpeakers, transcript_revision: currentRevision };
       return this.value;
     }
     if (!this.loading) {
@@ -61,10 +66,12 @@ export class RecordingRefresh {
     if (this.disposed || generation !== this.generation || snapshot.session_id !== runtime.session_id
       || (snapshot.meeting_uid && runtime.meeting_uid ? snapshot.meeting_uid !== runtime.meeting_uid : snapshot.id !== runtime.id)) return null;
     const transcriptRevision = snapshot.transcript_revision ?? runtime.transcript_revision;
+    if (transcriptRevision < (this.value.transcript_revision ?? 0)) return null;
     const preview = runtime.transcript_revision === transcriptRevision
       ? currentPreview(snapshot.preview, runtime.preview, transcriptRevision) : snapshot.preview;
+    const liveSpeakers = currentLiveSpeakers(currentLiveSpeakers(this.value.live_speaker_attribution, snapshot.live_speaker_attribution), runtime.live_speaker_attribution);
     this.value = { ...snapshot, ...runtime, transcript: snapshot.transcript, notes: snapshot.notes,
-      preview, transcript_revision: transcriptRevision };
+      preview, live_speaker_attribution: liveSpeakers, transcript_revision: transcriptRevision };
     return this.value;
   }
 }

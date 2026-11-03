@@ -46,6 +46,7 @@
     attribution: segment.attribution || (segment.voice == null ? { kind: "unknown", voices: [] } : { kind: "single", voices: [segment.voice] }), attribution_revision: segment.attribution_revision || 1 });
   if (options.rich_utterances) transcript.forEach((segment, index) => Object.assign(segment, richUtterance(segment, index),
     options.rich_attribution_states ? { attribution: { kind: ["overlap", "unknown", "mixed"][index], voices: index === 1 ? [] : [1, 2] } } : {}));
+  if (options.rich_provisional) transcript.forEach(segment => { segment.attribution = { ...segment.attribution, provisional: true }; });
   const available = () => ({ status: "available", reason: null });
   const providers = [
     { id: "local", kind: "local", name: "Lokaal", base_url: "" },
@@ -223,6 +224,13 @@
   let activeMeetingId = meetingId;
   let metadataStatus = options.metadata_status || "valid";
   let playbackRequest = null;
+  const initialLiveSpeakers = () => ({ enabled: Boolean(options.live_speaker_enabled), available: !options.live_speaker_reason,
+    state: options.live_speaker_reason ? "unavailable" : options.live_speaker_enabled ? "running" : "off",
+    reason_code: options.live_speaker_reason || null, revision: 1,
+    model: options.live_speaker_reason === "local_required" ? null : "Owned segmentation + embedding models",
+    destination: options.live_speaker_reason === "local_required" || options.live_speaker_reason === "unsupported" ? null : "local" });
+  let liveSpeakerStatus = initialLiveSpeakers();
+  let liveSpeakerDelay = options.live_speaker_delay_ms || 0;
   const retainedMeetings = new Map();
   const storedTranscript = segments => segments.map(segment => segment.utterance_id ? clone(segment) : ({ ...segment, end_ms: segment.start_ms,
     text: segment.text.trim().replace(/\p{White_Space}+/gu, " "), voice: segment.speaker === "others" ? segment.voice ?? null : null }));
@@ -255,6 +263,7 @@
       pending: storageError ? 1 : paused ? 3 : 0, transcript_revision: retained ? transcriptRevision : 0,
       ...(retained && options.rich_utterances ? { metadata_status: metadataStatus } : {}),
       ...(retained && options.live_captions ? { preview: previewSnapshot() } : {}),
+      ...(retained && options.live_speakers ? { live_speaker_attribution: clone(liveSpeakerStatus) } : {}),
       ...(includeContent ? { notes, transcript: retained ? clone(transcript) : [] } : {}),
       ...(retained ? { recognition: { provider_kind: "local", provider_name: "Lokaal", model: settings.meeting_stt.model, language: "nl" } } : {}),
     };
@@ -454,6 +463,14 @@
       case "check_cli_agent": return "Niet uitgevoerd in deze fixture.";
       case "meeting_status": return meetingStatus();
       case "meeting_runtime_status": return meetingStatus(false);
+      case "set_live_speaker_attribution": {
+        if (liveSpeakerDelay) await new Promise(resolve => setTimeout(resolve, liveSpeakerDelay));
+        if (args.sessionId !== liveSession || !meetingStatus().recording) throw new Error("The recording session changed.");
+        if (options.live_speaker_toggle_error) throw new Error("Synthetic speaker attribution failed.");
+        if (args.enabled && !liveSpeakerStatus.available) throw new Error("Synthetic live speaker setup unavailable.");
+        liveSpeakerStatus = { ...liveSpeakerStatus, enabled: Boolean(args.enabled), state: args.enabled ? "running" : "off", reason_code: null, revision: liveSpeakerStatus.revision + 1 };
+        return clone(liveSpeakerStatus);
+      }
       case "set_meeting_title": meeting.title = String(args.title ?? ""); return null;
       case "set_meeting_notes": case "save_meeting_notes": {
         if (saveFailure) throw new Error("Synthetic notes storage unavailable.");
@@ -637,6 +654,8 @@
     workspace: { append: segment => { transcript.push(options.rich_utterances ? richUtterance(clone(segment), transcript.length) : clone(segment)); transcriptRevision++; },
       attribution: (index, update) => { Object.assign(transcript[index], clone(update)); transcript[index].attribution_revision = (transcript[index].attribution_revision || 0) + 1; transcriptRevision++; },
       metadata: state => { metadataStatus = state; }, playback: () => clone(playbackRequest),
+      liveSpeakers: update => { liveSpeakerStatus = { ...liveSpeakerStatus, ...clone(update), revision: update.revision ?? liveSpeakerStatus.revision + 1 }; },
+      liveSpeakerDelay: delay => { liveSpeakerDelay = delay; },
       preview: (source, update) => {
         const track = previewTracks.find(track => track.source === source);
         if (!track) throw new Error("Unknown synthetic preview source");
@@ -656,6 +675,7 @@
         notes = next.notes ?? ""; transcript.splice(0, transcript.length, ...clone(next.transcript ?? []));
         transcriptRevision = 1; recordingStopped = false; recordingRecovered = false;
         previewRevision = 1;
+        liveSpeakerStatus = { ...initialLiveSpeakers(), enabled: false, state: options.live_speaker_reason ? "unavailable" : "off" };
         for (const track of previewTracks) Object.assign(track, { revision: 1, epoch: 0, chunk_start_ms: 0, start_ms: 0, end_ms: 0, text: "", state: settings.live_text_enabled ? "ready" : "disabled" });
         return { id: activeMeetingId, meeting_uid: meetingUid, session_id: liveSession, notes };
       },

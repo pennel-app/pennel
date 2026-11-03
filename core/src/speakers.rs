@@ -64,6 +64,7 @@ pub(crate) fn diarize_local(
     embedding: &Path,
     samples: &[f32],
 ) -> Result<Diarization, PennelError> {
+    let _physical = crate::live_speakers::offline_acoustic_permit();
     if !segmentation.is_file() || !embedding.is_file() {
         return Err(PennelError::ModelNotDownloaded);
     }
@@ -76,6 +77,68 @@ pub(crate) fn diarize_local(
             message: error.to_string(),
         },
     )
+}
+
+#[cfg(feature = "speakers")]
+#[derive(Clone, PartialEq, Eq)]
+struct SpeakerAssetStamp {
+    length: u64,
+    modified: Option<std::time::SystemTime>,
+    #[cfg(unix)]
+    identity: (u64, u64),
+}
+
+#[cfg(feature = "speakers")]
+fn speaker_asset_stamp(path: &Path) -> Result<SpeakerAssetStamp, PennelError> {
+    let metadata = std::fs::metadata(path).map_err(|_| PennelError::ModelNotDownloaded)?;
+    if !metadata.is_file() {
+        return Err(PennelError::ModelNotDownloaded);
+    }
+    #[cfg(unix)]
+    let identity = {
+        use std::os::unix::fs::MetadataExt;
+        (metadata.dev(), metadata.ino())
+    };
+    Ok(SpeakerAssetStamp {
+        length: metadata.len(),
+        modified: metadata.modified().ok(),
+        #[cfg(unix)]
+        identity,
+    })
+}
+
+#[cfg(feature = "speakers")]
+fn speaker_asset_digest(path: &Path) -> Result<String, PennelError> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).map_err(|_| PennelError::ModelNotDownloaded)?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|_| PennelError::ModelNotDownloaded)?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(crate::models::hex(&digest.finalize()))
+}
+
+#[cfg(feature = "speakers")]
+struct LocalLiveSpeakerInference {
+    diarizer: pennel_speakers::Diarizer,
+}
+#[cfg(feature = "speakers")]
+impl crate::live_speakers::LiveSpeakerInference for LocalLiveSpeakerInference {
+    fn infer(&mut self, samples: &[f32]) -> Result<Diarization, PennelError> {
+        self.diarizer
+            .process(samples)
+            .map_err(|_| PennelError::InvalidResponse {
+                message: "Live speaker recognition failed.".into(),
+            })
+    }
 }
 
 #[cfg(not(feature = "speakers"))]
@@ -148,6 +211,111 @@ fn establish_single_archive_source(
 }
 
 impl PennelEngine {
+    /// Readiness is metadata-only; saving a setup or loading this state never starts acoustic work.
+    pub fn live_speaker_availability(&self) -> crate::live_speakers::LiveSpeakerStatus {
+        use crate::live_speakers::LiveSpeakerStatus;
+        if self.settings().speaker_recognition != SpeakerRecognitionMode::Local {
+            return LiveSpeakerStatus::availability(false, Some("local_required"), None);
+        }
+        if !cfg!(feature = "speakers") {
+            return LiveSpeakerStatus::availability(false, Some("unsupported"), None);
+        }
+        if self.models.path(SEGMENTATION_ID).is_none() || self.models.path(EMBEDDING_ID).is_none() {
+            return LiveSpeakerStatus::availability(false, Some("models_missing"), None);
+        }
+        LiveSpeakerStatus::availability(
+            true,
+            None,
+            Some(format!("{SEGMENTATION_ID}/{EMBEDDING_ID}")),
+        )
+    }
+
+    /// Called only for explicit activation, outside capture/UI threads. No model is acquired here.
+    pub fn start_live_speaker_worker(
+        self: &std::sync::Arc<Self>,
+        session_id: String,
+        generation: u64,
+        observer: std::sync::Arc<dyn crate::live_speakers::LiveSpeakerObserver>,
+    ) -> Result<std::sync::Arc<crate::live_speakers::LiveSpeakerWorker>, PennelError> {
+        self.start_live_speaker_worker_with_memory(
+            session_id,
+            generation,
+            std::sync::Arc::new(crate::live_speakers::LiveSpeakerMemory::default()),
+            observer,
+        )
+    }
+
+    pub fn start_live_speaker_worker_with_memory(
+        self: &std::sync::Arc<Self>,
+        session_id: String,
+        generation: u64,
+        memory: std::sync::Arc<crate::live_speakers::LiveSpeakerMemory>,
+        observer: std::sync::Arc<dyn crate::live_speakers::LiveSpeakerObserver>,
+    ) -> Result<std::sync::Arc<crate::live_speakers::LiveSpeakerWorker>, PennelError> {
+        if !self.live_speaker_availability().available {
+            return Err(PennelError::InvalidResponse {message:"Live speaker attribution requires the selected local speaker route and installed compatible models.".into()});
+        }
+        #[cfg(feature = "speakers")]
+        {
+            let segmentation = self
+                .models
+                .path(SEGMENTATION_ID)
+                .ok_or(PennelError::ModelNotDownloaded)?;
+            let embedding = self
+                .models
+                .path(EMBEDDING_ID)
+                .ok_or(PennelError::ModelNotDownloaded)?;
+            let segmentation_stamp = speaker_asset_stamp(&segmentation)?;
+            let embedding_stamp = speaker_asset_stamp(&embedding)?;
+            let options = pennel_speakers::Options::default();
+            let model = format!(
+                "{SEGMENTATION_ID}@{}:{EMBEDDING_ID}@{};{}:{}:{}",
+                speaker_asset_digest(&segmentation)?,
+                speaker_asset_digest(&embedding)?,
+                options.threads,
+                options.cluster_threshold.to_bits(),
+                options.window_shift.to_bits()
+            );
+            if !memory.bind(&model, &session_id) {
+                return Err(PennelError::InvalidResponse {message:"The live speaker configuration changed. Existing session voices were preserved.".into()});
+            }
+            let owner = std::sync::Arc::downgrade(self);
+            let (segmentation_check, embedding_check) = (segmentation.clone(), embedding.clone());
+            let current = std::sync::Arc::new(move || {
+                owner.upgrade().is_some_and(|engine| {
+                    engine.settings().speaker_recognition == SpeakerRecognitionMode::Local
+                        && engine.models.path(SEGMENTATION_ID).as_ref() == Some(&segmentation_check)
+                        && engine.models.path(EMBEDDING_ID).as_ref() == Some(&embedding_check)
+                        && speaker_asset_stamp(&segmentation_check).as_ref()
+                            == Ok(&segmentation_stamp)
+                        && speaker_asset_stamp(&embedding_check).as_ref() == Ok(&embedding_stamp)
+                })
+            });
+            let factory = Box::new(move || {
+                let models = pennel_speakers::Models {
+                    segmentation: &segmentation,
+                    embedding: &embedding,
+                };
+                let diarizer =
+                    pennel_speakers::Diarizer::load(&models, &options).map_err(|_| {
+                        PennelError::InvalidResponse {
+                            message: "Live speaker models could not be loaded.".into(),
+                        }
+                    })?;
+                Ok(Box::new(LocalLiveSpeakerInference { diarizer })
+                    as Box<dyn crate::live_speakers::LiveSpeakerInference>)
+            });
+            Ok(crate::live_speakers::LiveSpeakerWorker::start_with_memory(
+                session_id, generation, model, current, factory, observer, memory,
+            ))
+        }
+        #[cfg(not(feature = "speakers"))]
+        {
+            let _ = (session_id, generation, memory, observer);
+            Err(unavailable())
+        }
+    }
+
     /// Hybrid meetings analyze both physical sources. Enrollment only helps identify the user;
     /// it is never required to obtain neutral numbered speakers from a shared microphone.
     pub fn wants_microphone_track(&self, _system: Option<&[f32]>) -> bool {

@@ -9,6 +9,7 @@ import { languageModelConfigured } from "./presentation";
 import { speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
 import { attributionNoticeKey } from "./meeting-source";
+import { LiveSpeakerControl, liveSpeakerStatusKey } from "./live-speaker-state";
 import type { Context } from "./main";
 
 interface Turn {
@@ -96,6 +97,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   let following = true;
   let previousScroll = 0;
   let intendedScroll: number | null = null;
+  let pendingTranscript: Segment[] | null = null;
   let sourceReturn: { pane: LivePane; questionScroll: number; transcriptScroll: number; notesScroll: number; start: number; end: number; direction: "forward" | "backward" | "none"; turn: HTMLElement } | null = null;
   const panes = new LivePaneState();
   const requests = new LiveRequestState(uid, session);
@@ -105,8 +107,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   const writes = new SerialQueue();
   const titleWrites = new SerialQueue();
   const refresh = new RecordingRefresh(initial);
+  const liveSpeakers = new LiveSpeakerControl(session, initial.live_speaker_attribution);
   const turns: Turn[] = [];
-  const rows = new Map<string, { element: HTMLElement; body: HTMLElement; speaker: HTMLElement; correction: HTMLElement; segment: Segment }>();
+  const rows = new Map<string, { element: HTMLElement; body: HTMLElement; speaker: HTMLElement; provisional: HTMLElement; correction: HTMLElement; segment: Segment }>();
   const root = h("article", { class: "live-workspace live-recording", "data-session-id": session, "data-meeting-uid": uid });
   const title = textField({ class: "live-title", "aria-label": l("meetings.meeting_title_label") });
   const clock = h("span", { class: "live-clock" });
@@ -163,10 +166,20 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   }
   const noteHeading = h("div", { class: "live-note-controls" }, h("div", { class: "live-preview-toggle" }, sourceToggle, previewToggle), formatting);
   panels.get("notes")!.append(noteHeading, editor, notePreview, h("footer", { class: "live-save-controls" }, saveStatus, save), saveError);
-  const follow = controlButton({ class: "btn compact live-follow", hidden: true, onclick: () => { following = true; follow.hidden = true; scrollLive(); } }, l("meetings.workspace_follow"));
+  const follow = controlButton({ class: "btn compact live-follow", hidden: true, onclick: resumeFollowing }, l("meetings.workspace_follow"));
   const transcriptOutput = h("div", { class: "live-transcript", tabindex: 0, "aria-label": l("meetings.workspace_transcript") });
   const transcriptEmpty = h("p", { class: "muted" }, l("meetings.empty_transcript"));
   const attributionNotice = h("p", { class: "help live-attribution-notice", hidden: true });
+  const speakerToggle = h("input", { type: "checkbox", role: "switch", "data-live-speaker-toggle": "true", checked: false, disabled: true });
+  const speakerState = h("p", { class: "help live-speaker-state", role: "status" });
+  const speakerDestination = h("summary", { class: "help live-speaker-destination" });
+  const speakerModels = h("p", { class: "help live-speaker-models" });
+  const speakerSetup = h("button", { class: "text-button", hidden: true, onclick: () => ctx.navigate("meeting-settings") }, l("meetings.live_speakers_setup"));
+  const speakerControls = h("section", { class: "live-speaker-controls", tabindex: 0, "aria-label": l("meetings.live_speakers_title") },
+    h("label", { class: "checkbox" }, speakerToggle, l("meetings.live_speakers_title")), speakerState,
+    h("details", { class: "live-speaker-details" }, speakerDestination, speakerModels, h("p", { class: "help" }, l("meetings.live_speakers_help")),
+      h("p", { class: "help" }, l("meetings.workspace_cadence")), speakerSetup));
+  speakerToggle.addEventListener("change", () => { void changeLiveSpeakers(speakerToggle.checked); });
   transcriptOutput.append(transcriptEmpty);
   const captionOutput = h("div", { class: "live-captions", hidden: true, role: "region", tabindex: 0, "aria-label": l("meetings.captions_title") });
   const captionRows = new Map<Speaker, { element: HTMLElement; state: HTMLElement; body: HTMLElement }>();
@@ -179,7 +192,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     captionRows.set(source, { element, state, body });
     captionOutput.append(element);
   }
-  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, h("p", { class: "help" }, l("meetings.workspace_cadence")), follow), attributionNotice, transcriptOutput, captionOutput);
+  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, follow), speakerControls, attributionNotice, transcriptOutput, captionOutput);
   const history = h("div", { class: "live-question-history chat-history", tabindex: 0, "aria-label": l("meetings.workspace_questions") });
   const question = h("textarea", { class: "live-question-input", rows: 2, "aria-label": l("meetings.your_question"), placeholder: l("meetings.ask_placeholder_this") });
   const submit = controlButton({ class: "btn primary live-question-submit", onclick: () => { void ask(); } }, l("meetings.ask"));
@@ -234,8 +247,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     previousScroll = position;
   });
   document.addEventListener("selectionchange", () => {
-    const selected = window.getSelection();
-    if (selected && !selected.isCollapsed && selected.anchorNode && transcriptOutput.contains(selected.anchorNode)) pauseFollowing();
+    if (transcriptSelection().length) pauseFollowing();
+    flushPendingTranscript();
   });
   bindLocalization(root, () => { updateStatus(status); updateSaving(); });
 
@@ -379,6 +392,38 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     attributionNotice.textContent = metadataNotice ? t(metadataNotice) : "";
     attributionNotice.hidden = !metadataNotice;
     updateCaptions(next);
+    if (!next.recording && next.phase !== "starting") liveSpeakers.stop();
+    else liveSpeakers.observe(session, next.live_speaker_attribution);
+    updateLiveSpeakers();
+  }
+  function updateLiveSpeakers() {
+    const value = liveSpeakers.value;
+    speakerToggle.checked = liveSpeakers.checked;
+    speakerToggle.disabled = !liveSpeakers.canChange(status.recording);
+    speakerControls.dataset.liveSpeakerState = !status.recording && status.phase !== "starting" ? "stopped" : value?.state ?? "unavailable";
+    speakerControls.setAttribute("aria-busy", String(liveSpeakers.pending));
+    const stateKey = liveSpeakers.pending ? "meetings.live_speakers_updating" : !status.recording && status.phase !== "starting"
+      ? "meetings.live_speakers_stopped" : liveSpeakerStatusKey(value);
+    const stateText = liveSpeakers.error ?? t(stateKey);
+    if (speakerState.textContent !== stateText) speakerState.textContent = stateText;
+    speakerState.hidden = !liveSpeakers.pending && !liveSpeakers.error && !!value?.available && ["off", "running"].includes(value.state);
+    speakerState.classList.toggle("error", !!liveSpeakers.error || value?.state === "failed");
+    const destination = t(value?.destination === "local" ? "meetings.live_speakers_destination_local_short" : "meetings.live_speakers_destination_unavailable");
+    const readiness = t(value?.available ? "meetings.live_speakers_models_ready_short" : value?.reason_code === "models_missing"
+      ? "meetings.live_speakers_models_missing_short" : "meetings.live_speakers_models_unknown");
+    const destinationText = `${destination} · ${readiness}`;
+    if (speakerDestination.textContent !== destinationText) speakerDestination.textContent = destinationText;
+    const modelText = value?.model ? t(value.available ? "meetings.live_speakers_models_ready" : "meetings.live_speakers_models_selected", { model: value.model }) : t("meetings.live_speakers_models_unknown");
+    if (speakerModels.textContent !== modelText) speakerModels.textContent = modelText;
+    speakerSetup.hidden = !["models_missing", "local_required", "configuration_changed"].includes(value?.reason_code ?? "");
+  }
+  async function changeLiveSpeakers(enabled: boolean) {
+    const request = liveSpeakers.begin(status.recording);
+    updateLiveSpeakers();
+    if (request === null) return;
+    try { liveSpeakers.complete(request, await api.setLiveSpeakerAttribution(session, enabled)); }
+    catch (error) { liveSpeakers.fail(request, errorText(error)); }
+    updateLiveSpeakers();
   }
   function updateCaptions(next: MeetingStatus) {
     const snapshot = next.preview;
@@ -399,13 +444,55 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     }
   }
   function pauseFollowing() { following = false; follow.hidden = false; }
+  function transcriptSelection(): Range[] {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return [];
+    return Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index))
+      .filter(range => !range.collapsed && range.intersectsNode(transcriptOutput));
+  }
+  function clearTranscriptSelection() {
+    if (transcriptSelection().length) window.getSelection()?.removeAllRanges();
+  }
+  function resumeFollowing() {
+    clearTranscriptSelection();
+    following = true; follow.hidden = true;
+    flushPendingTranscript();
+    scrollLive();
+  }
+  function flushPendingTranscript() {
+    if (pendingTranscript) updateTranscript(pendingTranscript);
+  }
+  function changesSelectedTranscript(segments: Segment[], keys: string[]): boolean {
+    const selected = transcriptSelection();
+    if (!selected.length) return false;
+    const next = new Map(keys.map((key, index) => [key, segments[index]]));
+    for (const [key, row] of rows) {
+      if (!selected.some(range => range.intersectsNode(row.element))) continue;
+      const segment = next.get(key);
+      if (!segment) return true;
+      if (selected.some(range => range.intersectsNode(row.body))
+        && row.body.textContent !== (segment.failed ? t("meetings.transcription_failed") : segment.text)) return true;
+      if (selected.some(range => range.intersectsNode(row.speaker)) && row.speaker.textContent !== String(speakerUiLabel(segment))) return true;
+      if (selected.some(range => range.intersectsNode(row.provisional))
+        && row.provisional.hidden !== (segment.attribution?.provisional !== true || !!segment.confirmed_speaker_name)) return true;
+      if (selected.some(range => range.intersectsNode(row.correction)) && row.correction.hidden !== !segment.correction_review_required) return true;
+    }
+    const retained = new Set(keys);
+    const currentOrder = [...transcriptOutput.querySelectorAll<HTMLElement>(".transcript-line")]
+      .map(row => row.dataset.segmentKey!).filter(key => retained.has(key));
+    const nextOrder = keys.filter(key => rows.has(key));
+    return currentOrder.some((key, index) => nextOrder[index] !== key);
+  }
   function scrollLive() { intendedScroll = Math.max(0, transcriptOutput.scrollHeight - transcriptOutput.clientHeight); transcriptOutput.scrollTop = intendedScroll; previousScroll = transcriptOutput.scrollTop; }
   function updateTranscript(segments: Segment[]) {
+    const keys = segmentKeys(segments);
+    // Retain the user's actual text nodes rather than guessing a Range across new speaker turns.
+    if (changesSelectedTranscript(segments, keys)) { pendingTranscript = segments; return; }
+    pendingTranscript = null;
     const viewport = transcriptOutput.getBoundingClientRect();
     const first = [...rows.values()].find(row => row.element.getBoundingClientRect().bottom >= viewport.top);
     const offset = first ? first.element.getBoundingClientRect().top - viewport.top : 0;
     const oldPosition = transcriptOutput.scrollTop;
-    const keys = segmentKeys(segments);
     const retained = new Set(keys);
     for (const [key, row] of rows) if (!retained.has(key)) { row.element.remove(); rows.delete(key); }
     transcriptEmpty.hidden = segments.length > 0;
@@ -416,9 +503,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       if (!row) {
         const body = h("div", { class: "transcript-copy" }, segment.failed ? l("meetings.transcription_failed") : segment.text);
         const speaker = h("span", { class: "speaker" }, speakerUiLabel(segment));
+        const provisional = h("span", { class: "live-speaker-provisional", hidden: true, title: l("meetings.live_speakers_provisional_help") }, l("meetings.live_speakers_provisional_tag"));
         const correction = h("p", { class: "help transcript-correction-review", hidden: !segment.correction_review_required }, l("meetings.attribution_correction_review"));
-        const element = h("div", { class: "transcript-line", "data-segment-key": key, "data-start-ms": segment.start_ms, "data-source-id": segment.source_id ?? "" }, h("span", { class: "transcript-stamp" }, formatClock(segment.start_ms / 1000)), speaker, body, correction);
-        row = { element, body, speaker, correction, segment };
+        const element = h("div", { class: "transcript-line", "data-segment-key": key, "data-start-ms": segment.start_ms, "data-source-id": segment.source_id ?? "" }, h("span", { class: "transcript-stamp" }, formatClock(segment.start_ms / 1000)), h("div", { class: "live-transcript-speaker" }, speaker, provisional), body, correction);
+        row = { element, body, speaker, provisional, correction, segment };
         rows.set(key, row);
       } else if (!sameSegment(row.segment, segment)) {
         if (row.segment.text !== segment.text || row.segment.failed !== segment.failed) row.body.textContent = segment.failed ? t("meetings.transcription_failed") : segment.text;
@@ -427,6 +515,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       const label = String(speakerUiLabel(segment));
       if (row.speaker.textContent !== label) row.speaker.textContent = label;
       row.speaker.title = label;
+      row.provisional.hidden = segment.attribution?.provisional !== true || !!segment.confirmed_speaker_name;
       row.correction.hidden = !segment.correction_review_required;
       row.element.dataset.sourceId = segment.source_id ?? "";
       row.element.title = segment.source_id ? t(`meetings.attribution_source_${segment.source_id}`) : "";
@@ -435,7 +524,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     }
     if (following) scrollLive();
     else {
-      const position = first?.element.parentElement === transcriptOutput ? oldPosition + first.element.getBoundingClientRect().top - viewport.top - offset : oldPosition;
+      const delta = first?.element.parentElement === transcriptOutput ? first.element.getBoundingClientRect().top - viewport.top - offset : null;
+      // Layout may already have moved scrollTop through native scroll anchoring.
+      const position = delta === null ? oldPosition : transcriptOutput.scrollTop + delta;
       intendedScroll = position;
       transcriptOutput.scrollTop = position;
     }
@@ -574,6 +665,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     if (anchor.passage.kind === "notes") {
       selectPane("notes", true); showPreview(false); editor.focus({ preventScroll: true }); editor.setSelectionRange(anchor.notes_start!, anchor.notes_end!);
     } else {
+      if (pendingTranscript) { clearTranscriptSelection(); flushPendingTranscript(); }
       pauseFollowing(); selectPane("transcript", true);
       const row = rows.get(anchor.segment_keys[0]);
       row?.element.classList.add("live-source-highlight"); row?.element.scrollIntoView({ block: "center", behavior: "instant" });

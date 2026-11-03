@@ -1207,6 +1207,7 @@ impl MeetingRecorder {
         }
         let duration = self.started.elapsed().as_millis() as u64;
         self.quiescent_ms = Some(duration);
+        self.session.stop_live_speaker_attribution();
         self.session.stop_preview();
         #[cfg(target_os = "macos")]
         if let Some(preview) = self.preview.take() {

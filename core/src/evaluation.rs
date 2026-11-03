@@ -212,6 +212,7 @@ fn write_fixture_meeting(store: &MeetingStore, meeting: InputMeeting) -> Result<
                 },
                 voices,
                 self_voice,
+                provisional: false,
                 turns: Vec::new(),
             };
             row

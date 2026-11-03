@@ -22,6 +22,7 @@ const STOP_WORDS: &[&str] = &[
 
 const SYSTEM_PROMPT: &str = "You answer questions about the user's meetings.
 Use only the numbered sources. Cite every claim with its source number in square brackets, like [2].
+Treat provisional speaker labels as revisable estimates, not confirmed identities or evidence of ownership.
 If the sources do not contain the answer, say so plainly instead of guessing.
 Answer in the language of the question, concisely, in Markdown.";
 
@@ -307,6 +308,30 @@ mod tests {
         source.utterance_fingerprints = vec!["immutable-source".into()];
         let citations = cited("The source agrees [1].", &[source.clone()]);
         assert_eq!(citations[0].passage, source);
+    }
+
+    #[test]
+    fn ordinary_and_apple_questions_retain_provisional_speaker_uncertainty() {
+        let sources = vec![passage(
+            "M",
+            PassageKind::Transcript,
+            Some(1_000),
+            "Speaker 1 (provisional): I will prepare it.",
+        )];
+        let guard = "Treat provisional speaker labels as revisable estimates, not confirmed identities or evidence of ownership.";
+        let ordinary = chat_messages("Who will prepare it?", &[], &sources);
+        let (apple, selected) = apple_chat_messages("Who will prepare it?", &[], &sources).unwrap();
+        for messages in [ordinary, apple] {
+            assert!(messages[0].content.contains(guard));
+            assert!(
+                messages
+                    .last()
+                    .unwrap()
+                    .content
+                    .contains("Speaker 1 (provisional): I will prepare it.")
+            );
+        }
+        assert_eq!(selected, sources);
     }
 
     #[test]

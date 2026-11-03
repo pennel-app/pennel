@@ -47,3 +47,11 @@ Canonical utterances retain IDs, source IDs, actual start/end times, exact autho
 The legacy Segment/Markdown projection loses richer attribution meaning. Its Me/Others labels do not prove who spoke or which archive a relabelled row came from. Current UI, cited questions, summaries, exports and playback use the verified canonical snapshot. Unparsed legacy text and unknown/corrupt metadata are retained; uncertain remapping requires review.
 
 Snapshot and speaker/retranscription journals recover text, names and metadata together. Private ownership metadata permits pruning only proven unreferenced generated parts after successful commit, with complete backup and sync-conflict references protected. Embeddings, voiceprint internals, diagnostic context and raw capture data are not included in portable attribution metadata. See [the candidate's evidence and remaining gates](evidence/speaker-turns-22.md).
+
+### Provisional live attribution
+
+Automatic attribution carries a `provisional` flag. A snapshot with any provisional utterance uses manifest schema **2**; readers support schemas 1 and 2, while a schema-1 payload claiming provisional attribution is invalid. Older schema-1 readers preserve schema-2 files and expose them read-only rather than silently treating estimates as settled. Unsupported, malformed and conflicting generations retain the existing preservation behavior.
+
+Ordinary saves, rename, reopen and encrypted text sync retain provisional state. Actual final acoustic reconciliation can clear it and write a schema-1-compatible snapshot again. Valid manual corrections remain authoritative; ambiguous automatic remapping remains unknown or requires review. The private ownership ledger and recovery journals keep their existing version: text, parts and manifest still recover as one checked generation at every journal boundary.
+
+Only attribution metadata is portable. Session centroids and owned PCM never enter the sidecar or sync. Provisional person labels do not change utterance IDs, physical source identity or frozen question evidence; interim caption text remains excluded. See [the live-speaker evidence](evidence/live-speakers-99.md).
