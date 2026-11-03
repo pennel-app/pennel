@@ -834,5 +834,66 @@
     "No installed Windows/Linux acceptance, merge, release or deployment.",
     "Markdown links reference transcript.md relative to the meeting folder; no deep-link handler or Markdown row anchor is claimed.",
     "Native export API and enabled UI were verified; native system clipboard click was not exercised."
-  ]
+  ],
+  "stack_maintenance": {
+    "reason": "Inherit the reviewed deterministic native projection-cache fixture repair without changing production code.",
+    "previous_publication_head": "e96104285af91a6a8c9eea1b6ff5c69d72e07f99",
+    "rebased_phase_head": "62d696f85d0fe5d91269842eae676f664e7b2e5a",
+    "previous_stack_base": "748e01707e2474eaf70a5c284a60e3a71bd1cd5e",
+    "current_stack_base": "80ef2e71ed2ac379e69ddd781f5630d6829148eb",
+    "upstream_heads": {
+      "99": "aebf7cef503742d6e6285b82172113664fa5f277",
+      "96": "e3fa44b3c7bb97cba7593e108b6ec9ca146c8984",
+      "98": "80ef2e71ed2ac379e69ddd781f5630d6829148eb"
+    },
+    "all_7_phase_patches_range_diff_equal": true,
+    "production_blobs_unchanged": true,
+    "existing_receipt_screenshots_helper_preserved_before_addendum": true,
+    "inherited_delta": [
+      "apps/mobile/native/ios/Tests/PennelRuntimeTests.swift",
+      "docs/evidence/live-speakers-99/native-ci-follow-up.md"
+    ],
+    "native_fixture": {
+      "old_sha256": "a224c97eb993b8fde8b925779558e5eeb905887014d7e106f5b04ba9e686416a",
+      "new_sha256": "db45b622a7140a4a6a16fb9bd47867d5bc5a88cad24c200db2c0686e3e8d00d3",
+      "strategy": "Explicit entry/publication handshakes, physical-worker count assertions and a 120-second independent cleanup watchdog replace fixture five-second polling races.",
+      "passed": true,
+      "duration_seconds": 5.229
+    },
+    "generation": "Xcode project references canonical native/ios/Tests source directly; no CNG copy, Prebuild, Rust/core/frontend or Release rebuild needed for this test-only repair.",
+    "test_command": [
+      "/Users/landerparren/.local/bin/worktree-storage",
+      "run",
+      "--",
+      "bash",
+      "scripts/ci-xcodebuild.sh",
+      "test",
+      "-workspace",
+      "apps/mobile/ios/Pennel.xcworkspace",
+      "-scheme",
+      "Pennel",
+      "-configuration",
+      "Debug",
+      "-destination",
+      "platform=iOS Simulator,id=64C462E2-0904-4E38-98C0-F1F19690D2E4",
+      "-derivedDataPath",
+      "apps/mobile/build/Issue57TestDerivedData",
+      "-resultBundlePath",
+      "build/issue57/native-stack-repair-tests.xcresult",
+      "CODE_SIGNING_ALLOWED=YES",
+      "CODE_SIGN_IDENTITY=-",
+      "CODE_SIGN_STYLE=Manual",
+      "DEVELOPMENT_TEAM="
+    ],
+    "native_summary": {
+      "passedTests": 171,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 171,
+      "result": "Passed"
+    },
+    "result_bundle": "build/issue57/native-stack-repair-tests.xcresult",
+    "log": "build/issue57/stack-maintenance/native-tests.log",
+    "immutable_original_evidence": "https://github.com/pennel-app/pennel/blob/e96104285af91a6a8c9eea1b6ff5c69d72e07f99/docs/evidence/reviewed-insights-57.md"
+  }
 }
