@@ -895,5 +895,60 @@
     "result_bundle": "build/issue57/native-stack-repair-tests.xcresult",
     "log": "build/issue57/stack-maintenance/native-tests.log",
     "immutable_original_evidence": "https://github.com/pennel-app/pennel/blob/e96104285af91a6a8c9eea1b6ff5c69d72e07f99/docs/evidence/reviewed-insights-57.md"
+  },
+  "rust_worker_ci_maintenance": {
+    "previous_head": "a006e5c026cac62714a4f2c72170e68627f8a69d",
+    "verified_rebased_phase_head": "b90f48fed22bd9e7b6f56363c7dd646a65ef3cff",
+    "current_stack_base": "52befd1e0674ad38e7d221d869fad0aff2995562",
+    "upstream_heads": {
+      "99": "2f6745312e3bf6e6cab095a04c40dd8050996430",
+      "96": "a8d54b1af5248739ab90b31ce2c6ca68f261659c",
+      "98": "52befd1e0674ad38e7d221d869fad0aff2995562"
+    },
+    "cause_and_repair_record": "live-speakers-99/worker-ci-follow-up.md",
+    "upstream_ci_failure": "https://github.com/pennel-app/pennel/actions/runs/41672788946/job/126046219296",
+    "scope": "Reviewed cfg(test) admission/cleanup fixture repair and upstream CI receipt only; every production prefix and other blob is unchanged.",
+    "source_proof": {
+      "previous_head": "a006e5c026cac62714a4f2c72170e68627f8a69d",
+      "rebased_head": "b90f48fed22bd9e7b6f56363c7dd646a65ef3cff",
+      "base": "52befd1e0674ad38e7d221d869fad0aff2995562",
+      "inherited_delta": [
+        "core/src/live_speakers.rs",
+        "docs/evidence/live-speakers-99/worker-ci-follow-up.md"
+      ],
+      "production_prefix_sha256": "a3e850dbae3cb7fa1cbff9e26930c1e4c84b6b8f7339ac41ae6140aeb33c4917",
+      "test_module_sha256_before": "d30e3bb8208038c1bacb6a05d3d2a5d375e3b19a03f0c6aa2fcdccdbea4762d4",
+      "test_module_sha256_after": "68835b298d9ffc4e5502eb4c6f329c659f467c4e6467aafffdb2ab584d5471bc",
+      "all_other_blobs_unchanged": true,
+      "native_release_frontend_unchanged": true,
+      "production_prefix_boundary": "Bytes before #[cfg(test)] newline mod tests {"
+    },
+    "all_8_phase_patches_range_diff_equal": true,
+    "full_joined_suites": {
+      "default": {
+        "passed": 974,
+        "failed": 0,
+        "ignored": 7,
+        "seconds": 82.55,
+        "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --lib",
+        "log": "build/issue57/rust-worker-maintenance/core-default.log"
+      },
+      "lean": {
+        "passed": 957,
+        "failed": 0,
+        "ignored": 5,
+        "seconds": 79.8,
+        "command": "scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml --no-default-features --lib",
+        "log": "build/issue57/rust-worker-maintenance/core-lean.log"
+      }
+    },
+    "strict_clippy": {
+      "default": "passed with warnings denied",
+      "lean": "passed with warnings denied"
+    },
+    "core_format_check": "passed",
+    "whitespace_check": "passed",
+    "no_native_release_frontend_repeat": "The changed Rust test module is excluded from production builds; existing 171 native, Release, frontend and screenshot evidence remains applicable.",
+    "qualification": "Still empty; no model/provider inference or activation from this test repair."
   }
 }
