@@ -228,6 +228,7 @@ export interface Settings {
   appearance: AppearancePreference;
   onboarding: OnboardingProgress;
   dictation_pad_auto_paste: boolean;
+  live_text_enabled: boolean;
   providers: ProviderAccount[];
   dictation_stt: ModelChoice;
   meeting_stt: ModelChoice;
@@ -350,6 +351,7 @@ export interface Segment {
 export interface MeetingStatus {
   meeting_uid?: string | null;
   transcript_revision?: number;
+  preview?: MeetingPreviewSnapshot | null;
   recognition?: { provider_kind: ProviderKind | null; provider_name: string; model: string; language: string | null };
   recording: boolean;
   phase: MeetingPhase;
@@ -371,6 +373,25 @@ export interface MeetingStatus {
   consent_copied?: boolean;
   pending: number;
   transcript: Segment[];
+}
+
+export type MeetingPreviewState = "disabled" | "warming" | "ready" | "busy" | "failed" | "unsupported" | "stopped";
+export interface MeetingTrackPreview {
+  source: Speaker;
+  revision: number;
+  epoch: number;
+  chunk_start_ms: number;
+  start_ms: number;
+  end_ms: number;
+  text: string;
+  mode: "local" | "system" | "after_recording";
+  state: MeetingPreviewState;
+}
+export interface MeetingPreviewSnapshot {
+  session_id: string;
+  revision: number;
+  transcript_revision: number;
+  tracks: MeetingTrackPreview[];
 }
 
 export type MeetingRuntimeStatus = Omit<MeetingStatus, "notes" | "transcript" | "transcript_revision"> & { transcript_revision: number };

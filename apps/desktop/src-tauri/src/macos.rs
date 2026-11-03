@@ -99,7 +99,19 @@ unsafe extern "C" {
         sink: TextSink,
         context: *mut c_void,
     ) -> *mut c_void;
+    fn pennel_mac_speech_preview_start_timed(
+        language: *const c_char,
+        vocabulary: *const c_char,
+        sink: TextSink,
+        context: *mut c_void,
+    ) -> *mut c_void;
     fn pennel_mac_speech_preview_feed(handle: *mut c_void, samples: *const f32, count: usize);
+    fn pennel_mac_speech_preview_feed_at(
+        handle: *mut c_void,
+        samples: *const f32,
+        count: usize,
+        start_ms: u64,
+    );
     fn pennel_mac_speech_preview_stop(handle: *mut c_void);
     fn pennel_mac_language_model_availability() -> *mut c_char;
     fn pennel_mac_language_model_complete(
@@ -635,6 +647,30 @@ impl Drop for MeetingCapture {
 
 type PreviewCallback = Mutex<Box<dyn FnMut(String) + Send>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppleSpeechPreviewStatus {
+    Warming,
+    Ready,
+    Unavailable,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AppleSpeechPreviewEvent {
+    Status {
+        status: AppleSpeechPreviewStatus,
+        reason: Option<String>,
+    },
+    Fragment {
+        start_ms: u64,
+        end_ms: u64,
+        text: String,
+        is_final: bool,
+    },
+}
+
 unsafe extern "C" fn preview_text(
     context: *mut c_void,
     value: *const c_char,
@@ -666,17 +702,50 @@ impl AppleSpeechPreview {
         language: Option<&str>,
         callback: impl FnMut(String) + Send + 'static,
     ) -> Result<Self, String> {
+        Self::start_with(language, None, callback)
+    }
+
+    pub fn start_timed(
+        language: Option<&str>,
+        vocabulary: &[String],
+        mut callback: impl FnMut(AppleSpeechPreviewEvent) + Send + 'static,
+    ) -> Result<Self, String> {
+        Self::start_with(language, Some(vocabulary), move |json| {
+            if let Ok(event) = serde_json::from_str(&json) {
+                callback(event);
+            }
+        })
+    }
+
+    fn start_with(
+        language: Option<&str>,
+        vocabulary: Option<&[String]>,
+        callback: impl FnMut(String) + Send + 'static,
+    ) -> Result<Self, String> {
         let language = language.map(c_string).transpose()?;
+        let vocabulary = vocabulary
+            .map(|words| {
+                serde_json::to_string(&words.iter().take(100).collect::<Vec<_>>())
+                    .map_err(|_| "Invalid speech vocabulary".to_owned())
+                    .and_then(|json| c_string(&json))
+            })
+            .transpose()?;
         let mut callback: Box<PreviewCallback> = Box::new(Mutex::new(Box::new(callback)));
         let context = (&mut *callback as *mut PreviewCallback).cast();
+        let language = language
+            .as_ref()
+            .map_or(ptr::null(), |value| value.as_ptr());
         let handle = NonNull::new(unsafe {
-            pennel_mac_speech_preview_start(
-                language
-                    .as_ref()
-                    .map_or(ptr::null(), |value| value.as_ptr()),
-                preview_text,
-                context,
-            )
+            if let Some(vocabulary) = vocabulary.as_ref() {
+                pennel_mac_speech_preview_start_timed(
+                    language,
+                    vocabulary.as_ptr(),
+                    preview_text,
+                    context,
+                )
+            } else {
+                pennel_mac_speech_preview_start(language, preview_text, context)
+            }
         })
         .ok_or_else(|| "Live Apple preview is unavailable".to_owned())?;
         Ok(Self {
@@ -693,7 +762,20 @@ impl AppleSpeechPreview {
         }
     }
 
-    /// The runtime calls this on its worker before starting the final Apple transcription.
+    pub fn feed_at(&self, samples: &[f32], start_ms: u64) {
+        if let Some(handle) = self.handle {
+            unsafe {
+                pennel_mac_speech_preview_feed_at(
+                    handle.as_ptr(),
+                    samples.as_ptr(),
+                    samples.len(),
+                    start_ms,
+                )
+            };
+        }
+    }
+
+    /// Callback publication stops synchronously; native analyzer teardown retains its own lifetime.
     pub fn stop(mut self) {
         self.finish();
     }
@@ -821,6 +903,39 @@ mod tests {
     #[test]
     fn strings_reject_embedded_nuls() {
         assert!(c_string("hello\0world").is_err());
+    }
+
+    #[test]
+    fn timed_preview_contract_keeps_status_and_ranges_separate_from_text() {
+        assert_eq!(
+            serde_json::from_value::<AppleSpeechPreviewEvent>(serde_json::json!({
+                "kind": "status", "status": "unavailable", "reason": "assets_missing"
+            }))
+            .unwrap(),
+            AppleSpeechPreviewEvent::Status {
+                status: AppleSpeechPreviewStatus::Unavailable,
+                reason: Some("assets_missing".into()),
+            }
+        );
+        assert_eq!(
+            serde_json::from_value::<AppleSpeechPreviewEvent>(serde_json::json!({
+                "kind": "fragment", "start_ms": 1250, "end_ms": 2750,
+                "text": "café 👩🏽‍💻", "is_final": true
+            }))
+            .unwrap(),
+            AppleSpeechPreviewEvent::Fragment {
+                start_ms: 1250,
+                end_ms: 2750,
+                text: "café 👩🏽‍💻".into(),
+                is_final: true,
+            }
+        );
+        assert!(
+            serde_json::from_value::<AppleSpeechPreviewEvent>(serde_json::json!({
+                "kind": "status", "status": "invented"
+            }))
+            .is_err()
+        );
     }
 
     #[test]

@@ -2,6 +2,8 @@ use std::path::Path;
 #[cfg(feature = "local-models")]
 use std::path::PathBuf;
 #[cfg(feature = "local-models")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "local-models")]
 use std::sync::{Mutex, TryLockError};
 use std::time::{Duration, Instant};
 
@@ -27,6 +29,20 @@ struct Loaded {
 pub struct LocalEngine {
     #[cfg(feature = "local-models")]
     loaded: Mutex<Option<Loaded>>,
+    #[cfg(feature = "local-models")]
+    authoritative: AtomicUsize,
+    #[cfg(feature = "local-models")]
+    preview_cancel: Mutex<Option<CancelToken>>,
+}
+
+#[cfg(feature = "local-models")]
+struct SpeechDemand<'a>(&'a AtomicUsize);
+
+#[cfg(feature = "local-models")]
+impl Drop for SpeechDemand<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 pub(crate) fn ensure_available() -> Result<(), PennelError> {
@@ -215,6 +231,11 @@ impl LocalEngine {
         vocabulary: &[String],
         require_complete: bool,
     ) -> Result<String, PennelError> {
+        self.authoritative.fetch_add(1, Ordering::SeqCst);
+        let _demand = SpeechDemand(&self.authoritative);
+        if let Some(preview) = self.preview_cancel.lock().unwrap().take() {
+            preview.cancel();
+        }
         if !model_path.exists() {
             return Err(PennelError::ModelNotDownloaded);
         }
@@ -250,6 +271,40 @@ impl LocalEngine {
         };
         let model = loaded_model(&mut loaded, model_path)?;
         run(model, samples, language, vocabulary, Some(cancel), false).map(Some)
+    }
+
+    pub(crate) fn preview_warm(
+        &self,
+        model_path: &Path,
+        samples: &[f32],
+        language: Option<&str>,
+        vocabulary: &[String],
+        cancel: &CancelToken,
+    ) -> Result<Option<String>, PennelError> {
+        if cancel.is_cancelled() {
+            return Err(PennelError::Cancelled);
+        }
+        let mut preview_cancel = self.preview_cancel.lock().unwrap();
+        if self.authoritative.load(Ordering::SeqCst) > 0 {
+            return Ok(None);
+        }
+        let mut loaded = match self.loaded.try_lock() {
+            Ok(loaded) => loaded,
+            Err(TryLockError::WouldBlock) => return Ok(None),
+            Err(TryLockError::Poisoned(error)) => error.into_inner(),
+        };
+        let Some(model) = loaded.as_mut().filter(|model| model.path == model_path) else {
+            return Ok(None);
+        };
+        *preview_cancel = Some(cancel.clone());
+        drop(preview_cancel);
+        if self.authoritative.load(Ordering::SeqCst) > 0 {
+            cancel.cancel();
+            return Err(PennelError::Cancelled);
+        }
+        let result = run(model, samples, language, vocabulary, Some(cancel), false).map(Some);
+        self.preview_cancel.lock().unwrap().take();
+        result
     }
 }
 
@@ -294,11 +349,54 @@ impl LocalEngine {
     ) -> Result<Option<String>, PennelError> {
         Err(PennelError::local_models_unavailable())
     }
+
+    pub(crate) fn preview_warm(
+        &self,
+        model_path: &Path,
+        samples: &[f32],
+        language: Option<&str>,
+        vocabulary: &[String],
+        cancel: &CancelToken,
+    ) -> Result<Option<String>, PennelError> {
+        self.preview(model_path, samples, language, vocabulary, cancel)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "local-models")]
+    #[test]
+    fn meeting_preview_never_loads_a_cold_or_different_model() {
+        let engine = LocalEngine::default();
+        let invalid = tempfile::NamedTempFile::new().unwrap();
+        assert_eq!(
+            engine.preview_warm(
+                invalid.path(),
+                &[0.1; 16_000],
+                None,
+                &[],
+                &CancelToken::new()
+            ),
+            Ok(None)
+        );
+        assert!(!engine.is_loaded());
+    }
+
+    #[cfg(feature = "local-models")]
+    #[test]
+    fn authoritative_speech_cancels_preview_before_waiting_for_the_model() {
+        let engine = LocalEngine::default();
+        let cancel = CancelToken::new();
+        *engine.preview_cancel.lock().unwrap() = Some(cancel.clone());
+        assert_eq!(
+            engine.transcribe(Path::new("/not/an/owned/model"), &[0.1; 16_000], None, &[]),
+            Err(PennelError::ModelNotDownloaded)
+        );
+        assert!(cancel.is_cancelled());
+        assert_eq!(engine.authoritative.load(Ordering::SeqCst), 0);
+    }
 
     #[cfg(feature = "local-models")]
     #[test]

@@ -32,6 +32,7 @@ mod localization;
 mod meeting_chat;
 mod meeting_evidence;
 mod meeting_index;
+mod meeting_preview;
 mod meeting_recording;
 mod meetings;
 mod models;
@@ -99,6 +100,10 @@ pub use meeting_evidence::{
     MeetingEvidence, MeetingSourceAnchor, evidence_revision, segment_evidence_revision,
 };
 pub use meeting_index::{Passage, PassageKind};
+pub use meeting_preview::{
+    MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode, MeetingPreviewSnapshot,
+    MeetingPreviewState, MeetingTrackPreview,
+};
 pub use meeting_recording::{
     CaptureEventKind, CaptureFormatEpoch, MeetingAudioTrack, MeetingCaptureEvent,
     MeetingRecordingMetadata, RecordingEnvironment, RecordingRecognition, RecordingSource,

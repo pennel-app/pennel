@@ -213,6 +213,7 @@ pub struct LiveDictationSession {
     worker: Mutex<Option<JoinHandle<()>>>,
     finishing: Mutex<()>,
     outcome: Mutex<Option<Result<DictationResult, PennelError>>>,
+    priority_released: AtomicBool,
 }
 
 impl LiveDictationSession {
@@ -222,16 +223,21 @@ impl LiveDictationSession {
         mut settings: Settings,
         practice: bool,
     ) -> Arc<Self> {
+        engine.begin_meeting_preview_priority();
         if practice {
             settings.mode = DictationMode::Fast;
         }
-        let mode = match settings
-            .resolve(&settings.dictation_stt)
-            .map(|(account, _)| account.kind)
-        {
-            Some(ProviderKind::AppleSpeech) => DictationPreviewMode::System,
-            Some(ProviderKind::Local) => DictationPreviewMode::Local,
-            _ => DictationPreviewMode::AfterRecording,
+        let mode = if !settings.live_text_enabled {
+            DictationPreviewMode::AfterRecording
+        } else {
+            match settings
+                .resolve(&settings.dictation_stt)
+                .map(|(account, _)| account.kind)
+            {
+                Some(ProviderKind::AppleSpeech) => DictationPreviewMode::System,
+                Some(ProviderKind::Local) => DictationPreviewMode::Local,
+                _ => DictationPreviewMode::AfterRecording,
+            }
         };
         let state = Arc::new(PreviewState::new(observer));
         let local =
@@ -265,6 +271,7 @@ impl LiveDictationSession {
             worker: Mutex::new(worker),
             finishing: Mutex::new(()),
             outcome: Mutex::new(None),
+            priority_released: AtomicBool::new(false),
         })
     }
 
@@ -318,7 +325,14 @@ impl LiveDictationSession {
             ),
         };
         *self.outcome.lock().unwrap() = Some(outcome.clone());
+        self.release_priority();
         outcome
+    }
+
+    fn release_priority(&self) {
+        if !self.priority_released.swap(true, Ordering::SeqCst) {
+            self.engine.end_meeting_preview_priority();
+        }
     }
 }
 
@@ -375,6 +389,9 @@ impl LiveDictationSession {
         if let Some(local) = &self.local {
             local.stop();
         }
+        if let Ok(_finishing) = self.finishing.try_lock() {
+            self.release_priority();
+        }
     }
 
     pub fn finish(&self, request: DictationRequest) -> Result<DictationResult, PennelError> {
@@ -398,6 +415,7 @@ impl LiveDictationSession {
 impl Drop for LiveDictationSession {
     fn drop(&mut self) {
         self.cancel();
+        self.release_priority();
     }
 }
 

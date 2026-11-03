@@ -1,4 +1,4 @@
-import { api, listenToWindow, type MeetingStatus, type MeetingFinished, type LiveQuestionSnapshot, type LiveQuestionResult, type LiveSourceAnchor, type MeetingAnswer, type Segment } from "./api";
+import { api, listenToWindow, type MeetingStatus, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveQuestionSnapshot, type LiveQuestionResult, type LiveSourceAnchor, type MeetingAnswer, type Segment } from "./api";
 import { SerialQueue, persistAll } from "./async";
 import { bindLocalization, l, t, localizeBackendText, type TranslationKey } from "./i18n";
 import { controlButton, errorText, formatClock, h, markdown, textField } from "./dom";
@@ -166,7 +166,18 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   const transcriptOutput = h("div", { class: "live-transcript", tabindex: 0, "aria-label": l("meetings.workspace_transcript") });
   const transcriptEmpty = h("p", { class: "muted" }, l("meetings.empty_transcript"));
   transcriptOutput.append(transcriptEmpty);
-  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, h("p", { class: "help" }, l("meetings.workspace_cadence")), follow), transcriptOutput);
+  const captionOutput = h("div", { class: "live-captions", hidden: true, role: "region", tabindex: 0, "aria-label": l("meetings.captions_title") });
+  const captionRows = new Map<Speaker, { element: HTMLElement; state: HTMLElement; body: HTMLElement }>();
+  for (const source of ["me", "others"] as const) {
+    const state = h("span", { class: "live-caption-state" });
+    const body = h("div", { class: "live-caption-copy", "data-preview-source": source });
+    const element = h("div", { class: "live-caption", "data-caption-source": source },
+      h("div", { class: "live-caption-heading" }, h("span", {}, l(source === "me" ? "meetings.captions_microphone" : "meetings.captions_system")),
+        h("span", { class: "live-caption-interim" }, l("meetings.captions_interim"))), state, body);
+    captionRows.set(source, { element, state, body });
+    captionOutput.append(element);
+  }
+  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, h("p", { class: "help" }, l("meetings.workspace_cadence")), follow), transcriptOutput, captionOutput);
   const history = h("div", { class: "live-question-history chat-history", tabindex: 0, "aria-label": l("meetings.workspace_questions") });
   const question = h("textarea", { class: "live-question-input", rows: 2, "aria-label": l("meetings.your_question"), placeholder: l("meetings.ask_placeholder_this") });
   const submit = controlButton({ class: "btn primary live-question-submit", onclick: () => { void ask(); } }, l("meetings.ask"));
@@ -362,6 +373,25 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     if (next.can_retry_persistence && !recovery.childElementCount) recovery.append(h("p", { class: "error" }, localizeBackendText(next.persistence_error ?? next.terminal_error ?? "")), controlButton({ class: "btn", onclick: async () => { try { await flush(); await api.retryMeetingPersistence(session); } catch (error) { showSaveError(error); } } }, l("common.retry")));
     if (preview && !composing && previewValue !== notes.value) { const position = notePreview.scrollTop; notePreview.replaceChildren(markdown(notes.value)); notePreview.scrollTop = position; previewValue = notes.value; }
     updateTranscript(next.transcript);
+    updateCaptions(next);
+  }
+  function updateCaptions(next: MeetingStatus) {
+    const snapshot = next.preview;
+    captionOutput.hidden = !next.recording || !snapshot || snapshot.transcript_revision !== next.transcript_revision;
+    const reasons: Record<MeetingPreviewState, TranslationKey> = {
+      disabled: "meetings.captions_disabled", warming: "meetings.captions_warming", ready: "meetings.captions_listening",
+      busy: "meetings.captions_busy", failed: "meetings.captions_failed", unsupported: "meetings.captions_unsupported", stopped: "meetings.captions_stopped",
+    };
+    for (const [source, row] of captionRows) {
+      const track = snapshot?.tracks.find(track => track.source === source);
+      row.element.hidden = !track || source === "others" && !next.system_audio;
+      const text = !captionOutput.hidden && track && !["stopped", "disabled", "unsupported", "failed"].includes(track.state) ? track.text : "";
+      if (row.body.textContent !== text) row.body.textContent = text;
+      const reason = track && (track.state !== "ready" || !text) ? t(reasons[track.state]) : "";
+      if (row.state.textContent !== reason) row.state.textContent = reason;
+      row.state.hidden = !reason;
+      row.element.dataset.previewState = track?.state ?? "stopped";
+    }
   }
   function pauseFollowing() { following = false; follow.hidden = false; }
   function scrollLive() { intendedScroll = Math.max(0, transcriptOutput.scrollHeight - transcriptOutput.clientHeight); transcriptOutput.scrollTop = intendedScroll; previousScroll = transcriptOutput.scrollTop; }

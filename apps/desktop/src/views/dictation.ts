@@ -64,6 +64,9 @@ export function dictationView(ctx: Context): HTMLElement {
       ),
       radio("mode", "fast", s.mode, l("dictation.mode.fast"), () => ctx.save((n) => (n.mode = "fast"))),
     ),
+    section(l("settings.live_text.title"), l("settings.live_text.help"),
+      toggle(l("settings.live_text.enabled"), s.live_text_enabled !== false,
+        (value) => ctx.save((settings) => { settings.live_text_enabled = value; }))),
     verificationSettings,
     section(
       l("dictation.shortcut.title"),

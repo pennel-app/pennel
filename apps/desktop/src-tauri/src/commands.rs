@@ -773,6 +773,7 @@ fn require_inactive_meeting(shared: &Shared, id: &str) -> Result<()> {
 #[derive(Serialize)]
 pub struct MeetingRuntimeStatus {
     recognition: Option<pennel_core::MeetingRecognition>,
+    preview: Option<pennel_core::MeetingPreviewSnapshot>,
     recording: bool,
     busy: bool,
     phase: pennel_core::RecordingPhase,
@@ -823,8 +824,9 @@ pub async fn meeting_runtime_status(
 fn status(shared: &Shared) -> MeetingStatus {
     let (mut runtime, session) = runtime_status(shared);
     let (transcript, notes) = if let Some(session) = session {
-        let (revision, transcript) = session.transcript_snapshot();
+        let (revision, transcript, preview) = session.display_snapshot();
         runtime.transcript_revision = revision;
+        runtime.preview = Some(preview);
         (transcript, shared.engine.meeting_notes(session.id()))
     } else {
         (Vec::new(), String::new())
@@ -900,6 +902,7 @@ fn runtime_status(
         });
     let mut result = MeetingRuntimeStatus {
         recognition: None,
+        preview: None,
         recording,
         busy,
         phase: state.phase,
@@ -961,7 +964,9 @@ fn runtime_status(
         }
         result.pending = session.pending();
         result.recognition = Some(session.recognition_config());
-        result.transcript_revision = session.transcript_revision();
+        let (revision, preview) = session.preview_status_snapshot();
+        result.transcript_revision = revision;
+        result.preview = Some(preview);
         let health = session.health();
         result.persistence_error = health.persistence_error;
         result.transcription_warning = health.transcription_warning;
@@ -1975,6 +1980,107 @@ mod tests {
         .unwrap();
         assert_eq!(history[0].question, "Wat is afgesproken?");
         assert_eq!(history[0].answer, "Donderdag [1].");
+    }
+
+    #[test]
+    fn idle_runtime_explicitly_clears_the_display_only_meeting_preview() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().join("preview"));
+        let snapshot = serde_json::to_value(runtime_status(&shared).0).unwrap();
+        assert_eq!(snapshot.get("preview"), Some(&serde_json::Value::Null));
+        assert!(snapshot.get("notes").is_none());
+        assert!(snapshot.get("transcript").is_none());
+    }
+
+    #[test]
+    fn runtime_previews_share_the_finalized_revision_without_becoming_meeting_content() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().join("preview"));
+        let mut settings = shared.settings();
+        settings.providers.push(pennel_core::ProviderAccount {
+            id: "apple-preview-fixture".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Apple".into(),
+            base_url: String::new(),
+        });
+        settings.meeting_stt = ModelChoice {
+            provider_id: "apple-preview-fixture".into(),
+            model: "system".into(),
+        };
+        shared.engine.update_settings(settings).unwrap();
+        let session = shared
+            .engine
+            .clone()
+            .start_meeting(
+                "Owned preview fixture".into(),
+                pennel_core::ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        let token = shared.recording.lock().unwrap().begin(None).unwrap();
+        shared.recording.lock().unwrap().recording(&token).unwrap();
+        *shared.meeting_context.lock().unwrap() = Some(crate::meeting_runtime::MeetingContext {
+            token,
+            uid: "preview-fixture-uid".into(),
+            session: session.clone(),
+            notes_gate: Arc::new(std::sync::Mutex::new(true)),
+            title: "Owned preview fixture".into(),
+            started: std::time::Instant::now(),
+            duration_secs: None,
+            pending_recording_finish: None,
+            system_audio: true,
+            heard_system_audio: true,
+            audio_warning: None,
+            consent_copied: false,
+        });
+        session
+            .push_audio_at(pennel_core::Speaker::Me, 0, vec![0.1; 16_000])
+            .unwrap();
+        let before = session.preview_snapshot();
+        assert!(session.publish_preview(
+            before.session_id,
+            pennel_core::Speaker::Me,
+            before.tracks[0].epoch,
+            0,
+            0,
+            1_000,
+            "INTERIM_RUNTIME_ONLY".into()
+        ));
+        let full = serde_json::to_value(status(&shared)).unwrap();
+        let light = serde_json::to_value(runtime_status(&shared).0).unwrap();
+        assert_eq!(full["preview"]["tracks"][0]["text"], "INTERIM_RUNTIME_ONLY");
+        assert_eq!(light["preview"], full["preview"]);
+        assert_eq!(
+            full["preview"]["transcript_revision"],
+            full["transcript_revision"]
+        );
+        assert!(full["transcript"].as_array().unwrap().is_empty());
+        assert_eq!(full["notes"], "");
+        assert!(shared.engine.meeting_transcript(session.id()).is_empty());
+        for file in std::fs::read_dir(session.dir())
+            .unwrap()
+            .flatten()
+            .filter(|file| file.path().is_file())
+        {
+            assert!(
+                !std::fs::read_to_string(file.path())
+                    .unwrap_or_default()
+                    .contains("INTERIM_RUNTIME_ONLY")
+            );
+        }
+        session.stop_preview();
+        assert!(!session.is_finalized());
+        assert!(
+            status(&shared)
+                .runtime
+                .preview
+                .unwrap()
+                .tracks
+                .iter()
+                .all(|track| track.text.is_empty())
+        );
+        session.stop().unwrap();
     }
 
     #[test]

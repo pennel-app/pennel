@@ -52,6 +52,111 @@ final class LiveSpeechPreviewTests: XCTestCase {
         XCTAssertNil(buffer.drain())
     }
 
+    func testTimedInputPreservesRecordingOffsetAndDoesNotBridgeMissingAudio() {
+        let buffer = LiveSpeechPreviewBuffer(maxSamples: 5)
+        XCTAssertTrue(buffer.start())
+        XCTAssertTrue(buffer.append([1, 2, 3], startFrame: 16_000))
+        XCTAssertTrue(buffer.append([4, 5], startFrame: 32_000))
+        let chunk = buffer.drain()
+        XCTAssertEqual(chunk?.samples, [4, 5])
+        XCTAssertEqual(chunk?.startFrame, 32_000)
+    }
+
+    func testTimedInputRejectsRepeatedFramesAndKeepsOnlyUnseenSuffix() {
+        let buffer = LiveSpeechPreviewBuffer(maxSamples: 5)
+        XCTAssertTrue(buffer.start())
+        XCTAssertTrue(buffer.append([1, 2, 3], startFrame: 100))
+        XCTAssertFalse(buffer.append([1, 2], startFrame: 100))
+        XCTAssertTrue(buffer.append([3, 4, 5], startFrame: 102))
+        let chunk = buffer.drain()
+        XCTAssertEqual(chunk?.samples, [1, 2, 3, 4, 5])
+        XCTAssertEqual(chunk?.startFrame, 100)
+    }
+
+    func testTimedEventsRetainExactRangeAndFinalityWithoutBecomingFinalTranscript() throws {
+        let event = LiveSpeechPreviewEvent.fragment(startMS: 1_250, endMS: 2_750, text: "café 👩🏽‍💻", isFinal: true)
+        let data = try JSONEncoder().encode(event)
+        let value = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(value["kind"] as? String, "fragment")
+        XCTAssertEqual(value["start_ms"] as? Int, 1_250)
+        XCTAssertEqual(value["end_ms"] as? Int, 2_750)
+        XCTAssertEqual(value["text"] as? String, "café 👩🏽‍💻")
+        XCTAssertEqual(value["is_final"] as? Bool, true)
+    }
+
+    func testTimedEventsRejectInvalidRangesAndBoundDisplayText() {
+        XCTAssertNil(LiveSpeechPreviewEvent.timedFragment(start: .nan, end: 2, text: "invalid", isFinal: false))
+        XCTAssertNil(LiveSpeechPreviewEvent.timedFragment(start: 2, end: 1, text: "invalid", isFinal: false))
+        XCTAssertNil(LiveSpeechPreviewEvent.timedFragment(start: -1, end: 1, text: "invalid", isFinal: false))
+        XCTAssertNil(LiveSpeechPreviewEvent.timedFragment(start: 0, end: .infinity, text: "invalid", isFinal: false))
+        XCTAssertNil(LiveSpeechPreviewEvent.timedFragment(start: 0, end: 1, text: " \n ", isFinal: false))
+        let event = LiveSpeechPreviewEvent.timedFragment(start: 0.125, end: 1.625, text: String(repeating: "👩🏽‍💻", count: 2_000), isFinal: false)
+        guard case let .fragment(start, end, text, isFinal) = event else { return XCTFail("missing fragment") }
+        XCTAssertEqual(start, 125)
+        XCTAssertEqual(end, 1_625)
+        XCTAssertEqual(text.count, 1_024)
+        XCTAssertFalse(isFinal)
+    }
+
+    func testTimedGateDeliversStartupFailureAndRejectsLateResults() {
+        let values = LockedPreviewEvents()
+        let gate = LiveSpeechEventGate { values.append($0) }
+        gate.emit(.status(.warming, reason: nil))
+        gate.emit(.status(.unavailable, reason: "assets_missing"))
+        gate.stop()
+        gate.emit(.fragment(startMS: 0, endMS: 1, text: "late", isFinal: false))
+        XCTAssertEqual(values.values, [.status(.warming, reason: nil), .status(.unavailable, reason: "assets_missing")])
+    }
+
+    func testPreviewVocabularyMatchesBoundedAuthoritativeContext() {
+        let vocabulary = (0..<120).map { "term\($0)" }
+        XCTAssertEqual(LiveSpeechPreview.boundedVocabulary(vocabulary), Array(vocabulary.prefix(100)))
+    }
+
+    func testPhysicalAdmissionRemainsOccupiedUntilUnderlyingWorkReleasesIt() throws {
+        let pool = LiveSpeechPreviewAdmission(maximum: 2)
+        let first = try XCTUnwrap(pool.acquire())
+        let second = try XCTUnwrap(pool.acquire())
+        XCTAssertNil(pool.acquire())
+        let gate = LiveSpeechEventGate { _ in }
+        gate.stop()
+        XCTAssertNil(pool.acquire())
+        first.release()
+        let replacement = try XCTUnwrap(pool.acquire())
+        XCTAssertNil(pool.acquire())
+        first.release()
+        XCTAssertNil(pool.acquire())
+        second.release()
+        replacement.release()
+        XCTAssertNotNil(pool.acquire())
+    }
+
+    func testReplacementWaitsOffCallerUntilRetiringPhysicalWorkerExits() async throws {
+        let pool = LiveSpeechPreviewAdmission(maximum: 1)
+        let retiring = try XCTUnwrap(pool.acquire())
+        let waiting = Task { await pool.acquireWhenAvailable(isActive: { true }) }
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertNil(pool.acquire())
+        retiring.release()
+        let admitted = await waiting.value
+        let replacement = try XCTUnwrap(admitted)
+        XCTAssertNil(pool.acquire())
+        replacement.release()
+        XCTAssertNotNil(pool.acquire())
+    }
+
+    func testCancelledReplacementCannotClaimOrReleaseRetiringWorkersSlot() async throws {
+        let pool = LiveSpeechPreviewAdmission(maximum: 1)
+        let retiring = try XCTUnwrap(pool.acquire())
+        let waiting = Task { await pool.acquireWhenAvailable(isActive: { true }) }
+        waiting.cancel()
+        let admitted = await waiting.value
+        XCTAssertNil(admitted)
+        XCTAssertNil(pool.acquire())
+        retiring.release()
+        XCTAssertNotNil(pool.acquire())
+    }
+
     func testStoppingBeforePreparationRejectsAudioAndCannotRestart() {
         let buffer = LiveSpeechPreviewBuffer(maxSamples: 5)
         XCTAssertTrue(buffer.start())
@@ -108,6 +213,13 @@ final class LiveSpeechPreviewTests: XCTestCase {
         XCTAssertGreaterThan(result.frameLength, 0)
         XCTAssertLessThanOrEqual(result.frameLength, 2500)
     }
+}
+
+private final class LockedPreviewEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [LiveSpeechPreviewEvent] = []
+    var values: [LiveSpeechPreviewEvent] { lock.withLock { stored } }
+    func append(_ value: LiveSpeechPreviewEvent) { lock.withLock { stored.append(value) } }
 }
 
 private final class LockedPreviewValues: @unchecked Sendable {

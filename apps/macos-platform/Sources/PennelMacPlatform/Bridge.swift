@@ -486,11 +486,34 @@ func speechPreviewStart(_ rawLanguage: UnsafePointer<CChar>?, _ sink: @escaping 
     return Unmanaged.passRetained(preview).toOpaque()
 }
 
+@_cdecl("pennel_mac_speech_preview_start_timed")
+func speechPreviewStartTimed(_ rawLanguage: UnsafePointer<CChar>?, _ rawVocabulary: UnsafePointer<CChar>?, _ sink: @escaping TextSink, _ context: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
+    let vocabulary: [String]
+    if let json = decodeString(rawVocabulary) {
+        guard let words = try? JSONDecoder().decode([String].self, from: Data(json.utf8)) else { return nil }
+        vocabulary = words
+    } else { vocabulary = [] }
+    let callback = LiveSpeechSink(sink: sink, context: context)
+    let preview = LiveSpeechPreview(language: decodeString(rawLanguage), vocabulary: vocabulary, onEvent: { event in
+        guard let data = try? JSONEncoder().encode(event), let json = String(data: data, encoding: .utf8) else { return }
+        callback.emit(json)
+    })
+    guard preview.start() else { preview.stop(); return nil }
+    return Unmanaged.passRetained(preview).toOpaque()
+}
+
 @_cdecl("pennel_mac_speech_preview_feed")
 public func speechPreviewFeed(_ handle: UnsafeMutableRawPointer?, _ samples: UnsafePointer<Float>?, _ count: Int) {
     guard let handle, let samples, count > 0 else { return }
     let preview = Unmanaged<LiveSpeechPreview>.fromOpaque(handle).takeUnretainedValue()
     preview.feed(Array(UnsafeBufferPointer(start: samples, count: count)))
+}
+
+@_cdecl("pennel_mac_speech_preview_feed_at")
+public func speechPreviewFeedAt(_ handle: UnsafeMutableRawPointer?, _ samples: UnsafePointer<Float>?, _ count: Int, _ startMS: UInt64) {
+    guard let handle, let samples, count > 0 else { return }
+    let preview = Unmanaged<LiveSpeechPreview>.fromOpaque(handle).takeUnretainedValue()
+    preview.feed(Array(UnsafeBufferPointer(start: samples, count: count)), startMS: startMS)
 }
 
 @_cdecl("pennel_mac_speech_preview_stop")
@@ -499,11 +522,7 @@ public func speechPreviewStop(_ handle: UnsafeMutableRawPointer?) {
     // stop drains the repeated sink before Rust releases its callback allocation.
     let preview = Unmanaged<LiveSpeechPreview>.fromOpaque(handle).takeRetainedValue()
     preview.stop()
-    if !Thread.isMainThread {
-        let finished = DispatchSemaphore(value: 0)
-        Task.detached { await preview.stopAndWait(); finished.signal() }
-        finished.wait()
-    }
+    Task.detached { await preview.stopAndWait() }
 }
 
 @_cdecl("pennel_mac_decode_audio")

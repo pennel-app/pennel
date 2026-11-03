@@ -193,5 +193,8 @@
   "settings.setup.access_help": "Pennel heeft toegang nodig om spraak op te nemen. Controleer de toegang en keer terug naar deze instelling.",
   "settings.setup.sample_help": "De test gebruikt een vast voorbeeld, nooit je opnames, notities of woordenboek. Je gekozen dienst kan hiervoor kosten aanrekenen.",
   "settings.setup.prerequisites": "Annuleren behoudt je actieve model. Bewaarde verbindingen, downloads en aanmelding blijven beschikbaar.",
-  "settings.setup.changed_review": "Deze verbinding veranderde tijdens het toepassen. Controleer ze en kies opnieuw Deze instelling gebruiken."
+  "settings.setup.changed_review": "Deze verbinding veranderde tijdens het toepassen. Controleer ze en kies opnieuw Deze instelling gebruiken.",
+  "settings.live_text.title": "Live tekst",
+  "settings.live_text.help": "Toon voorlopige dicteertekst en ondertiteling bij vergaderingen wanneer de gekozen lokale of Apple-spraakprovider dit ondersteunt. Definitieve tekst wordt zoals gewoonlijk bewaard. Wijzigingen gelden voor nieuwe opnames.",
+  "settings.live_text.enabled": "Live tekst tonen voor dicteren en vergaderingen"
 }

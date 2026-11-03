@@ -34,6 +34,7 @@ export interface Settings {
   decision?: InferenceConfig | null;
   reranking?: InferenceConfig | null;
   cleanup_verification_enabled: boolean;
+  live_text_enabled: boolean;
   mode: 'fast' | 'clean';
   language: string | null;
   dictionary: string[];

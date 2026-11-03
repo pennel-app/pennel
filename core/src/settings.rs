@@ -145,6 +145,8 @@ pub struct Settings {
     pub reranking: Option<crate::InferenceConfig>,
     #[serde(default)]
     pub cleanup_verification_enabled: bool,
+    #[serde(default = "enabled")]
+    pub live_text_enabled: bool,
     pub mode: DictationMode,
     pub language: Option<String>,
     #[serde(default)]
@@ -238,6 +240,7 @@ pub fn default_settings() -> Settings {
         decision: None,
         reranking: None,
         cleanup_verification_enabled: false,
+        live_text_enabled: true,
         providers: vec![groq, local],
         mode: DictationMode::Fast,
         language: None,
@@ -820,5 +823,22 @@ mod tests {
     fn settings_json_never_contains_api_key_fields() {
         let json = serde_json::to_string(&default_settings()).unwrap();
         assert!(!json.contains("api_key"));
+    }
+
+    #[test]
+    fn missing_live_text_setting_keeps_existing_previews_enabled() {
+        let mut value = serde_json::to_value(default_settings()).unwrap();
+        value.as_object_mut().unwrap().remove("live_text_enabled");
+        assert!(
+            serde_json::from_value::<Settings>(value.clone())
+                .unwrap()
+                .live_text_enabled
+        );
+        value["live_text_enabled"] = false.into();
+        assert!(
+            !serde_json::from_value::<Settings>(value)
+                .unwrap()
+                .live_text_enabled
+        );
     }
 }

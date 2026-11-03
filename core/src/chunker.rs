@@ -52,6 +52,14 @@ impl Chunker {
         self.take(len)
     }
 
+    pub(crate) fn current_start_ms(&self) -> u64 {
+        self.buffer_start * 1000 / u64::from(self.sample_rate)
+    }
+
+    pub(crate) fn current_start_sample(&self) -> u64 {
+        self.buffer_start
+    }
+
     /// Finish the current audio before a device interruption without allocating the missing silence.
     pub fn skip_to(&mut self, sample_offset: u64) -> Option<Chunk> {
         let end = self.buffer_start + self.buffer.len() as u64;

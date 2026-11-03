@@ -193,5 +193,8 @@
   "settings.setup.access_help": "Pennel needs access to record speech. Review access, then return to this setup.",
   "settings.setup.sample_help": "The test uses a fixed example, never your recordings, notes or dictionary. Your chosen service may charge for it.",
   "settings.setup.prerequisites": "Cancel keeps your active model. Connections you save, downloads and sign-in remain available.",
-  "settings.setup.changed_review": "This connection changed while applying the setup. Review it and choose Use this setup again."
+  "settings.setup.changed_review": "This connection changed while applying the setup. Review it and choose Use this setup again.",
+  "settings.live_text.title": "Live text",
+  "settings.live_text.help": "Show interim dictation text and meeting captions when the selected local or Apple speech provider supports them. Finalized text is saved as usual. Changes apply to new recordings.",
+  "settings.live_text.enabled": "Show live text for dictation and meetings"
 }

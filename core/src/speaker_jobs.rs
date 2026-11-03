@@ -1594,6 +1594,36 @@ mod tests {
     }
 
     #[test]
+    fn mobile_live_text_preference_survives_unrelated_patch_and_persisted_reload() {
+        let f = fixture(16000);
+        f.engine
+            .patch_mobile_settings(r#"{"live_text_enabled":false}"#.into())
+            .unwrap();
+        f.engine
+            .patch_mobile_settings(r#"{"dictionary":["caption preference"]}"#.into())
+            .unwrap();
+        let current: serde_json::Value =
+            serde_json::from_str(&f.engine.mobile_settings_json().unwrap()).unwrap();
+        assert_eq!(current["live_text_enabled"], false);
+        let loaded = Settings::load_strict(&f.engine.data_dir().join("settings.json")).unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap()["live_text_enabled"],
+            false
+        );
+        assert!(
+            f.engine
+                .patch_mobile_settings(r#"{"live_text_enabled":"false"}"#.into())
+                .is_err()
+        );
+        f.engine
+            .patch_mobile_settings(r#"{"live_text_enabled":true}"#.into())
+            .unwrap();
+        let enabled: serde_json::Value =
+            serde_json::from_str(&f.engine.mobile_settings_json().unwrap()).unwrap();
+        assert_eq!(enabled["live_text_enabled"], true);
+    }
+
+    #[test]
     fn mobile_settings_patch_preserves_fields_and_rejects_unknown_path_or_cli_selection() {
         let f = fixture(16000);
         f.engine
