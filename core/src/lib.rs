@@ -36,6 +36,7 @@ mod meeting_index;
 mod meeting_preview;
 mod meeting_qualification;
 mod meeting_recording;
+mod meeting_scheduler;
 mod meeting_utterances;
 mod meetings;
 mod models;
@@ -89,9 +90,9 @@ pub use history::{HistoryEntry, HistoryStatus};
 pub use inference::{
     DecisionAnswer, DecisionOption, DecisionProbability, DecisionQuestion, DecisionQuestionKind,
     DecisionRequest, DecisionResult, DecisionSpan, InferenceCancellation, InferenceCapability,
-    InferenceConfig, InferenceIdentity, InferenceProtocol, InferenceProtocolInfo, InferenceUsage,
-    RerankPassage, RerankRequest, RerankResult, RerankScore, inference_protocols,
-    new_inference_config,
+    InferenceConfig, InferenceIdentity, InferenceProtocol, InferenceProtocolInfo,
+    InferenceRetention, InferenceUsage, RerankPassage, RerankRequest, RerankResult, RerankScore,
+    inference_protocols, new_inference_config,
 };
 pub use inference_engine::{InferenceAvailability, InferenceMutation, InferenceVerification};
 pub use keyboard_writing::{KeyboardRewriteAction, KeyboardWritingJob};
@@ -127,6 +128,12 @@ pub use meeting_recording::{
     MeetingRecordingMetadata, RecordingEnvironment, RecordingRecognition, RecordingSource,
     RecordingTrackMetadata, RecordingTranscriptionAttempt, RecordingTransport,
     resolve_meeting_audio_tracks,
+};
+pub use meeting_scheduler::{
+    ForegroundQuestionAdmission, InferencePriority, MeetingAnalysisAdmission,
+    MeetingAnalysisCoordinator, MeetingAnalysisIdentity, MeetingAnalysisResourceDemand,
+    MeetingAnalysisResourceHints, MeetingAnalysisScheduleError, MeetingAnalysisState,
+    MeetingAnalysisStatus, ReadyMeetingAnalysis, ScheduledMeetingSnapshot,
 };
 pub use meeting_utterances::{
     AcousticTurn, AttributionKind, AutomaticAttribution, ManualCorrection,

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
@@ -175,9 +175,193 @@ pub struct RerankResult {
     pub usage: InferenceUsage,
 }
 
-#[derive(Debug, uniffi::Object)]
+#[derive(Clone, Copy)]
+struct InferenceSchedule {
+    priority: crate::InferencePriority,
+    deadline: Option<std::time::Instant>,
+}
+
+#[derive(Default)]
+struct PhysicalAttachments {
+    next_id: u64,
+    retained: Vec<(u64, Weak<dyn Send + Sync>)>,
+    observers: Vec<(
+        u64,
+        Weak<dyn crate::meeting_scheduler::InferencePhysicalObserver>,
+    )>,
+}
+
+#[derive(uniffi::Object)]
 pub struct InferenceCancellation {
     cancelled: AtomicBool,
+    parents: Vec<Arc<InferenceCancellation>>,
+    schedule: Option<InferenceSchedule>,
+    physical: Mutex<PhysicalAttachments>,
+}
+
+impl std::fmt::Debug for InferenceCancellation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("InferenceCancellation")
+            .field("cancelled", &self.is_cancelled())
+            .finish_non_exhaustive()
+    }
+}
+
+pub struct InferenceRetention {
+    cancellation: Arc<InferenceCancellation>,
+    id: u64,
+    _retained: Arc<dyn Send + Sync>,
+}
+
+impl Drop for InferenceRetention {
+    fn drop(&mut self) {
+        self.cancellation
+            .physical
+            .lock()
+            .unwrap()
+            .retained
+            .retain(|(id, _)| *id != self.id);
+    }
+}
+
+pub(crate) struct InferenceObserverRegistration {
+    cancellation: Arc<InferenceCancellation>,
+    id: u64,
+    _observer: Arc<dyn crate::meeting_scheduler::InferencePhysicalObserver>,
+}
+
+impl Drop for InferenceObserverRegistration {
+    fn drop(&mut self) {
+        self.cancellation
+            .physical
+            .lock()
+            .unwrap()
+            .observers
+            .retain(|(id, _)| *id != self.id);
+    }
+}
+
+impl InferenceCancellation {
+    pub fn for_priority(priority: crate::InferencePriority) -> Arc<Self> {
+        Arc::new(Self {
+            cancelled: AtomicBool::new(false),
+            parents: Vec::new(),
+            schedule: Some(InferenceSchedule {
+                priority,
+                deadline: None,
+            }),
+            physical: Mutex::default(),
+        })
+    }
+
+    pub fn scheduled(
+        parent: Arc<Self>,
+        priority: crate::InferencePriority,
+        deadline: std::time::Instant,
+    ) -> Arc<Self> {
+        Self::linked(vec![parent], priority, deadline)
+    }
+
+    pub(crate) fn linked(
+        parents: Vec<Arc<Self>>,
+        priority: crate::InferencePriority,
+        deadline: std::time::Instant,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            cancelled: AtomicBool::new(false),
+            parents,
+            schedule: Some(InferenceSchedule {
+                priority,
+                deadline: Some(deadline),
+            }),
+            physical: Mutex::default(),
+        })
+    }
+
+    pub(crate) fn priority(&self) -> crate::InferencePriority {
+        self.schedule
+            .map_or(crate::InferencePriority::ExplicitAnalysis, |schedule| {
+                schedule.priority
+            })
+    }
+
+    pub(crate) fn effective_deadline(&self, deadline: std::time::Instant) -> std::time::Instant {
+        let deadline = self
+            .schedule
+            .and_then(|schedule| schedule.deadline)
+            .map_or(deadline, |fixed| deadline.min(fixed));
+        self.parents.iter().fold(deadline, |deadline, parent| {
+            parent.effective_deadline(deadline)
+        })
+    }
+
+    /// Keep this guard through logical work; only actual workers take strong attachment references.
+    pub fn retain_until_physical_exit(
+        self: &Arc<Self>,
+        retained: Arc<dyn Send + Sync>,
+    ) -> InferenceRetention {
+        let mut physical = self.physical.lock().unwrap();
+        let id = physical.next_id;
+        physical.next_id = physical.next_id.wrapping_add(1);
+        physical.retained.push((id, Arc::downgrade(&retained)));
+        InferenceRetention {
+            cancellation: self.clone(),
+            id,
+            _retained: retained,
+        }
+    }
+
+    pub(crate) fn observe_physical(
+        self: &Arc<Self>,
+        observer: Arc<dyn crate::meeting_scheduler::InferencePhysicalObserver>,
+    ) -> InferenceObserverRegistration {
+        let mut physical = self.physical.lock().unwrap();
+        let id = physical.next_id;
+        physical.next_id = physical.next_id.wrapping_add(1);
+        physical.observers.push((id, Arc::downgrade(&observer)));
+        InferenceObserverRegistration {
+            cancellation: self.clone(),
+            id,
+            _observer: observer,
+        }
+    }
+
+    fn physical_retentions(&self) -> Vec<Arc<dyn Send + Sync>> {
+        let mut values: Vec<_> = self
+            .physical
+            .lock()
+            .unwrap()
+            .retained
+            .iter()
+            .filter_map(|(_, retained)| retained.upgrade())
+            .collect();
+        for parent in &self.parents {
+            values.extend(parent.physical_retentions());
+        }
+        values
+    }
+
+    fn physical_observers(
+        &self,
+    ) -> Vec<Arc<dyn crate::meeting_scheduler::InferencePhysicalObserver>> {
+        let mut values: Vec<_> = self
+            .physical
+            .lock()
+            .unwrap()
+            .observers
+            .iter()
+            .filter_map(|(_, observer)| observer.upgrade())
+            .collect();
+        for parent in &self.parents {
+            for observer in parent.physical_observers() {
+                if !values.iter().any(|known| Arc::ptr_eq(known, &observer)) {
+                    values.push(observer);
+                }
+            }
+        }
+        values
+    }
 }
 
 #[uniffi::export]
@@ -186,6 +370,9 @@ impl InferenceCancellation {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             cancelled: AtomicBool::new(false),
+            parents: Vec::new(),
+            schedule: None,
+            physical: Mutex::default(),
         })
     }
     pub fn cancel(&self) {
@@ -193,6 +380,7 @@ impl InferenceCancellation {
     }
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
+            || self.parents.iter().any(|parent| parent.is_cancelled())
     }
 }
 
@@ -595,6 +783,13 @@ fn decision_body_with_id(
     Ok(body)
 }
 
+pub(crate) fn validate_decision_request(
+    config: &InferenceConfig,
+    request: &DecisionRequest,
+) -> Result<(), PennelError> {
+    decision_body(config, request).map(|_| ())
+}
+
 fn validate_size(config: &InferenceConfig, body: &[u8]) -> Result<(), PennelError> {
     if body.len() > config.max_input_bytes as usize {
         Err(invalid(
@@ -605,11 +800,27 @@ fn validate_size(config: &InferenceConfig, body: &[u8]) -> Result<(), PennelErro
     }
 }
 
-struct WorkerPermit;
-static ACTIVE_WORKERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-impl Drop for WorkerPermit {
+struct PhysicalObservation {
+    observers: Vec<Arc<dyn crate::meeting_scheduler::InferencePhysicalObserver>>,
+    started: usize,
+    outcome: crate::meeting_scheduler::InferenceWorkerOutcome,
+}
+
+impl PhysicalObservation {
+    fn start(&mut self) -> Result<(), PennelError> {
+        for observer in &self.observers {
+            observer.starting()?;
+            self.started += 1;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for PhysicalObservation {
     fn drop(&mut self) {
-        ACTIVE_WORKERS.fetch_sub(1, Ordering::AcqRel);
+        for observer in self.observers.iter().take(self.started) {
+            observer.finished(self.outcome);
+        }
     }
 }
 
@@ -627,38 +838,59 @@ pub(crate) fn run_cancelled_before<T: Send + 'static>(
     deadline: std::time::Instant,
     operation: impl FnOnce(std::time::Instant) -> Result<T, PennelError> + Send + 'static,
 ) -> Result<T, PennelError> {
-    loop {
-        if cancellation.is_cancelled() {
-            return Err(PennelError::Cancelled);
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err(network());
-        }
-        let active = ACTIVE_WORKERS.load(Ordering::Acquire);
-        if active < 2
-            && ACTIVE_WORKERS
-                .compare_exchange(active, active + 1, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-        {
-            break;
-        }
-        std::thread::sleep(
-            deadline
-                .saturating_duration_since(std::time::Instant::now())
-                .min(std::time::Duration::from_millis(20)),
-        );
-    }
-    let permit = WorkerPermit;
+    run_with_pool(
+        crate::meeting_scheduler::physical_pool(),
+        cancellation,
+        deadline,
+        operation,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn run_cancelled_in_pool<T: Send + 'static>(
+    pool: &Arc<crate::meeting_scheduler::PhysicalInferencePool>,
+    cancellation: Arc<InferenceCancellation>,
+    deadline: std::time::Instant,
+    operation: impl FnOnce(std::time::Instant) -> Result<T, PennelError> + Send + 'static,
+) -> Result<T, PennelError> {
+    run_with_pool(pool, cancellation, deadline, operation)
+}
+
+fn run_with_pool<T: Send + 'static>(
+    pool: &Arc<crate::meeting_scheduler::PhysicalInferencePool>,
+    cancellation: Arc<InferenceCancellation>,
+    deadline: std::time::Instant,
+    operation: impl FnOnce(std::time::Instant) -> Result<T, PennelError> + Send + 'static,
+) -> Result<T, PennelError> {
+    let deadline = cancellation.effective_deadline(deadline);
+    let retained = cancellation.physical_retentions();
+    let observers = cancellation.physical_observers();
+    let permit = pool.acquire(cancellation.priority(), &cancellation, deadline)?;
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     let worker_cancellation = cancellation.clone();
     std::thread::Builder::new()
         .name("pennel-inference".into())
         .spawn(move || {
             let _permit = permit;
+            let _retained = retained;
+            let mut observation = PhysicalObservation {
+                observers,
+                started: 0,
+                outcome: crate::meeting_scheduler::InferenceWorkerOutcome::Cancelled,
+            };
             let result = if worker_cancellation.is_cancelled() {
                 Err(PennelError::Cancelled)
+            } else if std::time::Instant::now() >= deadline {
+                Err(network())
             } else {
-                operation(deadline)
+                observation.start().and_then(|()| operation(deadline))
+            };
+            observation.outcome = if worker_cancellation.is_cancelled() {
+                crate::meeting_scheduler::InferenceWorkerOutcome::Cancelled
+            } else if result.is_ok() && std::time::Instant::now() < deadline {
+                crate::meeting_scheduler::InferenceWorkerOutcome::Completed
+            } else {
+                crate::meeting_scheduler::InferenceWorkerOutcome::Failed
             };
             let _ = sender.send(result);
         })

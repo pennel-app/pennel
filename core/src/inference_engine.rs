@@ -34,6 +34,7 @@ pub struct InferenceVerification {
 pub(crate) struct InferenceState {
     pub(crate) requests: Vec<Weak<InferenceCancellation>>,
     pub(crate) mutation_depth: usize,
+    pub(crate) generation: u64,
 }
 
 /// Keeps inference admission closed throughout a native configuration or credential write.
@@ -59,6 +60,10 @@ impl Drop for InferenceMutation {
 }
 
 impl PennelEngine {
+    pub fn inference_epoch(&self) -> u64 {
+        self.inference_state().lock().unwrap().generation
+    }
+
     pub(crate) fn inference_state(&self) -> Arc<Mutex<InferenceState>> {
         self.inference_requests.clone()
     }
@@ -76,6 +81,7 @@ impl PennelEngine {
         {
             let mut active = state.lock().unwrap();
             active.mutation_depth += 1;
+            active.generation = active.generation.wrapping_add(1);
             for request in &active.requests {
                 if let Some(cancellation) = request.upgrade() {
                     cancellation.cancel();
@@ -879,6 +885,7 @@ impl PennelEngine {
             cancellation: &cancellation,
         };
         let (config, account) = self.inference_selection(capability)?;
+        inference::validate_decision_request(&config, &request)?;
         let managed = self.managed_inference(&account)?;
         let result = if let Some(managed) = managed.as_ref() {
             inference::decide_managed(&config, managed.clone(), request, cancellation.clone())?
