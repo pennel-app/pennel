@@ -41,12 +41,18 @@
     { start_ms: 8000, end_ms: 14000, speaker: "me", text: "Ik bevestig de volgende afspraak.", failed: false, voice: null },
     { start_ms: 14000, end_ms: 21000, speaker: "others", text: "Dan zet ik het voorstel nog vandaag in de map.", failed: false, voice: 2 },
   ];
+  if (options.insights_seeded) transcript.splice(0, transcript.length,
+    { start_ms: 0, end_ms: 8000, speaker: "others", text: "Noor will send the draft on Friday.", failed: false, voice: 1 },
+    { start_ms: 8000, end_ms: 16000, speaker: "me", text: "We might move the deadline, but no decision was made.", failed: false, voice: null },
+    { start_ms: 16000, end_ms: 24000, speaker: "others", text: "Who will review the final proposal?", failed: false, voice: 2 },
+    { start_ms: 24000, end_ms: 32000, speaker: "others", text: "The earlier plan was withdrawn; Sam owns the follow-up now.", failed: false, voice: 2 });
   const richUtterance = (segment, index) => ({ ...segment, utterance_id: segment.utterance_id || `qa-utterance-${index}`,
     source_id: segment.source_id || (segment.speaker === "me" ? "microphone" : "system"),
     attribution: segment.attribution || (segment.voice == null ? { kind: "unknown", voices: [] } : { kind: "single", voices: [segment.voice] }), attribution_revision: segment.attribution_revision || 1 });
   if (options.rich_utterances) transcript.forEach((segment, index) => Object.assign(segment, richUtterance(segment, index),
     options.rich_attribution_states ? { attribution: { kind: ["overlap", "unknown", "mixed"][index], voices: index === 1 ? [] : [1, 2] } } : {}));
   if (options.rich_provisional) transcript.forEach(segment => { segment.attribution = { ...segment.attribution, provisional: true }; });
+  if (options.insights_seeded) transcript.forEach((segment, index) => { segment.utterance_id = `00000000-0000-7000-8000-${String(index + 1).padStart(12, "0")}`; });
   const available = () => ({ status: "available", reason: null });
   const providers = [
     { id: "local", kind: "local", name: "Lokaal", base_url: "" },
@@ -269,9 +275,120 @@
     };
   };
 
+  const insightStores = new Map();
+  const insightJobs = new Map();
+  let insightSequence = 100;
+  const insightId = () => `00000000-0000-7000-8000-${String(++insightSequence).padStart(12, "0")}`;
+  const uidFor = id => retainedMeetings.get(id)?.meeting_uid || (id === activeMeetingId ? meetingUid : "qa-meeting-stable-uid");
+  const insightMetadata = value => emit("meeting-insights-changed", Object.fromEntries(["meeting_uid", "revision", "job_id", "state", "physical_running"].filter(key => key in value).map(key => [key, value[key]])));
+  const insightStore = id => {
+    const uid = uidFor(id);
+    if (!insightStores.has(uid)) {
+      const items = options.insights_seeded ? transcript.map((row, index) => ({ id: insightId(), dedup_key: `owned-ui-${index}`, revision: 1,
+        kind: ["action", "decision", "open_question", "changed_commitment"][index], commitment: ["confirmed", "tentative", "unresolved", "changed"][index],
+        text: row.text, edited_text: null, edit_claim: null, review_state: "proposed", owner: index === 0 ? { text: "Noor", source_index: 0, start_byte: 0, end_byte: 4 } : null,
+        due: index === 0 ? { text: "Friday", source_index: 0, start_byte: row.text.indexOf("Friday"), end_byte: row.text.indexOf("Friday") + 6 } : null,
+        sources: [{ meeting_uid: uid, utterance_id: row.utterance_id, source_fingerprint: row.source_fingerprint, quote: row.text, start_byte: 0, end_byte: new TextEncoder().encode(row.text).length, start_ms: row.start_ms, end_ms: row.end_ms }],
+        evidence_cutoff_ms: 32000, transcript_revision: transcriptRevision, transcript_digest: "a".repeat(64), related_item_ids: [],
+        processing: { identity: { protocol: "perplexity", endpoint: "https://decision.example.invalid/v1", requested_model: "owned-ui-fixture", requested_upstream: null, actual_model: "owned-ui-fixture", actual_provider: "owned", actual_revision: "owned-revision", request_id: null }, qualification_id: "owned-ui-only-not-production", language_policy: "en", task: "meeting_suggestions_v1" },
+        source_state: "current", source_history: [], source_reassociated: false })) : [];
+      if (items[3]) items[3].related_item_ids = [items[0].id];
+      if (options.insight_unresolved_link && items[3]) { items[3].related_item_ids = []; items[3].prior_evidence = [{ kind: "action", source: clone(items[0].sources[0]), target_item_id: null }]; }
+      insightStores.set(uid, { meeting_uid: uid, revision: items.length ? 1 : 0, status: options.insight_store_status || (items.length ? "ready" : "missing"), items, insertion_receipts: [] });
+    }
+    return insightStores.get(uid);
+  };
+  const insightRead = id => {
+    const value = clone(insightStore(id));
+    if (!["missing", "ready"].includes(value.status)) { value.items = []; return value; }
+    for (const item of value.items) item.source_state = item.sources.some(source => !transcript.some(row => row.utterance_id === source.utterance_id)) ? "missing"
+      : item.sources.some(source => !transcript.some(row => row.utterance_id === source.utterance_id && row.source_fingerprint === source.source_fingerprint && row.text.includes(source.quote))) ? "stale" : "current";
+    return value;
+  };
+  const insightWrite = (id, revision) => { const value = insightStore(id); if (!["missing", "ready"].includes(value.status) || value.revision !== revision) throw Error("Reviewed items changed. Refresh before saving."); return value; };
+  const insightItem = (store, id, revision) => { const item = store.items.find(item => item.id === id); if (!item || item.revision !== revision) throw Error("This item changed. Refresh before saving."); return item; };
+  const itemMarkdown = item => item.edited_text !== null ? item.edited_text : `${item.text}\n\n${item.sources.map(source => `> [${Math.floor(source.start_ms / 60000)}:${String(Math.floor(source.start_ms / 1000) % 60).padStart(2, "0")}] ${source.quote}\n`).join("")}`;
+  const exportMarkdown = item => {
+    const clock = ms => `${String(Math.floor(ms / 60000)).padStart(2, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+    const destination = item.processing.identity.endpoint.match(/^https:\/\/([a-zA-Z0-9.:[\]-]+)(?:\/|$)/)?.[1] || "unavailable";
+    const evidence = item.sources.map(source => `Meeting UID: \`${source.meeting_uid}\`\n\nUtterance: \`${source.utterance_id}\`\n\nEvidence revision: \`${source.source_fingerprint}\`\n\nUtterance range: [${clock(source.start_ms)}]–[${clock(source.end_ms)}] (${source.start_ms}–${source.end_ms} ms)\n\n> [${clock(source.start_ms)}] ${source.quote.replaceAll("\n", "\n> ")}`).join("\n\n");
+    return `${item.edited_text ?? item.text}\n\n---\n\n**Source evidence (original transcript)**\n\nMeeting file: [Transcript](transcript.md).\n\nEvidence cutoff: [${clock(item.evidence_cutoff_ms)}] (${item.evidence_cutoff_ms} ms)\n\nProcessing destination: \`${destination}\`\n\nSource status: ${item.source_state}\n\n${evidence}`;
+  };
+  const insightSave = store => { store.status = "ready"; store.revision++; insightMetadata(store); };
+  async function insightCommand(command, args) {
+    const request = args.request || {};
+    if (command === "insights_snapshot") return insightRead(args.id);
+    if (command === "insights_availability") return { configured: !!options.insights_seeded, available: !!options.insight_qualified && args.languagePolicy !== "unknown", qualified: !!options.insight_qualified && args.languagePolicy !== "unknown",
+      reason_code: args.languagePolicy === "unknown" ? "unknown_language" : options.insight_qualified ? "" : "unqualified", provider_id: options.insights_seeded ? "owned-ui" : null,
+      model: options.insights_seeded ? "owned-ui-fixture" : null, endpoint: options.insights_seeded ? "https://decision.example.invalid/v1" : null, language_policy: args.languagePolicy, task: "meeting_suggestions_v1", use_case: "manual_finished_suggestions", qualification_id: options.insight_qualified ? "owned-ui-only" : null };
+    if (command === "claim_insight_edit" || command === "review_insight") {
+      if (options.insight_write_fail) throw Error("Synthetic review storage unavailable.");
+      if (options.insight_review_delay_ms) await new Promise(resolve => setTimeout(resolve, options.insight_review_delay_ms));
+      const store = insightWrite(args.id, request.store_revision), item = insightItem(store, request.item_id, request.item_revision);
+      if (command === "claim_insight_edit") item.edit_claim = request.claim_id || item.edit_claim || insightId();
+      else {
+        const update = request.update || {};
+        if (item.edit_claim && update.edit_claim !== item.edit_claim) throw Error("The edit claim changed.");
+        if (update.review_state) item.review_state = update.review_state;
+        if (typeof update.edited_text === "string") item.edited_text = update.edited_text;
+        if (update.clear_edit) item.edited_text = null;
+        if (update.release_edit_claim) item.edit_claim = null;
+      }
+      item.revision++; insightSave(store); return insightRead(args.id);
+    }
+    if (command === "insights_export") return insightRead(args.id).items.filter(item => item.review_state === "accepted").map(exportMarkdown).join("\n");
+    if (command === "insight_markdown") { const item = insightItem(insightStore(args.id), args.itemId, args.itemRevision); if (item.review_state !== "accepted") throw Error("Accept this item first."); return itemMarkdown(item); }
+    if (command === "prepare_insight_insertion") {
+      if (options.insight_prepare_delay_ms) await new Promise(resolve => setTimeout(resolve, options.insight_prepare_delay_ms));
+      const store = insightWrite(args.id, request.store_revision), item = insightItem(store, request.item_id, request.item_revision);
+      if (item.review_state !== "accepted" || request.expected_notes !== notes) throw Error("The notes changed. Refresh before insertion.");
+      const existing = store.insertion_receipts.find(receipt => receipt.item_id === item.id && receipt.state !== "not_inserted");
+      if (existing) return { snapshot: insightRead(args.id), receipt: clone(existing), stage: false, intended_notes: null };
+      const receipt = { attempt_id: request.attempt_id || insightId(), item_id: item.id, item_revision: item.revision, before_notes_hash: await fingerprint(notes), intended_notes_hash: await fingerprint(request.intended_notes), markdown: request.markdown, state: "pending", manual_resolution: null };
+      store.insertion_receipts.push(receipt); insightSave(store); return { snapshot: insightRead(args.id), receipt: clone(receipt), stage: true, intended_notes: request.intended_notes };
+    }
+    if (command === "reconcile_insight_insertions" || command === "resolve_insight_insertion") {
+      const store = insightWrite(args.id, args.storeRevision ?? request.store_revision), hash = await fingerprint(notes);
+      if (command === "reconcile_insight_insertions") {
+        for (const receipt of store.insertion_receipts) if (["pending", "needs_review"].includes(receipt.state)) receipt.state = hash === receipt.intended_notes_hash ? "acknowledged" : hash === receipt.before_notes_hash ? "not_inserted" : "needs_review";
+      } else {
+        if (request.expected_notes !== notes) throw Error("Notes changed during review.");
+        const receipt = store.insertion_receipts.find(receipt => receipt.attempt_id === request.attempt_id); if (!receipt) throw Error("Insertion not found.");
+        receipt.state = request.decision; receipt.manual_resolution = { state: request.decision, notes_hash: hash };
+      }
+      insightSave(store); return insightRead(args.id);
+    }
+    if (command === "reassociate_insight_source") {
+      const store = insightWrite(args.id, request.store_revision), item = insightItem(store, request.item_id, request.item_revision);
+      if (request.source.quote !== item.sources[request.source_index]?.quote) throw Error("The original quote must match exactly.");
+      item.source_history.push(clone(item.sources[request.source_index])); item.sources[request.source_index] = clone(request.source);
+      item.source_reassociated = true; item.evidence_cutoff_ms = request.evidence_cutoff_ms; item.revision++; insightSave(store); return insightRead(args.id);
+    }
+    if (command === "begin_insights_analysis") {
+      if (!options.insight_qualified || args.languagePolicy === "unknown") throw Error("This setup is not qualified.");
+      const store = insightStore(args.id), job = { job_id: insightId(), meeting_uid: store.meeting_uid, state: "running", revision: 1, error_code: null, physical_running: true, included_through_ms: 32000, completed_windows: 0, total_windows: 1 };
+      insightJobs.set(job.job_id, { job, id: args.id, polls: 0 }); insightMetadata(job); return clone(job);
+    }
+    if (command === "insights_job" || command === "cancel_insights_analysis") {
+      const entry = insightJobs.get(args.jobId); if (!entry) throw Error("Analysis not found.");
+      if (command === "cancel_insights_analysis") entry.job.state = "cancelled";
+      else if (++entry.polls >= (options.insight_job_polls || 2)) {
+        entry.job.physical_running = false;
+        if (entry.job.state !== "cancelled") { entry.job.state = options.insight_analysis_fail ? "failed" : "completed"; entry.job.completed_windows = 1;
+          if (!options.insight_analysis_fail) { const store = insightStore(entry.id); if (options.insight_remove_proposed) store.items = store.items.filter(item => item.review_state !== "proposed" || item.edited_text !== null || item.edit_claim || item.source_reassociated); insightSave(store); }
+        }
+      }
+      entry.job.revision++; insightMetadata(entry.job); return clone(entry.job);
+    }
+    return undefined;
+  }
+
   async function invoke(command, args = {}) {
     calls.push(command);
-    if (options.rich_utterances && ["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings"].includes(command)) await refreshFingerprints();
+    if (options.rich_utterances && (["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings"].includes(command) || command.includes("insight"))) await refreshFingerprints();
+    if (["insights_snapshot", "insights_availability", "claim_insight_edit", "review_insight", "insights_export", "insight_markdown",
+      "prepare_insight_insertion", "reconcile_insight_insertions", "resolve_insight_insertion", "reassociate_insight_source",
+      "begin_insights_analysis", "insights_job", "cancel_insights_analysis"].includes(command)) return insightCommand(command, args);
     switch (command) {
       case "desktop_environment": return {
         material: options.native_material || "unavailable",
@@ -475,6 +592,14 @@
       case "set_meeting_notes": case "save_meeting_notes": {
         if (saveFailure) throw new Error("Synthetic notes storage unavailable.");
         if (args.id && args.id !== activeMeetingId && retainedMeetings.has(args.id)) { retainedMeetings.get(args.id).notes = String(args.text ?? ""); return null; }
+        if (args.insightReceipt) {
+          const store = insightStore(args.id || activeMeetingId), receipt = store.insertion_receipts.find(receipt => receipt.attempt_id === args.insightReceipt);
+          if (!receipt || await fingerprint(String(args.text ?? "")) !== receipt.intended_notes_hash
+            || ![receipt.before_notes_hash, receipt.intended_notes_hash].includes(await fingerprint(notes))) throw Error("Insertion notes changed.");
+          notes = String(args.text ?? "");
+          if (!options.insight_ack_fail) { receipt.state = "acknowledged"; insightSave(store); }
+          return null;
+        }
         notes = String(args.text ?? ""); return null;
       }
       case "begin_live_question": {
@@ -673,7 +798,7 @@
       forceComplete: requestId => completeLiveQuestion(requestId, true),
       replaceTranscript: segments => { transcript.splice(0, transcript.length, ...clone(segments)); transcriptRevision++; },
       restart: (next = { id: "qa-next-meeting", uid: "qa-next-uid", session: "qa-next-session", title: "Next synthetic meeting", notes: "New meeting notes", transcript: [] }) => {
-        retainedMeetings.set(activeMeetingId, { info: { ...meeting, id: activeMeetingId }, notes, transcript: recordingStopped ? storedTranscript(transcript) : clone(transcript) });
+        retainedMeetings.set(activeMeetingId, { info: { ...meeting, id: activeMeetingId }, meeting_uid: meetingUid, notes, transcript: recordingStopped ? storedTranscript(transcript) : clone(transcript) });
         activeMeetingId = next.id; meetingUid = next.uid; liveSession = next.session; meeting.title = next.title;
         notes = next.notes ?? ""; transcript.splice(0, transcript.length, ...clone(next.transcript ?? []));
         transcriptRevision = 1; recordingStopped = false; recordingRecovered = false;

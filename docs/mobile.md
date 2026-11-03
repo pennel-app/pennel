@@ -525,3 +525,11 @@ Local receipts: `build/mobile/cloud-inference/summary.json` and
 `build/mobile/cloud-inference/native-tests-isolated-final.xcresult`. Final source review and
 cross-platform checks are recorded on PR #91. Physical-device, live-provider, regional,
 retention and broader accessibility acceptance remain open.
+
+### Post-meeting suggestion review — #57
+
+The active Expo/iPhone meeting view exposes the shared Suggestions review after recording finishes: exact-source navigation and return, edit/accept/dismiss/reopen, stale-source review/reassociation, accepted Markdown export, and explicit Add to notes through the existing note session. The shared `insights.json` store preserves user edits, dismissals and insertion receipts across reopening, regeneration and text sync. Legacy citation navigation remains supported beside durable utterance anchors. Mobile keeps its existing warm typography and palette.
+
+The native facade uses an opaque single-use core admission before reading credentials, then consumes that same admission to start qualified finished-meeting analysis. Availability and invalidation carry status/identity only; content is fetched through meeting-owned APIs. Content language starts unknown and is an explicit choice. The production qualification registry remains empty, so no actual analysis, live suggestions or background updating is enabled. Rejected admission cannot read credentials or send meeting content.
+
+[The #57 receipt](evidence/reviewed-insights-57.md) records exact matched bindings, type/UI/plugin/helper checks, clean and repeated Prebuild, pods, hosted native tests and sequential simulator/iPhoneOS build results. Those checks do not establish a signed physical-iPhone upgrade, real-provider quality, field resources, keyboard acceptance, Cloud deployment or App Review. Android implementation remains gated on the agreed iPhone acceptance.

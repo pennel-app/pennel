@@ -801,6 +801,26 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 .live-question-composer .row { flex-wrap: wrap; }
 .live-workspace .chat-setup { margin: 0; padding: 8px; flex-shrink: 0; }
 .live-suggestions-pane { overflow: auto !important; }
+.insight-review { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; flex: 1; overflow: auto; }
+.insight-review > * { flex-shrink: 0; }
+.insight-review h2 { margin: 0; font-size: var(--font-content); }
+.insight-review p { margin: 0; overflow-wrap: anywhere; }
+.insight-toolbar, .insight-actions, .insight-export-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.insight-language { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); }
+.insight-language select { max-width: 100%; }
+.insight-list { display: flex; flex-direction: column; gap: 16px; }
+.insight-card { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding: 14px 0 2px; min-width: 0; }
+.insight-kind { font-weight: 600; }
+.insight-item-text, .insight-source blockquote { white-space: pre-wrap; user-select: text; -webkit-user-select: text; }
+.insight-source blockquote { margin: 4px 0 8px; padding-inline-start: 10px; border-inline-start: 2px solid var(--border); overflow-wrap: anywhere; }
+.insight-edit { width: 100%; min-height: 88px; resize: vertical; }
+.insight-source-history { color: var(--muted); }
+.insight-source-history summary { cursor: pointer; }
+.insight-review [hidden] { display: none !important; }
+.insight-review .btn { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+.insight-language { min-width: 0; max-width: 100%; }
+.insight-insertion-review pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; user-select: text; -webkit-user-select: text; }
+.detail-tabs { flex-wrap: wrap; max-width: 100%; }
 .live-suggestions-pane h2 { margin: 0; font-size: var(--font-content); }
 .live-pane-separator { width: 8px; cursor: col-resize; touch-action: none; align-self: stretch; position: relative; }
 .live-pane-separator::before { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: var(--border); }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FlatList, Modal, Pressable, Share, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter, usePreventRemove } from 'expo-router';
 import type { MeetingDetail, MeetingTemplate, SpeakerJob } from '../domain';
@@ -18,13 +18,17 @@ import { workflowText } from '../workflow-copy';
 import { summaryHasHeading } from '../workflow-state';
 import { useHapticFeedback } from '../haptics';
 import { attributionEditable, transcriptKeys, transcriptSpeakerLabel, transcriptPlayback, transcriptAttributionProvisional } from '../transcript-state';
+import { InsightReview } from '../components/InsightReview';
+import { mobileInsightService } from '../insight-service';
+import { InsightReviewModel, type InsightNoteHost } from '../../../../assets/contracts/insight-review-model.ts';
+import { insertionStillCurrent, type InsightNoteLatch } from '../../../../assets/contracts/meeting-insights.ts';
 
-type Pane = 'notes' | 'transcript' | 'questions';
+type Pane = 'notes' | 'transcript' | 'questions' | 'insights';
 type Editor = { type: 'rename' } | { type: 'speaker'; voice: number; initial: string } | null;
 export default function Meeting() {
   const params = useLocalSearchParams<{ id: string; source?: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { snapshot, run, busy, t, theme, language } = useRuntime();
+  const { snapshot, run, busy, t, theme, language, store } = useRuntime();
   const router = useRouter();
   const reducedMotion = useReducedMotion();
   const haptic = useHapticFeedback();
@@ -38,6 +42,28 @@ export default function Meeting() {
   const [pane, setPane] = useState<Pane>('notes');
   const [askSession, setAskSession] = useState<AskSession>({ question: '', turns: [] });
   const draft = useNoteDraft(id, detail?.notes ?? '');
+  const insightHolder = useRef<InsightReviewModel | null>(null);
+  if (!insightHolder.current || detail?.meeting_uid && insightHolder.current.meetingUid !== detail.meeting_uid) {
+    insightHolder.current = new InsightReviewModel(id, detail?.meeting_uid ?? id, mobileInsightService(store.client));
+  }
+  const insightModel = insightHolder.current;
+  if (detail?.info.id === id) insightModel.id = id;
+  const insightState = useSyncExternalStore(insightModel.subscribe, insightModel.getSnapshot, insightModel.getSnapshot);
+  const noteFocused = useRef(false);
+  const noteSelection = useRef({ start: 0, end: 0, revision: 0 });
+  const interactions = useRef(0);
+  useEffect(() => { if (pane !== 'notes') noteFocused.current = false; }, [pane]);
+  const currentNotes = (): InsightNoteLatch => {
+    const value = draft.getCurrent(); return { text: value.draft, revision: value.revision, selection_start: noteSelection.current.start,
+      selection_end: noteSelection.current.end, selection_revision: noteSelection.current.revision, interaction_revision: interactions.current, composing: noteFocused.current };
+  };
+  const insightNotes: InsightNoteHost = {
+    flush: draft.save, current: currentNotes,
+    stage: async (text, attempt, before) => {
+      if (insightModel.id !== id || !insertionStillCurrent(before, currentNotes()) || !draft.stageInsightInsertion(text, attempt, before.text)) return false;
+      setPane('notes'); setEditingNotes(true); return draft.save();
+    },
+  };
   const notes = draft.draft;
   const [template, setTemplate] = useState(snapshot?.settings.default_template ?? 'general');
   const [editor, setEditor] = useState<Editor>(null);
@@ -52,7 +78,12 @@ export default function Meeting() {
   const dirty = draft.dirty;
   const remoteChanged = draft.conflict;
   useEffect(() => { if (draft.dirty || draft.failed || draft.conflict) setEditingNotes(true); }, [draft.dirty, draft.failed, draft.conflict]);
-  const disableRemoval = usePreventRemove(dirty, ({ repeat }) => confirm(t('mobile.notes.leave_title'), t('mobile.notes.leave_help'), t('common.delete'), t('common.cancel'), () => { draft.discard(); repeat(); }, true));
+  const disableRemoval = usePreventRemove(dirty || insightModel.dirty, ({ repeat }) => confirm(t(insightModel.dirty ? 'insights.edit_unsaved_leave' : 'mobile.notes.leave_title'),
+    t(insightModel.dirty ? 'insights.edit_unsaved_help' : 'mobile.notes.leave_help'), t('common.delete'), t('common.cancel'), () => { draft.discard(); insightModel.discardLocalEdits(); repeat(); }, true));
+  useEffect(() => {
+    const revision = snapshot?.insight_revisions?.[insightModel.meetingUid];
+    if (revision !== undefined && revision > (insightState.snapshot?.revision ?? 0) && pane === 'insights') void insightModel.load();
+  }, [snapshot?.insight_revisions, insightModel, insightState.snapshot?.revision, pane]);
   useEffect(() => {
     const token = typeof params.source === 'string' ? params.source : null;
     if (!token || !detail || token === openedSource.current) return;
@@ -116,10 +147,10 @@ export default function Meeting() {
     {sourceIssue !== null && <Section><Notice>{t('meetings.source_changed')}</Notice>{sourceIssue ? <Body selectable>{sourceIssue}</Body> : null}</Section>}
     {detail.interruption && <Section><Notice error>{ownedFailureText(language, detail.interruption, detail.interruption_code)}</Notice></Section>}
     {(detail.conflicts ?? []).length > 0 && <Section description={t('meetings.conflict_notice')}>{detail.conflicts?.map((conflict) => <Row key={conflict.name} title={conflict.name} onPress={() => setViewConflict({ name: conflict.name, text: conflict.text ?? '' })} />)}</Section>}
-    <View style={{ marginBottom: theme.space[5] }}><NativeChoice label={copy('content')} segmented value={pane} options={(['notes', 'transcript', 'questions'] as const).map((value) => ({ value, label: t(`meetings.${value}`) }))} onChange={setPane} /></View>
+    <View style={{ marginBottom: theme.space[5] }}><NativeChoice label={copy('content')} segmented value={pane} options={(['notes', 'transcript', 'questions', 'insights'] as const).map((value) => ({ value, label: t(value === 'insights' ? 'insights.title' : `meetings.${value}`) }))} onChange={value => { ++interactions.current; setPane(value); }} /></View>
     {pane === 'notes' && <>
       <Section title={summaryHasHeading(detail.summary) ? undefined : t('mobile.summary')}>{detail.summary_outdated && <Notice>{t('meetings.summary_outdated')}</Notice>}{detail.summary ? <Markdown text={detail.summary} /> : <><Body muted>{t('meetings.empty_summary')}</Body><Button title={copy('viewTranscript')} subtle onPress={() => setPane('transcript')} /></>}<NativeChoice label={t('meetings.template')} value={template} options={(templates.value ?? []).map((value) => ({ value: value.id, label: templateLabel(value, language) }))} onChange={setTemplate} /><Button title={t(detail.summary ? 'meetings.regenerate' : 'meetings.summarize')} subtle busy={busy.has('summary')} disabled={active || !snapshot?.settings.llm.provider_id} onPress={() => void summarize()} />{!snapshot?.settings.llm.provider_id && <Button title={t('meetings.set_up_summaries')} subtle onPress={() => router.push({ pathname: '/settings/[section]', params: { section: 'models' } })} />}</Section>
-      <Section title={t('meetings.your_notes')}>{editingNotes ? <Field label={copy('notesPlaceholder')} multiline value={notes} onChangeText={draft.setDraft} placeholder={t('meetings.notes_placeholder')} style={{ minHeight: 180 }} autoFocus /> : <Body selectable muted={!notes.trim()}>{notes.trim() ? notes : copy('noNotes')}</Body>}{!editingNotes && <Button title={copy(notes.trim() ? 'editNotes' : 'addNote')} subtle icon="create-outline" onPress={() => setEditingNotes(true)} />}{remoteChanged && <><Notice error>{t('mobile.notes.remote_change')}</Notice><Button title={t('mobile.refresh')} subtle onPress={() => confirm(t('mobile.notes.leave_title'), t('mobile.notes.leave_help'), t('mobile.refresh'), t('common.cancel'), draft.discard)} /></>}{editingNotes && <Button title={copy('finishEditing')} busy={draft.saving} disabled={remoteChanged} onPress={() => void save()} />}</Section>
+      <Section title={t('meetings.your_notes')}>{editingNotes ? <Field label={copy('notesPlaceholder')} multiline value={notes} onChangeText={value => { ++interactions.current; draft.setDraft(value); }} onFocus={() => { noteFocused.current = true; }} onBlur={() => { noteFocused.current = false; }} onSelectionChange={event => { const value = event.nativeEvent.selection; if (value.start !== noteSelection.current.start || value.end !== noteSelection.current.end) noteSelection.current = { ...value, revision: noteSelection.current.revision + 1 }; }} placeholder={t('meetings.notes_placeholder')} style={{ minHeight: 180 }} autoFocus /> : <Body selectable muted={!notes.trim()}>{notes.trim() ? notes : copy('noNotes')}</Body>}{!editingNotes && <Button title={copy(notes.trim() ? 'editNotes' : 'addNote')} subtle icon="create-outline" onPress={() => setEditingNotes(true)} />}{remoteChanged && <><Notice error>{t('mobile.notes.remote_change')}</Notice><Button title={t('mobile.refresh')} subtle onPress={() => confirm(t('mobile.notes.leave_title'), t('mobile.notes.leave_help'), t('mobile.refresh'), t('common.cancel'), draft.discard)} /></>}{editingNotes && <Button title={copy('finishEditing')} busy={draft.saving} disabled={remoteChanged} onPress={() => void save()} />}</Section>
     </>}
     {pane === 'transcript' && <>
       <Actions><Button title={copy('manageSpeakers')} subtle icon="people-outline" onPress={() => setShowSpeakers(true)} />{canPlay && playRequested && <Button title={t('mobile.playback.stop')} subtle onPress={() => void run('playback', 'meetings.stopPlayback').then((value) => { if (value !== undefined) setPlayRequested(false); })} />}</Actions>
@@ -132,7 +163,8 @@ export default function Meeting() {
         return <Pressable accessibilityRole="button" accessibilityLabel={`${clock(item.start_ms / 1000)} ${label}${provisional}${source ? ` · ${source}` : ''}. ${item.text}`} accessibilityState={{ disabled: !playback }} accessibilityHint={playback ? t('meetings.play_from_here') : t('meetings.passage_audio_unavailable')} disabled={!playback} onPress={() => { if (playback) void run('playback', playback.method, playback.payload).then(value => { if (value !== undefined) setPlayRequested(true); }); }} style={{ gap: theme.space[1], minHeight: 44, paddingBottom: theme.space[5] }}><Body muted style={{ fontSize: theme.size.label }}>{clock(item.start_ms / 1000)} · {label}{provisional}{source ? ` · ${source}` : ''}</Body><Body selectable style={item.failed ? { color: theme.colors.accent } : undefined}>{item.failed ? t('meetings.transcription_failed') : item.text}</Body>{item.correction_review_required && <Body muted style={{ fontSize: theme.size.label }}>{t('meetings.attribution_correction_review')}</Body>}</Pressable>;
       }} ListEmptyComponent={<Empty title={t('meetings.empty_transcript')} />} />
     </>}
-    {pane === 'questions' && <AskPanel meetingId={id} session={askSession} onSessionChange={setAskSession} />}
+    {pane === 'questions' && <AskPanel meetingId={id} session={askSession} onSessionChange={value => { ++interactions.current; setAskSession(value); }} />}
+    {pane === 'insights' && (active ? <Notice>{t('insights.finished_only')}</Notice> : <View onTouchStart={() => { ++interactions.current; }}><InsightReview model={insightModel} notes={insightNotes} /></View>)}
     <Modal visible={showSpeakers} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => { setShowSpeakers(false); setEditor(null); }}><Page title={copy('manageSpeakers')} bottomInset action={<Button title={t('common.close')} subtle onPress={() => { setShowSpeakers(false); setEditor(null); }} />}>
       {editor?.type === 'speaker' ? <Section description={t('mobile.speakers.name_help')}><Field label={t('mobile.speakers.name')} value={editor.initial} onChangeText={(initial) => setEditor((current) => current?.type === 'speaker' ? { ...current, initial } : current)} autoFocus /><Actions><Button title={t('common.save')} busy={busy.has('rename-speaker')} disabled={!canEditAttribution} onPress={() => { void run('rename-speaker', 'recognition.renameSpeaker', { id, voice: editor.voice, name: editor.initial.trim(), remember: false }).then((value) => { if (value !== undefined) { setEditor(null); return query.refresh(); } }); }} /><Button title={t('common.cancel')} subtle onPress={() => setEditor(null)} /></Actions></Section> : <>
       <Section title={t('mobile.speakers.choice')}>

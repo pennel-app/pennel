@@ -50,8 +50,29 @@ Snapshot and speaker/retranscription journals recover text, names and metadata t
 
 ### Provisional live attribution
 
-Automatic attribution carries a `provisional` flag. A snapshot with any provisional utterance uses manifest schema **2**; readers support schemas 1 and 2, while a schema-1 payload claiming provisional attribution is invalid. Older schema-1 readers preserve schema-2 files and expose them read-only rather than silently treating estimates as settled. Unsupported, malformed and conflicting generations retain the existing preservation behavior.
+Automatic attribution carries a `provisional` flag. Manifest versions retain both attribution state and original capture/completion provenance:
 
-Ordinary saves, rename, reopen and encrypted text sync retain provisional state. Actual final acoustic reconciliation can clear it and write a schema-1-compatible snapshot again. Valid manual corrections remain authoritative; ambiguous automatic remapping remains unknown or requires review. The private ownership ledger and recovery journals keep their existing version: text, parts and manifest still recover as one checked generation at every journal boundary.
+| Schema | Attribution | Recovery provenance |
+| --- | --- | --- |
+| 1 | Settled | Absent |
+| 2 | Provisional | Absent |
+| 3 | Settled | Present |
+| 4 | Provisional | Present |
 
-Only attribution metadata is portable. Session centroids and owned PCM never enter the sidecar or sync. Provisional person labels do not change utterance IDs, physical source identity or frozen question evidence; interim caption text remains excluded. See [the live-speaker evidence](evidence/live-speakers-99.md).
+The final reader supports schemas 1–4. The #128 backport supports 1/3 and preserves 2/4 read-only. Earlier readers preserve unsupported generations rather than treating provisional estimates as settled or overwriting completion proof. Unsupported, malformed and conflicting generations retain the existing preservation behavior.
+
+Ordinary saves, rename, reopen and encrypted text sync retain provisional state. Actual final acoustic reconciliation can clear it and write schema 1 without recovery provenance or schema 3 with it. Refinement retains original capture/completion proof, including hidden empty dispositions; it does not downgrade a proven completion to an unproven row. Valid manual corrections remain authoritative; ambiguous automatic remapping remains unknown or requires review. The private ownership ledger and recovery journals keep their existing version: text, parts and manifest still recover as one checked generation at every journal boundary.
+
+Portable metadata contains attribution and original capture/completion proof. Session centroids and owned PCM never enter the sidecar or sync. Provisional person labels do not change utterance IDs, physical source identity or frozen question evidence; interim caption text remains excluded. Recovery suppression and cleanup require the original lane, basename, range and verified WAV hash, independently of person labels and acoustic splits. Failed or unverified recovery audio is retained. See [the audio preservation review](evidence/audio-recovery-cleanup-128-129.md) and [the live-speaker evidence](evidence/live-speakers-99.md).
+
+## Reviewed meeting insights
+
+`insights.json` is the sole portable review store. Schema 1 binds the document to the meeting UID and has a 3,000,000-byte limit, within the existing encrypted text-sync envelope. It contains source-linked proposals, their processing identity and qualification, the finalized evidence cutoff, separate user review/edit state, and note-insertion receipts. It does not change `transcript.md`, personal notes or summary checkboxes merely by accepting an item.
+
+Each source retains the canonical utterance ID, evidence fingerprint, exact UTF-8 byte range and quote, and authoritative start/end time. Owners and original deadline phrases require exact supporting source spans; unsupported fields remain unknown. Exact extraction and whole-passage proposals are distinguished. Typed prior evidence preserves an explicit retraction or changed commitment even when its target cannot be resolved uniquely. Only proven one-to-one lineage can reuse a reviewed identity after transcript replacement; ambiguous sources remain available for review without an invented replacement anchor.
+
+Regeneration uses revision-checked atomic writes. It can replace unreviewed proposals only within explicitly assessed source/kind scopes; omitted or abstained scopes are retained. Edited, claimed, accepted and dismissed items survive regeneration. A changed confirmed commitment becomes a linked proposal. Source replacement marks affected anchors stale and retains the original quote and reassociation history. Unknown versions/fields, malformed documents, oversized documents and sync conflicts are preserved rather than overwritten.
+
+An explicit Add to notes operation first persists a pending receipt with before/intended note hashes and the accepted item revision. The ordinary guarded notes writer acknowledges it only after durable saving. Recovery distinguishes the exact intended notes, unchanged notes and ambiguous intervening edits. Repeated clicks cannot duplicate a confirmed insertion; ambiguous recovery requires an explicit review bound to the currently saved notes hash. Insertion preserves the user's exact edited Markdown. Accepted-item export keeps that body intact and adds a separate original-evidence section with transcript-file references, durable identities, timing, cutoff, destination and current/stale status. Relative transcript-file references require the meeting folder; they are not an application deep link or a claimed Markdown row anchor.
+
+The JSON review APIs, opaque single-use analysis admission and metadata-only invalidation events are shared by Tauri and Expo/iPhone. Admission freezes and qualifies the source/configuration before native credential reads. Logical cancellation keeps physical worker accounting and the library lease until underlying work exits. See [the #57 verification receipt](evidence/reviewed-insights-57.md). Production qualification is empty; persisted fixture review does not establish model quality or enable live/background suggestions.

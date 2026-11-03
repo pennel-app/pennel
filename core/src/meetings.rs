@@ -21,7 +21,7 @@ enum ReplacementKey {
 }
 
 // Keep one meeting atomic without making unrelated libraries wait for its metadata or fsyncs.
-fn replacement_gate(root: &Path) -> Arc<Mutex<()>> {
+pub(crate) fn replacement_gate(root: &Path) -> Arc<Mutex<()>> {
     static GATES: OnceLock<Mutex<std::collections::HashMap<ReplacementKey, Weak<Mutex<()>>>>> =
         OnceLock::new();
     let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());

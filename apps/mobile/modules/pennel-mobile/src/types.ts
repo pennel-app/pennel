@@ -1,3 +1,5 @@
+import type { InsightSnapshot, InsightAvailability, InsightJob, InsightInsertionPreparation } from '../../../../../assets/contracts/meeting-insights';
+export type { InsightSnapshot, InsightAvailability, InsightJob, InsightItem, InsightSource, InsightLanguagePolicy } from '../../../../../assets/contracts/meeting-insights';
 export type InterfaceLanguage = 'en' | 'nl';
 export type Appearance = 'system' | 'light' | 'dark';
 export type ProviderKind = 'open_ai' | 'open_router' | 'groq' | 'mistral' | 'ollama' | 'lm_studio' | 'custom' | 'local' | 'apple_speech' | 'apple_intelligence' | 'claude_code' | 'codex' | 'open_code' | 'copilot' | 'cursor_agent' | 'gemini_cli' | 'pennel_cloud';
@@ -95,6 +97,8 @@ export interface RuntimeSnapshot {
   meeting: { phase: 'idle' | 'starting' | 'recording' | 'interrupted' | 'finishing' | 'error'; id: string | null; retained_id?: string | null; last_finished_id?: string | null; title: string; elapsed_secs: number; notes: string; transcript: Segment[]; pending: number; error: string | null; error_code?: string | null };
   cloud: CloudState;
   recognition_jobs: SpeakerJob[];
+  insight_jobs?: Pick<InsightJob, 'job_id' | 'meeting_uid' | 'state' | 'revision' | 'physical_running'>[];
+  insight_revisions?: Record<string, number>;
   navigation?: { sequence: number; route: 'dictation' | 'meeting' | 'sync'; meeting_id?: string } | null;
 }
 export interface NativeFailure { code: string; message: string; recoverable?: boolean }
@@ -121,6 +125,19 @@ export interface KeyboardSettings {
 }
 
 export interface MobileCommandResults {
+  'insights.read': InsightSnapshot;
+  'insights.availability': InsightAvailability;
+  'insights.start': InsightJob;
+  'insights.job': InsightJob;
+  'insights.cancel': InsightJob;
+  'insights.review': InsightSnapshot;
+  'insights.claimEdit': InsightSnapshot;
+  'insights.prepareInsertion': InsightInsertionPreparation;
+  'insights.reconcile': InsightSnapshot;
+  'insights.resolveInsertion': InsightSnapshot;
+  'insights.reassociate': InsightSnapshot;
+  'insights.export': string;
+  'insights.itemMarkdown': string;
   'keyboard.feedbackPreview': void;
   'keyboard.feedbackTrial': KeyboardSettings;
   'keyboard.learning.remove': KeyboardSettings;

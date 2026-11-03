@@ -22,6 +22,7 @@ mod foreground;
 mod gesture;
 mod hotkey;
 mod inference;
+mod insights;
 mod keys;
 #[cfg(any(target_os = "macos", test))]
 mod legacy_migration;
@@ -1156,6 +1157,19 @@ fn main() {
             inference::inference_rerank,
             inference::verify_inference,
             inference::cancel_inference,
+            insights::insights_snapshot,
+            insights::insights_availability,
+            insights::begin_insights_analysis,
+            insights::insights_job,
+            insights::cancel_insights_analysis,
+            insights::review_insight,
+            insights::claim_insight_edit,
+            insights::prepare_insight_insertion,
+            insights::reconcile_insight_insertions,
+            insights::resolve_insight_insertion,
+            insights::reassociate_insight_source,
+            insights::insights_export,
+            insights::insight_markdown,
             commands::delete_history,
             commands::open_log,
             commands::open_path,

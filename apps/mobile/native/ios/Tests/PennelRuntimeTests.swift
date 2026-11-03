@@ -4,6 +4,34 @@ import Testing
 import PennelMobileKit
 @testable internal import PennelMobile
 
+@Test("Insight invalidation metadata excludes proposal, source and private-note content")
+@MainActor
+func insightInvalidationMetadataIsContentFree() throws {
+    let metadata = BridgeJSON.insightMetadata(["snapshot": ["meeting_uid": "owned", "revision": 3,
+        "items": [["text": "private sentinel", "sources": [["quote": "private sentinel"]]]], "notes": "private sentinel"]])
+    let encoded = try BridgeJSON.encode(metadata)
+    #expect(metadata["meeting_uid"] as? String == "owned")
+    #expect(!encoded.contains("sentinel"))
+    #expect(metadata.count == 2)
+}
+
+@Test("Insight admission is frozen before credential access and rejected admission reads no keys")
+@MainActor
+func insightAdmissionPrecedesCredentialAccess() throws {
+    enum Rejected: Error { case unqualified }
+    var reads = 0
+    do {
+        let _: (Int, String) = try keysAfterInsightAdmission({ throw Rejected.unqualified }, keys: { reads += 1; return "owned key" })
+        Issue.record("Unqualified admission unexpectedly succeeded")
+    } catch Rejected.unqualified { }
+    #expect(reads == 0)
+    var order: [String] = []
+    let (admission, key) = keysAfterInsightAdmission({ order.append("admission"); return 7 }, keys: { order.append("keys"); return "owned key" })
+    #expect(admission == 7)
+    #expect(key == "owned key")
+    #expect(order == ["admission", "keys"])
+}
+
 private final class UploadProgress: RecognitionUploadProgress, @unchecked Sendable {
     func sent(sentBytes: UInt64, totalBytes: UInt64) {}
 }

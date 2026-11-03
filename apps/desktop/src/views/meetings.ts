@@ -16,6 +16,8 @@ import { retranscriptionControl, retranscriptionPercent } from "../meeting-retra
 import { summaryControl } from "../voice-flow-state";
 import { segmentKeys, sameSegment } from "../recording-refresh";
 import { attributionEditable, attributionNoticeKey, segmentAudioAvailable } from "../meeting-source";
+import { reviewedInsights, flushReviewedInsights } from "../reviewed-insights";
+import { insightSourceMatches, insertionStillCurrent, utf8Range, type InsightNoteLatch, type InsightSource } from "../../../../assets/contracts/meeting-insights.ts";
 import { liveMeetingWorkspace, retainedMeetingWorkspace, getRetainedMeetingWorkspace, acknowledgeRetainedNotes, flushLiveWorkspaces, finishLiveWorkspace, displayedLiveWorkspaceSession } from "../live-workspace";
 
 const notesQueue = new SerialQueue();
@@ -25,7 +27,7 @@ const liveTitleDraft = new MeetingDraft();
 const titleQueue = new SerialQueue();
 let liveMeetingId: string | null = null;
 const sessionMeetingIds = new Map<string, string>();
-type MeetingTab = "notes" | "transcript" | "ask";
+type MeetingTab = "notes" | "transcript" | "ask" | "insights";
 const detailState = new Map<string, { tab: MeetingTab; template: string; working: boolean; message: string; recognition?: SpeakerRecognition;
   scrollTop: Record<MeetingTab, number>; ownNotesOpen?: boolean; noteSelection?: { start: number; end: number; direction: "forward" | "backward" | "none" } }>();
 interface Exchange { question: string; answer?: MeetingAnswer; error?: string }
@@ -49,7 +51,8 @@ function draftFor(id: string, notes: string) {
 }
 
 async function saveDraft(draft: MeetingDraft, meetingId: string) {
-  await draft.persist((value) => notesQueue.run(async () => { await api.saveMeetingNotes(meetingId, value); acknowledgeRetainedNotes(meetingId, value); }));
+  const receipt = draft.insightReceipt;
+  await draft.persist((value) => notesQueue.run(async () => { await api.saveMeetingNotes(meetingId, value, receipt?.text === value ? receipt.attempt : undefined); acknowledgeRetainedNotes(meetingId, value); }));
 }
 
 async function flushLiveTitle() {
@@ -60,6 +63,7 @@ async function flushLiveTitle() {
 
 export async function flushMeetingDrafts(includeLiveWorkspaces = true) {
   await persistAll([
+    flushReviewedInsights,
     ...includeLiveWorkspaces ? [flushLiveWorkspaces] : [],
     async () => { await titleQueue.drain(); await flushLiveTitle(); },
     async () => {
@@ -99,19 +103,33 @@ export function finishMeetingDrafts(event: MeetingFinished) {
 
 function editNotes(ctx: Context, draft: MeetingDraft, id: string, rows = 8) {
   const input = h("textarea", { rows, placeholder: l("meetings.notes_placeholder"), "aria-label": l("meetings.your_notes") });
+  const saveError = h("p", { class: "error insight-note-save-error", hidden: true, role: "status" }, l("insights.error_notes_not_saved"));
   input.value = draft.value;
   let timer: number | undefined;
+  let composing = false, revision = 0, selectionRevision = 0, selection = "";
+  const observeSelection = () => { const next = `${input.selectionStart}:${input.selectionEnd}`; if (selection !== next) { selection = next; ++selectionRevision; } };
+  input.addEventListener("select", observeSelection);
+  input.addEventListener("compositionstart", () => { composing = true; ++revision; window.clearTimeout(timer); });
+  input.addEventListener("compositionend", () => { composing = false; ++revision; draft.edit(input.value); timer = window.setTimeout(() => { void flush().catch(ctx.report); }, 600); });
   input.addEventListener("input", () => {
+    ++revision;
     draft.edit(input.value);
     window.clearTimeout(timer);
-    timer = window.setTimeout(() => { void saveDraft(draft, id).catch(ctx.report); }, 600);
+    if (!composing) timer = window.setTimeout(() => { void flush().catch(ctx.report); }, 600);
   });
-  const flush = () => { window.clearTimeout(timer); return saveDraft(draft, id); };
+  const flush = async () => { window.clearTimeout(timer); if (composing) throw new Error(t("meetings.workspace_composing")); await saveDraft(draft, id); saveError.hidden = true; };
   ctx.beforeLeave(flush);
   ctx.onFlush(flush);
   input.addEventListener("blur", () => { void flush().catch(ctx.report); });
   ctx.onDispose(() => { void flush().catch(ctx.report); });
-  return { input, flush };
+  return { input, error: saveError, flush, current: (): InsightNoteLatch => {
+    observeSelection();
+    return { text: draft.value, revision, selection_start: input.selectionStart, selection_end: input.selectionEnd, selection_revision: selectionRevision, composing };
+  }, stage: async (value: string, attempt: string, before: InsightNoteLatch): Promise<boolean> => {
+    if (composing || !draft.stageInsightInsertion(value, attempt, before.text)) return false;
+    ++revision; input.value = value; input.focus({ preventScroll: true }); input.setSelectionRange(before.text.length, value.length);
+    try { await flush(); return true; } catch { saveError.hidden = false; return false; }
+  } };
 }
 
 /** Names a voice in this meeting; remembered voices receive the same name in future meetings. */
@@ -403,9 +421,9 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
   const active = runtime.busy && runtime.id === id;
   let state = detailState.get(id);
   const firstVisit = !state;
-  if (!state) { state = { tab: "notes", template: ctx.info.settings.default_template, working: false, message: "", scrollTop: { notes: 0, transcript: 0, ask: 0 } }; detailState.set(id, state); }
+  if (!state) { state = { tab: "notes", template: ctx.info.settings.default_template, working: false, message: "", scrollTop: { notes: 0, transcript: 0, ask: 0, insights: 0 } }; detailState.set(id, state); }
   const fixtureTab = fixtureClient()?.fixture?.meeting_tab;
-  if (firstVisit && ["notes", "transcript", "ask"].includes(String(fixtureTab))) state.tab = fixtureTab as "notes" | "transcript" | "ask";
+  if (firstVisit && ["notes", "transcript", "ask", "insights"].includes(String(fixtureTab))) state.tab = fixtureTab as MeetingTab;
   const current = state;
   const playback = ctx.info.capabilities.audio_playback;
   const audioAvailable = detail.audio_tracks.some((track) => track.available);
@@ -475,17 +493,23 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
   let renderedTab = current.tab;
   let drawGeneration = 0;
   let questions: HTMLElement | null = null;
+  let insights: ReturnType<typeof reviewedInsights> | null = null;
+  let sourceNavigation = 0, interactionRevision = 0;
+  let restoreInsightSource: (() => void) | null = null;
+  const insightBack = h("button", { class: "text-button insight-source-back", hidden: true, onclick: () => {
+    const restore = restoreInsightSource; restoreInsightSource = null; insightBack.hidden = true; chooseTab("insights"); if (restore) requestAnimationFrame(restore);
+  } }, l("insights.back"));
   const rememberPosition = () => { current.scrollTop[renderedTab] = panel.scrollTop; };
   panel.addEventListener("scroll", rememberPosition);
   ctx.beforeLeave(async () => { rememberPosition(); rememberNoteSelection(); });
   ctx.onDispose(rememberPosition);
-  const chooseTab = (tab: MeetingTab) => { rememberPosition(); current.tab = tab; draw(); };
+  const chooseTab = (tab: MeetingTab) => { ++sourceNavigation; rememberPosition(); current.tab = tab; draw(); };
   const draw = () => {
     const generation = ++drawGeneration;
     renderedTab = current.tab;
     const scrollTop = current.scrollTop[renderedTab];
     requestAnimationFrame(() => { if (panel.isConnected && generation === drawGeneration) panel.scrollTop = scrollTop; });
-    footer.hidden = current.tab === "ask";
+    footer.hidden = current.tab === "ask" || current.tab === "insights";
     refreshSummaryControls();
     diarize.hidden = current.tab !== "transcript";
     diarizeReason.hidden = current.tab !== "transcript" || !speakerReason();
@@ -495,6 +519,31 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
     });
     panel.setAttribute("aria-labelledby", `${panelId}-${current.tab}`);
     if (current.tab === "ask") { questions ??= chat(ctx, id); panel.replaceChildren(questions); return; }
+    if (current.tab === "insights") {
+      if (active) { panel.replaceChildren(h("p", { class: "help" }, l("insights.finished_only"))); return; }
+      insights ??= reviewedInsights(ctx, { id, meetingUid: detail.meeting_uid ?? id, notes: {
+        flush: async () => { try { await notes.flush(); return true; } catch { return false; } },
+        current: () => ({ ...notes.current(), interaction_revision: interactionRevision }),
+        stage: async (value, attempt, before) => {
+          if (!insertionStillCurrent(before, { ...notes.current(), interaction_revision: interactionRevision })) return false;
+          chooseTab("notes"); const disclosure = result.querySelector<HTMLDetailsElement>(".own-notes"); if (disclosure) disclosure.open = true;
+          return notes.stage(value, attempt, before);
+        },
+      }, openSource: async (source: InsightSource, origin, restore) => {
+        const navigation = ++sourceNavigation; const fresh = await api.meetingDetail(id);
+        if (navigation !== sourceNavigation || !result.isConnected) return true;
+        const sourceIndex = fresh.transcript.findIndex(segment => segment.utterance_id === source.utterance_id);
+        if (!insightSourceMatches(source, fresh.transcript[sourceIndex], fresh.meeting_uid ?? id)) return false;
+        detail.transcript = fresh.transcript; detail.speakers = fresh.speakers; detail.metadata_status = fresh.metadata_status;
+        transcriptContent?.update(fresh.transcript, voices); chooseTab("transcript");
+        const row = result.querySelector<HTMLElement>(`[data-transcript-index="${sourceIndex}"]`);
+        row?.classList.add("source-highlight"); row?.scrollIntoView({ block: "center" });
+        const text = row?.querySelector(".transcript-copy")?.firstChild, range = utf8Range(fresh.transcript[sourceIndex].text, source.start_byte, source.end_byte);
+        if (text instanceof Text && range) { const selected = document.createRange(); selected.setStart(text, range.start); selected.setEnd(text, range.end); window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(selected); }
+        restoreInsightSource = () => { restore(); origin.focus({ preventScroll: true }); }; insightBack.hidden = false; return true;
+      } });
+      panel.replaceChildren(insights.root); void insights.refresh(); return;
+    }
     if (current.tab === "transcript") {
       if (!transcriptControls) {
         const playbackReason = h("span", { class: audioReason() ? "help" : "grow" }, audioReason());
@@ -511,17 +560,17 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
       return;
     }
     panel.replaceChildren(detail.summary ? enhanced : detail.notes.trim() ? h("div", { class: "markdown" }, detail.notes) : h("p", { class: "muted" }, l("meetings.empty_summary")));
-    const ownNotes = h("details", { class: "own-notes", open: current.ownNotesOpen ?? !detail.summary }, h("summary", {}, l("meetings.your_notes")), notes.input);
+    const ownNotes = h("details", { class: "own-notes", open: current.ownNotesOpen ?? !detail.summary }, h("summary", {}, l("meetings.your_notes")), notes.input, notes.error);
     ownNotes.addEventListener("toggle", () => { if (ownNotes.isConnected) current.ownNotesOpen = ownNotes.open; });
     panel.append(ownNotes);
   };
-  for (const [tab, label] of [["notes", l("meetings.notes")], ["transcript", l("meetings.transcript")], ["ask", l("meetings.questions")]] as const) {
+  for (const [tab, label] of [["notes", l("meetings.notes")], ["transcript", l("meetings.transcript")], ["ask", l("meetings.questions")], ["insights", l("insights.title")]] as const) {
     const button = h("button", { id: `${panelId}-${tab}`, role: "tab", "aria-controls": panelId, "data-tab": tab, onclick: () => { chooseTab(tab); } }, label);
     button.addEventListener("keydown", (event) => {
-      const order = ["notes", "transcript", "ask"] as const;
+      const order = ["notes", "transcript", "ask", "insights"] as const;
       const index = order.indexOf(current.tab);
-      const next = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3
-        : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
+      const next = event.key === "ArrowRight" ? (index + 1) % order.length : event.key === "ArrowLeft" ? (index + order.length - 1) % order.length
+        : event.key === "Home" ? 0 : event.key === "End" ? order.length - 1 : -1;
       if (next < 0) return;
       event.preventDefault(); chooseTab(order[next]);
       tabs.querySelector<HTMLButtonElement>(`[data-tab="${current.tab}"]`)?.focus();
@@ -707,7 +756,8 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
     runtime.id === id && runtime.recognition ? meetingProcessingNotice(ctx, () => runtime, true).element : null,
     banners, runtime.id === id ? recoveryNotice(ctx, runtime) : null,
     detail.summary_outdated ? h("p", { class: "help", role: "status" }, l("meetings.summary_outdated")) : null,
-    summarySetup, message, panel, footer);
+    summarySetup, message, insightBack, panel, footer);
+  for (const event of ["pointerdown", "keydown", "input"]) result.addEventListener(event, () => { ++interactionRevision; }, true);
   void voicesReady.then((loaded) => {
     if (disposed) return;
     voices = loaded;

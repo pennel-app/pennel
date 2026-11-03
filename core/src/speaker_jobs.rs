@@ -1174,18 +1174,8 @@ impl PennelEngine {
         text: String,
         expected: Option<String>,
     ) -> Result<(), PennelError> {
-        self.claim_library()?;
-        let _edit = self.edit_meeting(&id)?;
-        let _sync = self.sync_gate.lock().unwrap();
-        let store = self.meeting_store();
-        store.info(&id).ok_or(PennelError::NotFound)?;
-        if expected.is_some_and(|expected| expected != store.read_notes(&id)) {
-            return Err(PennelError::Cloud {
-                code: "stale_notes".into(),
-                message: "The notes have changed. Open the latest version before saving.".into(),
-            });
-        }
-        store.write_notes(&id, &text)
+        self.save_owned_meeting_notes(&id, &text, expected.as_deref(), None)
+            .map(|_| ())
     }
 }
 

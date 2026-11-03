@@ -5,6 +5,7 @@ export class MeetingDraft {
   acknowledgedValue = "";
   acknowledgedRevision = 0;
   error: string | null = null;
+  insightReceipt: { text: string; attempt: string } | null = null;
   private pending = 0;
   private writes: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
@@ -29,9 +30,15 @@ export class MeetingDraft {
   }
 
   edit(value: string): void {
+    if (this.insightReceipt && this.insightReceipt.text !== value) this.insightReceipt = null;
     this.value = value;
     this.dirty = true;
     this.changed();
+  }
+
+  stageInsightInsertion(value: string, attempt: string, expected: string): boolean {
+    if (this.value !== expected || this.dirty || this.pending || this.sessionId === null) return false;
+    this.insightReceipt = { text: value, attempt }; this.edit(value); return true;
   }
 
   acknowledge(sessionId: string | null, value: string): void {
@@ -40,6 +47,7 @@ export class MeetingDraft {
     ++this.acknowledgedRevision;
     this.error = null;
     if (value === this.value) this.dirty = false;
+    if (this.insightReceipt?.text === value) this.insightReceipt = null;
     this.changed();
   }
 
