@@ -12,6 +12,7 @@ use crate::cleanup::{assess_cleanup, cleanup_messages, cleanup_timeout_secs, str
 use crate::llm::{ChatMessage, Reasoning};
 use crate::meeting_chat::{chat_messages_with_tag, cited, select_sources};
 use crate::meeting_index::{MeetingIndex, Passage, PassageKind};
+use crate::meeting_utterances::{AttributionKind, AutomaticAttribution, MeetingUtterance};
 use crate::meetings::{MeetingStore, Segment, Speaker, SpeakerName};
 use crate::provider::{ProviderConfig, ProviderKind};
 use crate::settings::Style;
@@ -166,6 +167,78 @@ fn source_tag(question: &str, sources: &[Passage]) -> String {
     format!("sources-{}", &digest[..32])
 }
 
+fn fixture_id(kind: &str, meeting_id: &str, ordinal: Option<usize>) -> String {
+    let key = json!(["pennel-evaluation-v1", kind, meeting_id, ordinal]);
+    let digest = Sha256::digest(key.to_string().as_bytes());
+    let mut bytes: [u8; 16] = digest[..16].try_into().expect("digest length");
+    bytes[6] = (bytes[6] & 0x0f) | 0x80;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    uuid::Uuid::from_bytes(bytes).to_string()
+}
+
+fn write_fixture_meeting(store: &MeetingStore, meeting: InputMeeting) -> Result<(), &'static str> {
+    let directory = store.dir_of(&meeting.id);
+    std::fs::create_dir(&directory).map_err(|_| "fixture_io")?;
+    // Only authored fixtures have content-independent deterministic ids; production keeps UUIDv7.
+    let metadata = format!(
+        "---\ntitle: {}\nstart: {}\nduration_min: 0\ntemplate: {}\npennel_id: {}\n---\n\n",
+        meeting.title,
+        meeting.start_iso,
+        meeting.template_id,
+        fixture_id("meeting", &meeting.id, None)
+    );
+    std::fs::write(directory.join("meeting.md"), metadata).map_err(|_| "fixture_io")?;
+    let rows = meeting
+        .transcript
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, input)| {
+            let segment: Segment = input.into();
+            // In this synthetic schema `speaker`/`voice` are authored identities, not audio routes.
+            // No physical source or finer timing is invented for these text-only fixtures.
+            let self_voice = segment.speaker == Speaker::Me;
+            let voices = if self_voice {
+                Vec::new()
+            } else {
+                segment.voice.into_iter().collect()
+            };
+            let mut row = MeetingUtterance::new(segment, None);
+            row.metadata.utterance_id = fixture_id("utterance", &meeting.id, Some(ordinal));
+            row.metadata.attribution = AutomaticAttribution {
+                kind: if self_voice || !voices.is_empty() {
+                    AttributionKind::Single
+                } else {
+                    AttributionKind::Unknown
+                },
+                voices,
+                self_voice,
+                turns: Vec::new(),
+            };
+            row
+        })
+        .collect::<Vec<_>>();
+    store
+        .write_transcript_snapshot(&meeting.id, Some(0), &rows)
+        .map_err(|_| "fixture_io")?;
+    let names = meeting
+        .speaker_names
+        .into_iter()
+        .map(|n| SpeakerName {
+            voice: n.voice,
+            name: n.name,
+        })
+        .collect::<Vec<_>>();
+    store
+        .set_speaker_names(&meeting.id, &names)
+        .map_err(|_| "fixture_io")?;
+    store
+        .write_notes(&meeting.id, &meeting.notes)
+        .map_err(|_| "fixture_io")?;
+    store
+        .write_meeting(&meeting.id, 0, &meeting.template_id, &meeting.summary)
+        .map_err(|_| "fixture_io")
+}
+
 fn evaluate_suite(input: Value) -> Result<Value, &'static str> {
     let suite: Suite = serde_json::from_value(input).map_err(|_| "invalid_request")?;
     let mut ids = HashSet::new();
@@ -195,35 +268,7 @@ fn evaluate_suite(input: Value) -> Result<Value, &'static str> {
         .map(|meeting| (meeting.id.clone(), meeting.template_id.clone()))
         .collect();
     for meeting in suite.meetings {
-        let directory = store.dir_of(&meeting.id);
-        std::fs::create_dir(&directory).map_err(|_| "fixture_io")?;
-        // Construct only the fixture's initial metadata; all transcript and note writes use the store.
-        let metadata = format!(
-            "---\ntitle: {}\nstart: {}\nduration_min: 0\ntemplate: {}\n---\n\n",
-            meeting.title, meeting.start_iso, meeting.template_id
-        );
-        std::fs::write(directory.join("meeting.md"), metadata).map_err(|_| "fixture_io")?;
-        let segments: Vec<Segment> = meeting.transcript.into_iter().map(Into::into).collect();
-        store
-            .write_transcript(&meeting.id, &segments)
-            .map_err(|_| "fixture_io")?;
-        let names = meeting
-            .speaker_names
-            .into_iter()
-            .map(|n| SpeakerName {
-                voice: n.voice,
-                name: n.name,
-            })
-            .collect::<Vec<_>>();
-        store
-            .set_speaker_names(&meeting.id, &names)
-            .map_err(|_| "fixture_io")?;
-        store
-            .write_notes(&meeting.id, &meeting.notes)
-            .map_err(|_| "fixture_io")?;
-        store
-            .write_meeting(&meeting.id, 0, &meeting.template_id, &meeting.summary)
-            .map_err(|_| "fixture_io")?;
+        write_fixture_meeting(&store, meeting)?;
     }
     let templates = TemplateStore::new(&store.root());
     let started = Instant::now();
@@ -526,6 +571,110 @@ mod tests {
         assert_eq!(first["cleanup"][0]["accepted"], false);
         assert_eq!(first["cleanup"][0]["text"], "Stuur niet naar Jan");
         assert_eq!(first["templates"].as_array().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn fixture_anchors_keep_identity_and_revalidate_changed_evidence() {
+        let transcript = |result: Value| {
+            result["passages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|passage| passage["kind"] == "transcript")
+                .unwrap()
+                .clone()
+        };
+        let first = transcript(evaluate(fixture()).unwrap());
+        let mut edited = fixture();
+        edited["meetings"][0]["title"] = json!("Renamed synthetic budget");
+        edited["meetings"][0]["notes"] = json!("Updated notes.");
+        let renamed = transcript(evaluate(edited.clone()).unwrap());
+        assert_eq!(first["meeting_uid"], renamed["meeting_uid"]);
+        assert_eq!(first["utterance_ids"], renamed["utterance_ids"]);
+        assert_eq!(
+            first["utterance_fingerprints"],
+            renamed["utterance_fingerprints"]
+        );
+        assert!(uuid::Uuid::parse_str(first["meeting_uid"].as_str().unwrap()).is_ok());
+        let ids = first["utterance_ids"].as_array().unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_ne!(ids[0], ids[1]);
+        assert!(
+            ids.iter()
+                .all(|id| uuid::Uuid::parse_str(id.as_str().unwrap()).is_ok())
+        );
+        edited["meetings"][0]["transcript"][0]["text"] = json!("The budget was retracted.");
+        let replaced = transcript(evaluate(edited).unwrap());
+        assert_eq!(first["utterance_ids"], replaced["utterance_ids"]);
+        assert_ne!(
+            first["utterance_fingerprints"][0],
+            replaced["utterance_fingerprints"][0]
+        );
+        assert_eq!(
+            first["utterance_fingerprints"][1],
+            replaced["utterance_fingerprints"][1]
+        );
+    }
+
+    #[test]
+    fn fixture_preserves_authored_identity_without_assigning_unknown_speech() {
+        let mut input = fixture();
+        input["meetings"][0]["speaker_names"] = json!([{"voice": 1, "name": "Zoë"}]);
+        input["meetings"][0]["transcript"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "start_ms":2000,"end_ms":2500,"speaker":"others","text":"An unknown participant."
+            }));
+        let result = evaluate(input).unwrap();
+        let transcript = result["passages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|passage| passage["kind"] == "transcript")
+            .unwrap();
+        assert_eq!(
+            transcript["text"],
+            "Me: The approved budget is fifty euros.\nZoë: I am Zoë. I will review the budget.\nUnknown speaker: An unknown participant."
+        );
+    }
+
+    #[test]
+    fn fixture_canonical_metadata_roundtrips_exact_duplicate_utterances() {
+        let duplicate = json!({
+            "start_ms":127,"end_ms":871,"speaker":"others","voice":2,
+            "text":"Exact  Zoë\ntext."
+        });
+        let mut input = fixture();
+        input["meetings"][0]["transcript"] = json!([duplicate.clone(), duplicate]);
+        let mut snapshots = Vec::new();
+        for _ in 0..2 {
+            let root = OwnedRoot::new().unwrap();
+            let store = MeetingStore::new(&root.0);
+            let meeting = serde_json::from_value(input["meetings"][0].clone()).unwrap();
+            write_fixture_meeting(&store, meeting).unwrap();
+            let reopened = MeetingStore::new(&root.0);
+            let snapshot = reopened.read_transcript_snapshot("fixture_en").unwrap();
+            assert_eq!(
+                snapshot.metadata_status,
+                crate::TranscriptMetadataStatus::Valid
+            );
+            assert_eq!(snapshot.revision, 1);
+            assert_eq!(snapshot.utterances.len(), 2);
+            assert_ne!(
+                snapshot.utterances[0].metadata.utterance_id,
+                snapshot.utterances[1].metadata.utterance_id
+            );
+            for row in &snapshot.utterances {
+                assert_eq!(row.segment.text, "Exact  Zoë\ntext.");
+                assert_eq!((row.segment.start_ms, row.segment.end_ms), (127, 871));
+                assert_eq!(row.metadata.source_id, None);
+                assert!(row.metadata.spans.is_empty());
+                assert_eq!(row.metadata.attribution.voices, vec![2]);
+            }
+            snapshots.push(snapshot);
+        }
+        assert_eq!(snapshots[0], snapshots[1]);
     }
 
     #[test]

@@ -1062,7 +1062,11 @@ impl pennel_core::SystemTranscriber for AppleTranscriber {
 #[cfg(target_os = "macos")]
 impl pennel_core::TimedSystemTranscriber for AppleTranscriber {
     fn transcribe_timed(
-        &self, samples: Vec<f32>, sample_rate: u32, language: Option<String>, vocabulary: Vec<String>,
+        &self,
+        samples: Vec<f32>,
+        sample_rate: u32,
+        language: Option<String>,
+        vocabulary: Vec<String>,
     ) -> Result<pennel_core::SpeechTranscript, pennel_core::PennelError> {
         macos::transcribe_timed(&samples, sample_rate, language.as_deref(), &vocabulary)
             .map_err(|message| pennel_core::PennelError::InvalidResponse { message })
