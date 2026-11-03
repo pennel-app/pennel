@@ -977,12 +977,17 @@ mod tests {
     impl crate::SystemTranscriber for FinalSpeech {
         fn transcribe(
             &self,
-            _: Vec<f32>,
+            samples: Vec<f32>,
             _: u32,
             _: Option<String>,
             _: Vec<String>,
         ) -> Result<String, PennelError> {
-            Ok("Finalized.".into())
+            Ok(if samples.len() <= 3 * SR {
+                "The room speaker proposes checking the documents."
+            } else {
+                "A remote participant asks about tomorrow."
+            }
+            .into())
         }
     }
 
@@ -1083,7 +1088,13 @@ mod tests {
             )
             .unwrap();
         for source in [Speaker::Me, Speaker::Others] {
-            session.push_audio_at(source, 0, tone(3.0)).unwrap();
+            session
+                .push_audio_at(
+                    source,
+                    0,
+                    tone(if source == Speaker::Me { 3.0 } else { 4.0 }),
+                )
+                .unwrap();
             let snapshot = session.preview_snapshot();
             assert!(session.publish_preview(
                 snapshot.session_id,
@@ -1111,6 +1122,20 @@ mod tests {
         let (revision, transcript, preview) = session.display_snapshot();
         assert_eq!(preview.transcript_revision, revision);
         assert_eq!(transcript.len(), 2);
+        assert!(
+            transcript
+                .iter()
+                .any(|segment| segment.speaker == Speaker::Me
+                    && segment.end_ms == 3_000
+                    && segment.text == "The room speaker proposes checking the documents.")
+        );
+        assert!(
+            transcript
+                .iter()
+                .any(|segment| segment.speaker == Speaker::Others
+                    && segment.end_ms == 4_000
+                    && segment.text == "A remote participant asks about tomorrow.")
+        );
         assert!(preview.tracks.iter().all(|track| track.text.is_empty()));
         fn inspect(path: &Path) {
             for entry in std::fs::read_dir(path).unwrap() {
