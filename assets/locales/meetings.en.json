@@ -185,5 +185,16 @@
   "meetings.workspace_composing": "Finish text composition before saving or sending.",
   "meetings.workspace_copy_notes": "Copy notes",
   "meetings.workspace_review_export": "Review and export",
-  "meetings.workspace_return": "Back to meeting workspace"
+  "meetings.workspace_return": "Back to meeting workspace",
+  "meetings.captions_title": "Interim captions",
+  "meetings.captions_microphone": "Microphone",
+  "meetings.captions_system": "Computer audio",
+  "meetings.captions_interim": "Interim · not saved",
+  "meetings.captions_disabled": "Live text is off. Finalized speech still appears in the transcript.",
+  "meetings.captions_warming": "Preparing live captions…",
+  "meetings.captions_listening": "Listening for speech…",
+  "meetings.captions_busy": "Live captions are paused while speech is processed.",
+  "meetings.captions_failed": "Live captions are unavailable. Finalized transcription continues.",
+  "meetings.captions_unsupported": "This provider returns completed chunks of 15–30 seconds.",
+  "meetings.captions_stopped": "Live captions have stopped."
 }

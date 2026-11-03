@@ -60,6 +60,28 @@ test("live fixture refuses mismatched acknowledged notes and cancels without del
   assert.equal(delivered, false);
 });
 
+test("two-track preview fixtures stay out of question evidence and reconcile only their own chunk", async () => {
+  const context = fixture("live-captions-wide", { configured_text_provider: true, live_question_manual: true });
+  const api = context.__PENNEL_PLATFORM__;
+  const control = context.__PENNEL_FIXTURE__.workspace;
+  control.preview("me", { text: "Provisional microphone sentinel", chunk_start_ms: 21000, start_ms: 21000, end_ms: 24000 });
+  control.preview("others", { text: "Provisional system sentinel", chunk_start_ms: 21000, start_ms: 21000, end_ms: 24000 });
+  const status = await api.invoke("meeting_status");
+  assert.equal(status.preview.tracks.length, 2);
+  assert.equal(status.preview.transcript_revision, status.transcript_revision);
+  const question = await api.invoke("begin_live_question", { requestId: "preview-question", meetingUid: status.meeting_uid,
+    sessionId: status.session_id, expectedNotesText: status.notes, question: "Use finalized evidence only", history: [] });
+  assert.equal(JSON.stringify(question).includes("sentinel"), false);
+  control.preview("me", { text: "Newer microphone sentinel", chunk_start_ms: 24000, start_ms: 24000, end_ms: 27000 });
+  control.finalizePreview("me", 21000, { start_ms: 21000, end_ms: 24000, speaker: "me", text: "Final microphone speech", failed: false, voice: null });
+  const after = await api.invoke("meeting_status");
+  assert.equal(after.preview.tracks.find(track => track.source === "me").text, "Newer microphone sentinel");
+  assert.equal(after.preview.tracks.find(track => track.source === "others").text, "Provisional system sentinel");
+  assert.equal(after.transcript.filter(segment => segment.text === "Final microphone speech").length, 1);
+  await api.invoke("stop_meeting");
+  assert.equal(JSON.stringify(await api.invoke("meeting_detail", { id: status.id })).includes("sentinel"), false);
+});
+
 test("saved-audio retranscription reports local progress and marks the summary outdated", async () => {
   const context=fixture("meeting-transcript",{saved_audio:true});
   const client=context.__PENNEL_PLATFORM__;

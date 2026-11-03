@@ -147,6 +147,7 @@ pub struct PennelEngine {
     cloud_session: Mutex<Option<Arc<Session>>>,
     meeting_gate: Mutex<()>,
     active_sessions: Mutex<Vec<Weak<MeetingSession>>>,
+    meeting_preview_priority: Mutex<usize>,
     pub(crate) meeting_jobs: Mutex<HashSet<String>>,
     pub(crate) retranscriptions:
         Mutex<HashMap<String, crate::retranscription::MeetingRetranscriptionStatus>>,
@@ -906,10 +907,13 @@ impl PennelEngine {
         let id = store.create(&title, chrono::Local::now())?;
         store.set_attendees(&id, &attendees)?;
         let session = MeetingSession::start(self.clone(), store, id, keys);
+        let priority = self.meeting_preview_priority.lock().unwrap();
+        session.set_preview_paused(*priority > 0);
         self.active_sessions
             .lock()
             .unwrap()
             .push(Arc::downgrade(&session));
+        drop(priority);
         Ok(session)
     }
 
@@ -2184,6 +2188,7 @@ impl PennelEngine {
             cloud_session: Mutex::new(None),
             meeting_gate: Mutex::new(()),
             active_sessions: Mutex::new(Vec::new()),
+            meeting_preview_priority: Mutex::new(0),
             meeting_jobs: Mutex::new(HashSet::new()),
             retranscriptions: Mutex::new(HashMap::new()),
             speaker_jobs: Mutex::new(HashMap::new()),
@@ -2205,6 +2210,36 @@ impl PennelEngine {
         engine.load_speaker_recognition_jobs()?;
         registry.insert(dir, Arc::downgrade(&engine));
         Ok(engine)
+    }
+
+    pub fn begin_meeting_preview_priority(&self) {
+        let mut priority = self.meeting_preview_priority.lock().unwrap();
+        *priority = priority.saturating_add(1);
+        for session in self
+            .active_sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(Weak::upgrade)
+        {
+            session.set_preview_paused(true);
+        }
+    }
+
+    pub fn end_meeting_preview_priority(&self) {
+        let mut priority = self.meeting_preview_priority.lock().unwrap();
+        *priority = priority.saturating_sub(1);
+        if *priority == 0 {
+            for session in self
+                .active_sessions
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(Weak::upgrade)
+            {
+                session.set_preview_paused(false);
+            }
+        }
     }
 
     fn has_active_session(&self) -> bool {
@@ -2429,7 +2464,27 @@ impl PennelEngine {
         samples: &[f32],
         cancel: &crate::local_engine::CancelToken,
     ) -> Result<Option<String>, PennelError> {
-        let Some((account, model)) = settings.resolve(&settings.dictation_stt) else {
+        self.preview_local_choice(settings, &settings.dictation_stt, samples, cancel, false)
+    }
+
+    pub(crate) fn preview_meeting_local(
+        &self,
+        settings: &Settings,
+        samples: &[f32],
+        cancel: &crate::local_engine::CancelToken,
+    ) -> Result<Option<String>, PennelError> {
+        self.preview_local_choice(settings, &settings.meeting_stt, samples, cancel, true)
+    }
+
+    fn preview_local_choice(
+        &self,
+        settings: &Settings,
+        choice: &ModelChoice,
+        samples: &[f32],
+        cancel: &crate::local_engine::CancelToken,
+        warm_only: bool,
+    ) -> Result<Option<String>, PennelError> {
+        let Some((account, model)) = settings.resolve(choice) else {
             return Err(PennelError::NotFound);
         };
         if account.kind != ProviderKind::Local {
@@ -2441,13 +2496,23 @@ impl PennelEngine {
             .path(&model)
             .ok_or(PennelError::ModelNotDownloaded)?;
         let vocabulary = capped_terms(&settings.dictionary, MAX_PROMPT_CHARS);
-        self.local.preview(
-            &path,
-            samples,
-            settings.language.as_deref(),
-            &vocabulary,
-            cancel,
-        )
+        if warm_only {
+            self.local.preview_warm(
+                &path,
+                samples,
+                settings.language.as_deref(),
+                &vocabulary,
+                cancel,
+            )
+        } else {
+            self.local.preview(
+                &path,
+                samples,
+                settings.language.as_deref(),
+                &vocabulary,
+                cancel,
+            )
+        }
     }
 
     pub(crate) fn transcribe_complete_local(

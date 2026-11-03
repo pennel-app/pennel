@@ -185,5 +185,16 @@
   "meetings.workspace_composing": "Rond je tekstinvoer af voor je opslaat of verstuurt.",
   "meetings.workspace_copy_notes": "Notities kopiëren",
   "meetings.workspace_review_export": "Bekijken en exporteren",
-  "meetings.workspace_return": "Terug naar de meetingwerkruimte"
+  "meetings.workspace_return": "Terug naar de meetingwerkruimte",
+  "meetings.captions_title": "Voorlopige ondertiteling",
+  "meetings.captions_microphone": "Microfoon",
+  "meetings.captions_system": "Computeraudio",
+  "meetings.captions_interim": "Voorlopig · niet bewaard",
+  "meetings.captions_disabled": "Live tekst staat uit. Definitieve spraak verschijnt nog in het transcript.",
+  "meetings.captions_warming": "Live ondertiteling wordt voorbereid…",
+  "meetings.captions_listening": "Luisteren naar spraak…",
+  "meetings.captions_busy": "Live ondertiteling is gepauzeerd terwijl spraak wordt verwerkt.",
+  "meetings.captions_failed": "Live ondertiteling is niet beschikbaar. Definitieve transcriptie gaat door.",
+  "meetings.captions_unsupported": "Deze provider geeft verwerkte spraakblokken van 15–30 seconden terug.",
+  "meetings.captions_stopped": "Live ondertiteling is gestopt."
 }

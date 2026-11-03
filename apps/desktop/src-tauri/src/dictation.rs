@@ -215,13 +215,22 @@ impl<T> Drop for CountedWork<T> {
 
 pub struct DictationJob {
     _pending: CountedWork<Arc<Shared>>,
+    preview_priority: Arc<pennel_core::PennelEngine>,
 }
 
 impl DictationJob {
     fn new(shared: Arc<Shared>) -> Self {
+        shared.engine.begin_meeting_preview_priority();
         Self {
+            preview_priority: shared.engine.clone(),
             _pending: CountedWork::new(shared, |shared| &shared.dictation_jobs),
         }
+    }
+}
+
+impl Drop for DictationJob {
+    fn drop(&mut self) {
+        self.preview_priority.end_meeting_preview_priority();
     }
 }
 
@@ -240,6 +249,7 @@ impl CaptureActivity {
             shared.dictation_active.store(false, Ordering::SeqCst);
             return None;
         }
+        shared.engine.begin_meeting_preview_priority();
         Some(Self(shared))
     }
 }
@@ -247,6 +257,7 @@ impl CaptureActivity {
 impl Drop for CaptureActivity {
     fn drop(&mut self) {
         self.0.dictation_active.store(false, Ordering::SeqCst);
+        self.0.engine.end_meeting_preview_priority();
     }
 }
 
@@ -1682,6 +1693,58 @@ mod tests {
         settings.mode = pennel_core::DictationMode::Fast;
         engine.update_settings(settings).unwrap();
         (directory, engine)
+    }
+
+    #[test]
+    fn meeting_previews_remain_paused_until_capture_and_every_dictation_job_exit() {
+        let directory = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(directory.path().join("preview"));
+        let mut settings = shared.settings();
+        settings.providers.push(pennel_core::ProviderAccount {
+            id: "apple-preview-priority".into(),
+            kind: pennel_core::ProviderKind::AppleSpeech,
+            name: "Apple".into(),
+            base_url: String::new(),
+        });
+        settings.meeting_stt = pennel_core::ModelChoice {
+            provider_id: "apple-preview-priority".into(),
+            model: "system".into(),
+        };
+        shared.engine.update_settings(settings).unwrap();
+        let session = shared
+            .engine
+            .clone()
+            .start_meeting(
+                "Priority fixture".into(),
+                pennel_core::ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        let capture = CaptureActivity::begin(shared.clone()).unwrap();
+        let first = DictationJob::new(shared.clone());
+        let second = DictationJob::new(shared.clone());
+        let busy = || {
+            session
+                .preview_snapshot()
+                .tracks
+                .iter()
+                .all(|track| track.state == pennel_core::MeetingPreviewState::Busy)
+        };
+        assert!(busy());
+        drop(capture);
+        assert!(busy());
+        drop(first);
+        assert!(busy());
+        drop(second);
+        assert!(
+            session
+                .preview_snapshot()
+                .tracks
+                .iter()
+                .all(|track| track.state == pennel_core::MeetingPreviewState::Warming)
+        );
+        session.stop().unwrap();
     }
 
     #[test]

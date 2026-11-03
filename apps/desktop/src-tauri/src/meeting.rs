@@ -163,6 +163,248 @@ impl Drop for MacCaptureMonitor {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+#[derive(Default)]
+struct ApplePreviewPending {
+    tracks: [Option<pennel_core::MeetingPreviewAudio>; 2],
+    next: usize,
+    stopped: bool,
+    reset: bool,
+}
+
+#[cfg(any(target_os = "macos", test))]
+enum ApplePreviewDispatch {
+    Audio(pennel_core::MeetingPreviewAudio),
+    Reset,
+}
+
+#[cfg(any(target_os = "macos", test))]
+#[derive(Default)]
+struct ApplePreviewQueue {
+    pending: Mutex<ApplePreviewPending>,
+    ready: std::sync::Condvar,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl ApplePreviewQueue {
+    fn push(&self, audio: pennel_core::MeetingPreviewAudio) {
+        // Optional previews never back-pressure the authoritative ingestion path.
+        let Ok(mut pending) = self.pending.try_lock() else {
+            return;
+        };
+        if pending.stopped || audio.samples.is_empty() || audio.samples.len() > 6 * 16_000 {
+            return;
+        }
+        let index = usize::from(audio.source == Speaker::Others);
+        pending.tracks[index] = Some(audio);
+        self.ready.notify_one();
+    }
+
+    fn next(&self) -> Option<ApplePreviewDispatch> {
+        let mut pending = self.pending.lock().unwrap();
+        loop {
+            if pending.stopped {
+                return None;
+            }
+            if std::mem::take(&mut pending.reset) {
+                return Some(ApplePreviewDispatch::Reset);
+            }
+            for offset in 0..2 {
+                let index = (pending.next + offset) % 2;
+                if let Some(audio) = pending.tracks[index].take() {
+                    pending.next = (index + 1) % 2;
+                    return Some(ApplePreviewDispatch::Audio(audio));
+                }
+            }
+            pending = self.ready.wait(pending).unwrap();
+        }
+    }
+
+    fn reset(&self) {
+        let mut pending = self.pending.lock().unwrap();
+        pending.tracks = [None, None];
+        pending.reset = true;
+        self.ready.notify_one();
+    }
+
+    fn stop(&self) {
+        let mut pending = self.pending.lock().unwrap();
+        pending.stopped = true;
+        pending.tracks = [None, None];
+        self.ready.notify_all();
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl pennel_core::MeetingPreviewAudioObserver for ApplePreviewQueue {
+    fn audio(&self, audio: pennel_core::MeetingPreviewAudio) {
+        self.push(audio);
+    }
+
+    fn reset(&self) {
+        ApplePreviewQueue::reset(self);
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct AppleMeetingPreview {
+    session: Arc<MeetingSession>,
+    queue: Arc<ApplePreviewQueue>,
+}
+
+#[cfg(target_os = "macos")]
+impl AppleMeetingPreview {
+    fn start(session: Arc<MeetingSession>) -> Option<Self> {
+        use pennel_core::{MeetingPreviewMode, MeetingPreviewState};
+
+        let snapshot = session.preview_snapshot();
+        if !snapshot.tracks.iter().any(|track| {
+            track.mode == MeetingPreviewMode::System && track.state != MeetingPreviewState::Disabled
+        }) {
+            return None;
+        }
+        let queue = Arc::new(ApplePreviewQueue::default());
+        let worker_queue = queue.clone();
+        let worker_session = session.clone();
+        let language = session.recognition_config().language;
+        let vocabulary = session.preview_vocabulary();
+        let worker = std::thread::Builder::new()
+            .name("pennel-meeting-preview".into())
+            .spawn(move || {
+                let mut services: [Option<crate::macos::AppleSpeechPreview>; 2] = [None, None];
+                let mut epochs: [Option<(u64, u64)>; 2] = [None, None];
+                let busy: [Arc<AtomicBool>; 2] =
+                    std::array::from_fn(|_| Arc::new(AtomicBool::new(false)));
+                let mut last_attempt = [0; 2];
+                while let Some(dispatch) = worker_queue.next() {
+                    let audio = match dispatch {
+                        ApplePreviewDispatch::Audio(audio) => audio,
+                        ApplePreviewDispatch::Reset => {
+                            for service in services.iter_mut().filter_map(Option::take) {
+                                service.stop();
+                            }
+                            epochs = [None, None];
+                            continue;
+                        }
+                    };
+                    let index = usize::from(audio.source == Speaker::Others);
+                    let epoch = (audio.epoch, audio.chunk_start_ms);
+                    if epochs[index] != Some(epoch)
+                        || (busy[index].load(Ordering::SeqCst)
+                            && audio.start_ms.saturating_sub(last_attempt[index]) >= 3_000)
+                    {
+                        if let Some(service) = services[index].take() {
+                            service.stop();
+                        }
+                        epochs[index] = Some(epoch);
+                        last_attempt[index] = audio.start_ms;
+                        busy[index].store(false, Ordering::SeqCst);
+                        let callback_busy = busy[index].clone();
+                        let callback_session = worker_session.clone();
+                        let session_id = audio.session_id.clone();
+                        let source = audio.source;
+                        let callback_epoch = audio.epoch;
+                        let chunk_start_ms = audio.chunk_start_ms;
+                        services[index] = crate::macos::AppleSpeechPreview::start_timed(
+                            language.as_deref(),
+                            &vocabulary,
+                            move |event| match event {
+                                crate::macos::AppleSpeechPreviewEvent::Fragment {
+                                    start_ms,
+                                    end_ms,
+                                    text,
+                                    ..
+                                } => {
+                                    callback_session.publish_preview(
+                                        session_id.clone(),
+                                        source,
+                                        callback_epoch,
+                                        chunk_start_ms,
+                                        start_ms,
+                                        end_ms,
+                                        text,
+                                    );
+                                }
+                                crate::macos::AppleSpeechPreviewEvent::Status {
+                                    status,
+                                    reason,
+                                } => {
+                                    use crate::macos::AppleSpeechPreviewStatus;
+                                    let state = match status {
+                                        AppleSpeechPreviewStatus::Warming => {
+                                            MeetingPreviewState::Warming
+                                        }
+                                        AppleSpeechPreviewStatus::Ready => {
+                                            MeetingPreviewState::Ready
+                                        }
+                                        AppleSpeechPreviewStatus::Unavailable
+                                            if reason.as_deref() == Some("busy") =>
+                                        {
+                                            callback_busy.store(true, Ordering::SeqCst);
+                                            MeetingPreviewState::Busy
+                                        }
+                                        AppleSpeechPreviewStatus::Unavailable => {
+                                            MeetingPreviewState::Unsupported
+                                        }
+                                        AppleSpeechPreviewStatus::Failed => {
+                                            MeetingPreviewState::Failed
+                                        }
+                                    };
+                                    callback_session.set_preview_state(
+                                        session_id.clone(),
+                                        source,
+                                        callback_epoch,
+                                        state,
+                                    );
+                                }
+                            },
+                        )
+                        .ok();
+                        if services[index].is_none() {
+                            worker_session.set_preview_state(
+                                audio.session_id.clone(),
+                                audio.source,
+                                audio.epoch,
+                                MeetingPreviewState::Failed,
+                            );
+                        }
+                    }
+                    if let Some(service) = &services[index] {
+                        service.feed_at(&audio.samples, audio.start_ms);
+                    }
+                }
+                for service in services.into_iter().flatten() {
+                    service.stop();
+                }
+            });
+        if worker.is_err() {
+            for track in snapshot.tracks {
+                session.set_preview_state(
+                    snapshot.session_id.clone(),
+                    track.source,
+                    track.epoch,
+                    MeetingPreviewState::Failed,
+                );
+            }
+            return None;
+        }
+        session.set_preview_audio_observer(Some(queue.clone()));
+        Some(Self { session, queue })
+    }
+
+    fn stop(&self) {
+        self.session.set_preview_audio_observer(None);
+        self.queue.stop();
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for AppleMeetingPreview {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct RecordingFinish {
     pub duration_ms: u64,
@@ -180,6 +422,8 @@ pub struct MeetingRecorder {
     quiescence_probe: Option<Arc<AtomicBool>>,
     #[cfg(target_os = "macos")]
     native: Option<MacCaptureMonitor>,
+    #[cfg(target_os = "macos")]
+    preview: Option<AppleMeetingPreview>,
     #[cfg(not(target_os = "macos"))]
     mic: Option<Microphone>,
     #[cfg(not(target_os = "macos"))]
@@ -597,6 +841,7 @@ impl MeetingRecorder {
         let system_path = track_path(Speaker::Others)?;
         #[cfg(target_os = "macos")]
         {
+            let preview = AppleMeetingPreview::start(session.clone());
             let heard_system = Arc::new(AtomicBool::new(false));
             let heard = heard_system.clone();
             let sink = session.clone();
@@ -636,6 +881,7 @@ impl MeetingRecorder {
                 #[cfg(test)]
                 quiescence_probe: None,
                 native: Some(native),
+                preview,
                 has_system,
                 dictating_since: Mutex::new(None),
                 heard_system,
@@ -916,6 +1162,8 @@ impl MeetingRecorder {
             quiescence_probe: Some(probe),
             #[cfg(target_os = "macos")]
             native: None,
+            #[cfg(target_os = "macos")]
+            preview: None,
             #[cfg(not(target_os = "macos"))]
             mic: None,
             #[cfg(not(target_os = "macos"))]
@@ -959,6 +1207,11 @@ impl MeetingRecorder {
         }
         let duration = self.started.elapsed().as_millis() as u64;
         self.quiescent_ms = Some(duration);
+        self.session.stop_preview();
+        #[cfg(target_os = "macos")]
+        if let Some(preview) = self.preview.take() {
+            preview.stop();
+        }
         #[cfg(test)]
         if let Some(probe) = &self.quiescence_probe {
             probe.store(true, Ordering::SeqCst);
@@ -1050,6 +1303,97 @@ impl MeetingRecorder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn preview_audio(source: Speaker, start_ms: u64) -> pennel_core::MeetingPreviewAudio {
+        pennel_core::MeetingPreviewAudio {
+            session_id: "preview-session".into(),
+            source,
+            epoch: 2,
+            chunk_start_ms: 0,
+            start_ms,
+            samples: vec![0.1; 160],
+        }
+    }
+
+    #[test]
+    fn apple_preview_queue_replaces_each_track_independently_and_alternates_sources() {
+        let queue = ApplePreviewQueue::default();
+        queue.push(preview_audio(Speaker::Me, 0));
+        queue.push(preview_audio(Speaker::Others, 10));
+        queue.push(preview_audio(Speaker::Me, 20));
+        let Some(ApplePreviewDispatch::Audio(first)) = queue.next() else {
+            panic!()
+        };
+        assert_eq!((first.source, first.start_ms), (Speaker::Me, 20));
+        queue.push(preview_audio(Speaker::Me, 30));
+        let Some(ApplePreviewDispatch::Audio(second)) = queue.next() else {
+            panic!()
+        };
+        assert_eq!((second.source, second.start_ms), (Speaker::Others, 10));
+        let Some(ApplePreviewDispatch::Audio(third)) = queue.next() else {
+            panic!()
+        };
+        assert_eq!((third.source, third.start_ms), (Speaker::Me, 30));
+        queue.stop();
+        assert!(queue.next().is_none());
+    }
+
+    #[test]
+    fn apple_preview_reset_drops_queued_audio_and_stop_does_not_wait_for_analyzer_work() {
+        let queue = Arc::new(ApplePreviewQueue::default());
+        queue.push(preview_audio(Speaker::Me, 0));
+        queue.reset();
+        assert!(matches!(queue.next(), Some(ApplePreviewDispatch::Reset)));
+        queue.push(preview_audio(Speaker::Others, 10));
+        let (entered, ready) = std::sync::mpsc::channel();
+        let (release, waiting) = std::sync::mpsc::channel();
+        let worker_queue = queue.clone();
+        let worker = std::thread::spawn(move || {
+            assert!(matches!(
+                worker_queue.next(),
+                Some(ApplePreviewDispatch::Audio(_))
+            ));
+            entered.send(()).unwrap();
+            waiting
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            assert!(worker_queue.next().is_none());
+        });
+        ready
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        queue.push(preview_audio(Speaker::Me, 20));
+        queue.stop();
+        assert!(
+            queue
+                .pending
+                .lock()
+                .unwrap()
+                .tracks
+                .iter()
+                .all(Option::is_none)
+        );
+        release.send(()).unwrap();
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn oversized_optional_apple_packets_are_refused_without_entering_the_queue() {
+        let queue = ApplePreviewQueue::default();
+        let mut oversized = preview_audio(Speaker::Me, 0);
+        oversized.samples = vec![0.1; 6 * 16_000 + 1];
+        queue.push(oversized);
+        assert!(
+            queue
+                .pending
+                .lock()
+                .unwrap()
+                .tracks
+                .iter()
+                .all(Option::is_none)
+        );
+        queue.stop();
+    }
 
     #[test]
     fn both_capture_sources_are_signalled_before_joining_and_one_failure_does_not_skip_the_other() {

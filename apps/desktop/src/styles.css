@@ -773,6 +773,11 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 .live-workspace .live-transcript { flex: 1; min-height: 0; max-height: none; margin: 0; overflow: auto; scroll-behavior: auto; }
 .live-workspace .transcript-line { padding: 10px 4px; overflow-wrap: anywhere; }
 .live-workspace .transcript-copy { min-width: 0; white-space: pre-wrap; }
+.live-captions { flex: 0 1 auto; min-height: 0; max-height: 35%; overflow: auto; border-top: 1px solid var(--border); padding-top: 6px; }
+.live-caption { padding: 4px; min-width: 0; }
+.live-caption-heading { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: space-between; color: var(--muted); font-size: var(--font-label); }
+.live-caption-interim, .live-caption-state { color: var(--muted); font-size: var(--font-label); }
+.live-caption-copy { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .live-source-highlight { background: var(--selection); outline: 2px solid var(--focus-ring); outline-offset: -2px; border-radius: 6px; }
 .live-question-scope, .live-source-assessment { flex-shrink: 0; margin: 0; }
 .live-workspace .live-question-history { flex: 1; min-height: 0; overflow: auto; padding: 0 4px; }

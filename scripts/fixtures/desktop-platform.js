@@ -74,7 +74,7 @@
     meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", meeting_audio_retention_days: 30,
     app_rules: [], calendar_rules: [], event_rules: [], calendar_enabled: false, echo_cancellation: true,
     record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), speaker_recognition: options.speaker_mode || "local",
-    appearance: options.appearance, dictation_pad_auto_paste: false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
+    appearance: options.appearance, dictation_pad_auto_paste: false, live_text_enabled: options.live_text_enabled !== false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
     onboarding: { version: 1, status: options.onboarding_status || (options.window === "onboarding" ? "pending" : options.shortcut_denied ? "skipped" : "completed"), resume_step: options.step || "welcome", goal: options.goal || "dictation" },
   };
   if (options.cleanup_connection) {
@@ -209,6 +209,12 @@
   const liveRequests = new Map();
   let meetingUid = "qa-meeting-stable-uid";
   let liveSession = "qa-recording";
+  let previewRevision = 1;
+  const previewTracks = ["me", "others"].map(source => ({ source, revision: 1, epoch: 0,
+    chunk_start_ms: 21000, start_ms: 21000, end_ms: 24000, text: "", mode: "local", state: settings.live_text_enabled ? "ready" : "disabled",
+    ...clone(options.caption_tracks?.find(track => track.source === source) || {}) }));
+  const previewSnapshot = () => ({ session_id: `preview-${liveSession}`, revision: previewRevision,
+    transcript_revision: transcriptRevision, tracks: clone(previewTracks) });
   let activeMeetingId = meetingId;
   const retainedMeetings = new Map();
   const storedTranscript = segments => segments.map(segment => ({ ...segment, end_ms: segment.start_ms,
@@ -236,6 +242,7 @@
       transcription_warning: paused ? "Transcriptie is tijdelijk gepauzeerd. Je audio en herstelbestanden blijven lokaal bewaard." : null,
       terminal_error: storageError ? "De opname is gestopt omdat bewaren niet lukt." : null, can_retry_persistence: storageError,
       pending: storageError ? 1 : paused ? 3 : 0, transcript_revision: retained ? transcriptRevision : 0,
+      ...(retained && options.live_captions ? { preview: previewSnapshot() } : {}),
       ...(includeContent ? { notes, transcript: retained ? clone(transcript) : [] } : {}),
       ...(retained ? { recognition: { provider_kind: "local", provider_name: "Lokaal", model: settings.meeting_stt.model, language: "nl" } } : {}),
     };
@@ -606,6 +613,16 @@
   });
   globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace,
     workspace: { append: segment => { transcript.push(clone(segment)); transcriptRevision++; },
+      preview: (source, update) => {
+        const track = previewTracks.find(track => track.source === source);
+        if (!track) throw new Error("Unknown synthetic preview source");
+        Object.assign(track, clone(update), { source, revision: ++previewRevision });
+      },
+      finalizePreview: (source, chunkStart, segment) => {
+        transcript.push(clone(segment)); transcriptRevision++;
+        const track = previewTracks.find(track => track.source === source);
+        if (track?.chunk_start_ms === chunkStart) { track.text = ""; track.revision = ++previewRevision; }
+      },
       requests: () => [...liveRequests.values()].map(request => clone(request.snapshot)), complete: completeLiveQuestion,
       forceComplete: requestId => completeLiveQuestion(requestId, true),
       replaceTranscript: segments => { transcript.splice(0, transcript.length, ...clone(segments)); transcriptRevision++; },
@@ -614,6 +631,8 @@
         activeMeetingId = next.id; meetingUid = next.uid; liveSession = next.session; meeting.title = next.title;
         notes = next.notes ?? ""; transcript.splice(0, transcript.length, ...clone(next.transcript ?? []));
         transcriptRevision = 1; recordingStopped = false; recordingRecovered = false;
+        previewRevision = 1;
+        for (const track of previewTracks) Object.assign(track, { revision: 1, epoch: 0, chunk_start_ms: 0, start_ms: 0, end_ms: 0, text: "", state: settings.live_text_enabled ? "ready" : "disabled" });
         return { id: activeMeetingId, meeting_uid: meetingUid, session_id: liveSession, notes };
       },
       failSaves: value => { saveFailure = value; }, notes: () => notes, recording: () => meetingStatus().recording } };

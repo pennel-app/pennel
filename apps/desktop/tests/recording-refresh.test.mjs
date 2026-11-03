@@ -8,6 +8,11 @@ const metadata = (revision = 1, changes = {}) => {
   const { notes, transcript, ...runtime } = snapshot(revision, changes);
   return runtime;
 };
+const preview = (revision, transcriptRevision = 1, text = "Provisional speech") => ({
+  session_id: "preview-session", revision, transcript_revision: transcriptRevision,
+  tracks: [{ source: "me", revision, chunk_start_ms: 300, start_ms: 300, end_ms: 900,
+    text, mode: "local", state: "ready" }],
+});
 function deferred() {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
@@ -84,4 +89,46 @@ test("stable UID and session permit a folder rename without replacing the transc
   assert.equal(renamed.id, "renamed");
   assert.equal(renamed.transcript, initial.transcript);
   assert.equal(await refresh.refresh(metadata(2, { meeting_uid: "other", id: "renamed" }), async () => snapshot(2)), null);
+});
+
+test("preview-only revisions retain content without loading the finalized transcript", async () => {
+  const initial = snapshot(1, { preview: preview(1) });
+  const refresh = new RecordingRefresh(initial);
+  const next = await refresh.refresh(metadata(1, { preview: preview(2, 1, "Updated provisional speech") }), () => { throw Error("unexpected read"); });
+  assert.equal(next.transcript, initial.transcript);
+  assert.equal(next.notes, initial.notes);
+  assert.equal(next.preview.revision, 2);
+  assert.equal(next.preview.tracks[0].text, "Updated provisional speech");
+});
+
+test("a full finalized snapshot never regains an older runtime provisional line", async () => {
+  const refresh = new RecordingRefresh(snapshot(1, { preview: preview(2) }));
+  const next = await refresh.refresh(metadata(2, { preview: preview(3, 2, "Earlier partial") }), async () =>
+    snapshot(3, { transcript: [segment, { ...segment, start_ms: 300, text: "Finalized speech" }], preview: preview(4, 3, "") }));
+  assert.equal(next.transcript_revision, 3);
+  assert.equal(next.preview.revision, 4);
+  assert.equal(next.preview.tracks[0].text, "");
+  const stale = await refresh.refresh(metadata(2, { preview: preview(3, 2, "Earlier partial") }), () => { throw Error("unexpected read"); });
+  assert.equal(stale.transcript_revision, 3);
+  assert.equal(stale.preview.revision, 4);
+});
+
+test("lagging transcript reads retain their own atomic preview and retry the remaining revision", async () => {
+  const refresh = new RecordingRefresh(snapshot(1, { preview: preview(2) }));
+  const next = await refresh.refresh(metadata(3, { preview: preview(5, 3, "Next chunk") }), async () =>
+    snapshot(2, { preview: preview(4, 2, "") }));
+  assert.equal(next.transcript_revision, 2);
+  assert.equal(next.preview.revision, 4);
+  const caughtUp = await refresh.refresh(metadata(3, { preview: preview(5, 3, "Next chunk") }), async () =>
+    snapshot(3, { preview: preview(5, 3, "Next chunk") }));
+  assert.equal(caughtUp.preview.tracks[0].text, "Next chunk");
+});
+
+test("older, incompatible and foreign preview snapshots cannot replace the current line", async () => {
+  const refresh = new RecordingRefresh(snapshot(1, { preview: preview(4) }));
+  for (const incoming of [preview(3), preview(5, 2), { ...preview(5), session_id: "another-preview" }]) {
+    const next = await refresh.refresh(metadata(1, { preview: incoming }), () => { throw Error("unexpected read"); });
+    assert.equal(next.preview.revision, 4);
+    assert.equal(next.preview.session_id, "preview-session");
+  }
 });

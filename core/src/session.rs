@@ -8,6 +8,10 @@ use std::time::Duration;
 use crate::chunker::{Chunk, Chunker};
 use crate::engine::{ApiKeys, PennelEngine};
 use crate::error::PennelError;
+use crate::meeting_preview::{
+    LocalPreviewQueue, MeetingPreviewAudio, MeetingPreviewAudioObserver, MeetingPreviewMode,
+    MeetingPreviewSnapshot, MeetingPreviewState, PreviewDisplay,
+};
 use crate::meetings::{MeetingStore, Segment, Speaker};
 use crate::provider::ProviderKind;
 use crate::settings::Settings;
@@ -79,6 +83,7 @@ impl StoredJob {
 
 #[derive(Default)]
 struct Progress {
+    preview: PreviewDisplay,
     segments: Vec<Segment>,
     dictations: Vec<(u64, u64)>,
     pending: u32,
@@ -207,6 +212,11 @@ pub struct MeetingSession {
     id: String,
     store: MeetingStore,
     recognition: MeetingRecognition,
+    preview_vocabulary: Vec<String>,
+    preview_observer: Mutex<Option<Arc<dyn MeetingPreviewAudioObserver>>>,
+    preview_local: Option<Arc<LocalPreviewQueue>>,
+    preview_worker: Mutex<Option<JoinHandle<()>>>,
+    preview_paused: AtomicBool,
     chunkers: Mutex<[Chunker; 2]>,
     pushed_samples: Mutex<[u64; 2]>,
     dictating: AtomicBool,
@@ -240,7 +250,87 @@ impl MeetingSession {
         let recognition = MeetingRecognition::from_settings(&settings);
         let (sender, receiver) = mpsc::sync_channel::<Job>(INGRESS_CAPACITY);
         let (stored_sender, stored_receiver) = mpsc::channel::<StoredJob>();
-        let progress = Arc::new(Mutex::new(Progress::default()));
+        let progress = Arc::new(Mutex::new(Progress {
+            preview: PreviewDisplay::new(recognition.provider_kind, settings.live_text_enabled),
+            ..Default::default()
+        }));
+        let preview_vocabulary = crate::system_stt::bounded_vocabulary(&settings.dictionary);
+        let preview_local = (settings.live_text_enabled
+            && recognition.provider_kind == Some(ProviderKind::Local))
+        .then(|| Arc::new(LocalPreviewQueue::default()));
+        let preview_worker = preview_local.as_ref().map(|queue| {
+            let queue = queue.clone();
+            let progress = progress.clone();
+            let engine = Arc::downgrade(&engine);
+            let settings = settings.clone();
+            std::thread::spawn(move || {
+                while let Some(audio) = queue.next() {
+                    let session_id = {
+                        let progress = progress.lock().unwrap();
+                        let snapshot = progress.preview.snapshot(progress.revision);
+                        let track = &snapshot.tracks[index(audio.source)];
+                        if progress.pending > 0
+                            || track.epoch != audio.epoch
+                            || matches!(
+                                track.state,
+                                MeetingPreviewState::Busy | MeetingPreviewState::Stopped
+                            )
+                            || audio.cancel.is_cancelled()
+                        {
+                            queue.finished();
+                            continue;
+                        }
+                        snapshot.session_id
+                    };
+                    if let Some(engine) = engine.upgrade() {
+                        let result = if crate::speech::has_speech(&audio.samples, SAMPLE_RATE) {
+                            engine.preview_meeting_local(&settings, &audio.samples, &audio.cancel)
+                        } else {
+                            Ok(None)
+                        };
+                        if !audio.cancel.is_cancelled() {
+                            let mut progress = progress.lock().unwrap();
+                            let excluded = audio.source == Speaker::Me
+                                && progress.dictations.iter().any(|(start, end)| {
+                                    audio.start_ms < *end && audio.end_ms > *start
+                                });
+                            match result {
+                                _ if excluded => {}
+                                Ok(Some(text)) if !is_hallucination(&text) => {
+                                    progress.preview.publish(
+                                        &session_id,
+                                        audio.source,
+                                        audio.epoch,
+                                        audio.chunk_start_ms,
+                                        audio.start_ms,
+                                        audio.end_ms,
+                                        &text,
+                                    );
+                                }
+                                Ok(_) => {
+                                    progress.preview.state(
+                                        &session_id,
+                                        audio.source,
+                                        audio.epoch,
+                                        MeetingPreviewState::Warming,
+                                    );
+                                }
+                                Err(PennelError::Cancelled) => {}
+                                Err(_) => {
+                                    progress.preview.state(
+                                        &session_id,
+                                        audio.source,
+                                        audio.epoch,
+                                        MeetingPreviewState::Failed,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    queue.finished();
+                }
+            })
+        });
         let terminal = Arc::new(AtomicBool::new(false));
         let root = store.root();
         let spool_progress = progress.clone();
@@ -305,6 +395,9 @@ impl MeetingSession {
                 };
                 {
                     let mut progress = worker_progress.lock().unwrap();
+                    progress
+                        .preview
+                        .complete(segment.speaker, segment.start_ms, segment.end_ms);
                     if !segment.failed {
                         progress.cleanup.push(job.path);
                     }
@@ -323,6 +416,11 @@ impl MeetingSession {
             id,
             store,
             recognition,
+            preview_vocabulary,
+            preview_observer: Mutex::new(None),
+            preview_local,
+            preview_worker: Mutex::new(preview_worker),
+            preview_paused: AtomicBool::new(false),
             chunkers: Mutex::new([Chunker::new(SAMPLE_RATE), Chunker::new(SAMPLE_RATE)]),
             pushed_samples: Mutex::new([0, 0]),
             dictating: AtomicBool::new(false),
@@ -340,6 +438,11 @@ impl MeetingSession {
     }
 
     fn enqueue(&self, speaker: Speaker, chunks: Vec<Chunk>) -> Result<(), PennelError> {
+        if !chunks.is_empty()
+            && let Some(preview) = &self.preview_local
+        {
+            preview.preempt();
+        }
         let sender = self.sender.lock().unwrap();
         let mut failure = false;
         for chunk in chunks {
@@ -429,15 +532,62 @@ impl MeetingSession {
         let chunker = &mut chunkers[index(speaker)];
         let mut chunks: Vec<Chunk> = chunker.skip_to(start).into_iter().collect();
         let audio = &samples[overlap..];
-        if speaker == Speaker::Me && self.dictating.load(Ordering::SeqCst) {
+        let suppressed = speaker == Speaker::Me && self.dictating.load(Ordering::SeqCst);
+        if suppressed {
             chunks.extend(chunker.push(&vec![0.0; audio.len()]));
         } else {
             chunks.extend(chunker.push(audio));
         }
+        let chunk_start_ms = chunker.current_start_ms();
+        let current_start = chunker.current_start_sample();
+        let audio_start = end - audio.len() as u64;
+        let tail_offset = current_start
+            .saturating_sub(audio_start)
+            .min(audio.len() as u64) as usize;
+        let preview_start = audio_start + tail_offset as u64;
+        let preview_audio = &audio[tail_offset..];
         *count = end;
         drop(chunkers);
         drop(counters);
-        self.enqueue(speaker, chunks)
+        self.enqueue(speaker, chunks)?;
+        let (update, allows_audio) = {
+            let mut progress = self.progress.lock().unwrap();
+            progress.preview.advance(
+                speaker,
+                chunk_start_ms,
+                preview_start * 1000 / u64::from(SAMPLE_RATE),
+                end * 1000 / u64::from(SAMPLE_RATE),
+            );
+            (
+                progress.preview.snapshot(progress.revision),
+                progress.preview.allows_audio(speaker),
+            )
+        };
+        let track = &update.tracks[index(speaker)];
+        if !suppressed && !preview_audio.is_empty() && allows_audio {
+            if let Some(local) = &self.preview_local {
+                local.feed(
+                    speaker,
+                    track.epoch,
+                    chunk_start_ms,
+                    preview_start,
+                    preview_audio,
+                );
+            }
+            if track.mode == MeetingPreviewMode::System
+                && let Some(observer) = self.preview_observer.lock().unwrap().clone()
+            {
+                observer.audio(MeetingPreviewAudio {
+                    session_id: update.session_id,
+                    source: speaker,
+                    epoch: track.epoch,
+                    chunk_start_ms,
+                    start_ms: preview_start * 1000 / u64::from(SAMPLE_RATE),
+                    samples: preview_audio.to_vec(),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn persist_final(&self) -> Result<(), PennelError> {
@@ -499,10 +649,116 @@ impl MeetingSession {
         let progress = self.progress.lock().unwrap();
         (progress.revision, progress.visible())
     }
+
+    pub fn display_snapshot(&self) -> (u64, Vec<Segment>, MeetingPreviewSnapshot) {
+        let progress = self.progress.lock().unwrap();
+        (
+            progress.revision,
+            progress.visible(),
+            progress.preview.snapshot(progress.revision),
+        )
+    }
+
+    pub fn preview_status_snapshot(&self) -> (u64, MeetingPreviewSnapshot) {
+        let progress = self.progress.lock().unwrap();
+        (
+            progress.revision,
+            progress.preview.snapshot(progress.revision),
+        )
+    }
+
+    pub fn set_preview_audio_observer(
+        &self,
+        observer: Option<Arc<dyn MeetingPreviewAudioObserver>>,
+    ) {
+        *self.preview_observer.lock().unwrap() = observer;
+    }
+
+    pub fn set_preview_paused(&self, paused: bool) {
+        let _ingestion = self.ingestion.lock().unwrap();
+        self.preview_paused.store(paused, Ordering::SeqCst);
+        self.update_preview_pause();
+    }
+
+    fn update_preview_pause(&self) {
+        let paused =
+            self.preview_paused.load(Ordering::SeqCst) || self.dictating.load(Ordering::SeqCst);
+        self.progress.lock().unwrap().preview.pause(paused);
+        if let Some(local) = &self.preview_local {
+            local.pause(paused);
+        }
+        if paused && let Some(observer) = self.preview_observer.lock().unwrap().clone() {
+            observer.reset();
+        }
+    }
 }
 
 #[uniffi::export]
 impl MeetingSession {
+    pub fn preview_snapshot(&self) -> MeetingPreviewSnapshot {
+        let progress = self.progress.lock().unwrap();
+        progress.preview.snapshot(progress.revision)
+    }
+
+    pub fn preview_vocabulary(&self) -> Vec<String> {
+        self.preview_vocabulary.clone()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn publish_preview(
+        &self,
+        session_id: String,
+        source: Speaker,
+        epoch: u64,
+        chunk_start_ms: u64,
+        start_ms: u64,
+        end_ms: u64,
+        text: String,
+    ) -> bool {
+        let mut progress = self.progress.lock().unwrap();
+        if progress
+            .dictations
+            .iter()
+            .any(|(start, end)| source == Speaker::Me && start_ms < *end && end_ms > *start)
+        {
+            return false;
+        }
+        progress.preview.publish(
+            &session_id,
+            source,
+            epoch,
+            chunk_start_ms,
+            start_ms,
+            end_ms,
+            &text,
+        )
+    }
+
+    pub fn set_preview_state(
+        &self,
+        session_id: String,
+        source: Speaker,
+        epoch: u64,
+        state: MeetingPreviewState,
+    ) -> bool {
+        self.progress
+            .lock()
+            .unwrap()
+            .preview
+            .state(&session_id, source, epoch, state)
+    }
+
+    pub fn stop_preview(&self) {
+        self.progress.lock().unwrap().preview.stop();
+        if let Some(local) = &self.preview_local {
+            local.stop();
+        }
+        self.preview_worker.lock().unwrap().take();
+        if let Some(observer) = self.preview_observer.lock().unwrap().clone() {
+            observer.reset();
+        }
+    }
+
     pub fn recognition_config(&self) -> MeetingRecognition {
         self.recognition.clone()
     }
@@ -539,12 +795,15 @@ impl MeetingSession {
         self.progress.lock().unwrap().visible()
     }
     pub fn set_dictating(&self, dictating: bool) {
+        let _ingestion = self.ingestion.lock().unwrap();
         self.dictating.store(dictating, Ordering::SeqCst);
+        self.update_preview_pause();
     }
 
     pub fn mark_dictation(&self, start_ms: u64, end_ms: u64) {
         let mut progress = self.progress.lock().unwrap();
         progress.dictations.push((start_ms, end_ms));
+        progress.preview.exclude(Speaker::Me, start_ms, end_ms);
         progress.changed();
     }
 
@@ -574,6 +833,7 @@ impl MeetingSession {
         {
             let _ingestion = self.ingestion.lock().unwrap();
             self.stopping.store(true, Ordering::SeqCst);
+            self.stop_preview();
             for speaker in [Speaker::Me, Speaker::Others] {
                 let rest = self.chunkers.lock().unwrap()[index(speaker)].flush();
                 let _ = self.enqueue(speaker, rest.into_iter().collect());
@@ -702,6 +962,210 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const SR: usize = 16_000;
+
+    #[derive(Default)]
+    struct PreviewObserver(Mutex<Vec<MeetingPreviewAudio>>);
+
+    impl MeetingPreviewAudioObserver for PreviewObserver {
+        fn audio(&self, audio: MeetingPreviewAudio) {
+            self.0.lock().unwrap().push(audio);
+        }
+    }
+
+    struct FinalSpeech;
+
+    impl crate::SystemTranscriber for FinalSpeech {
+        fn transcribe(
+            &self,
+            _: Vec<f32>,
+            _: u32,
+            _: Option<String>,
+            _: Vec<String>,
+        ) -> Result<String, PennelError> {
+            Ok("Finalized.".into())
+        }
+    }
+
+    fn preview_engine() -> (tempfile::TempDir, Arc<PennelEngine>) {
+        let directory = tempfile::tempdir().unwrap();
+        let engine =
+            PennelEngine::new_preview(directory.path().to_string_lossy().into_owned()).unwrap();
+        let mut settings = engine.settings();
+        let account = crate::new_account(ProviderKind::AppleSpeech, settings.providers.clone());
+        settings.meeting_stt = crate::ModelChoice {
+            provider_id: account.id.clone(),
+            model: "dictation".into(),
+        };
+        settings.providers.push(account);
+        settings.dictionary = vec!["Pennel".into()];
+        engine.update_settings(settings).unwrap();
+        engine.set_system_transcriber(Arc::new(FinalSpeech));
+        (directory, engine)
+    }
+
+    #[test]
+    fn preview_audio_uses_the_trimmed_clock_and_never_forwards_suppressed_pcm() {
+        let (_directory, engine) = preview_engine();
+        let session = engine
+            .start_meeting(
+                "Owned caption clock".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        let observer = Arc::new(PreviewObserver::default());
+        session.set_preview_audio_observer(Some(observer.clone()));
+        session.push_audio_at(Speaker::Me, 0, tone(3.0)).unwrap();
+        session
+            .push_audio_at(Speaker::Me, 2_000, tone(3.0))
+            .unwrap();
+        {
+            let audio = observer.0.lock().unwrap();
+            assert_eq!(audio.len(), 2);
+            assert_eq!(audio[1].start_ms, 3_000);
+            assert_eq!(audio[1].samples.len(), 2 * SR);
+        }
+        let before = session.preview_snapshot();
+        assert!(session.set_preview_state(
+            before.session_id.clone(),
+            Speaker::Me,
+            before.tracks[0].epoch,
+            MeetingPreviewState::Busy
+        ));
+        session
+            .push_audio_at(Speaker::Me, 5_000, tone(1.0))
+            .unwrap();
+        assert_eq!(
+            observer.0.lock().unwrap().len(),
+            3,
+            "transient native busy must not suppress recovery input"
+        );
+        assert!(session.set_preview_state(
+            before.session_id.clone(),
+            Speaker::Me,
+            before.tracks[0].epoch,
+            MeetingPreviewState::Ready
+        ));
+        session.set_dictating(true);
+        session
+            .push_audio_at(Speaker::Me, 6_000, tone(2.0))
+            .unwrap();
+        assert_eq!(observer.0.lock().unwrap().len(), 3);
+        session.set_dictating(false);
+        session.mark_dictation(6_000, 8_000);
+        assert!(!session.publish_preview(
+            before.session_id,
+            Speaker::Me,
+            before.tracks[0].epoch,
+            0,
+            0,
+            6_000,
+            "stale".into()
+        ));
+        session
+            .push_audio_at(Speaker::Me, 8_000, tone(2.0))
+            .unwrap();
+        assert_eq!(observer.0.lock().unwrap().last().unwrap().start_ms, 8_000);
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn preview_is_display_only_and_final_snapshot_reconciles_both_tracks() {
+        const SENTINEL: &str = "OWNED_PROVISIONAL_SENTINEL";
+        let (_directory, engine) = preview_engine();
+        let session = engine
+            .start_meeting(
+                "Owned caption isolation".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        for source in [Speaker::Me, Speaker::Others] {
+            session.push_audio_at(source, 0, tone(3.0)).unwrap();
+            let snapshot = session.preview_snapshot();
+            assert!(session.publish_preview(
+                snapshot.session_id,
+                source,
+                snapshot.tracks[index(source)].epoch,
+                0,
+                0,
+                3_000,
+                SENTINEL.into()
+            ));
+        }
+        let (revision, transcript, preview) = session.display_snapshot();
+        assert_eq!(preview.transcript_revision, revision);
+        assert!(transcript.is_empty());
+        assert!(session.transcript().is_empty());
+        assert_eq!(
+            preview
+                .tracks
+                .iter()
+                .filter(|track| track.text == SENTINEL)
+                .count(),
+            2
+        );
+        session.stop().unwrap();
+        let (revision, transcript, preview) = session.display_snapshot();
+        assert_eq!(preview.transcript_revision, revision);
+        assert_eq!(transcript.len(), 2);
+        assert!(preview.tracks.iter().all(|track| track.text.is_empty()));
+        fn inspect(path: &Path) {
+            for entry in std::fs::read_dir(path).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    inspect(&path);
+                } else {
+                    assert!(
+                        !std::fs::read(&path)
+                            .unwrap()
+                            .windows(SENTINEL.len())
+                            .any(|window| window == SENTINEL.as_bytes())
+                    );
+                }
+            }
+        }
+        inspect(Path::new(&session.dir()));
+    }
+
+    #[test]
+    fn preview_priority_is_counted_and_vocabulary_stays_frozen() {
+        let (_directory, engine) = preview_engine();
+        let session = engine
+            .clone()
+            .start_meeting(
+                "Owned caption priority".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        engine.begin_meeting_preview_priority();
+        engine.begin_meeting_preview_priority();
+        engine.end_meeting_preview_priority();
+        assert_eq!(
+            session.preview_snapshot().tracks[0].state,
+            MeetingPreviewState::Busy
+        );
+        session.set_dictating(true);
+        engine.end_meeting_preview_priority();
+        assert_eq!(
+            session.preview_snapshot().tracks[0].state,
+            MeetingPreviewState::Busy
+        );
+        session.set_dictating(false);
+        assert_eq!(
+            session.preview_snapshot().tracks[0].state,
+            MeetingPreviewState::Warming
+        );
+        let mut settings = engine.settings();
+        settings.dictionary = vec!["changed after recording started".into()];
+        engine.update_settings(settings).unwrap();
+        assert_eq!(session.preview_vocabulary(), vec!["Pennel"]);
+        session.stop().unwrap();
+    }
 
     fn tone(seconds: f32) -> Vec<f32> {
         (0..(seconds * SR as f32) as usize)
@@ -1325,6 +1789,11 @@ mod tests {
         let session = MeetingSession {
             id,
             store,
+            preview_vocabulary: Vec::new(),
+            preview_observer: Mutex::new(None),
+            preview_local: None,
+            preview_worker: Mutex::new(None),
+            preview_paused: AtomicBool::new(false),
             recognition: MeetingRecognition {
                 provider_kind: None,
                 provider_name: "Not configured".into(),

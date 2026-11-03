@@ -3,47 +3,110 @@ import CoreMedia
 import Foundation
 import Speech
 
+enum LiveSpeechPreviewStatus: String, Codable, Sendable {
+    case warming, ready, unavailable, failed
+}
+
+enum LiveSpeechPreviewEvent: Encodable, Equatable, Sendable {
+    case status(LiveSpeechPreviewStatus, reason: String?)
+    case fragment(startMS: UInt64, endMS: UInt64, text: String, isFinal: Bool)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, status, reason, text
+        case startMS = "start_ms", endMS = "end_ms", isFinal = "is_final"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .status(status, reason):
+            try value.encode("status", forKey: .kind)
+            try value.encode(status, forKey: .status)
+            try value.encodeIfPresent(reason, forKey: .reason)
+        case let .fragment(start, end, text, isFinal):
+            try value.encode("fragment", forKey: .kind)
+            try value.encode(start, forKey: .startMS)
+            try value.encode(end, forKey: .endMS)
+            try value.encode(text, forKey: .text)
+            try value.encode(isFinal, forKey: .isFinal)
+        }
+    }
+
+    static func timedFragment(start: TimeInterval, end: TimeInterval, text: String, isFinal: Bool) -> Self? {
+        guard start.isFinite, end.isFinite, start >= 0, end >= start,
+              end * 1_000 < Double(UInt64.max),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return .fragment(startMS: UInt64(start * 1_000), endMS: UInt64((end * 1_000).rounded(.up)),
+                         text: String(text.suffix(1_024)), isFinal: isFinal)
+    }
+}
+
 final class LiveSpeechPreview: @unchecked Sendable {
+    private static let admission = LiveSpeechPreviewAdmission(maximum: 2)
     private let language: String?
+    private let vocabulary: [String]
     private let buffer = LiveSpeechPreviewBuffer(maxSamples: 16_000 * 5)
-    private let gate: LiveSpeechCallbackGate
+    private let gate: LiveSpeechEventGate
     private let lock = NSLock()
     private var task: Task<Void, Never>?
     private var continuation: AsyncStream<Void>.Continuation?
 
-    init(language: String?, onText: @escaping @Sendable (String) -> Void) {
-        self.language = language
-        gate = LiveSpeechCallbackGate(onText)
+    convenience init(language: String?, onText: @escaping @Sendable (String) -> Void) {
+        let projection = LiveSpeechLegacyProjection(onText: onText)
+        self.init(language: language, vocabulary: [], onEvent: { projection.receive($0) })
     }
+
+    init(language: String?, vocabulary: [String], onEvent: @escaping @Sendable (LiveSpeechPreviewEvent) -> Void) {
+        self.language = language
+        self.vocabulary = Self.boundedVocabulary(vocabulary)
+        gate = LiveSpeechEventGate(onEvent)
+    }
+
+    static func boundedVocabulary(_ vocabulary: [String]) -> [String] { Array(vocabulary.prefix(100)) }
 
     deinit { stop() }
 
     @discardableResult
     func start() -> Bool {
-        guard #available(macOS 26, *), SFSpeechRecognizer.authorizationStatus() == .authorized else { return false }
+        guard #available(macOS 26, *) else {
+            gate.emit(.status(.unavailable, reason: "unsupported_platform"))
+            return false
+        }
+        guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
+            gate.emit(.status(.unavailable, reason: "permission_required"))
+            return false
+        }
         return lock.withLock {
             guard buffer.start() else { return false }
             let input = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
             continuation = input.continuation
             let language = language
+            let vocabulary = vocabulary
             let buffer = buffer
             let gate = gate
+            gate.emit(.status(.warming, reason: nil))
             task = Task.detached {
-                await Self.run(input: input.stream, language: language, buffer: buffer, gate: gate)
+                await Self.run(input: input.stream, finishInput: { input.continuation.finish() },
+                               language: language, vocabulary: vocabulary, buffer: buffer, gate: gate)
             }
             return true
         }
     }
 
-    func feed(_ samples: [Float]) {
+    func feed(_ samples: [Float], startMS: UInt64? = nil) {
         guard !samples.isEmpty else { return }
+        let startFrame: Int64?
+        if let startMS {
+            guard startMS <= UInt64(Int64.max / 16) else { return }
+            startFrame = Int64(startMS) * 16
+        } else { startFrame = nil }
         lock.withLock {
-            if buffer.append(samples) { continuation?.yield(()) }
+            if buffer.append(samples, startFrame: startFrame) { continuation?.yield(()) }
         }
     }
 
     func stop() {
-        // A foreign callback can own a Rust allocation: finish it before stop returns.
+        // Drain the foreign callback before Rust frees its context; analyzer teardown is asynchronous.
         gate.stop()
         lock.withLock {
             buffer.stop()
@@ -62,37 +125,66 @@ final class LiveSpeechPreview: @unchecked Sendable {
 
     @available(macOS 26, *)
     private static func run(
-        input: AsyncStream<Void>, language: String?, buffer: LiveSpeechPreviewBuffer,
-        gate: LiveSpeechCallbackGate
+        input: AsyncStream<Void>, finishInput: @escaping @Sendable () -> Void,
+        language: String?, vocabulary: [String], buffer: LiveSpeechPreviewBuffer,
+        gate: LiveSpeechEventGate
     ) async {
         defer { buffer.stop(); gate.stop() }
+        guard let lease = await admission.acquireWhenAvailable(isActive: { buffer.isActive }) else {
+            if !Task.isCancelled, buffer.isActive { gate.emit(.status(.unavailable, reason: "busy")) }
+            return
+        }
+        defer { lease.release() }
+        guard !Task.isCancelled, buffer.isActive else { return }
         let wanted = Locale(identifier: language ?? Locale.preferredLanguages.first ?? "en")
-        guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: wanted),
-              !Task.isCancelled, buffer.isActive else { return }
+        guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: wanted) else {
+            gate.emit(.status(.unavailable, reason: "unsupported_locale"))
+            return
+        }
+        guard !Task.isCancelled, buffer.isActive else { return }
         let transcriber = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
+        guard await AssetInventory.status(forModules: [transcriber]) == .installed else {
+            gate.emit(.status(.unavailable, reason: "assets_missing"))
+            return
+        }
+        guard !Task.isCancelled, buffer.isActive else { return }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
-        let audio = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(8))
+        let audio = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let results = Task {
-            var caption = LiveSpeechCaptionReducer()
             do {
                 for try await result in transcriber.results {
                     guard !Task.isCancelled, buffer.isActive else { break }
-                    if let text = caption.update(
+                    if let event = LiveSpeechPreviewEvent.timedFragment(
                         start: result.range.start.seconds, end: result.range.end.seconds,
                         text: String(result.text.characters), isFinal: result.isFinal
-                    ) { gate.emit(text) }
+                    ) { gate.emit(event) }
+                }
+                if !Task.isCancelled, buffer.isActive {
+                    gate.emit(.status(.failed, reason: "recognition_finished"))
+                    buffer.stop()
+                    finishInput()
                 }
             } catch {
-                // Preview failure does not change the authoritative final transcription.
+                if !Task.isCancelled, buffer.isActive {
+                    gate.emit(.status(.failed, reason: "recognition_failed"))
+                    buffer.stop()
+                    finishInput()
+                }
             }
         }
+        var prepared = false
         do {
             guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]),
                   !Task.isCancelled, buffer.isActive else { throw CancellationError() }
             let converter = try LiveSpeechAudioConverter(target: format)
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = vocabulary
+            try await analyzer.setContext(context)
             try await analyzer.prepareToAnalyze(in: format)
             try Task.checkCancellation()
             try await analyzer.start(inputSequence: audio.stream)
+            prepared = true
+            gate.emit(.status(.ready, reason: nil))
             for await _ in input {
                 try Task.checkCancellation()
                 guard buffer.isActive else { break }
@@ -108,7 +200,9 @@ final class LiveSpeechPreview: @unchecked Sendable {
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
             }
         } catch {
-            // The regular selected-provider path still owns errors and the final result.
+            if !Task.isCancelled, buffer.isActive {
+                gate.emit(.status(.failed, reason: prepared ? "analysis_failed" : "preparation_failed"))
+            }
         }
         buffer.stop()
         gate.stop()
@@ -117,6 +211,71 @@ final class LiveSpeechPreview: @unchecked Sendable {
         results.cancel()
         await results.value
     }
+}
+
+private final class LiveSpeechLegacyProjection: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reducer = LiveSpeechCaptionReducer()
+    private let onText: @Sendable (String) -> Void
+
+    init(onText: @escaping @Sendable (String) -> Void) { self.onText = onText }
+
+    func receive(_ event: LiveSpeechPreviewEvent) {
+        guard case let .fragment(start, end, text, isFinal) = event else { return }
+        lock.withLock {
+            if let text = reducer.update(start: Double(start) / 1_000, end: Double(end) / 1_000, text: text, isFinal: isFinal) {
+                onText(text)
+            }
+        }
+    }
+}
+
+final class LiveSpeechEventGate: @unchecked Sendable {
+    private let lock = NSRecursiveLock()
+    private var callback: (@Sendable (LiveSpeechPreviewEvent) -> Void)?
+
+    init(_ callback: @escaping @Sendable (LiveSpeechPreviewEvent) -> Void) { self.callback = callback }
+    func emit(_ event: LiveSpeechPreviewEvent) { lock.withLock { callback?(event) } }
+    func stop() { lock.withLock { callback = nil } }
+}
+
+final class LiveSpeechPreviewAdmission: @unchecked Sendable {
+    private let lock = NSLock()
+    private let maximum: Int
+    private var active = 0
+
+    init(maximum: Int) { self.maximum = max(1, maximum) }
+
+    func acquire() -> LiveSpeechPreviewLease? {
+        lock.withLock {
+            guard active < maximum else { return nil }
+            active += 1
+            return LiveSpeechPreviewLease { [self] in lock.withLock { active -= 1 } }
+        }
+    }
+
+    func acquireWhenAvailable(isActive: @escaping @Sendable () -> Bool) async -> LiveSpeechPreviewLease? {
+        for attempt in 0...50 {
+            guard !Task.isCancelled, isActive() else { return nil }
+            if let lease = acquire() { return lease }
+            if attempt < 50 {
+                do { try await Task.sleep(for: .milliseconds(20)) } catch { return nil }
+            }
+        }
+        return nil
+    }
+}
+
+final class LiveSpeechPreviewLease: @unchecked Sendable {
+    private let lock = NSLock()
+    private var onRelease: (@Sendable () -> Void)?
+
+    init(_ onRelease: @escaping @Sendable () -> Void) { self.onRelease = onRelease }
+    func release() {
+        let action = lock.withLock { let action = onRelease; onRelease = nil; return action }
+        action?()
+    }
+    deinit { release() }
 }
 
 struct LiveSpeechCaptionReducer {
@@ -185,10 +344,16 @@ final class LiveSpeechPreviewBuffer: @unchecked Sendable {
         }
     }
 
-    func append(_ samples: [Float]) -> Bool {
+    func append(_ samples: [Float], startFrame: Int64? = nil) -> Bool {
         lock.withLock {
             guard phase == .running, !samples.isEmpty else { return false }
-            frames += Int64(samples.count)
+            let start = startFrame ?? frames
+            guard start >= 0, start <= Int64.max - Int64(samples.count) else { return false }
+            let skipped = min(samples.count, Int(max(0, frames - start)))
+            guard skipped < samples.count else { return false }
+            if start > frames { pending.removeAll(keepingCapacity: true) }
+            let samples = Array(samples.dropFirst(skipped))
+            frames = start + Int64(skipped) + Int64(samples.count)
             if samples.count >= maxSamples { pending = Array(samples.suffix(maxSamples)) }
             else {
                 let excess = max(0, pending.count + samples.count - maxSamples)
