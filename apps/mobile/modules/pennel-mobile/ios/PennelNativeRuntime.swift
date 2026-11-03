@@ -1141,7 +1141,7 @@ extension PennelNativeRuntime {
         let session = DictationSession.shared
         let liveTranscript: [String: Any]?
         if let liveSession = runtime.transcriptSnapshotSession() {
-            liveTranscript = liveTranscriptCache.value(key: String(describing: ObjectIdentifier(liveSession)), revision: liveSession.transcriptRevision(),
+            liveTranscript = liveTranscriptCache.value(key: String(describing: ObjectIdentifier(liveSession)), revision: liveSession.previewSnapshot().transcriptRevision,
                                                        load: { try liveSession.transcriptSnapshotJson() }, changed: { [weak self] in self?.publish() })
         } else {
             liveTranscriptCache.clear()
