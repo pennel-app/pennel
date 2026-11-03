@@ -6,12 +6,12 @@ use crate::{PennelError, system_llm};
 pub(crate) const MAP_REDUCE_ABOVE: usize = 40_000;
 pub(crate) const BLOCK_CHARS: usize = 30_000;
 
-const SYSTEM_PROMPT: &str = "You write meeting notes from a transcript. In legacy transcripts, \"Ik\" labels the user. \"Me\" labels an explicit own-voice estimate. Unknown, mixed or overlapping speaker labels do not establish a person's identity or who made a commitment. Never infer a person from a microphone or system-audio track. Keep an owner unknown unless the source supports the assignment.
+const SYSTEM_PROMPT: &str = "You write meeting notes from a transcript. In legacy transcripts, \"Ik\" labels the user. \"Me\" labels an explicit own-voice estimate. Unknown, mixed or overlapping speaker labels do not establish a person's identity or who made a commitment. Speaker labels marked provisional are revisable estimates, not confirmed identities or ownership. Never infer a person from a microphone or system-audio track. Keep an owner unknown unless the source supports the assignment.
 Never invent facts that are not in the transcript or notes.";
 
 const LANGUAGE_RULE: &str = "Determine the predominant meeting language from the transcript content, ignoring speaker labels, template wording and interface language. If there is no transcript, use the notes. If the language is indeterminate, use English. Write generated prose and empty-section text in that language. Use \"- None\" in English or \"- Geen\" in Dutch for empty generated sections, or the equivalent in the meeting language.";
 const DEFAULT_SECTION_RULE: &str = "Use Markdown with exactly these semantic sections, translating their headings into the meeting language: Summary, Decisions, Action items. English headings: ## Summary, ## Decisions, ## Action items. Dutch headings: ## Samenvatting, ## Beslissingen, ## Actiepunten. These examples do not determine the meeting language.";
-const MAP_PROMPT: &str = "Summarize this part of a meeting transcript as concise bullet points: facts, decisions and action items with who is responsible. Keep the predominant language of the source content, ignoring speaker labels. If the language is indeterminate, use English. In legacy transcripts, \"Ik\" labels the user; \"Me\" is an explicit own-voice estimate. Unknown, mixed and overlapping speech does not establish a named owner. Never infer a person from an audio track; keep unsupported owners unknown.";
+const MAP_PROMPT: &str = "Summarize this part of a meeting transcript as concise bullet points: facts, decisions and action items with who is responsible. Keep the predominant language of the source content, ignoring speaker labels. If the language is indeterminate, use English. In legacy transcripts, \"Ik\" labels the user; \"Me\" is an explicit own-voice estimate. Unknown, mixed and overlapping speech does not establish a named owner. Speaker labels marked provisional are revisable estimates, not confirmed identities or ownership. Never infer a person from an audio track; keep unsupported owners unknown.";
 
 fn section_is(section: &str, english: &str, dutch: &str) -> bool {
     let section = section.trim();
@@ -449,6 +449,31 @@ mod tests {
         assert!(text.contains("Ada: Named statement"));
         assert!(!text.contains("Ik:"));
         assert!(!text.contains("Me:"));
+    }
+
+    #[test]
+    fn summaries_keep_live_speaker_estimates_distinct_from_final_attribution() {
+        let mut row = crate::MeetingUtterance::new(
+            seg(0, Speaker::Me, "Finalized speech", false),
+            Some("microphone".into()),
+        );
+        row.metadata.attribution.kind = crate::AttributionKind::Single;
+        row.metadata.attribution.voices = vec![1];
+        row.metadata.attribution.provisional = true;
+        let mut snapshot = crate::MeetingTranscriptSnapshot {
+            meeting_uid: "uid".into(),
+            revision: 1,
+            transcript_digest: String::new(),
+            metadata_digest: None,
+            metadata_status: crate::TranscriptMetadataStatus::Valid,
+            utterances: vec![row],
+        };
+        assert!(
+            transcript_snapshot_text(&snapshot, &[])
+                .contains("Speaker 1 (provisional): Finalized speech")
+        );
+        snapshot.utterances[0].metadata.attribution.provisional = false;
+        assert!(transcript_snapshot_text(&snapshot, &[]).contains("Speaker 1: Finalized speech"));
     }
 
     fn engine(dir: &tempfile::TempDir, server: &mockito::Server) -> std::sync::Arc<PennelEngine> {

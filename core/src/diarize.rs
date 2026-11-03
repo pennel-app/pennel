@@ -21,6 +21,7 @@ pub type Turn = (u64, u64, u32);
 pub fn diarize(model_path: &Path, samples: &[f32]) -> Result<Vec<Turn>, PennelError> {
     use transcribe_cpp::Model;
 
+    let _physical = crate::live_speakers::offline_acoustic_permit();
     if !model_path.exists() {
         return Err(PennelError::ModelNotDownloaded);
     }
@@ -275,6 +276,43 @@ fn usable_spans(row: &crate::meeting_utterances::MeetingUtterance) -> bool {
     !text[previous_byte..].chars().any(char::is_alphanumeric)
 }
 
+fn provisional_voice_map(
+    before: &[crate::meeting_utterances::MeetingUtterance],
+    turns: &[SpeakerTurn],
+    track: Track,
+) -> std::collections::BTreeMap<u32, Option<u32>> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut candidates: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+    let mut reverse: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+    for old in before
+        .iter()
+        .filter(|row| includes_source(row, track) && row.metadata.attribution.provisional)
+    {
+        for prior in &old.metadata.attribution.turns {
+            let Some(voice) = prior.voice else { continue };
+            for fresh in turns
+                .iter()
+                .filter(|fresh| fresh.end_ms.min(prior.end_ms) > fresh.start_ms.max(prior.start_ms))
+            {
+                candidates.entry(fresh.speaker).or_default().insert(voice);
+                reverse.entry(voice).or_default().insert(fresh.speaker);
+            }
+        }
+    }
+    candidates
+        .into_iter()
+        .map(|(speaker, voices)| {
+            let voice = voices.first().copied().filter(|voice| {
+                voices.len() == 1
+                    && reverse
+                        .get(voice)
+                        .is_some_and(|speakers| speakers.len() == 1)
+            });
+            (speaker, voice)
+        })
+        .collect()
+}
+
 /// Apply actual acoustic turns to exact authoritative spans. Missing word alignment preserves the
 /// intact utterance as mixed/unknown; acoustic duration never allocates words between speakers.
 pub fn apply_utterances(
@@ -282,6 +320,28 @@ pub fn apply_utterances(
     turns: &[SpeakerTurn],
     identities: &[Identity],
     track: Track,
+) -> (Vec<crate::meeting_utterances::MeetingUtterance>, Applied) {
+    apply_utterances_inner(before, turns, identities, track, None, false)
+}
+
+/// The rolling acoustic worker owns the mapping; window order must never renumber session voices.
+pub(crate) fn apply_utterances_with_voice_map(
+    before: &[crate::meeting_utterances::MeetingUtterance],
+    turns: &[SpeakerTurn],
+    track: Track,
+    voice_map: &[(u32, u32)],
+    provisional: bool,
+) -> (Vec<crate::meeting_utterances::MeetingUtterance>, Applied) {
+    apply_utterances_inner(before, turns, &[], track, Some(voice_map), provisional)
+}
+
+fn apply_utterances_inner(
+    before: &[crate::meeting_utterances::MeetingUtterance],
+    turns: &[SpeakerTurn],
+    identities: &[Identity],
+    track: Track,
+    voice_map: Option<&[(u32, u32)]>,
+    provisional: bool,
 ) -> (Vec<crate::meeting_utterances::MeetingUtterance>, Applied) {
     use crate::meeting_utterances::{
         AcousticTurn, AttributionKind, AutomaticAttribution, TimedTextSpan,
@@ -304,7 +364,22 @@ pub fn apply_utterances(
                         .filter_map(|manual| manual.voice),
                 )
         })
+        .chain(
+            before
+                .iter()
+                .filter(|row| row.metadata.attribution.provisional)
+                .flat_map(|row| {
+                    row.metadata.attribution.voices.iter().copied().chain(
+                        row.metadata
+                            .attribution
+                            .turns
+                            .iter()
+                            .filter_map(|turn| turn.voice),
+                    )
+                }),
+        )
         .collect();
+    let previous_provisional = provisional_voice_map(before, turns, track);
     let manual_voices: BTreeSet<_> = before
         .iter()
         .filter_map(|row| row.metadata.manual.as_ref())
@@ -326,50 +401,73 @@ pub fn apply_utterances(
     ordered.sort_by_key(|turn| (turn.start_ms, turn.end_ms, turn.speaker));
     let mut seen = BTreeSet::new();
     let mut applied = Applied::default();
-    for turn in ordered {
-        if !seen.insert(turn.speaker) {
-            continue;
+    if let Some(voice_map) = voice_map {
+        for (speaker, voice) in voice_map {
+            if VOICES.contains(voice)
+                && !applied
+                    .voices
+                    .iter()
+                    .any(|(old, model)| old == voice || *model == *speaker as usize)
+                && ordered.iter().any(|turn| turn.speaker == *speaker)
+            {
+                applied.voices.push((*voice, *speaker as usize));
+            }
         }
-        if track == Track::Microphone
-            && identities.get(turn.speaker as usize) == Some(&Identity::Me)
-        {
-            continue;
-        }
-        let preferred: BTreeSet<_> = before
-            .iter()
-            .filter(|row| includes_source(row, track))
-            .filter(|row| {
-                attribution_label(turns, row.metadata.start_ms, row.metadata.end_ms).speakers
-                    == [turn.speaker]
-            })
-            .filter_map(|row| {
-                row.metadata.manual.as_ref().filter(|manual| {
-                    !manual.review_required
-                        && manual.source_fingerprint == row.metadata.source_fingerprint
+    } else {
+        for turn in ordered {
+            if !seen.insert(turn.speaker) {
+                continue;
+            }
+            if track == Track::Microphone
+                && identities.get(turn.speaker as usize) == Some(&Identity::Me)
+            {
+                continue;
+            }
+            if let Some(previous) = previous_provisional.get(&turn.speaker) {
+                if let Some(voice) = previous.filter(|voice| VOICES.contains(voice))
+                    && !applied.voices.iter().any(|(used, _)| *used == voice)
+                {
+                    applied.voices.push((voice, turn.speaker as usize));
+                }
+                // Ambiguous old-to-final mappings stay unknown instead of claiming another old ID.
+                continue;
+            }
+            let preferred: BTreeSet<_> = before
+                .iter()
+                .filter(|row| includes_source(row, track))
+                .filter(|row| {
+                    attribution_label(turns, row.metadata.start_ms, row.metadata.end_ms).speakers
+                        == [turn.speaker]
                 })
-            })
-            .filter_map(|manual| manual.voice)
-            .collect();
-        let preferred = preferred
-            .iter()
-            .next()
-            .copied()
-            .filter(|_| preferred.len() == 1);
-        let voice = preferred
-            .filter(|voice| {
-                VOICES.contains(voice)
-                    && !reserved.contains(voice)
-                    && !applied.voices.iter().any(|(used, _)| used == voice)
-            })
-            .or_else(|| {
-                VOICES.clone().find(|voice| {
-                    !reserved.contains(voice)
-                        && !manual_voices.contains(voice)
+                .filter_map(|row| {
+                    row.metadata.manual.as_ref().filter(|manual| {
+                        !manual.review_required
+                            && manual.source_fingerprint == row.metadata.source_fingerprint
+                    })
+                })
+                .filter_map(|manual| manual.voice)
+                .collect();
+            let preferred = preferred
+                .iter()
+                .next()
+                .copied()
+                .filter(|_| preferred.len() == 1);
+            let voice = preferred
+                .filter(|voice| {
+                    VOICES.contains(voice)
+                        && !reserved.contains(voice)
                         && !applied.voices.iter().any(|(used, _)| used == voice)
                 })
-            });
-        if let Some(voice) = voice {
-            applied.voices.push((voice, turn.speaker as usize));
+                .or_else(|| {
+                    VOICES.clone().find(|voice| {
+                        !reserved.contains(voice)
+                            && !manual_voices.contains(voice)
+                            && !applied.voices.iter().any(|(used, _)| used == voice)
+                    })
+                });
+            if let Some(voice) = voice {
+                applied.voices.push((voice, turn.speaker as usize));
+            }
         }
     }
     let voice_of = |speaker: u32| {
@@ -481,6 +579,7 @@ pub fn apply_utterances(
                 voices,
                 turns: acoustic,
                 self_voice,
+                provisional,
             };
             if row.metadata.attribution != automatic || split {
                 row.metadata.attribution_revision =
@@ -1308,6 +1407,139 @@ mod tests {
                 name: "Current remembered".into()
             }]
         );
+    }
+
+    #[test]
+    fn rolling_explicit_voice_map_never_renumbers_first_appearance() {
+        let rows = vec![timed_row("Yes no", &[(0, 3, 0, 500), (4, 6, 700, 1_200)])];
+        let (first, _) = apply_utterances_with_voice_map(
+            &rows,
+            &[turn(0, 600, 9), turn(600, 1_200, 2)],
+            Track::Microphone,
+            &[(9, 10), (2, 3)],
+            true,
+        );
+        assert_eq!(
+            first
+                .iter()
+                .map(|row| row.segment.voice)
+                .collect::<Vec<_>>(),
+            [Some(10), Some(3)]
+        );
+        assert!(first.iter().all(|row| row.metadata.attribution.provisional));
+        let ids: Vec<_> = first
+            .iter()
+            .map(|row| row.metadata.utterance_id.clone())
+            .collect();
+        let (second, _) = apply_utterances_with_voice_map(
+            &first,
+            &[turn(700, 1_200, 2), turn(0, 600, 9)],
+            Track::Microphone,
+            &[(2, 3), (9, 10)],
+            true,
+        );
+        assert_eq!(
+            second
+                .iter()
+                .map(|row| row.segment.voice)
+                .collect::<Vec<_>>(),
+            [Some(10), Some(3)]
+        );
+        assert_eq!(
+            second
+                .iter()
+                .map(|row| row.metadata.utterance_id.clone())
+                .collect::<Vec<_>>(),
+            ids
+        );
+        let (finalized, _) = apply_utterances_with_voice_map(
+            &second,
+            &[turn(0, 600, 9), turn(600, 1_200, 2)],
+            Track::Microphone,
+            &[(9, 10), (2, 3)],
+            false,
+        );
+        assert!(
+            finalized
+                .iter()
+                .all(|row| !row.metadata.attribution.provisional)
+        );
+    }
+
+    #[test]
+    fn final_analysis_reuses_unambiguous_live_voice_across_both_physical_sources() {
+        let microphone = timed_row("Room", &[(0, 4, 0, 1_200)]);
+        let mut system = timed_row("Call", &[(0, 4, 0, 1_200)]);
+        system.metadata.source_id = Some("system_audio".into());
+        system.metadata.refresh_fingerprints(&system.segment);
+        let (rows, _) = apply_utterances_with_voice_map(
+            &[microphone, system],
+            &[turn(0, 1_200, 0)],
+            Track::Microphone,
+            &[(0, 1)],
+            true,
+        );
+        let (rows, _) = apply_utterances_with_voice_map(
+            &rows,
+            &[turn(0, 1_200, 0)],
+            Track::System,
+            &[(0, 1)],
+            true,
+        );
+        let ids: Vec<_> = rows
+            .iter()
+            .map(|row| row.metadata.utterance_id.clone())
+            .collect();
+        let (rows, system_applied) = apply_utterances(
+            &rows,
+            &[turn(0, 1_200, 7)],
+            &[Identity::Unknown; 8],
+            Track::System,
+        );
+        assert_eq!(system_applied.voices, [(1, 7)]);
+        let (rows, microphone_applied) = apply_utterances(
+            &rows,
+            &[turn(0, 1_200, 3)],
+            &[Identity::Unknown; 4],
+            Track::Microphone,
+        );
+        assert_eq!(microphone_applied.voices, [(1, 3)]);
+        assert!(
+            rows.iter()
+                .all(|row| row.segment.voice == Some(1) && !row.metadata.attribution.provisional)
+        );
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.metadata.utterance_id.clone())
+                .collect::<Vec<_>>(),
+            ids
+        );
+    }
+
+    #[test]
+    fn ambiguous_final_mapping_abstains_instead_of_recycling_live_voice_numbers() {
+        let row = timed_row("Intact mixed words", &[]);
+        let (provisional, _) = apply_utterances_with_voice_map(
+            std::slice::from_ref(&row),
+            &[turn(0, 600, 0), turn(600, 1_200, 1)],
+            Track::Microphone,
+            &[(0, 1), (1, 2)],
+            true,
+        );
+        let (finalized, applied) = apply_utterances(
+            &provisional,
+            &[turn(0, 1_200, 7)],
+            &[Identity::Unknown; 8],
+            Track::Microphone,
+        );
+        assert!(applied.voices.is_empty());
+        assert_eq!(finalized[0].segment.voice, None);
+        assert_eq!(finalized[0].segment.text, row.segment.text);
+        assert_eq!(
+            finalized[0].metadata.utterance_id,
+            provisional[0].metadata.utterance_id
+        );
+        assert!(!finalized[0].metadata.attribution.provisional);
     }
 
     /// Needs the Sortformer model in the app folder and `/tmp/diar/meeting.wav`; run with `--ignored`.

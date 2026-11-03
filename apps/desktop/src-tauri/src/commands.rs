@@ -774,6 +774,8 @@ fn require_inactive_meeting(shared: &Shared, id: &str) -> Result<()> {
 pub struct MeetingRuntimeStatus {
     recognition: Option<pennel_core::MeetingRecognition>,
     preview: Option<pennel_core::MeetingPreviewSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    live_speaker_attribution: Option<serde_json::Value>,
     recording: bool,
     busy: bool,
     phase: pennel_core::RecordingPhase,
@@ -830,6 +832,7 @@ struct TranscriptProjection {
     metadata_status: String,
     transcript: Vec<serde_json::Value>,
     preview: Option<pennel_core::MeetingPreviewSnapshot>,
+    live_speaker_attribution: Option<serde_json::Value>,
 }
 
 fn transcript_projection(value: &str) -> Result<TranscriptProjection> {
@@ -843,6 +846,7 @@ fn status(shared: &Shared) -> Result<MeetingStatus> {
         runtime.transcript_revision = snapshot.revision;
         runtime.meeting_uid = Some(snapshot.meeting_uid);
         runtime.metadata_status = Some(snapshot.metadata_status);
+        runtime.live_speaker_attribution = snapshot.live_speaker_attribution;
         runtime.preview = Some(
             snapshot
                 .preview
@@ -927,6 +931,7 @@ fn runtime_status(
     let mut result = MeetingRuntimeStatus {
         recognition: None,
         preview: None,
+        live_speaker_attribution: None,
         recording,
         busy,
         phase: state.phase,
@@ -989,6 +994,7 @@ fn runtime_status(
         }
         result.pending = session.pending();
         result.recognition = Some(session.recognition_config());
+        result.live_speaker_attribution = serde_json::to_value(session.live_speaker_status()).ok();
         let (revision, preview) = session.preview_status_snapshot();
         result.transcript_revision = revision;
         result.preview = Some(preview);
@@ -1015,6 +1021,21 @@ fn runtime_status(
 pub async fn start_meeting(title: String, shared: State<'_, Arc<Shared>>) -> Result<String> {
     let shared = shared.inner().clone();
     blocking(move || meeting_runtime::start(&shared, title, None, Vec::new())).await
+}
+
+#[tauri::command]
+pub async fn set_live_speaker_attribution(
+    session_id: String,
+    enabled: bool,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<serde_json::Value> {
+    let shared = shared.inner().clone();
+    off_main("set_live_speaker_attribution", move || {
+        let value = meeting_runtime::set_live_speaker_attribution(&shared, &session_id, enabled)?;
+        serde_json::from_str(&value)
+            .map_err(|_| "The live speaker status could not be read.".into())
+    })
+    .await
 }
 
 #[tauri::command]

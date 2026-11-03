@@ -60,7 +60,7 @@ pub(crate) fn utterance_speaker_label(
     row: &crate::MeetingUtterance,
     names: &[crate::SpeakerName],
 ) -> String {
-    match utterance_speaker_identity(row, names) {
+    let label = match utterance_speaker_identity(row, names) {
         UtteranceSpeakerLabel::Name(name) => name,
         UtteranceSpeakerLabel::Number(voice) => format!("Speaker {voice}"),
         UtteranceSpeakerLabel::SelfVoice => "Me".into(),
@@ -68,10 +68,28 @@ pub(crate) fn utterance_speaker_label(
         UtteranceSpeakerLabel::NeedsReview => "Unknown speaker (correction needs review)".into(),
         UtteranceSpeakerLabel::Mixed => "Mixed speakers".into(),
         UtteranceSpeakerLabel::Overlap => "Overlapping speakers".into(),
+    };
+    if provisional_speaker_estimate(row) {
+        format!("{label} (provisional)")
+    } else {
+        label
     }
 }
 
-pub(crate) fn localized_utterance_speaker_label(
+fn provisional_speaker_estimate(row: &crate::MeetingUtterance) -> bool {
+    row.metadata.attribution.provisional
+        && !row.metadata.manual.as_ref().is_some_and(|manual| {
+            !manual.review_required
+                && manual.source_fingerprint == row.metadata.source_fingerprint
+                && (manual.voice.is_some()
+                    || manual
+                        .name
+                        .as_ref()
+                        .is_some_and(|name| !name.trim().is_empty()))
+        })
+}
+
+fn localized_settled_utterance_speaker_label(
     row: &crate::MeetingUtterance,
     names: &[crate::SpeakerName],
     language: crate::InterfaceLanguage,
@@ -99,6 +117,22 @@ pub(crate) fn localized_utterance_speaker_label(
         UtteranceSpeakerLabel::Overlap => "meetings.attribution_overlap",
     };
     crate::ui_text(language, key, &[])
+}
+
+pub(crate) fn localized_utterance_speaker_label(
+    row: &crate::MeetingUtterance,
+    names: &[crate::SpeakerName],
+    language: crate::InterfaceLanguage,
+) -> String {
+    let label = localized_settled_utterance_speaker_label(row, names, language);
+    if provisional_speaker_estimate(row) {
+        format!(
+            "{label} ({})",
+            crate::ui_text(language, "meetings.live_speakers_provisional_tag", &[])
+        )
+    } else {
+        label
+    }
 }
 
 /// Desktop request evidence; this is deliberately independent of the persisted/UniFFI records.
@@ -419,6 +453,7 @@ mod tests {
             voices: vec![1],
             turns: vec![],
             self_voice: false,
+            provisional: false,
         };
         let before =
             MeetingEvidence::new_with_utterances("uid", "M", "", "", &[row.clone()], &[]).unwrap();
@@ -524,6 +559,84 @@ mod tests {
         row.segment.speaker = Speaker::Others;
         row.metadata.source_id = Some("system_audio".into());
         assert_eq!(utterance_speaker_label(&row, &[]), "Me");
+    }
+
+    #[test]
+    fn live_speaker_estimates_are_qualified_without_changing_durable_evidence() {
+        let mut row = crate::MeetingUtterance::new(
+            segment("Finalized words", 100),
+            Some("microphone".into()),
+        );
+        row.metadata.attribution.kind = crate::AttributionKind::Single;
+        row.metadata.attribution.voices = vec![1];
+        row.metadata.attribution.provisional = true;
+        let provisional = MeetingEvidence::new_with_utterances(
+            "uid",
+            "M",
+            "",
+            "",
+            std::slice::from_ref(&row),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            provisional.sources[0].text,
+            "Speaker 1 (provisional): Finalized words"
+        );
+        let fingerprint = utterance_evidence_revision(&row);
+        row.metadata.attribution.provisional = false;
+        let final_evidence = MeetingEvidence::new_with_utterances(
+            "uid",
+            "M",
+            "",
+            "",
+            std::slice::from_ref(&row),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(final_evidence.sources[0].text, "Speaker 1: Finalized words");
+        assert_eq!(
+            provisional.anchors[0].segment_keys,
+            final_evidence.anchors[0].segment_keys
+        );
+        assert_eq!(
+            provisional.anchors[0].segment_fingerprints,
+            final_evidence.anchors[0].segment_fingerprints
+        );
+        assert_eq!(fingerprint, utterance_evidence_revision(&row));
+        row.metadata.attribution.provisional = true;
+        row.metadata.manual = Some(crate::ManualCorrection {
+            name: Some("Ada".into()),
+            voice: None,
+            source_fingerprint: row.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        assert_eq!(utterance_speaker_label(&row, &[]), "Ada");
+        row.metadata.manual.as_mut().unwrap().name = None;
+        row.metadata.manual.as_mut().unwrap().voice = Some(2);
+        assert_eq!(utterance_speaker_label(&row, &[]), "Speaker 2");
+        row.metadata.manual = None;
+        assert_eq!(
+            utterance_speaker_label(
+                &row,
+                &[crate::SpeakerName {
+                    voice: 1,
+                    name: "Ada".into()
+                }]
+            ),
+            "Ada (provisional)"
+        );
+        for (kind, label) in [
+            (crate::AttributionKind::Unknown, "Unknown speaker"),
+            (crate::AttributionKind::Mixed, "Mixed speakers"),
+            (crate::AttributionKind::Overlap, "Overlapping speakers"),
+        ] {
+            row.metadata.attribution.kind = kind;
+            assert_eq!(
+                utterance_speaker_label(&row, &[]),
+                format!("{label} (provisional)")
+            );
+        }
     }
 
     #[test]

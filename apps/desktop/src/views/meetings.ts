@@ -150,7 +150,7 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
       const speakerColor = segment.attribution && segment.attribution.kind !== "single" ? "var(--foreground)" : segment.speaker === "me" ? "var(--accent)" : segment.voice === null ? "var(--foreground)" : `var(--voice-${(segment.voice + 3) % 4 + 1})`;
       let speaker: HTMLElement = h("span", { class: "speaker", style: `color:${speakerColor}` }, speakerUiLabel(segment, detail));
       if (id && segment.voice !== null && segment.speaker === "others" && voices !== null && (!segment.attribution || segment.attribution.kind === "single") && attributionEditable(detail?.metadata_status)) {
-        const currentName = detail?.speakers.find((item) => item.voice === segment.voice)?.name ?? "";
+        const currentName = segment.confirmed_speaker_name ?? detail?.speakers.find((item) => item.voice === segment.voice)?.name ?? "";
         const names = detail?.attendees ?? [];
         const chosen = names.indexOf(currentName);
         const original = chosen >= 0 ? `name:${chosen}` : "current";
@@ -194,9 +194,12 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
       }
     };
     drawBody();
+    const provisional = h("span", { class: "live-speaker-provisional", hidden: segment.attribution?.provisional !== true || !!segment.confirmed_speaker_name,
+      title: l("meetings.live_speakers_provisional_help") }, l("meetings.live_speakers_provisional_tag"));
     const correction = h("p", { class: "help transcript-correction-review", hidden: !segment.correction_review_required }, l("meetings.attribution_correction_review"));
     const row = h("div", { class: "transcript-line", "data-start-ms": segment.start_ms, "data-transcript-index": index,
-      "data-source-id": segment.source_id ?? "", title: segment.source_id ? l(`meetings.attribution_source_${segment.source_id}`) : "" }, stamp, speaker, body, correction);
+      "data-source-id": segment.source_id ?? "", title: segment.source_id ? l(`meetings.attribution_source_${segment.source_id}`) : "" },
+      stamp, h("div", { class: "live-transcript-speaker" }, speaker, provisional), body, correction);
     return { segment, element: row, update: (next: Segment, nextIndex: number, speakersChanged: boolean) => {
       const bodyChanged = next.text !== segment.text || next.failed !== segment.failed;
       const speakerChanged = speakersChanged || next.voice !== segment.voice || next.speaker !== segment.speaker
@@ -207,6 +210,7 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
       stamp.disabled = !id || !available() || play.status !== "available";
       stamp.title = available() ? play.reason ? localizeBackendText(play.reason) : t("meetings.play_from_here") : t("meetings.passage_audio_unavailable");
       correction.hidden = !segment.correction_review_required;
+      provisional.hidden = segment.attribution?.provisional !== true || !!segment.confirmed_speaker_name;
       row.dataset.sourceId = segment.source_id ?? "";
       row.title = segment.source_id ? t(`meetings.attribution_source_${segment.source_id}`) : "";
       if (bodyChanged) drawBody();

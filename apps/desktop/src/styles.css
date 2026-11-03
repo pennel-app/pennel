@@ -771,6 +771,16 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 .live-save-error { flex: 0 1 auto; min-height: 0; max-height: 64px; overflow: auto; margin: 0; font-size: var(--font-label); }
 .live-transcript-heading { display: flex; align-items: start; gap: 8px; flex-shrink: 0; }
 .live-transcript-heading .help { flex: 1; margin: 0; }
+.live-speaker-controls { flex: 0 1 auto; min-height: 0; max-height: 38%; overflow: auto; }
+.live-speaker-controls .checkbox { margin: 0; }
+.live-speaker-state, .live-speaker-models, .live-speaker-details .help { margin: 4px 0; }
+.live-speaker-destination { cursor: pointer; overflow-wrap: anywhere; }
+.live-speaker-models { overflow-wrap: anywhere; }
+.live-transcript-speaker { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.live-transcript-speaker .speaker { max-width: 100%; }
+.live-speaker-provisional { color: var(--muted); font-size: var(--font-caption); overflow-wrap: anywhere; }
+.live-enlarged .live-transcript .transcript-line { grid-template-columns: auto minmax(0, 1fr); }
+.live-enlarged .live-transcript .transcript-copy { grid-column: 1 / -1; }
 .live-workspace .live-transcript { flex: 1; min-height: 0; max-height: none; margin: 0; overflow: auto; scroll-behavior: auto; }
 .live-workspace .transcript-line { padding: 10px 4px; overflow-wrap: anywhere; }
 .live-workspace .transcript-copy { min-width: 0; white-space: pre-wrap; }

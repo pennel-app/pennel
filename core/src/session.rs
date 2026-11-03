@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -25,6 +24,7 @@ const ATTEMPTS: usize = 2;
 const STORAGE_ATTEMPTS: usize = 3;
 const INGRESS_CAPACITY: usize = 4;
 const MAX_PACKET_SAMPLES: usize = SAMPLE_RATE as usize * 90;
+type LiveWorkerSlot = Arc<Mutex<Option<(u64, Arc<crate::live_speakers::LiveSpeakerWorker>)>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
 pub struct MeetingHealth {
@@ -109,9 +109,10 @@ impl StoredJob {
 #[derive(Default)]
 struct Progress {
     preview: PreviewDisplay,
-    segments: Vec<Segment>,
-    metadata: HashMap<(usize, u64), crate::UtteranceMetadata>,
+    utterances: Vec<crate::MeetingUtterance>,
     metadata_revision: u64,
+    live_status: Option<crate::live_speakers::LiveSpeakerStatus>,
+    live_updates: [Option<crate::live_speakers::LiveSpeakerUpdate>; 2],
     dictations: Vec<(u64, u64)>,
     pending: u32,
     unpersisted: Vec<Job>,
@@ -124,6 +125,21 @@ struct Progress {
 }
 
 impl Progress {
+    fn replace_live_status(&mut self, mut status: crate::live_speakers::LiveSpeakerStatus) {
+        if let Some(previous) = &self.live_status {
+            status.revision = previous.revision;
+            if previous != &status {
+                status.revision = status.revision.saturating_add(1);
+            }
+        }
+        self.live_status = Some(status);
+    }
+
+    #[cfg(test)]
+    fn insert(&mut self, segment: Segment, source: Speaker, spans: Vec<crate::TimedTextSpan>) {
+        self.insert_recovery(segment, source, spans, None);
+    }
+
     fn insert_recovery(
         &mut self,
         segment: Segment,
@@ -131,71 +147,183 @@ impl Progress {
         spans: Vec<crate::TimedTextSpan>,
         recovery: Option<crate::meeting_utterances::RecoveryAudioProvenance>,
     ) {
-        let mut metadata =
-            crate::UtteranceMetadata::new(&segment, Some(physical_source_id(source).into()));
-        metadata.spans = spans;
-        metadata.recovery_audio = recovery;
-        self.metadata
-            .insert((index(segment.speaker), segment.start_ms), metadata);
-        self.segments.push(segment);
-        self.segments.sort_by_key(|segment| segment.start_ms);
+        let mut row =
+            crate::MeetingUtterance::new(segment, Some(physical_source_id(source).into()));
+        row.metadata.spans = spans;
+        row.metadata.recovery_audio = recovery;
+        self.utterances.push(row);
+        self.utterances.sort_by_key(|row| row.segment.start_ms);
+        if self
+            .live_status
+            .as_ref()
+            .is_some_and(|status| status.enabled)
+            && let Some(update) = self.live_updates[index(source)].clone()
+        {
+            self.apply_live_window(&update);
+        }
     }
 
-    fn canonical(&mut self, segments: &[Segment]) -> Vec<crate::MeetingUtterance> {
-        segments
+    fn apply_live_window(&mut self, update: &crate::live_speakers::LiveSpeakerUpdate) -> bool {
+        let selected: Vec<_> = self
+            .utterances
+            .iter()
+            .filter(|row| {
+                row_source(row) == Some(update.source)
+                    && !row.segment.failed
+                    && row.metadata.start_ms >= update.start_ms
+                    && row.metadata.end_ms <= update.end_ms
+            })
+            .cloned()
+            .collect();
+        if selected.is_empty() {
+            return false;
+        }
+        let track = if update.source == Speaker::Me
+            || selected
+                .iter()
+                .all(|row| row.metadata.source_id.as_deref() == Some("room_microphone"))
+        {
+            crate::diarize::Track::Microphone
+        } else {
+            crate::diarize::Track::System
+        };
+        let (after, _) = crate::diarize::apply_utterances_with_voice_map(
+            &selected,
+            &update.turns,
+            track,
+            &update.voice_map,
+            true,
+        );
+        let before_text: String = selected
+            .iter()
+            .map(|row| row.segment.text.as_str())
+            .collect();
+        let after_text: String = after.iter().map(|row| row.segment.text.as_str()).collect();
+        if before_text != after_text
+            || after
+                .iter()
+                .any(|row| row_source(row) != Some(update.source))
+        {
+            return false;
+        }
+        if after == selected {
+            return false;
+        }
+        let selected_ids: std::collections::HashSet<_> = selected
+            .iter()
+            .map(|row| row.metadata.utterance_id.as_str())
+            .collect();
+        let mut updated: Vec<_> = self
+            .utterances
+            .iter()
+            .filter(|row| !selected_ids.contains(row.metadata.utterance_id.as_str()))
+            .cloned()
+            .collect();
+        updated.extend(after);
+        let ids: std::collections::HashSet<_> = updated
+            .iter()
+            .map(|row| row.metadata.utterance_id.as_str())
+            .collect();
+        if ids.len() != updated.len() {
+            return false;
+        }
+        updated.sort_by_key(|row| row.segment.start_ms);
+        self.utterances = updated;
+        self.changed();
+        true
+    }
+
+    fn visible_rows(&self) -> Vec<crate::MeetingUtterance> {
+        let physical: Vec<_> = self
+            .utterances
+            .iter()
+            .filter_map(physical_segment)
+            .collect();
+        let visible = filter_segments(&physical, &self.dictations);
+        let visible_keys: std::collections::HashSet<_> = visible
             .iter()
             .map(|segment| {
-                let metadata = self
-                    .metadata
-                    .entry((index(segment.speaker), segment.start_ms))
-                    .or_insert_with(|| {
-                        crate::UtteranceMetadata::new(
-                            segment,
-                            Some(physical_source_id(segment.speaker).into()),
-                        )
-                    });
-                let mut metadata = metadata.clone();
-                if segment.failed || segment.text.is_empty() {
-                    metadata.spans.clear();
-                    metadata.refresh_fingerprints(segment);
-                }
-                crate::MeetingUtterance {
-                    segment: segment.clone(),
-                    metadata,
-                }
+                (
+                    index(segment.speaker),
+                    segment.start_ms,
+                    segment.end_ms,
+                    segment.text.as_str(),
+                    segment.failed,
+                    segment.voice,
+                )
             })
+            .collect();
+        self.utterances
+            .iter()
+            .filter(|row| {
+                row_source(row).is_none_or(|source| {
+                    visible_keys.contains(&(
+                        index(source),
+                        row.segment.start_ms,
+                        row.segment.end_ms,
+                        row.segment.text.as_str(),
+                        row.segment.failed,
+                        row.segment.voice,
+                    ))
+                })
+            })
+            .filter(|row| row.segment.failed || !row.segment.text.trim().is_empty())
+            .cloned()
             .collect()
     }
 
     fn visible(&self) -> Vec<Segment> {
-        filter_segments(&self.segments, &self.dictations)
+        self.visible_rows()
             .into_iter()
-            .filter(|segment| segment.failed || !segment.text.trim().is_empty())
+            .map(|row| row.segment)
             .collect()
     }
 
-    fn persisted(&self) -> Vec<Segment> {
-        let visible = self.visible();
-        self.segments
+    fn persisted_rows(&self) -> Vec<crate::MeetingUtterance> {
+        let visible = self.visible_rows();
+        let ids: std::collections::HashSet<_> = visible
             .iter()
-            .map(|segment| {
-                let mut segment = segment.clone();
-                if !segment.failed
-                    && !visible.iter().any(|shown| {
-                        shown.speaker == segment.speaker && shown.start_ms == segment.start_ms
-                    })
-                {
-                    segment.text.clear();
+            .map(|row| row.metadata.utterance_id.as_str())
+            .collect();
+        self.utterances
+            .iter()
+            .map(|row| {
+                let mut row = row.clone();
+                if !row.segment.failed && !ids.contains(row.metadata.utterance_id.as_str()) {
+                    row.segment.text.clear();
+                    row.metadata.spans.clear();
+                    row.metadata.refresh_fingerprints(&row.segment);
                 }
-                segment
+                row
             })
             .collect()
+    }
+
+    fn has_source_start(&self, source: Speaker, start_ms: u64) -> bool {
+        self.utterances
+            .iter()
+            .any(|row| row_source(row) == Some(source) && row.metadata.start_ms == start_ms)
     }
 
     fn changed(&mut self) {
         self.dirty = true;
         self.revision = self.revision.wrapping_add(1);
     }
+}
+
+fn row_source(row: &crate::MeetingUtterance) -> Option<Speaker> {
+    match row.metadata.source_id.as_deref() {
+        Some("microphone") => Some(Speaker::Me),
+        Some("system" | "system_audio" | "room_microphone") => Some(Speaker::Others),
+        _ => None,
+    }
+}
+
+fn physical_segment(row: &crate::MeetingUtterance) -> Option<Segment> {
+    row_source(row).map(|source| Segment {
+        speaker: source,
+        ..row.segment.clone()
+    })
 }
 
 /// New chunks retain milliseconds; old whole-second file names remain valid.
@@ -246,11 +374,20 @@ fn commit_progress(
     store: &MeetingStore,
     id: &str,
     progress: &Mutex<Progress>,
+    write_gate: &Mutex<()>,
+) -> Result<(), PennelError> {
+    let _writing = write_gate.lock().unwrap();
+    commit_progress_owned(store, id, progress)
+}
+
+fn commit_progress_owned(
+    store: &MeetingStore,
+    id: &str,
+    progress: &Mutex<Progress>,
 ) -> Result<(), PennelError> {
     let (rows, metadata_revision, cleanup, revision, dictations) = {
-        let mut progress = progress.lock().unwrap();
-        let segments = progress.persisted();
-        let rows = progress.canonical(&segments);
+        let progress = progress.lock().unwrap();
+        let rows = progress.persisted_rows();
         (
             rows,
             progress.metadata_revision,
@@ -276,11 +413,11 @@ fn commit_progress(
                 }
             })
     })?;
-    if let Err(error) = retry_storage(|| store.cleanup_committed_audio(id)) {
-        progress.lock().unwrap().persistence_error = Some(format!(
-            "The text is saved, but recovery audio could not be cleaned up: {error}"
-        ));
-    }
+    let cleanup_error = retry_storage(|| store.cleanup_committed_audio(id))
+        .err()
+        .map(|error| {
+            format!("The text is saved, but recovery audio could not be cleaned up: {error}")
+        });
     let removed: Vec<_> = cleanup
         .into_iter()
         .filter(|path| !store.recovery_path_may_exist(id, path))
@@ -290,6 +427,12 @@ fn commit_progress(
     progress.cleanup.retain(|path| !removed.contains(path));
     if progress.revision == revision {
         progress.dirty = false;
+        if progress.terminal_error.is_none() && cleanup_error.is_none() {
+            progress.persistence_error = None;
+        }
+    }
+    if let Some(error) = cleanup_error {
+        progress.persistence_error = Some(error);
     }
     Ok(())
 }
@@ -301,6 +444,13 @@ pub struct MeetingSession {
     meeting_uid: String,
     store: MeetingStore,
     recognition: MeetingRecognition,
+    engine: Weak<PennelEngine>,
+    live_id: String,
+    live_generation: AtomicU64,
+    live_closed: AtomicBool,
+    live_worker: LiveWorkerSlot,
+    live_memory: Mutex<Option<Arc<crate::live_speakers::LiveSpeakerMemory>>>,
+    write_gate: Arc<Mutex<()>>,
     preview_vocabulary: Vec<String>,
     preview_observer: Mutex<Option<Arc<dyn MeetingPreviewAudioObserver>>>,
     preview_local: Option<Arc<LocalPreviewQueue>>,
@@ -336,6 +486,28 @@ fn physical_source_id(speaker: Speaker) -> &'static str {
     }
 }
 
+struct SessionLiveObserver(Weak<MeetingSession>);
+
+impl crate::live_speakers::LiveSpeakerObserver for SessionLiveObserver {
+    fn changed(&self, update: crate::live_speakers::LiveSpeakerUpdate) {
+        if let Some(session) = self.0.upgrade() {
+            session.apply_live_speaker_update(update);
+        }
+    }
+}
+
+fn unavailable_live_status() -> crate::live_speakers::LiveSpeakerStatus {
+    crate::live_speakers::LiveSpeakerStatus {
+        enabled: false,
+        available: false,
+        state: crate::live_speakers::LiveSpeakerState::Unavailable,
+        reason_code: Some("unsupported".into()),
+        revision: 0,
+        model: None,
+        destination: None,
+    }
+}
+
 impl MeetingSession {
     pub(crate) fn start(
         engine: Arc<PennelEngine>,
@@ -349,6 +521,7 @@ impl MeetingSession {
         let (stored_sender, stored_receiver) = mpsc::channel::<StoredJob>();
         let progress = Arc::new(Mutex::new(Progress {
             preview: PreviewDisplay::new(recognition.provider_kind, settings.live_text_enabled),
+            live_status: Some(engine.live_speaker_availability()),
             ..Default::default()
         }));
         let preview_vocabulary = crate::system_stt::bounded_vocabulary(&settings.dictionary);
@@ -460,6 +633,11 @@ impl MeetingSession {
             }
         });
         let worker_progress = progress.clone();
+        let live_worker: LiveWorkerSlot = Arc::new(Mutex::new(None));
+        let transcription_live_worker = live_worker.clone();
+        let engine_ref = Arc::downgrade(&engine);
+        let write_gate = Arc::new(Mutex::new(()));
+        let worker_write_gate = write_gate.clone();
         let worker_terminal = terminal.clone();
         let worker_store = MeetingStore::new(&root);
         let worker_id = id.clone();
@@ -502,11 +680,19 @@ impl MeetingSession {
                     progress.insert_recovery(segment, job.speaker, spans, Some(recovery));
                     progress.changed();
                 }
-                if let Err(error) = commit_progress(&worker_store, &worker_id, &worker_progress) {
+                if let Err(error) = commit_progress(
+                    &worker_store,
+                    &worker_id,
+                    &worker_progress,
+                    &worker_write_gate,
+                ) {
                     storage_failure(&worker_progress, &worker_terminal, &error);
                 }
                 let mut progress = worker_progress.lock().unwrap();
                 progress.pending = progress.pending.saturating_sub(1);
+                if let Some((_, worker)) = transcription_live_worker.lock().unwrap().clone() {
+                    worker.set_deferred(progress.pending > 0);
+                }
             }
         });
         Arc::new(Self {
@@ -514,6 +700,13 @@ impl MeetingSession {
             id,
             store,
             recognition,
+            engine: engine_ref,
+            live_id: uuid::Uuid::now_v7().to_string(),
+            live_generation: AtomicU64::new(0),
+            live_closed: AtomicBool::new(false),
+            live_worker,
+            live_memory: Mutex::new(None),
+            write_gate,
             preview_vocabulary,
             preview_observer: Mutex::new(None),
             preview_local,
@@ -545,7 +738,14 @@ impl MeetingSession {
         let mut failure = false;
         for chunk in chunks {
             let job = Job { speaker, chunk };
-            self.progress.lock().unwrap().pending += 1;
+            {
+                let mut progress = self.progress.lock().unwrap();
+                progress.pending += 1;
+                if let Some((_, worker)) = self.live_worker.lock().unwrap().clone() {
+                    worker.set_deferred(true);
+                    worker.submit_authoritative(speaker, job.chunk.start_ms, &job.chunk.samples);
+                }
+            }
             let result = if failure {
                 Err(TrySendError::Full(job))
             } else if let Some(sender) = sender.as_ref() {
@@ -648,6 +848,13 @@ impl MeetingSession {
         drop(chunkers);
         drop(counters);
         self.enqueue(speaker, chunks)?;
+        let live_worker = self.live_worker.lock().unwrap().clone();
+        if !suppressed
+            && !self.preview_paused.load(Ordering::SeqCst)
+            && let Some((_, worker)) = live_worker
+        {
+            worker.feed(speaker, audio_start * 1000 / u64::from(SAMPLE_RATE), audio);
+        }
         let (update, allows_audio) = {
             let mut progress = self.progress.lock().unwrap();
             progress.preview.advance(
@@ -689,7 +896,7 @@ impl MeetingSession {
     }
 
     fn persist_final(&self) -> Result<(), PennelError> {
-        commit_progress(&self.store, &self.id, &self.progress)?;
+        commit_progress(&self.store, &self.id, &self.progress, &self.write_gate)?;
         if !self.progress.lock().unwrap().unpersisted.is_empty() {
             return Err(PennelError::Storage {
                 message: "some audio has not been saved yet; try saving again".into(),
@@ -766,10 +973,119 @@ fn transcribe_job(
 }
 
 impl MeetingSession {
-    pub fn utterance_snapshot(&self) -> (u64, Vec<crate::MeetingUtterance>) {
+    fn apply_live_speaker_update(&self, update: crate::live_speakers::LiveSpeakerUpdate) {
+        if update.session_id != self.live_id
+            || update.end_ms <= update.start_ms
+            || update.end_ms.saturating_sub(update.start_ms) > 30_000
+            || self.live_closed.load(Ordering::SeqCst)
+            || self.stopping.load(Ordering::SeqCst)
+            || self.preview_paused.load(Ordering::SeqCst)
+            || self.dictating.load(Ordering::SeqCst)
+            || self.engine.upgrade().is_none_or(|engine| {
+                engine.settings().speaker_recognition
+                    != crate::settings::SpeakerRecognitionMode::Local
+            })
+        {
+            return;
+        }
+        let save = {
+            let mut progress = self.progress.lock().unwrap();
+            if self.live_generation.load(Ordering::SeqCst) != update.generation
+                || !progress
+                    .live_status
+                    .as_ref()
+                    .is_some_and(|status| status.enabled)
+                || progress.live_updates[index(update.source)]
+                    .as_ref()
+                    .is_some_and(|previous| previous.revision >= update.revision)
+            {
+                return;
+            }
+            let changed = progress.apply_live_window(&update);
+            let source_index = index(update.source);
+            progress.live_updates[source_index] = Some(update);
+            (changed || progress.dirty) && progress.pending == 0
+        };
+        if save
+            && let Ok(_writing) = self.write_gate.try_lock()
+            && let Err(error) = commit_progress_owned(&self.store, &self.id, &self.progress)
+        {
+            // Optional attribution saving cannot stop capture or discard the authoritative transcript.
+            let mut progress = self.progress.lock().unwrap();
+            progress.persistence_error = Some(format!("Saving failed: {error}"));
+        }
+    }
+
+    pub fn live_speaker_status(&self) -> crate::live_speakers::LiveSpeakerStatus {
+        use crate::live_speakers::LiveSpeakerState;
+        let worker = self.live_worker.lock().unwrap().clone();
+        let availability = self
+            .engine
+            .upgrade()
+            .map(|engine| engine.live_speaker_availability());
+        if !self.live_closed.load(Ordering::SeqCst)
+            && availability
+                .as_ref()
+                .is_some_and(|status| !status.available)
+            && worker.is_some()
+        {
+            self.deactivate_live_speakers(false);
+        }
+        let generation = self.live_generation.load(Ordering::SeqCst);
+        let worker_status = worker
+            .filter(|(owner, _)| *owner == generation)
+            .map(|(_, worker)| worker.status());
         let mut progress = self.progress.lock().unwrap();
-        let visible = progress.visible();
-        (progress.revision, progress.canonical(&visible))
+        let mut desired = progress
+            .live_status
+            .clone()
+            .unwrap_or_else(unavailable_live_status);
+        if self.live_closed.load(Ordering::SeqCst) {
+            desired.enabled = false;
+            desired.state = LiveSpeakerState::Stopped;
+            desired.reason_code = Some("stopped".into());
+        } else if let Some(status) = worker_status {
+            desired = status;
+        } else if !desired.enabled
+            && let Some(status) = availability
+            && (desired.state != LiveSpeakerState::Failed || !status.available)
+        {
+            desired = status;
+        }
+        progress.replace_live_status(desired);
+        progress.live_status.clone().unwrap()
+    }
+
+    fn deactivate_live_speakers(&self, permanent: bool) {
+        use crate::live_speakers::LiveSpeakerState;
+        self.live_generation.fetch_add(1, Ordering::SeqCst);
+        if permanent {
+            self.live_closed.store(true, Ordering::SeqCst);
+            self.live_memory.lock().unwrap().take();
+        }
+        let worker = self.live_worker.lock().unwrap().take();
+        if let Some((_, worker)) = worker {
+            worker.stop();
+        }
+        let mut progress = self.progress.lock().unwrap();
+        progress.live_updates = [None, None];
+        let mut status = progress
+            .live_status
+            .clone()
+            .unwrap_or_else(unavailable_live_status);
+        status.enabled = false;
+        status.state = if self.live_closed.load(Ordering::SeqCst) {
+            LiveSpeakerState::Stopped
+        } else {
+            LiveSpeakerState::Off
+        };
+        status.reason_code = (status.state == LiveSpeakerState::Stopped).then(|| "stopped".into());
+        progress.replace_live_status(status);
+    }
+
+    pub fn utterance_snapshot(&self) -> (u64, Vec<crate::MeetingUtterance>) {
+        let progress = self.progress.lock().unwrap();
+        (progress.revision, progress.visible_rows())
     }
 
     pub fn transcript_revision(&self) -> u64 {
@@ -815,26 +1131,126 @@ impl MeetingSession {
     fn update_preview_pause(&self) {
         let paused =
             self.preview_paused.load(Ordering::SeqCst) || self.dictating.load(Ordering::SeqCst);
-        self.progress.lock().unwrap().preview.pause(paused);
+        {
+            let mut progress = self.progress.lock().unwrap();
+            progress.preview.pause(paused);
+            if paused {
+                progress.live_updates = [None, None];
+            }
+        }
         if let Some(local) = &self.preview_local {
             local.pause(paused);
         }
         if paused && let Some(observer) = self.preview_observer.lock().unwrap().clone() {
             observer.reset();
         }
+        if let Some((_, worker)) = self.live_worker.lock().unwrap().clone() {
+            worker.set_paused(paused);
+        }
     }
 }
 
 #[uniffi::export]
 impl MeetingSession {
+    pub fn live_speaker_status_json(&self) -> Result<String, PennelError> {
+        serde_json::to_string(&self.live_speaker_status()).map_err(PennelError::storage)
+    }
+
+    pub fn set_live_speaker_attribution(
+        self: Arc<Self>,
+        enabled: bool,
+    ) -> Result<String, PennelError> {
+        use crate::live_speakers::LiveSpeakerState;
+        if !enabled {
+            self.deactivate_live_speakers(false);
+            return self.live_speaker_status_json();
+        }
+        if self.stopping.load(Ordering::SeqCst) || self.live_closed.load(Ordering::SeqCst) {
+            return Err(PennelError::Cancelled);
+        }
+        if self.live_speaker_status().enabled {
+            return self.live_speaker_status_json();
+        }
+        let engine = self.engine.upgrade().ok_or(PennelError::Cancelled)?;
+        let mut status = engine.live_speaker_availability();
+        if !status.available {
+            self.progress.lock().unwrap().replace_live_status(status);
+            return self.live_speaker_status_json();
+        }
+        let generation = self
+            .live_generation
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        status.enabled = true;
+        status.state = LiveSpeakerState::Warming;
+        status.reason_code = None;
+        self.progress
+            .lock()
+            .unwrap()
+            .replace_live_status(status.clone());
+        let memory = {
+            let mut memory = self.live_memory.lock().unwrap();
+            if self.live_closed.load(Ordering::SeqCst)
+                || self.live_generation.load(Ordering::SeqCst) != generation
+            {
+                return Err(PennelError::Cancelled);
+            }
+            memory
+                .get_or_insert_with(|| Arc::new(crate::live_speakers::LiveSpeakerMemory::default()))
+                .clone()
+        };
+        let result = engine.start_live_speaker_worker_with_memory(
+            self.live_id.clone(),
+            generation,
+            memory,
+            Arc::new(SessionLiveObserver(Arc::downgrade(&self))),
+        );
+        let worker = match result {
+            Ok(worker) => worker,
+            Err(error) => {
+                let mut progress = self.progress.lock().unwrap();
+                if self.live_generation.load(Ordering::SeqCst) == generation {
+                    status.enabled = false;
+                    status.state = LiveSpeakerState::Failed;
+                    status.reason_code = Some("failed".into());
+                    progress.replace_live_status(status);
+                }
+                return Err(error);
+            }
+        };
+        {
+            let progress = self.progress.lock().unwrap();
+            let mut slot = self.live_worker.lock().unwrap();
+            if self.live_generation.load(Ordering::SeqCst) != generation
+                || self.live_closed.load(Ordering::SeqCst)
+                || self.stopping.load(Ordering::SeqCst)
+            {
+                drop(slot);
+                worker.stop();
+                return Err(PennelError::Cancelled);
+            }
+            worker.set_deferred(progress.pending > 0);
+            *slot = Some((generation, worker.clone()));
+        }
+        worker.set_paused(
+            self.preview_paused.load(Ordering::SeqCst) || self.dictating.load(Ordering::SeqCst),
+        );
+        self.live_speaker_status_json()
+    }
+
+    pub fn stop_live_speaker_attribution(&self) {
+        self.deactivate_live_speakers(true);
+    }
+
     pub fn transcript_snapshot_json(&self) -> Result<String, PennelError> {
-        let (revision, rows, preview) = {
-            let mut progress = self.progress.lock().unwrap();
-            let visible = progress.visible();
+        self.live_speaker_status();
+        let (revision, rows, preview, live_status) = {
+            let progress = self.progress.lock().unwrap();
             (
                 progress.revision,
-                progress.canonical(&visible),
+                progress.visible_rows(),
                 progress.preview.snapshot(progress.revision),
+                progress.live_status.clone(),
             )
         };
         serde_json::to_string(&serde_json::json!({
@@ -843,6 +1259,7 @@ impl MeetingSession {
             "metadata_status": "valid",
             "transcript": crate::transcript_projection::rows(&rows)?,
             "preview": preview,
+            "live_speaker_attribution": live_status,
         }))
         .map_err(PennelError::storage)
     }
@@ -985,6 +1402,7 @@ impl MeetingSession {
         {
             let _ingestion = self.ingestion.lock().unwrap();
             self.stopping.store(true, Ordering::SeqCst);
+            self.stop_live_speaker_attribution();
             self.stop_preview();
             for speaker in [Speaker::Me, Speaker::Others] {
                 let rest = self.chunkers.lock().unwrap()[index(speaker)].flush();
@@ -1015,9 +1433,9 @@ impl MeetingSession {
                     .progress
                     .lock()
                     .unwrap()
-                    .segments
+                    .utterances
                     .iter()
-                    .any(|segment| segment.failed);
+                    .any(|row| row.segment.failed);
                 self.store
                     .finish_initial_transcription(&self.id, successful)
             });
@@ -1063,21 +1481,46 @@ impl MeetingSession {
             }
         }
         // A crashed worker may have queued durable files without publishing their segment yet.
-        let recovered = self.store.read_transcript_snapshot(&self.id)?;
+        let recovered = self.store.read_transcript_snapshot(&self.id)?.utterances;
         {
             let mut progress = self.progress.lock().unwrap();
-            for row in recovered.utterances {
-                let segment = row.segment;
-                if !progress.segments.iter().any(|existing| {
-                    existing.speaker == segment.speaker && existing.start_ms == segment.start_ms
-                }) {
-                    progress
-                        .metadata
-                        .insert((index(segment.speaker), segment.start_ms), row.metadata);
-                    progress.segments.push(segment);
+            for row in recovered {
+                let descendants: Vec<_> = progress
+                    .utterances
+                    .iter()
+                    .filter(|existing| {
+                        existing
+                            .metadata
+                            .lineage
+                            .contains(&row.metadata.utterance_id)
+                    })
+                    .collect();
+                let lineage_match = !descendants.is_empty()
+                    && descendants
+                        .iter()
+                        .all(|existing| row_source(existing) == row_source(&row))
+                    && descendants
+                        .iter()
+                        .map(|existing| existing.segment.text.as_str())
+                        .collect::<String>()
+                        == row.segment.text;
+                let exists =
+                    progress.utterances.iter().any(|existing| {
+                        existing.metadata.utterance_id == row.metadata.utterance_id
+                    }) || row_source(&row).is_some_and(|source| {
+                        progress.has_source_start(source, row.metadata.start_ms)
+                    }) || lineage_match;
+                if !exists && !descendants.is_empty() {
+                    return Err(PennelError::storage(
+                        "The transcript changed during recovery. Review the retained speaker turns before saving again.",
+                    ));
+                }
+                if !exists {
+                    progress.utterances.push(row);
                     progress.changed();
                 }
             }
+            progress.utterances.sort_by_key(|row| row.segment.start_ms);
             progress.pending = 0;
         }
         let result = self.persist_final().and_then(|_| {
@@ -1085,9 +1528,9 @@ impl MeetingSession {
                 .progress
                 .lock()
                 .unwrap()
-                .segments
+                .utterances
                 .iter()
-                .any(|segment| segment.failed);
+                .any(|row| row.segment.failed);
             self.store
                 .finish_initial_transcription(&self.id, successful)
         });
@@ -1417,6 +1860,567 @@ mod tests {
         }
     }
 
+
+    fn live_fixture() -> (tempfile::TempDir, Arc<PennelEngine>, Arc<MeetingSession>) {
+        let directory = tempfile::tempdir().unwrap();
+        let engine =
+            PennelEngine::new_preview(directory.path().to_string_lossy().into_owned()).unwrap();
+        let session = engine
+            .clone()
+            .start_meeting(
+                "Owned live speaker fixture".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        (directory, engine, session)
+    }
+
+    fn synthetic_live_status(enabled: bool) -> crate::live_speakers::LiveSpeakerStatus {
+        crate::live_speakers::LiveSpeakerStatus {
+            enabled,
+            available: true,
+            state: if enabled {
+                crate::live_speakers::LiveSpeakerState::Running
+            } else {
+                crate::live_speakers::LiveSpeakerState::Off
+            },
+            reason_code: None,
+            revision: 0,
+            model: Some("owned-synthetic-speaker".into()),
+            destination: Some("local".into()),
+        }
+    }
+
+    fn seed_live_row(session: &MeetingSession, source: Speaker) -> String {
+        let mut progress = session.progress.lock().unwrap();
+        progress.insert(
+            Segment {
+                start_ms: 0,
+                end_ms: 1_000,
+                speaker: source,
+                text: "Yes no".into(),
+                failed: false,
+                voice: None,
+            },
+            source,
+            vec![
+                crate::TimedTextSpan(0, 3, 0, 500),
+                crate::TimedTextSpan(4, 6, 500, 1_000),
+            ],
+        );
+        progress.replace_live_status(synthetic_live_status(true));
+        progress.changed();
+        progress.utterances[0].metadata.utterance_id.clone()
+    }
+
+    fn live_update(
+        session: &MeetingSession,
+        revision: u64,
+        source: Speaker,
+        voice: u32,
+    ) -> crate::live_speakers::LiveSpeakerUpdate {
+        crate::live_speakers::LiveSpeakerUpdate {
+            session_id: session.live_id.clone(),
+            generation: session.live_generation.load(Ordering::SeqCst),
+            revision,
+            source,
+            start_ms: 0,
+            end_ms: 1_000,
+            turns: vec![pennel_speakers::Turn {
+                start_ms: 0,
+                end_ms: 1_000,
+                speaker: 7,
+            }],
+            voice_map: vec![(7, voice)],
+        }
+    }
+
+    #[test]
+    fn live_status_revision_never_rewinds_when_workers_or_enablement_change() {
+        let mut progress = Progress::default();
+        progress.replace_live_status(synthetic_live_status(false));
+        let first = progress.live_status.as_ref().unwrap().revision;
+        progress.replace_live_status(synthetic_live_status(true));
+        assert!(progress.live_status.as_ref().unwrap().revision > first);
+        let enabled = progress.live_status.as_ref().unwrap().revision;
+        progress.replace_live_status(synthetic_live_status(false));
+        assert!(progress.live_status.as_ref().unwrap().revision > enabled);
+        let disabled = progress.live_status.as_ref().unwrap().revision;
+        progress.replace_live_status(synthetic_live_status(true));
+        assert!(progress.live_status.as_ref().unwrap().revision > disabled);
+    }
+
+    #[test]
+    fn live_source_updates_preserve_durable_identity_and_valid_manual_corrections() {
+        let (_directory, _engine, session) = live_fixture();
+        let id = seed_live_row(&session, Speaker::Me);
+        session.apply_live_speaker_update(live_update(&session, 1, Speaker::Me, 2));
+        let (first_revision, first) = session.utterance_snapshot();
+        assert_eq!(first[0].metadata.utterance_id, id);
+        assert_eq!(first[0].metadata.source_id.as_deref(), Some("microphone"));
+        assert_eq!(first[0].segment.voice, Some(2));
+        {
+            let mut progress = session.progress.lock().unwrap();
+            let row = &mut progress.utterances[0];
+            row.metadata.manual = Some(crate::ManualCorrection {
+                name: Some("Owned correction".into()),
+                voice: Some(2),
+                source_fingerprint: row.metadata.source_fingerprint.clone(),
+                review_required: false,
+            });
+        }
+        session.apply_live_speaker_update(live_update(&session, 2, Speaker::Me, 3));
+        let (second_revision, second) = session.utterance_snapshot();
+        assert!(second_revision >= first_revision);
+        assert_eq!(second[0].metadata.utterance_id, id);
+        assert_eq!(second[0].segment.voice, Some(2));
+        assert_eq!(
+            second[0].metadata.manual.as_ref().unwrap().name.as_deref(),
+            Some("Owned correction")
+        );
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn live_updates_reject_stale_sessions_generations_sources_and_stop_completions() {
+        let (_directory, _engine, session) = live_fixture();
+        seed_live_row(&session, Speaker::Me);
+        let initial = session.utterance_snapshot();
+        let mut foreign = live_update(&session, 1, Speaker::Me, 2);
+        foreign.session_id = "different-session".into();
+        session.apply_live_speaker_update(foreign);
+        let mut stale = live_update(&session, 2, Speaker::Me, 2);
+        stale.generation += 1;
+        session.apply_live_speaker_update(stale);
+        session.apply_live_speaker_update(live_update(&session, 3, Speaker::Others, 2));
+        assert_eq!(session.utterance_snapshot(), initial);
+        let pending = live_update(&session, 4, Speaker::Me, 2);
+        session.stop_live_speaker_attribution();
+        session.apply_live_speaker_update(pending);
+        assert_eq!(session.utterance_snapshot(), initial);
+        assert!(!session.live_speaker_status().enabled);
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn partially_overlapping_rolling_windows_leave_unmeasured_words_and_labels_unchanged() {
+        let (_directory, _engine, session) = live_fixture();
+        seed_live_row(&session, Speaker::Me);
+        let initial = session.utterance_snapshot();
+        let mut partial = live_update(&session, 1, Speaker::Me, 2);
+        partial.start_ms = 500;
+        session.apply_live_speaker_update(partial);
+        assert_eq!(session.utterance_snapshot(), initial);
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn optional_live_commit_skips_a_blocked_writer_and_authoritative_save_keeps_latest_rows() {
+        let (_directory, _engine, session) = live_fixture();
+        let microphone_id = seed_live_row(&session, Speaker::Me);
+        let writing = session.write_gate.lock().unwrap();
+        let live_session = session.clone();
+        let update = live_update(&session, 1, Speaker::Me, 2);
+        let (finished, completion) = mpsc::channel();
+        let live = std::thread::spawn(move || {
+            live_session.apply_live_speaker_update(update);
+            finished.send(()).unwrap();
+        });
+        completion
+            .recv_timeout(Duration::from_secs(2))
+            .expect("optional attribution must not wait on the authoritative writer");
+        assert!(session.progress.lock().unwrap().dirty);
+        {
+            let mut progress = session.progress.lock().unwrap();
+            progress.insert(
+                Segment {
+                    start_ms: 2_000,
+                    end_ms: 3_000,
+                    speaker: Speaker::Others,
+                    text: "Owned remote speech.".into(),
+                    failed: false,
+                    voice: None,
+                },
+                Speaker::Others,
+                Vec::new(),
+            );
+            progress.changed();
+        }
+        let authoritative = session.clone();
+        let save = std::thread::spawn(move || {
+            commit_progress(
+                &authoritative.store,
+                &authoritative.id,
+                &authoritative.progress,
+                &authoritative.write_gate,
+            )
+        });
+        drop(writing);
+        live.join().unwrap();
+        save.join().unwrap().unwrap();
+        let saved = session.store.read_transcript_snapshot(&session.id).unwrap();
+        assert_eq!(
+            saved.metadata_status,
+            crate::TranscriptMetadataStatus::Valid
+        );
+        assert_eq!(saved.utterances.len(), 2);
+        assert_eq!(saved.utterances[0].metadata.utterance_id, microphone_id);
+        assert_eq!(
+            saved.utterances[0].metadata.source_id.as_deref(),
+            Some("microphone")
+        );
+        assert_eq!(saved.utterances[0].segment.voice, Some(2));
+        assert_eq!(saved.utterances[1].segment.text, "Owned remote speech.");
+        assert!(session.health().terminal_error.is_none());
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn live_enablement_is_not_carried_to_a_following_meeting() {
+        let (_directory, engine, session) = live_fixture();
+        assert!(!session.live_speaker_status().enabled);
+        seed_live_row(&session, Speaker::Me);
+        session.clone().set_live_speaker_attribution(false).unwrap();
+        assert!(!session.live_speaker_status().enabled);
+        session.stop().unwrap();
+        let next = engine
+            .start_meeting(
+                "Following owned meeting".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        assert!(!next.live_speaker_status().enabled);
+        next.stop().unwrap();
+    }
+
+    #[test]
+    fn session_voice_memory_survives_disable_but_is_released_at_capture_stop() {
+        let (_directory, _engine, session) = live_fixture();
+        let memory = Arc::new(crate::live_speakers::LiveSpeakerMemory::default());
+        *session.live_memory.lock().unwrap() = Some(memory.clone());
+        session.clone().set_live_speaker_attribution(false).unwrap();
+        assert!(Arc::ptr_eq(
+            session.live_memory.lock().unwrap().as_ref().unwrap(),
+            &memory
+        ));
+        session.stop_live_speaker_attribution();
+        assert!(session.live_memory.lock().unwrap().is_none());
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn live_audio_uses_accepted_clock_without_caption_enablement_and_excludes_dictation() {
+        let _serial = crate::live_speakers::test_worker_guard();
+        struct OwnedInference;
+        impl crate::live_speakers::LiveSpeakerInference for OwnedInference {
+            fn infer(
+                &mut self,
+                samples: &[f32],
+            ) -> Result<pennel_speakers::Diarization, PennelError> {
+                let duration = samples.len() as u64 * 1_000 / 16_000;
+                Ok(pennel_speakers::Diarization {
+                    turns: vec![pennel_speakers::Turn {
+                        start_ms: 0,
+                        end_ms: duration,
+                        speaker: 0,
+                    }],
+                    speakers: vec![pennel_speakers::Speaker {
+                        speaker: 0,
+                        speech_ms: duration,
+                        embedding: vec![1.0, 0.0],
+                    }],
+                })
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let engine =
+            PennelEngine::new_preview(directory.path().to_string_lossy().into_owned()).unwrap();
+        let mut settings = engine.settings();
+        settings.live_text_enabled = false;
+        engine.update_settings(settings).unwrap();
+        let session = engine
+            .start_meeting(
+                "Owned live accepted audio".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        let worker = crate::live_speakers::LiveSpeakerWorker::start(
+            session.live_id.clone(),
+            0,
+            "owned-test-inference".into(),
+            Arc::new(|| true),
+            Box::new(|| Ok(Box::new(OwnedInference))),
+            Arc::new(SessionLiveObserver(Arc::downgrade(&session))),
+        );
+        *session.live_worker.lock().unwrap() = Some((0, worker.clone()));
+        session
+            .progress
+            .lock()
+            .unwrap()
+            .replace_live_status(synthetic_live_status(true));
+        let admission_deadline = Instant::now() + Duration::from_secs(10);
+        while !worker.is_admitted() && Instant::now() < admission_deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(worker.is_admitted());
+        session
+            .push_audio_at(Speaker::Me, 5_000, tone(10.0))
+            .unwrap();
+        let until = Instant::now() + Duration::from_secs(10);
+        while session.progress.lock().unwrap().live_updates[0].is_none() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let update = session.progress.lock().unwrap().live_updates[0]
+            .clone()
+            .expect("owned native fixture must receive accepted audio");
+        assert_eq!((update.start_ms, update.end_ms), (5_000, 15_000));
+        assert!(
+            session
+                .preview_snapshot()
+                .tracks
+                .iter()
+                .all(|track| track.state == MeetingPreviewState::Disabled)
+        );
+        let calls = worker.metrics().native_calls;
+        session.set_dictating(true);
+        session
+            .push_audio_at(Speaker::Me, 15_000, tone(1.0))
+            .unwrap();
+        session
+            .push_audio_at(Speaker::Others, 0, tone(1.0))
+            .unwrap();
+        assert_eq!(worker.metrics().pending_samples, 0);
+        assert_eq!(worker.metrics().native_calls, calls);
+        assert!(
+            session
+                .progress
+                .lock()
+                .unwrap()
+                .live_updates
+                .iter()
+                .all(Option::is_none)
+        );
+        session.set_dictating(false);
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn delayed_two_track_transcription_keeps_exact_hard_chunk_windows_for_live_attribution() {
+        let _serial = crate::live_speakers::test_worker_guard();
+        struct DelayedSpeech {
+            entered: mpsc::Sender<usize>,
+            release: Mutex<mpsc::Receiver<()>>,
+            calls: std::sync::atomic::AtomicUsize,
+        }
+        impl crate::SystemTranscriber for DelayedSpeech {
+            fn transcribe(
+                &self,
+                _: Vec<f32>,
+                _: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> Result<String, PennelError> {
+                let call = self.calls.fetch_add(1, Ordering::SeqCst);
+                if call < 2 {
+                    self.entered.send(call).unwrap();
+                    self.release
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                }
+                Ok(match call {
+                    0 => "Owned microphone speech remains complete.",
+                    1 => "The remote participant confirms another topic.",
+                    _ => "Owned final tail.",
+                }
+                .into())
+            }
+        }
+        struct SingleVoice {
+            calls: usize,
+        }
+        impl crate::live_speakers::LiveSpeakerInference for SingleVoice {
+            fn infer(
+                &mut self,
+                samples: &[f32],
+            ) -> Result<pennel_speakers::Diarization, PennelError> {
+                let duration = samples.len() as u64 * 1_000 / 16_000;
+                let embedding = if self.calls == 0 {
+                    vec![1.0, 0.0]
+                } else {
+                    vec![0.0, 1.0]
+                };
+                self.calls += 1;
+                Ok(pennel_speakers::Diarization {
+                    turns: vec![pennel_speakers::Turn {
+                        start_ms: 0,
+                        end_ms: duration,
+                        speaker: 0,
+                    }],
+                    speakers: vec![pennel_speakers::Speaker {
+                        speaker: 0,
+                        speech_ms: duration,
+                        embedding,
+                    }],
+                })
+            }
+        }
+        let (_directory, engine) = preview_engine();
+        let mut settings = engine.settings();
+        settings.live_text_enabled = false;
+        engine.update_settings(settings).unwrap();
+        let (entered, requests) = mpsc::channel();
+        let (release, blocked) = mpsc::channel();
+        engine.set_system_transcriber(Arc::new(DelayedSpeech {
+            entered,
+            release: Mutex::new(blocked),
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }));
+        let session = engine
+            .clone()
+            .start_meeting(
+                "Owned delayed two-track live attribution".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        let worker = crate::live_speakers::LiveSpeakerWorker::start(
+            session.live_id.clone(),
+            0,
+            "owned-chunk-boundary-inference".into(),
+            Arc::new(|| true),
+            Box::new(|| Ok(Box::new(SingleVoice { calls: 0 }))),
+            Arc::new(SessionLiveObserver(Arc::downgrade(&session))),
+        );
+        *session.live_worker.lock().unwrap() = Some((0, worker.clone()));
+        session
+            .progress
+            .lock()
+            .unwrap()
+            .replace_live_status(synthetic_live_status(true));
+        let admission_deadline = Instant::now() + Duration::from_secs(10);
+        while !worker.is_admitted() && Instant::now() < admission_deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(worker.is_admitted());
+        session.push_audio_at(Speaker::Me, 0, tone(30.0)).unwrap();
+        assert_eq!(requests.recv_timeout(Duration::from_secs(5)).unwrap(), 0);
+        session
+            .push_audio_at(Speaker::Others, 0, tone(30.0))
+            .unwrap();
+        session
+            .push_audio_at(Speaker::Me, 30_000, tone(0.5))
+            .unwrap();
+        session
+            .push_audio_at(Speaker::Others, 30_000, tone(0.5))
+            .unwrap();
+        assert_eq!(worker.metrics().native_calls, 0);
+        release.send(()).unwrap();
+        assert_eq!(requests.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
+        assert_eq!(worker.metrics().native_calls, 0);
+        release.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            let rows = session.utterance_snapshot().1;
+            if rows.len() == 2 && rows.iter().all(|row| row.segment.voice.is_some()) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let rows = session.utterance_snapshot().1;
+        assert_eq!(rows.len(), 2);
+        assert!(
+            rows.iter()
+                .all(|row| row.segment.voice.is_some() && row.metadata.attribution.provisional)
+        );
+        assert!(
+            rows.iter()
+                .all(|row| (row.metadata.start_ms, row.metadata.end_ms) == (0, 30_000))
+        );
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.segment.text.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Owned microphone speech remains complete.",
+                "The remote participant confirms another topic."
+            ]
+        );
+        let progress = session.progress.lock().unwrap();
+        assert!(
+            progress
+                .live_updates
+                .iter()
+                .all(|update| update
+                    .as_ref()
+                    .is_some_and(|update| (update.start_ms, update.end_ms) == (0, 30_000)))
+        );
+        drop(progress);
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn canonical_identity_and_dictation_filter_follow_physical_source_after_person_relabel() {
+        let mut progress = Progress::default();
+        progress.insert(
+            Segment {
+                start_ms: 0,
+                end_ms: 1_000,
+                speaker: Speaker::Me,
+                text: "Owned microphone fixture.".into(),
+                failed: false,
+                voice: None,
+            },
+            Speaker::Me,
+            Vec::new(),
+        );
+        let before = progress.utterances.clone();
+        progress.utterances[0].segment.speaker = Speaker::Others;
+        let after = progress.utterances.clone();
+        assert_eq!(
+            after[0].metadata.utterance_id,
+            before[0].metadata.utterance_id
+        );
+        assert_eq!(after[0].metadata.source_id.as_deref(), Some("microphone"));
+        progress.dictations.push((0, 1_000));
+        assert!(progress.visible().is_empty());
+    }
+
+    #[test]
+    fn system_speech_relabelled_as_me_never_becomes_microphone_dictation() {
+        let mut progress = Progress::default();
+        progress.insert(
+            Segment {
+                start_ms: 0,
+                end_ms: 1_000,
+                speaker: Speaker::Others,
+                text: "Owned remote fixture.".into(),
+                failed: false,
+                voice: None,
+            },
+            Speaker::Others,
+            Vec::new(),
+        );
+        let before = progress.utterances.clone();
+        progress.utterances[0].segment.speaker = Speaker::Me;
+        progress.dictations.push((0, 1_000));
+        assert_eq!(progress.visible().len(), 1);
+        let after = progress.utterances.clone();
+        assert_eq!(
+            after[0].metadata.utterance_id,
+            before[0].metadata.utterance_id
+        );
+        assert_eq!(after[0].metadata.source_id, before[0].metadata.source_id);
+    }
+
     #[derive(Default)]
     struct PreviewObserver(Mutex<Vec<MeetingPreviewAudio>>);
 
@@ -1693,14 +2697,18 @@ mod tests {
         assert!(session.transcript_snapshot().1.is_empty());
         {
             let mut progress = session.progress.lock().unwrap();
-            progress.segments.push(Segment {
-                start_ms: 0,
-                end_ms: 1_000,
-                speaker: Speaker::Me,
-                text: "fixture".into(),
-                failed: false,
-                voice: None,
-            });
+            progress.insert(
+                Segment {
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    speaker: Speaker::Me,
+                    text: "fixture".into(),
+                    failed: false,
+                    voice: None,
+                },
+                Speaker::Me,
+                Vec::new(),
+            );
             progress.changed();
         }
         let (revision, transcript) = session.transcript_snapshot();
@@ -1721,20 +2729,26 @@ mod tests {
         let session = engine(&dir, &server)
             .start_meeting("Atomic revision".into(), keys())
             .unwrap();
-        session.progress.lock().unwrap().segments.push(Segment {
-            start_ms: 0,
-            end_ms: 1_000,
-            speaker: Speaker::Others,
-            text: "0".into(),
-            failed: false,
-            voice: None,
-        });
+        session.progress.lock().unwrap().insert(
+            Segment {
+                start_ms: 0,
+                end_ms: 1_000,
+                speaker: Speaker::Others,
+                text: "0".into(),
+                failed: false,
+                voice: None,
+            },
+            Speaker::Others,
+            Vec::new(),
+        );
         std::thread::scope(|scope| {
             scope.spawn(|| {
                 for _ in 0..500 {
                     let mut progress = session.progress.lock().unwrap();
                     progress.changed();
-                    progress.segments[0].text = progress.revision.to_string();
+                    progress.utterances[0].segment.text = progress.revision.to_string();
+                    let row = &mut progress.utterances[0];
+                    row.metadata.refresh_fingerprints(&row.segment);
                 }
             });
             for _ in 0..500 {
@@ -2266,6 +3280,13 @@ mod tests {
             .unwrap();
         let (sender, _receiver) = mpsc::sync_channel(INGRESS_CAPACITY);
         let session = MeetingSession {
+            engine: Weak::new(),
+            live_id: "owned-full-queue".into(),
+            live_generation: AtomicU64::new(0),
+            live_closed: AtomicBool::new(false),
+            live_worker: Arc::new(Mutex::new(None)),
+            live_memory: Mutex::new(None),
+            write_gate: Arc::new(Mutex::new(())),
             meeting_uid: store.uid_of(&id).unwrap(),
             id,
             store,

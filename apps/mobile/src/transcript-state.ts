@@ -17,6 +17,10 @@ export function attributionEditable(status: TranscriptMetadataStatus | undefined
   return !status || status === 'valid' || status === 'absent';
 }
 
+export function transcriptAttributionProvisional(segment: Segment): boolean {
+  return segment.attribution?.provisional === true && !segment.confirmed_speaker_name;
+}
+
 export function transcriptSpeakerLabel(segment: Segment, speakers: MeetingDetail['speakers'], t: (key: string, args?: Record<string, string | number>) => string): string {
   if (segment.confirmed_speaker_name) return segment.confirmed_speaker_name;
   if (segment.attribution) {

@@ -17,7 +17,7 @@ import { AskPanel, type AskSession } from '../components/AskPanel';
 import { workflowText } from '../workflow-copy';
 import { summaryHasHeading } from '../workflow-state';
 import { useHapticFeedback } from '../haptics';
-import { attributionEditable, transcriptKeys, transcriptSpeakerLabel, transcriptPlayback } from '../transcript-state';
+import { attributionEditable, transcriptKeys, transcriptSpeakerLabel, transcriptPlayback, transcriptAttributionProvisional } from '../transcript-state';
 
 type Pane = 'notes' | 'transcript' | 'questions';
 type Editor = { type: 'rename' } | { type: 'speaker'; voice: number; initial: string } | null;
@@ -126,9 +126,10 @@ export default function Meeting() {
       {detail.metadata_status && detail.metadata_status !== 'valid' && <Notice>{t(`meetings.attribution_metadata_${detail.metadata_status}`)}</Notice>}
       <FlatList ref={transcriptList} data={detail.transcript} onScroll={(event) => { transcriptOffset.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={32} initialNumToRender={12} maxToRenderPerBatch={12} windowSize={7} contentContainerStyle={{ paddingTop: theme.space[3], paddingBottom: theme.space[10] }} keyExtractor={(_segment, index) => rowKeys[index]} onScrollToIndexFailed={({ index, averageItemLength }) => { transcriptList.current?.scrollToOffset({ offset: averageItemLength * index, animated: !reducedMotion }); }} renderItem={({ item }) => {
         const label = transcriptSpeakerLabel(item, detail.speakers, t);
+        const provisional = transcriptAttributionProvisional(item) ? ` · ${t('meetings.live_speakers_provisional_tag')}` : '';
         const source = item.source_id ? t(`meetings.attribution_source_${item.source_id}`) : '';
         const playback = transcriptPlayback(id, item, detail.audio_tracks, detail.metadata_status);
-        return <Pressable accessibilityRole="button" accessibilityLabel={`${clock(item.start_ms / 1000)} ${label}${source ? ` · ${source}` : ''}. ${item.text}`} accessibilityState={{ disabled: !playback }} accessibilityHint={playback ? t('meetings.play_from_here') : t('meetings.passage_audio_unavailable')} disabled={!playback} onPress={() => { if (playback) void run('playback', playback.method, playback.payload).then(value => { if (value !== undefined) setPlayRequested(true); }); }} style={{ gap: theme.space[1], minHeight: 44, paddingBottom: theme.space[5] }}><Body muted style={{ fontSize: theme.size.label }}>{clock(item.start_ms / 1000)} · {label}{source ? ` · ${source}` : ''}</Body><Body selectable style={item.failed ? { color: theme.colors.accent } : undefined}>{item.failed ? t('meetings.transcription_failed') : item.text}</Body>{item.correction_review_required && <Body muted style={{ fontSize: theme.size.label }}>{t('meetings.attribution_correction_review')}</Body>}</Pressable>;
+        return <Pressable accessibilityRole="button" accessibilityLabel={`${clock(item.start_ms / 1000)} ${label}${provisional}${source ? ` · ${source}` : ''}. ${item.text}`} accessibilityState={{ disabled: !playback }} accessibilityHint={playback ? t('meetings.play_from_here') : t('meetings.passage_audio_unavailable')} disabled={!playback} onPress={() => { if (playback) void run('playback', playback.method, playback.payload).then(value => { if (value !== undefined) setPlayRequested(true); }); }} style={{ gap: theme.space[1], minHeight: 44, paddingBottom: theme.space[5] }}><Body muted style={{ fontSize: theme.size.label }}>{clock(item.start_ms / 1000)} · {label}{provisional}{source ? ` · ${source}` : ''}</Body><Body selectable style={item.failed ? { color: theme.colors.accent } : undefined}>{item.failed ? t('meetings.transcription_failed') : item.text}</Body>{item.correction_review_required && <Body muted style={{ fontSize: theme.size.label }}>{t('meetings.attribution_correction_review')}</Body>}</Pressable>;
       }} ListEmptyComponent={<Empty title={t('meetings.empty_transcript')} />} />
     </>}
     {pane === 'questions' && <AskPanel meetingId={id} session={askSession} onSessionChange={setAskSession} />}

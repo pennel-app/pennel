@@ -677,6 +677,7 @@ mod tests {
             voices: vec![1],
             turns: vec![],
             self_voice: false,
+            provisional: false,
         };
         let before = f
             .store

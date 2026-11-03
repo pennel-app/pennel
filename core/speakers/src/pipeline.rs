@@ -99,62 +99,84 @@ pub fn embed(model: &Path, samples: &[f32]) -> Result<Vec<f32>, Error> {
     Embedder::load(model, Options::default().threads)?.embed(samples)
 }
 
+/// Loaded local acoustic models, owned by a worker and reused for bounded windows.
+pub struct Diarizer {
+    diarizer: OfflineSpeakerDiarization,
+    embedder: Embedder,
+}
+
+impl Diarizer {
+    pub fn load(models: &Models, options: &Options) -> Result<Self, Error> {
+        let segmentation = existing(models.segmentation)?;
+        let embedding = existing(models.embedding)?;
+        let config = OfflineSpeakerDiarizationConfig {
+            segmentation: OfflineSpeakerSegmentationModelConfig {
+                pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
+                    model: Some(segmentation),
+                    window_shift_ratio: options.window_shift,
+                },
+                num_threads: options.threads.max(1),
+                debug: false,
+                provider: Some("cpu".into()),
+            },
+            embedding: SpeakerEmbeddingExtractorConfig {
+                model: Some(embedding),
+                num_threads: options.threads.max(1),
+                debug: false,
+                provider: Some("cpu".into()),
+            },
+            clustering: FastClusteringConfig {
+                num_clusters: -1,
+                threshold: options.cluster_threshold,
+                compute_confidence: false,
+            },
+            min_duration_on: 0.3,
+            min_duration_off: 0.5,
+        };
+        let diarizer = OfflineSpeakerDiarization::create(&config)
+            .ok_or_else(|| Error::Model("segmentatiemodel".into()))?;
+        let embedder = Embedder::load(models.embedding, options.threads)?;
+        Ok(Self { diarizer, embedder })
+    }
+
+    pub fn process(&self, samples: &[f32]) -> Result<Diarization, Error> {
+        if samples.len() < SAMPLE_RATE as usize {
+            return Ok(Diarization::default());
+        }
+        let result = self
+            .diarizer
+            .process(samples)
+            .ok_or_else(|| Error::Audio("no result".into()))?;
+        let raw = result.sort_by_start_time().into_iter().map(|segment| {
+            (
+                (segment.start.max(0.0) * 1000.0).round() as u64,
+                (segment.end.max(0.0) * 1000.0).round() as u64,
+                i64::from(segment.speaker),
+            )
+        });
+        let (turns, count) = renumber(raw);
+        let speakers = (0..count as u32)
+            .map(|speaker| {
+                let spans = voiceprint_spans(&turns, speaker, VOICEPRINT_BUDGET_MS);
+                Ok(Speaker {
+                    speaker,
+                    speech_ms: speech_ms(&turns, speaker),
+                    embedding: self.embedder.embed_spans(samples, &spans)?,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Diarization { turns, speakers })
+    }
+}
+
 /// Who spoke when in 16 kHz mono audio, with a voiceprint per speaker.
 pub fn diarize(models: &Models, samples: &[f32], options: &Options) -> Result<Diarization, Error> {
-    let segmentation = existing(models.segmentation)?;
-    let embedding = existing(models.embedding)?;
+    existing(models.segmentation)?;
+    existing(models.embedding)?;
     if samples.len() < SAMPLE_RATE as usize {
         return Ok(Diarization::default());
     }
-    let config = OfflineSpeakerDiarizationConfig {
-        segmentation: OfflineSpeakerSegmentationModelConfig {
-            pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
-                model: Some(segmentation),
-                window_shift_ratio: options.window_shift,
-            },
-            num_threads: options.threads.max(1),
-            debug: false,
-            provider: Some("cpu".into()),
-        },
-        embedding: SpeakerEmbeddingExtractorConfig {
-            model: Some(embedding),
-            num_threads: options.threads.max(1),
-            debug: false,
-            provider: Some("cpu".into()),
-        },
-        clustering: FastClusteringConfig {
-            num_clusters: -1,
-            threshold: options.cluster_threshold,
-            compute_confidence: false,
-        },
-        min_duration_on: 0.3,
-        min_duration_off: 0.5,
-    };
-    let diarizer = OfflineSpeakerDiarization::create(&config)
-        .ok_or_else(|| Error::Model("segmentatiemodel".into()))?;
-    let result = diarizer
-        .process(samples)
-        .ok_or_else(|| Error::Audio("no result".into()))?;
-    let raw = result.sort_by_start_time().into_iter().map(|segment| {
-        (
-            (segment.start.max(0.0) * 1000.0).round() as u64,
-            (segment.end.max(0.0) * 1000.0).round() as u64,
-            i64::from(segment.speaker),
-        )
-    });
-    let (turns, count) = renumber(raw);
-    let embedder = Embedder::load(models.embedding, options.threads)?;
-    let speakers = (0..count as u32)
-        .map(|speaker| {
-            let spans = voiceprint_spans(&turns, speaker, VOICEPRINT_BUDGET_MS);
-            Ok(Speaker {
-                speaker,
-                speech_ms: speech_ms(&turns, speaker),
-                embedding: embedder.embed_spans(samples, &spans)?,
-            })
-        })
-        .collect::<Result<Vec<_>, Error>>()?;
-    Ok(Diarization { turns, speakers })
+    Diarizer::load(models, options)?.process(samples)
 }
 
 #[cfg(test)]

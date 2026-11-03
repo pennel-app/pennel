@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { attributionEditable, transcriptKeys, transcriptSpeakerLabel, transcriptPlayback } from '../../src/transcript-state.ts';
+import { attributionEditable, transcriptKeys, transcriptSpeakerLabel, transcriptPlayback, transcriptAttributionProvisional } from '../../src/transcript-state.ts';
 import { translate } from '../../src/localization.ts';
 import { meetingDetail } from '../../src/normalize.ts';
 
@@ -49,4 +49,13 @@ test('normalization retains richer metadata and exact text while keeping old mee
   assert.deepEqual(meetingDetail({ info: { id: 'legacy' } }).transcript, []);
   for (const status of [undefined, 'valid', 'absent']) assert.equal(attributionEditable(status), true);
   for (const status of ['pending', 'stale', 'unsupported', 'corrupt']) assert.equal(attributionEditable(status), false);
+});
+
+test('persisted live estimates have a qualitative review marker until final or manually confirmed', () => {
+  const provisional = { ...utterance, attribution: { ...utterance.attribution, provisional: true } };
+  assert.equal(transcriptAttributionProvisional(utterance), false);
+  assert.equal(transcriptAttributionProvisional(provisional), true);
+  assert.equal(transcriptAttributionProvisional({ ...provisional, attribution: { ...provisional.attribution, provisional: false } }), false);
+  assert.equal(transcriptAttributionProvisional({ ...provisional, confirmed_speaker_name: 'Confirmed person' }), false);
+  for (const language of ['en', 'nl']) assert.notEqual(translate(language, 'meetings.live_speakers_provisional_tag'), 'meetings.live_speakers_provisional_tag');
 });

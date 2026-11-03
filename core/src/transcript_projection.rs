@@ -27,9 +27,9 @@ pub(crate) fn rows(utterances: &[MeetingUtterance]) -> Result<Vec<serde_json::Va
                     || stored.source_fingerprint != row.metadata.source_fingerprint
             }) || !row.metadata.unresolved_manual.is_empty();
             let attribution = if let Some(voice) = manual.and_then(|manual| manual.voice) {
-                serde_json::json!({"kind":"single","voices":[voice],"self_voice":false,"turns":[]})
+                serde_json::json!({"kind":"single","voices":[voice],"self_voice":false,"provisional":false,"turns":[]})
             } else if manual.is_none() && needs_review {
-                serde_json::json!({"kind":"unknown","voices":[],"self_voice":false,"turns":[]})
+                serde_json::json!({"kind":"unknown","voices":[],"self_voice":false,"provisional":false,"turns":[]})
             } else {
                 serde_json::to_value(&row.metadata.attribution).map_err(PennelError::storage)?
             };
@@ -71,6 +71,7 @@ mod tests {
             kind: AttributionKind::Single,
             voices: vec![2],
             self_voice: false,
+            provisional: false,
             turns: Vec::new(),
         };
         row.metadata.manual = Some(ManualCorrection {

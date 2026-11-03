@@ -14,7 +14,7 @@ pub const METADATA_PART_BYTES: usize = 1_048_576;
 const MAX_MANIFEST_BYTES: u64 = 1_048_576;
 
 fn supported_metadata_schema(version: u64) -> bool {
-    matches!(version, 1 | 3)
+    matches!(version, 1..=4)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +114,8 @@ pub struct AutomaticAttribution {
     pub voices: Vec<u32>,
     #[serde(default)]
     pub self_voice: bool,
+    #[serde(default)]
+    pub provisional: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub turns: Vec<AcousticTurn>,
 }
@@ -124,6 +126,7 @@ impl Default for AutomaticAttribution {
             kind: AttributionKind::Unknown,
             voices: Vec::new(),
             self_voice: false,
+            provisional: false,
             turns: Vec::new(),
         }
     }
@@ -756,6 +759,7 @@ pub(crate) fn load_snapshot(
         snapshot.metadata_status = TranscriptMetadataStatus::Pending;
         return snapshot;
     }
+    let metadata_schema = manifest.schema_version;
     let mut metadata = Vec::new();
     let mut parts = HashSet::new();
     for part in manifest.parts {
@@ -807,7 +811,9 @@ pub(crate) fn load_snapshot(
         }
         segment.end_ms = metadata.end_ms;
         let row = MeetingUtterance { segment, metadata };
-        if manifest.schema_version == 1 && row.metadata.recovery_audio.is_some() {
+        if matches!(metadata_schema, 1 | 3) && row.metadata.attribution.provisional
+            || matches!(metadata_schema, 1 | 2) && row.metadata.recovery_audio.is_some()
+        {
             return snapshot;
         }
         if !ids.insert(row.metadata.utterance_id.clone()) || !validate_row(&row) {
@@ -1018,10 +1024,14 @@ pub(crate) fn prepare_metadata(
         ));
     }
     let manifest = serde_json::to_vec(&MetadataManifest {
-        schema_version: if rows.iter().any(|row| row.metadata.recovery_audio.is_some()) {
-            3
-        } else {
-            1
+        schema_version: match (
+            rows.iter().any(|row| row.metadata.recovery_audio.is_some()),
+            rows.iter().any(|row| row.metadata.attribution.provisional),
+        ) {
+            (true, true) => 4,
+            (true, false) => 3,
+            (false, true) => 2,
+            (false, false) => 1,
         },
         meeting_uid: uid.into(),
         transcript_sha256: digest(text),
@@ -1354,6 +1364,44 @@ mod tests {
     }
 
     #[test]
+    fn provisional_attribution_is_versioned_and_cannot_be_cleared_by_an_ordinary_save() {
+        let (_directory, store, id) = fixture();
+        let mut row = utterance(1_000, "Owned provisional voice.");
+        row.metadata.attribution.kind = AttributionKind::Single;
+        row.metadata.attribution.voices = vec![2];
+        row.metadata.attribution.provisional = true;
+        store
+            .write_transcript_snapshot(&id, Some(0), &[row])
+            .unwrap();
+        let root = store.dir_of(&id);
+        let manifest = || {
+            serde_json::from_slice::<serde_json::Value>(&fs::read(root.join(MANIFEST)).unwrap())
+                .unwrap()
+        };
+        assert_eq!(manifest()["schema_version"], 2);
+        let mut projection = store.read_transcript(&id);
+        projection[0].voice = Some(3);
+        store.write_transcript(&id, &projection).unwrap();
+        let current = store.read_transcript_snapshot(&id).unwrap();
+        assert_eq!(current.metadata_status, TranscriptMetadataStatus::Valid);
+        assert!(current.utterances[0].metadata.attribution.provisional);
+        assert_eq!(manifest()["schema_version"], 2);
+        let mut final_rows = current.utterances;
+        final_rows[0].metadata.attribution.provisional = false;
+        final_rows[0].metadata.attribution_revision += 1;
+        store
+            .write_transcript_snapshot(&id, Some(current.revision), &final_rows)
+            .unwrap();
+        assert_eq!(manifest()["schema_version"], 1);
+        assert!(
+            !store.read_transcript_snapshot(&id).unwrap().utterances[0]
+                .metadata
+                .attribution
+                .provisional
+        );
+    }
+
+    #[test]
     fn unsupported_and_partial_metadata_never_overwrite_or_apply_a_subset() {
         let (_directory, store, id) = fixture();
         store
@@ -1530,15 +1578,18 @@ mod tests {
 
     #[test]
     fn interrupted_snapshot_save_rolls_forward_without_partial_metadata() {
-        for (boundary, with_recovery) in (0..3)
-            .flat_map(|boundary| [false, true].map(move |with_recovery| (boundary, with_recovery)))
-        {
+        for (boundary, provisional, with_recovery) in (0..3).flat_map(|boundary| {
+            [false, true].into_iter().flat_map(move |provisional| {
+                [false, true].map(move |with_recovery| (boundary, provisional, with_recovery))
+            })
+        }) {
             let (_directory, store, id) = fixture();
             let old = store
                 .write_transcript_snapshot(&id, Some(0), &[utterance(0, "Previous.")])
                 .unwrap();
             let root = store.dir_of(&id);
             let mut next = utterance(700, "Committed new words.");
+            next.metadata.attribution.provisional = provisional;
             let recovery = with_recovery.then(|| {
                 store
                     .write_recovery(
@@ -1758,6 +1809,7 @@ mod tests {
             kind: AttributionKind::Single,
             voices: Vec::new(),
             self_voice: true,
+            provisional: false,
             turns: Vec::new(),
         };
         store

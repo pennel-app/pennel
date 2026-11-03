@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "onnx")]
 mod pipeline;
 #[cfg(feature = "onnx")]
-pub use pipeline::{Embedder, Models, Options, diarize, embed};
+pub use pipeline::{Diarizer, Embedder, Models, Options, diarize, embed};
 
 pub const SAMPLE_RATE: u32 = 16_000;
 

@@ -51,7 +51,7 @@ export interface Settings {
 }
 export type MeetingAudioSource = 'microphone' | 'system_audio' | 'system' | 'room_microphone';
 export type TranscriptMetadataStatus = 'valid' | 'absent' | 'pending' | 'stale' | 'unsupported' | 'corrupt';
-export interface SpeakerAttribution { kind: 'unknown' | 'single' | 'mixed' | 'overlap'; voices: number[]; self_voice?: boolean }
+export interface SpeakerAttribution { kind: 'unknown' | 'single' | 'mixed' | 'overlap'; voices: number[]; self_voice?: boolean; provisional?: boolean }
 export interface Segment {
   start_ms: number; end_ms: number; speaker: 'me' | 'others'; text: string; failed: boolean; voice: number | null;
   utterance_id?: string | null; source_id?: MeetingAudioSource | null; source_fingerprint?: string | null;
