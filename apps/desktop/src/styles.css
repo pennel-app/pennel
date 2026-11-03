@@ -363,13 +363,27 @@ mark { background: none; color: inherit; font-weight: 600; }
 .setup-model-picker > .field-label { margin: 0 0 var(--space-1); }
 .setup-selected-model { margin: 0 0 var(--space-3); font-weight: 500; overflow-wrap: anywhere; }
 .setup-model-picker > input[type="search"] { width: 100%; }
-.setup-model-list { max-height: calc(var(--space-10) * 5); overflow-y: auto; margin: var(--space-2) 0; }
-.setup-model-option { display: block; width: 100%; padding: var(--space-2) var(--space-3); text-align: start; border-radius: var(--radius-control); }
+.setup-model-picker > input[type="search"] { margin-bottom: var(--space-2); }
+.setup-model-list {
+  display: flex; flex-direction: column; gap: 2px; max-height: calc(var(--space-10) * 5); overflow-y: auto; margin: var(--space-2) 0; padding: var(--space-1);
+  border-radius: var(--radius-panel); background: var(--field); box-shadow: inset 0 0 0 .5px var(--control-edge);
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+}
+.setup-model-list:empty { display: none; }
+.setup-model-option {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-3); flex-shrink: 0; width: 100%; padding: var(--space-2) var(--space-3);
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--foreground); text-align: start;
+  appearance: none; -webkit-appearance: none; box-shadow: none; transition: background-color .12s ease;
+}
 .setup-model-option:hover { background: var(--hover); }
-.setup-model-option[aria-pressed="true"] { background: var(--selection); }
-.setup-model-name, .setup-model-id { display: block; overflow-wrap: anywhere; }
-.setup-model-name { font-size: var(--font-body); }
-.setup-model-id { margin-top: var(--space-1); color: var(--muted); font-size: var(--font-caption); }
+.setup-model-option[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.setup-model-option[aria-pressed="true"]::after {
+  content: ""; grid-column: 2; grid-row: 1 / span 2; width: 5px; height: 10px; margin-inline-end: var(--space-1);
+  border: solid var(--accent); border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg);
+}
+.setup-model-name, .setup-model-id { display: block; grid-column: 1; overflow-wrap: anywhere; }
+.setup-model-name { font-size: var(--font-body); font-weight: 500; line-height: 1.35; }
+.setup-model-id { margin-top: 2px; color: var(--muted); font-size: var(--font-caption); line-height: 1.3; }
 .setup-model-advanced { margin-top: var(--space-4); }
 .setup-model-advanced > summary { color: var(--muted); font-size: var(--font-label); }
 .setup-connection-field { display: grid; gap: var(--space-2); min-width: 0; }
