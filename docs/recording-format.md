@@ -50,11 +50,20 @@ Snapshot and speaker/retranscription journals recover text, names and metadata t
 
 ### Provisional live attribution
 
-Automatic attribution carries a `provisional` flag. A snapshot with any provisional utterance uses manifest schema **2**; readers support schemas 1 and 2, while a schema-1 payload claiming provisional attribution is invalid. Older schema-1 readers preserve schema-2 files and expose them read-only rather than silently treating estimates as settled. Unsupported, malformed and conflicting generations retain the existing preservation behavior.
+Automatic attribution carries a `provisional` flag. Manifest versions retain both attribution state and original capture/completion provenance:
 
-Ordinary saves, rename, reopen and encrypted text sync retain provisional state. Actual final acoustic reconciliation can clear it and write a schema-1-compatible snapshot again. Valid manual corrections remain authoritative; ambiguous automatic remapping remains unknown or requires review. The private ownership ledger and recovery journals keep their existing version: text, parts and manifest still recover as one checked generation at every journal boundary.
+| Schema | Attribution | Recovery provenance |
+| --- | --- | --- |
+| 1 | Settled | Absent |
+| 2 | Provisional | Absent |
+| 3 | Settled | Present |
+| 4 | Provisional | Present |
 
-Only attribution metadata is portable. Session centroids and owned PCM never enter the sidecar or sync. Provisional person labels do not change utterance IDs, physical source identity or frozen question evidence; interim caption text remains excluded. See [the live-speaker evidence](evidence/live-speakers-99.md).
+The final reader supports schemas 1–4. The #128 backport supports 1/3 and preserves 2/4 read-only. Earlier readers preserve unsupported generations rather than treating provisional estimates as settled or overwriting completion proof. Unsupported, malformed and conflicting generations retain the existing preservation behavior.
+
+Ordinary saves, rename, reopen and encrypted text sync retain provisional state. Actual final acoustic reconciliation can clear it and write schema 1 without recovery provenance or schema 3 with it. Refinement retains original capture/completion proof, including hidden empty dispositions; it does not downgrade a proven completion to an unproven row. Valid manual corrections remain authoritative; ambiguous automatic remapping remains unknown or requires review. The private ownership ledger and recovery journals keep their existing version: text, parts and manifest still recover as one checked generation at every journal boundary.
+
+Portable metadata contains attribution and original capture/completion proof. Session centroids and owned PCM never enter the sidecar or sync. Provisional person labels do not change utterance IDs, physical source identity or frozen question evidence; interim caption text remains excluded. Recovery suppression and cleanup require the original lane, basename, range and verified WAV hash, independently of person labels and acoustic splits. Failed or unverified recovery audio is retained. See [the audio preservation review](evidence/audio-recovery-cleanup-128-129.md) and [the live-speaker evidence](evidence/live-speakers-99.md).
 
 ## Reviewed meeting insights
 
