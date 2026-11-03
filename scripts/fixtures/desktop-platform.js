@@ -498,9 +498,12 @@
           if (line.trim()) anchors.push({ passage: passage("notes", null, line), segment_keys: [], segment_fingerprints: [], notes_start: notesOffset, notes_end: notesOffset + line.length, source_text: line });
           notesOffset += line.length + 1;
         }
+        const selectedAnchors = options.live_question_selected_scope ? anchors.slice(0, Math.max(1, Math.floor(anchors.length / 2))) : anchors;
         const snapshot = { request_id: args.requestId, meeting_uid: meetingUid, session_id: liveSession,
           transcript_revision: transcriptRevision, notes_revision: await fingerprint(notes), included_through_ms: Math.max(0, ...frozen.filter(segment => !segment.failed && segment.text.trim()).map(segment => segment.end_ms)),
-          pending_transcription: meetingStatus().pending, anchors };
+          pending_transcription: meetingStatus().pending, anchors: selectedAnchors,
+          ...(options.live_question_selected_scope ? { selection: { scope: "selected_excerpts", available_sources: anchors.length,
+            included_sources: selectedAnchors.length, available_history_turns: 8, included_history_turns: 2, history_reduced: true } } : {}) };
         liveRequests.set(args.requestId, { snapshot, cancelled: false, completed: false });
         if (!options.live_question_manual) setTimeout(() => completeLiveQuestion(args.requestId), options.live_question_delay_ms ?? 80);
         return clone(snapshot);

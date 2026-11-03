@@ -176,6 +176,8 @@
   "meetings.workspace_saving_question": "Notities opslaan — de vraag is nog niet verstuurd.",
   "meetings.workspace_question_save_error": "Vraag niet verstuurd. Sla je notities op en probeer opnieuw.",
   "meetings.workspace_cutoff": "Gebaseerd op transcript tot {time}",
+  "meetings.workspace_selected_cutoff": "Gebaseerd op geselecteerde fragmenten ({included}/{available} bronnen) beschikbaar tot {time}",
+  "meetings.workspace_history_reduced": "Eerder gesprek ingekort ({included}/{available} beurten).",
   "meetings.workspace_pending": "Er worden nog {count} spraakblokken verwerkt.",
   "meetings.workspace_cancelled": "Geannuleerd. Je vraag is bewaard.",
   "meetings.workspace_source_changed": "Deze bron is gewijzigd of niet beschikbaar. Hieronder staat de vastgezette bron die voor dit antwoord is gebruikt.",

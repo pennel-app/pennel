@@ -88,7 +88,7 @@ pub(crate) struct FrozenCleanupVerification {
 impl FrozenCleanupVerification {
     pub(crate) fn capture(engine: &PennelEngine, settings: &Settings) -> Self {
         let _capture_gate = engine.inference_capture_gate();
-        let cancellation = InferenceCancellation::new();
+        let cancellation = InferenceCancellation::for_priority(crate::InferencePriority::Speech);
         let state = engine.inference_state();
         let config = settings.decision.clone();
         let account = config

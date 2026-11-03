@@ -1,4 +1,5 @@
 {
+  "backend.live_question_too_large": "This question exceeds the selected setup's input budget. It was not truncated or sent. Shorten the question and try again.",
   "backend.retranscription_unknown_tracks": "The original recording tracks could not be determined. Both tracks are required for older speaker-labeled transcripts.",
   "backend.retranscription_local_model_required": "Choose a local speech model to transcribe a saved recording again.",
   "backend.retranscription_download_model": "Download the selected local speech model first.",

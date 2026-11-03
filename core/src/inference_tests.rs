@@ -988,31 +988,174 @@ fn managed_auth_and_content_never_follow_redirects_or_echo_error_bodies() {
     }
 }
 
-#[test]
-fn managed_auth_and_content_share_one_deadline() {
+const MANAGED_DEADLINE_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+const MANAGED_DEADLINE_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+#[derive(Clone, Copy)]
+enum ManagedDeadlineStrategy {
+    Shared,
+    ResetBetweenPhases,
+}
+
+#[derive(Debug)]
+struct ManagedDeadlineObservation {
+    result: Result<Value, PennelError>,
+    completed_while_content_held: bool,
+    completed_at: std::time::Instant,
+    original_deadline: std::time::Instant,
+    fresh_deadline_lower_bound: std::time::Instant,
+}
+
+impl ManagedDeadlineObservation {
+    fn kept_cumulative_budget(&self) -> bool {
+        self.completed_while_content_held
+            && self.completed_at >= self.original_deadline
+            && self.completed_at <= self.original_deadline + MANAGED_DEADLINE_GRACE
+            && matches!(self.result, Err(PennelError::Network { .. }))
+    }
+}
+
+fn observe_managed_deadline(strategy: ManagedDeadlineStrategy) -> ManagedDeadlineObservation {
+    use std::sync::{Mutex, mpsc};
+    use std::time::{Duration, Instant};
+
+    const WATCHDOG: Duration = Duration::from_secs(30);
+    struct ReleasePhases {
+        auth: mpsc::Sender<()>,
+        content: mpsc::Sender<()>,
+    }
+    impl Drop for ReleasePhases {
+        fn drop(&mut self) {
+            let _ = self.auth.send(());
+            let _ = self.content.send(());
+        }
+    }
+
+    let (auth_started, auth_seen) = mpsc::channel();
+    let (auth_release, auth_released) = mpsc::channel();
+    let auth_released = Mutex::new(auth_released);
+    let (content_started, content_seen) = mpsc::channel();
+    let (content_release, content_released) = mpsc::channel();
+    let content_released = Mutex::new(content_released);
     let mut server = mockito::Server::new();
     let (managed, _) = managed_fixture(&server);
-    let refresh = server.mock("POST", "/v1/auth/refresh").with_body_from_request(|_| {
-        std::thread::sleep(std::time::Duration::from_millis(120));
-        br#"{"access_token":"synthetic-access","refresh_token":"rotated-refresh","expires_in":900}"#.to_vec()
-    }).create();
-    let post = server
-        .mock("POST", "/v1/decisions")
-        .with_body_from_request(|_| {
-            std::thread::sleep(std::time::Duration::from_millis(180));
-            b"{}".to_vec()
+    let refresh = server
+        .mock("POST", "/v1/auth/refresh")
+        .match_body(Matcher::Json(json!({"refresh_token":"synthetic-refresh"})))
+        .with_body_from_request(move |_| {
+            let _ = auth_started.send(Instant::now());
+            auth_released.lock().unwrap().recv_timeout(WATCHDOG).unwrap();
+            br#"{"access_token":"synthetic-access","refresh_token":"rotated-refresh","expires_in":900}"#.to_vec()
         })
         .create();
-    let cancellation = InferenceCancellation::new();
-    let start = std::time::Instant::now();
-    let result = managed.send(
-        &format!("{}/v1/decisions", server.url()),
-        Some(b"{}"),
-        &cancellation,
-        start + std::time::Duration::from_millis(220),
-    );
-    assert!(matches!(result, Err(PennelError::Network { .. })));
-    assert!(start.elapsed() < std::time::Duration::from_millis(350));
+    let post = server
+        .mock("POST", "/v1/decisions")
+        .match_header("authorization", "Bearer synthetic-access")
+        .match_body(Matcher::Json(json!({})))
+        .with_body_from_request(move |_| {
+            let _ = content_started.send(Instant::now());
+            content_released
+                .lock()
+                .unwrap()
+                .recv_timeout(WATCHDOG)
+                .unwrap();
+            br#"{"owned_deadline":"content-complete"}"#.to_vec()
+        })
+        .create();
+    let endpoint = format!("{}/v1/decisions", server.url());
+    let observation = std::thread::scope(|scope| {
+        // Mockito holds its state lock inside body callbacks; release before mock cleanup on panic.
+        let release = ReleasePhases {
+            auth: auth_release,
+            content: content_release,
+        };
+        let (finished, result) = mpsc::channel();
+        let start = Instant::now();
+        let original_deadline = start + MANAGED_DEADLINE_BUDGET;
+        scope.spawn(move || {
+            let cancellation = InferenceCancellation::new();
+            let response = match strategy {
+                ManagedDeadlineStrategy::Shared => {
+                    managed.send(&endpoint, Some(b"{}"), &cancellation, original_deadline)
+                }
+                ManagedDeadlineStrategy::ResetBetweenPhases => (|| {
+                    // Deliberately wrong negative control: give content a new full budget after auth.
+                    let token = managed.session.inference_token(
+                        managed.generation,
+                        false,
+                        &cancellation,
+                        original_deadline,
+                    )?;
+                    let reset = Instant::now() + MANAGED_DEADLINE_BUDGET;
+                    managed
+                        .session
+                        .check_inference(managed.generation, &cancellation, reset)?;
+                    let (status, body) =
+                        send_json_status(&endpoint, Some(&token), Some(b"{}"), reset)?;
+                    managed
+                        .session
+                        .check_inference(managed.generation, &cancellation, reset)?;
+                    assert_eq!(status, 200);
+                    Ok(body)
+                })(),
+            };
+            let _ = finished.send((Instant::now(), response));
+        });
+        auth_seen
+            .recv_timeout(WATCHDOG)
+            .expect("auth never entered the owned mock");
+        std::thread::sleep(
+            (start + MANAGED_DEADLINE_BUDGET / 2).saturating_duration_since(Instant::now()),
+        );
+        let auth_released_at = Instant::now();
+        release.auth.send(()).unwrap();
+        let content_entered_at = content_seen
+            .recv_timeout(original_deadline.saturating_duration_since(Instant::now()))
+            .expect("content must physically enter before the shared deadline");
+        assert!(content_entered_at < original_deadline);
+        let before_release = match result.recv_timeout(
+            (original_deadline + MANAGED_DEADLINE_GRACE).saturating_duration_since(Instant::now()),
+        ) {
+            Ok(response) => Some(response),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            Err(error) => panic!("managed worker exited without a result: {error:?}"),
+        };
+        let fresh_deadline_lower_bound = auth_released_at + MANAGED_DEADLINE_BUDGET;
+        assert!(
+            Instant::now() + MANAGED_DEADLINE_GRACE < fresh_deadline_lower_bound,
+            "fixture scheduling consumed the negative-control response window"
+        );
+        let completed_while_content_held = before_release.is_some();
+        release.content.send(()).unwrap();
+        let (completed_at, response) =
+            before_release.unwrap_or_else(|| result.recv_timeout(WATCHDOG).unwrap());
+        ManagedDeadlineObservation {
+            result: response,
+            completed_while_content_held,
+            completed_at,
+            original_deadline,
+            fresh_deadline_lower_bound,
+        }
+    });
     refresh.assert();
     post.assert();
+    observation
+}
+
+#[test]
+fn managed_auth_and_content_share_one_deadline() {
+    let observed = observe_managed_deadline(ManagedDeadlineStrategy::Shared);
+    assert!(observed.kept_cumulative_budget(), "{observed:?}");
+}
+
+#[test]
+fn managed_deadline_fixture_rejects_per_phase_reset() {
+    let observed = observe_managed_deadline(ManagedDeadlineStrategy::ResetBetweenPhases);
+    assert_eq!(
+        observed.result.as_ref().unwrap(),
+        &json!({"owned_deadline":"content-complete"})
+    );
+    assert!(!observed.kept_cumulative_budget());
+    assert!(observed.completed_at > observed.original_deadline);
+    assert!(observed.completed_at < observed.fresh_deadline_lower_bound);
 }

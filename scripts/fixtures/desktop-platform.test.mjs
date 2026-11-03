@@ -45,6 +45,24 @@ test("live fixture freezes admitted notes and transcript through Stop and later 
   assert.ok(result.snapshot.anchors.every(anchor => !anchor.source_text.includes("Later synthetic") && !anchor.source_text.includes("Newer synthetic")));
 });
 
+test("selected live fixture declares exactly its sent anchors and freezes scope through append", async () => {
+  const context = fixture("live-question-selected-scope-wide");
+  const api = context.__PENNEL_PLATFORM__;
+  const control = context.__PENNEL_FIXTURE__.workspace;
+  const status = await api.invoke("meeting_status");
+  const snapshot = await api.invoke("begin_live_question", { requestId: "owned-selected-question", meetingUid: status.meeting_uid,
+    sessionId: status.session_id, expectedNotesText: status.notes, question: "Which evidence was sent?", history: [] });
+  assert.equal(snapshot.selection.scope, "selected_excerpts");
+  assert.equal(snapshot.selection.included_sources, snapshot.anchors.length);
+  assert.ok(snapshot.selection.available_sources > snapshot.selection.included_sources);
+  let delivered;
+  await api.listen("live-question-result", event => { delivered = event.payload.snapshot; });
+  control.append({ start_ms: 30_000, end_ms: 38_000, speaker: "others", text: "Later source.", failed: false, voice: null });
+  control.complete(snapshot.request_id);
+  assert.deepEqual(delivered.selection, snapshot.selection);
+  assert.equal(delivered.included_through_ms, snapshot.included_through_ms);
+});
+
 test("live fixture refuses mismatched acknowledged notes and cancels without delivering late completion", async () => {
   const context = fixture("recording", { configured_text_provider: true, live_question_manual: true });
   const api = context.__PENNEL_PLATFORM__;

@@ -176,6 +176,8 @@
   "meetings.workspace_saving_question": "Saving notes — question not sent yet.",
   "meetings.workspace_question_save_error": "Question not sent. Save your notes and try again.",
   "meetings.workspace_cutoff": "Based on transcript through {time}",
+  "meetings.workspace_selected_cutoff": "Based on selected excerpts ({included}/{available} sources) available through {time}",
+  "meetings.workspace_history_reduced": "Earlier conversation shortened ({included}/{available} turns).",
   "meetings.workspace_pending": "{count} speech blocks are still being processed.",
   "meetings.workspace_cancelled": "Cancelled. Your question is retained.",
   "meetings.workspace_source_changed": "This source has changed or is unavailable. The excerpt below is the frozen source used for this answer.",

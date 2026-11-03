@@ -361,6 +361,14 @@ impl QualifiedMeetingAnalysis {
         &self.record
     }
 
+    pub fn context_fingerprint(&self) -> String {
+        crate::evidence_revision(
+            &serde_json::to_value(&self.record.context)
+                .expect("application-owned qualification context")
+                .to_string(),
+        )
+    }
+
     pub fn validate_identity(
         &self,
         identity: &InferenceIdentity,
@@ -381,7 +389,7 @@ impl QualifiedMeetingAnalysis {
 }
 
 impl PennelEngine {
-    fn meeting_analysis_configuration(
+    pub(crate) fn meeting_analysis_configuration(
         &self,
     ) -> Result<(String, MeetingConfiguredInference), MeetingQualificationError> {
         let settings = self.settings();
@@ -517,6 +525,26 @@ pub struct MeetingAnalysisAvailability {
 }
 
 #[cfg(test)]
+pub(crate) fn test_qualification_for(
+    request: &MeetingQualificationRequest,
+    actual: MeetingActualInference,
+) -> QualifiedMeetingAnalysis {
+    let mut record = tests::record();
+    record.context.request = request.clone();
+    record.context.actual = actual;
+    if request.use_case == MeetingAnalysisUseCase::SourceAssessment {
+        record.metrics.selective_precision = Some(0.99);
+        record.metrics.coverage = Some(0.8);
+    }
+    MeetingQualificationRegistry {
+        records: vec![record],
+        valid: true,
+    }
+    .admit(request)
+    .expect("synthetic qualification fixture must satisfy the real gate")
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -547,7 +575,7 @@ mod tests {
         }
     }
 
-    fn record() -> MeetingQualificationRecord {
+    pub(super) fn record() -> MeetingQualificationRecord {
         MeetingQualificationRecord {
             schema_version: 1,
             qualification_id: "owned-qualified-v1".into(),
@@ -899,5 +927,22 @@ mod tests {
         );
         post.assert();
         metadata.assert();
+    }
+
+    #[test]
+    fn python_incremental_candidate_decodes_without_granting_adoption() {
+        let record: MeetingQualificationRecord = serde_json::from_str(include_str!(
+            "../../evaluations/decision-models/fixtures/incremental-qualification-record-v1.json"
+        ))
+        .unwrap();
+        assert_eq!(record.evidence.mode, "offline_fixture");
+        assert!(!record.valid());
+        let request = record.context.request.clone();
+        assert!(registry(record).admit(&request).is_err());
+        assert!(
+            MeetingQualificationRegistry::bundled()
+                .admit(&request)
+                .is_err()
+        );
     }
 }

@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use pennel_core::{
-    ChatTurn, InferenceCancellation, MeetingAnswer, MeetingEvidence, MeetingSourceAnchor,
+    ChatTurn, ForegroundQuestionAdmission, InferenceCancellation, MeetingAnswer, MeetingEvidence,
+    MeetingSourceAnchor,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -118,6 +119,7 @@ pub struct LiveQuestionSnapshot {
     pub included_through_ms: u64,
     pub pending_transcription: u32,
     pub anchors: Vec<MeetingSourceAnchor>,
+    pub selection: pennel_core::MeetingQuestionSelection,
 }
 
 #[derive(Clone, Serialize)]
@@ -265,6 +267,11 @@ pub async fn begin_live_question(
         .lock()
         .unwrap()
         .reserve(identity.clone())?;
+    let admission = ForegroundQuestionAdmission::begin_meeting(
+        cancellation.clone(),
+        identity.meeting_uid.clone(),
+    )
+    .with_inference_epoch(shared.engine.inference_epoch());
     let retained = shared.clone();
     let retained_identity = identity.clone();
     let response = tauri::async_runtime::spawn_blocking(move || {
@@ -276,7 +283,13 @@ pub async fn begin_live_question(
             capture_evidence(&shared, &identity, &expected_notes_text)?;
         let prepared = shared
             .engine
-            .prepare_meeting_evidence_question(question, history, &evidence, shared.keys())
+            .prepare_meeting_evidence_question_admitted(
+                question,
+                history,
+                &evidence,
+                shared.keys(),
+                admission,
+            )
             .map_err(|error| crate::commands::localize_error_message(error.to_string()))?;
         if cancellation.is_cancelled() {
             return Err("Question cancelled.".into());
@@ -293,12 +306,16 @@ pub async fn begin_live_question(
             included_through_ms: evidence.included_through_ms,
             pending_transcription: pending,
             anchors,
+            selection: prepared.selection(),
         };
         let output_snapshot = snapshot.clone();
         std::thread::Builder::new()
             .name("pennel-meeting-question".into())
             .spawn(move || {
-                let result = prepared.complete(cancellation, library_job);
+                let mut result = prepared.complete(cancellation, library_job);
+                if !response_session_current(&shared, &identity) {
+                    result = Err(pennel_core::PennelError::Cancelled);
+                }
                 if !shared.live_questions.lock().unwrap().finish(&identity) {
                     return;
                 }
@@ -329,6 +346,17 @@ pub async fn begin_live_question(
             .finish(&retained_identity);
     }
     response
+}
+
+fn response_session_current(shared: &Shared, identity: &QuestionIdentity) -> bool {
+    !shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|context| {
+            context.uid == identity.meeting_uid && context.token != identity.session_id
+        })
 }
 
 #[tauri::command]
@@ -458,6 +486,14 @@ mod tests {
         shared.recording.lock().unwrap().stopping(&token).unwrap();
         shared.recording.lock().unwrap().finalizing(&token).unwrap();
         shared.recording.lock().unwrap().complete(&token).unwrap();
+        assert!(response_session_current(&shared, &identity));
+        let mut replaced = shared.meeting_context.lock().unwrap().take().unwrap();
+        assert!(response_session_current(&shared, &identity));
+        replaced.token = "replacement-session".into();
+        *shared.meeting_context.lock().unwrap() = Some(replaced);
+        assert!(!response_session_current(&shared, &identity));
+        shared.meeting_context.lock().unwrap().as_mut().unwrap().uid = "different-meeting".into();
+        assert!(response_session_current(&shared, &identity));
         *shared.meeting_context.lock().unwrap() = None;
         let (finished, _, _) = capture_evidence(&shared, &identity, "Saved note").unwrap();
         let final_source = finished

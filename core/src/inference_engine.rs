@@ -34,6 +34,7 @@ pub struct InferenceVerification {
 pub(crate) struct InferenceState {
     pub(crate) requests: Vec<Weak<InferenceCancellation>>,
     pub(crate) mutation_depth: usize,
+    pub(crate) generation: u64,
 }
 
 /// Keeps inference admission closed throughout a native configuration or credential write.
@@ -59,6 +60,10 @@ impl Drop for InferenceMutation {
 }
 
 impl PennelEngine {
+    pub fn inference_epoch(&self) -> u64 {
+        self.inference_state().lock().unwrap().generation
+    }
+
     pub(crate) fn inference_state(&self) -> Arc<Mutex<InferenceState>> {
         self.inference_requests.clone()
     }
@@ -76,6 +81,7 @@ impl PennelEngine {
         {
             let mut active = state.lock().unwrap();
             active.mutation_depth += 1;
+            active.generation = active.generation.wrapping_add(1);
             for request in &active.requests {
                 if let Some(cancellation) = request.upgrade() {
                     cancellation.cancel();
@@ -228,6 +234,63 @@ mod tests {
 
     fn response() -> &'static str {
         r#"{"model":"fixture-model","answers":{"sample":{"type":"noul","noul":0.99}},"usage":{"input_tokens":12,"output_tokens":0,"cost":0.0001}}"#
+    }
+
+    #[test]
+    fn scheduled_meeting_decisions_reject_changed_setup_before_transport_even_without_early_registration()
+     {
+        for change in 0..4 {
+            let mut server = mockito::Server::new();
+            let (_dir, engine, keys) = configured(&server, InferenceProtocol::Perplexity);
+            let configured = engine.meeting_analysis_configuration().unwrap().1;
+            let cancellation = InferenceCancellation::for_meeting_analysis(
+                InferenceCancellation::new(),
+                crate::InferencePriority::ExplicitAnalysis,
+                std::time::Instant::now() + std::time::Duration::from_secs(10),
+                configured,
+                engine.inference_epoch(),
+                0,
+            );
+            if change == 2 {
+                let mutation = engine.begin_inference_mutation();
+                mutation.release();
+            } else {
+                let mut settings = engine.settings();
+                match change {
+                    0 => settings.decision.as_mut().unwrap().model = "different-model".into(),
+                    1 => {
+                        settings
+                            .providers
+                            .iter_mut()
+                            .find(|provider| provider.id == "typed-fixture")
+                            .unwrap()
+                            .base_url = format!("{}/changed", server.url())
+                    }
+                    _ => settings.decision.as_mut().unwrap().max_input_bytes -= 1,
+                }
+                engine.update_settings(settings).unwrap();
+            }
+            let never = server.mock("POST", Matcher::Any).expect(0).create();
+            let result = engine.decide(
+                DecisionRequest {
+                    state: "Owned frozen content.".into(),
+                    questions: vec![DecisionQuestion {
+                        id: "sample".into(),
+                        kind: DecisionQuestionKind::Binary,
+                        instructions: "Does the owned sample contain text?".into(),
+                        options: vec![],
+                    }],
+                },
+                cancellation,
+                keys,
+            );
+            assert_eq!(
+                result,
+                Err(PennelError::Cancelled),
+                "processing setup change {change}"
+            );
+            never.assert();
+        }
     }
 
     #[test]
@@ -879,6 +942,24 @@ impl PennelEngine {
             cancellation: &cancellation,
         };
         let (config, account) = self.inference_selection(capability)?;
+        if cancellation.has_meeting_binding() {
+            let current = self
+                .meeting_analysis_configuration()
+                .map(|(_, configured)| configured);
+            let epoch = self.inference_epoch();
+            let account_epoch = if config.protocol == InferenceProtocol::PennelCloud {
+                self.cloud_account_epoch()
+            } else {
+                0
+            };
+            if !current.is_ok_and(|configured| {
+                cancellation.matches_meeting_binding(&configured, epoch, account_epoch)
+            }) {
+                cancellation.cancel();
+                return Err(PennelError::Cancelled);
+            }
+        }
+        inference::validate_decision_request(&config, &request)?;
         let managed = self.managed_inference(&account)?;
         let result = if let Some(managed) = managed.as_ref() {
             inference::decide_managed(&config, managed.clone(), request, cancellation.clone())?

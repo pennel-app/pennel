@@ -435,6 +435,15 @@ export interface LiveSourceAnchor {
   source_text: string;
 }
 
+export interface MeetingQuestionSelection {
+  scope: "whole_meeting" | "selected_excerpts";
+  available_sources: number;
+  included_sources: number;
+  available_history_turns: number;
+  included_history_turns: number;
+  history_reduced: boolean;
+}
+
 export interface LiveQuestionSnapshot {
   request_id: string;
   meeting_uid: string;
@@ -444,6 +453,7 @@ export interface LiveQuestionSnapshot {
   included_through_ms: number;
   pending_transcription: number;
   anchors: LiveSourceAnchor[];
+  selection?: MeetingQuestionSelection;
 }
 
 export interface LiveQuestionResult {
