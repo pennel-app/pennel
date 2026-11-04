@@ -95,5 +95,15 @@
   "providers.local.languages": "{count} talen ›",
   "providers.local.downloading_model": "{model} downloaden",
   "providers.local.download_failed": "Download mislukt: {error}",
-  "providers.local.all_models": "Alle modellen ({count})"
+  "providers.local.all_models": "Alle modellen ({count})",
+  "credentials.title": "Opgeslagen toegang",
+  "credentials.migration_required": "Geef één keer toegang tot je opgeslagen inloggegevens zodat Pennel na updates verbonden blijft. macOS kan dit voor elk opgeslagen item vragen.",
+  "credentials.pending": "Opgeslagen gegevens om bij te werken: {count}.",
+  "credentials.update": "Opgeslagen toegang bijwerken",
+  "credentials.updating": "Opgeslagen toegang wordt bijgewerkt…",
+  "credentials.locked": "Ontgrendel je Mac en probeer het opnieuw. Je opgeslagen toegang blijft beveiligd.",
+  "credentials.denied": "De toegang is niet goedgekeurd. Probeer het opnieuw en keur het macOS-verzoek goed om je opgeslagen toegang bij te werken.",
+  "credentials.unavailable": "Opgeslagen toegang is momenteel niet beschikbaar. Probeer het opnieuw. Je inloggegevens zijn bewaard.",
+  "credentials.retry": "Opnieuw proberen",
+  "credentials.failed": "De opgeslagen toegang kon niet worden bijgewerkt. Probeer het opnieuw."
 }

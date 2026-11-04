@@ -287,6 +287,8 @@ pub fn start_with_calendar(
     attendees: Vec<String>,
     calendar_context: Option<serde_json::Value>,
 ) -> Result<String, String> {
+    let settings = shared.settings();
+    let keys = shared.keys_for(&[settings.meeting_stt.provider_id.as_str()])?;
     let token = begin_recording(shared, detected_app.clone())?;
     #[cfg(target_os = "macos")]
     let _tray_update = crate::macos_tray::UpdateOnDrop;
@@ -297,8 +299,6 @@ pub fn start_with_calendar(
     } else {
         title.trim().to_owned()
     };
-    let settings = shared.settings();
-    let keys = shared.keys();
     if let Err(error) = shared.engine.validate_meeting_setup(keys.clone()) {
         let error = error.to_string();
         fail(shared, &token, &error);
@@ -817,7 +817,11 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
         return;
     }
     let settings = shared.settings();
-    let keys = shared.keys();
+    let Ok(keys) = shared.keys_for(&[settings.llm.provider_id.as_str()]) else {
+        LOG.error("Automatic summarization paused until saved access is available.");
+        let _ = app.emit("meeting-updated", id);
+        return;
+    };
     let apple_available = settings.resolve(&settings.llm).is_some_and(|(account, _)| {
         account.kind != pennel_core::ProviderKind::AppleIntelligence
             || crate::capabilities::snapshot(None)

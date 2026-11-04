@@ -286,7 +286,7 @@ Known dictation exclusion intervals are retained locally and silenced before rep
 
 | Build | Data directory | Credentials |
 | --- | --- | --- |
-| Canonical Mac | `~/Library/Application Support/Pennel` | `dev.pennel.Pennel` Keychain service |
+| Canonical Mac | `~/Library/Application Support/Pennel` | App-scoped Data Protection Keychain, `dev.pennel.Pennel` service |
 | Canonical Windows | `%LOCALAPPDATA%\Pennel` | Existing `app.pennel.desktop` service |
 | Canonical Linux | `$XDG_DATA_HOME/Pennel`, normally `~/.local/share/Pennel` | Existing `app.pennel.desktop` Secret Service entries |
 | Preview/debug | Corresponding `Pennel Preview` directory | Separate preview service |
@@ -294,7 +294,17 @@ Known dictation exclusion intervals are retained locally and silenced before rep
 
 Canonical meetings use `~/Pennel` or the configured library. Previews pin their library to `<preview data>/Meetings`, reject external paths/symlink escapes, and do not migrate native credentials. `tauri.preview.conf.json` changes the bundle identity to `dev.pennel.Pennel.preview`; debug builds are also isolated.
 
-For permission-bearing Mac previews, the shared bundler reuses an existing certificate through `scripts/preview-signing-identity.py`. Explicit `APPLE_SIGNING_IDENTITY` or `PENNEL_SIGN_IDENTITY` takes precedence; otherwise the selector retains a still-valid certificate SHA in ignored `build/preview-signing-identity.sha1`, then tries the known local certificates or an existing Apple Development identity. With no suitable certificate it reports the ad-hoc fallback. It never creates/imports a certificate or changes certificate trust. Existing signing identities are retained.
+Permission-bearing Mac previews use an explicitly validated personal-team identity and a matching Preview provisioning profile. Production and Preview have distinct private Keychain groups. Unsigned or ad-hoc test builds cannot establish Keychain or signed-upgrade acceptance; headless captures use synthetic, in-memory credentials.
+
+### Saved access after Mac updates
+
+The Mac implementation uses non-synchronizing Data Protection Keychain storage behind the existing native platform bridge. Provider and Cloud account names are preserved. Startup detects older login-Keychain entries without requesting secret data or displaying an authentication prompt. Providers and Account settings expose **Update saved access** (**Bewaarde toegang bijwerken**) when import is needed. Only that explicit action may request access to legacy items; choosing **Allow** is sufficient to copy an item into Pennel's private store. Copies are verified before migration completion is recorded, destination entries win, and original entries remain intact.
+
+Denied, locked or unavailable access pauses the affected operation and offers retry. It is never cached as a missing credential, and core writes following a failed credential read are blocked until that worker is readmitted. Deletion markers prevent retained legacy entries from being imported after sign-out or removal. An open authentication prompt does not hold engine/capture locks or block native status reads. Windows/Linux stores and the mobile Keychain interface are unchanged.
+
+The Developer ID transition can require one-time system-permission approvals. Automated migration tests and synthetic renders are not evidence of no prompts during a Homebrew upgrade: exact signed packages, a pre-transition installation and a second differently built package still require recorded acceptance under #10/#11 before promotion.
+
+Retained legacy entries support recovery, but older self-signed builds cannot read credentials newly saved or rotated in the private store. A downgrade can require signing in again or restoring a provider key; do not treat it as a seamless credential rollback.
 
 Updating an allowed preview with ad-hoc signing changes its designated requirement and can invalidate microphone, speech and Accessibility approvals. macOS can show an old Accessibility switch as enabled while rejecting the new signature; the obsolete entry then needs to be replaced before granting the current app access. Preserve the preview's signing identity on subsequent builds. Debug/release bundles that share the preview identifier must not both remain registered with Launch Services when selecting the app in privacy settings.
 
@@ -363,7 +373,7 @@ Local recognition uses [transcribe.cpp](https://github.com/handy-computer/transc
 
 Automated checks and local package inspection are recorded in [shared-app-migration.md](shared-app-migration.md). Linux's isolated codec round-trip and synthetic PulseAudio observations verify code paths; they are not real calls, installed-package tests or Wayland compositor acceptance. Cross-target Windows type checking does not establish Windows execution. CI configuration does not imply a workflow has run for this change.
 
-The standard CI matrix builds Mac, Windows and Linux artifacts without requiring release keys. App changes on `main` publish [GitHub releases](https://github.com/pennel-app/pennel/releases) containing Mac `.dmg`, Windows `.exe`/`.msi` and Linux `.deb`/`.AppImage` packages. Mac releases use the configured stable self-signed certificate when available; they are not Developer ID notarized releases, and Windows installers are unsigned. The Homebrew cask handles Mac download quarantine. After installation, `brew upgrade --cask pennel` gets later cask updates.
+Non-publishing CI can build without release keys. Production Mac publication requires the personal Developer ID identity, authenticated provisioning profile, notarization/stapling and exact-package verification; missing credentials cannot fall back to ad-hoc signing. The Homebrew promotion receipt binds the final notarized DMG bytes and leaves quarantine intact. Existing published self-signed packages retain their historical cask instructions until a verified notarized package is promoted. Windows installers remain unsigned. After installation, `brew upgrade --cask pennel` gets later cask updates. See [releasing](releasing.md) for the credential setup, candidate commands and outstanding acceptance gates.
 
 The manual candidate workflow uses existing signing keys/certificates and performs no publication. Release helpers retain the legacy Sparkle upgrade path and require acceptance of the exact Mac, Windows and Linux updater artifacts before preparing an update manifest. The Tauri updater is enabled only when a public key is configured; previews without release configuration do not auto-update. Linux AppImages support in-app updates; Debian installations use a verified package or package manager. See [releasing](releasing.md) and [candidate and update artifacts](linux-packaging.md#candidate-and-update-artifacts).
 

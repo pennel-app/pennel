@@ -7,6 +7,7 @@ import { bindLocalization, liveText, l, localizeBackendText, t, uiLocale, type U
 import { connectionFeedback, connectionRole, linkIsPending, qrImageSource, syncRequiresBackup, syncSetupAction } from "../device-link";
 import { AccountActionEpoch } from "../account-actions";
 import { accountFailureText } from "../account-errors";
+import { credentialAccess } from "../credential-access";
 import "../sync.css";
 
 const LOGIN_LIFETIME_MS = 15 * 60 * 1000;
@@ -242,6 +243,7 @@ async function restoreConnection(identity: string | null, ownsView: () => boolea
 }
 
 export async function accountView(ctx: Context, options: { taskSetup?: boolean } = {}): Promise<HTMLElement> {
+  if (ctx.info.credential_store.status !== "ready") return h("div", {}, heading(), credentialAccess(ctx));
   listenForSync();
   listenForClaude();
   const mine = ctx.rerender;

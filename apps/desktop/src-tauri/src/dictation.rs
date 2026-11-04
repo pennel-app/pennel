@@ -1400,14 +1400,39 @@ impl Controller {
         );
         let command_pid = context.command_pid;
         let seq = self.queue.reserve();
+        let copy_only = self.recording_copy_only;
+        let is_command = self.command.is_command() && !copy_only && owned.is_none();
+        let providers = session.credential_providers(is_command);
+        let keys = if providers
+            .iter()
+            .any(|provider| provider.kind == pennel_core::ProviderKind::PennelCloud)
+        {
+            self.shared
+                .secrets
+                .ensure_cloud_access()
+                .and_then(|()| self.shared.secrets.keys_checked(&providers))
+        } else {
+            self.shared.secrets.keys_checked(&providers)
+        };
+        let mut keys = keys;
+        if !is_command && let Ok(keys) = &mut keys {
+            for provider in session.optional_credential_providers() {
+                if !keys.by_provider.contains_key(&provider.id)
+                    && let Ok(Some(key)) = self.shared.secrets.get_checked(&provider.id)
+                {
+                    keys.by_provider.insert(provider.id, key);
+                }
+            }
+        }
+        let credential_error = keys.as_ref().err().cloned();
         let request = DictationRequest {
             samples,
             sample_rate: TARGET_RATE,
             app_bundle_id: context.app_bundle_id,
-            keys: self.shared.keys(),
+            keys: keys.unwrap_or_else(|_| pennel_core::ApiKeys {
+                by_provider: Default::default(),
+            }),
         };
-        let copy_only = self.recording_copy_only;
-        let is_command = self.command.is_command() && !copy_only && owned.is_none();
         if let Some(capture) = &owned {
             owned_dictation::phase(&self.app, capture, SessionPhase::Working);
         }
@@ -1427,7 +1452,11 @@ impl Controller {
                         matches!(&destination, ExternalDestination::Captured(target) if external_paste::is_current(target)),
                     )
                 };
-                let outcome = if !still_there() {
+                let outcome = if let Some(message) = credential_error {
+                    session
+                        .fail_with_audio(request, PennelError::Storage { message })
+                        .map_err(Failure::Core)
+                } else if !still_there() {
                     Err(Failure::AppChanged)
                 } else {
                     let ExternalDestination::Captured(target) = &destination else {
@@ -1467,7 +1496,11 @@ impl Controller {
             return;
         }
         std::thread::spawn(move || {
-            let outcome = session.finish(request).map_err(Failure::Core);
+            let outcome = match credential_error {
+                Some(message) => session.fail_with_audio(request, PennelError::Storage { message }),
+                None => session.finish(request),
+            }
+            .map_err(Failure::Core);
             let _ = tx.send(Msg::Finished {
                 seq,
                 outcome: Box::new(outcome),

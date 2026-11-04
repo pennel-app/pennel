@@ -89,8 +89,9 @@ pub async fn begin_insights_analysis(
                 .engine
                 .clone()
                 .admit_meeting_insight_analysis(id, language_policy),
-            || shared.keys(),
+            || shared.keys_for_inference(pennel_core::InferenceCapability::Decision),
         )?;
+        let keys = keys.map_err(|message| PennelError::Storage { message })?;
         shared
             .engine
             .clone()

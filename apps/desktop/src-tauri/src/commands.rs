@@ -162,6 +162,7 @@ pub struct AppInfo {
     provider_revisions: HashMap<String, u64>,
     cloud_account_epoch: String,
     cloud_signed_in: bool,
+    credential_store: crate::secrets::CredentialStoreStatus,
     cleanup_verification: pennel_core::CleanupVerificationAvailability,
     active_model_downloads: Vec<String>,
     unsaved_history_count: u32,
@@ -185,19 +186,16 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
         LOG.info("initial app information: reading settings");
     }
     let settings = shared.settings();
+    shared.secrets.configure_providers(&settings.providers);
+    let credential_store = shared.secrets.status();
     if trace {
         LOG.info("initial app information: checking credential store");
     }
     let keys = settings
         .providers
         .iter()
-        .map(|p| {
-            shared
-                .secrets
-                .has(&p.id)
-                .map(|present| (p.id.clone(), present))
-        })
-        .collect::<Result<HashMap<_, _>>>()?;
+        .map(|p| (p.id.clone(), shared.secrets.has(&p.id).unwrap_or(false)))
+        .collect::<HashMap<_, _>>();
     if trace {
         LOG.info("initial app information: checking capabilities");
     }
@@ -218,7 +216,8 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
             .map(|provider| (provider.id.clone(), shared.secrets.revision()))
             .collect(),
         cloud_account_epoch: crate::cloud::account_epoch(shared),
-        cloud_signed_in: shared.secrets.has("pennel-cloud-refresh")?,
+        cloud_signed_in: shared.secrets.has("pennel-cloud-refresh").unwrap_or(false),
+        credential_store,
         cleanup_verification: shared.engine.cleanup_verification_availability(),
         active_model_downloads: shared.engine.active_model_downloads(),
         unsaved_history_count: shared.engine.unsaved_history_count(),
@@ -231,7 +230,10 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
         platform: std::env::consts::OS,
         version: shared.version.clone(),
         preview: shared.preview,
-        migration_warning: shared.migration_warning.clone().map(crate::ui::message),
+        migration_warning: (credential_store.status != crate::secrets::CredentialState::Ready)
+            .then(|| shared.migration_warning.clone())
+            .flatten()
+            .map(crate::ui::message),
         hotkey_error: hotkey_error.map(crate::ui::message),
         log_path: diagnostics::file_path().map(|p| p.to_string_lossy().into_owned()),
         data_dir: shared.data_dir.to_string_lossy().into_owned(),
@@ -248,6 +250,55 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
 pub async fn app_info(shared: State<'_, Arc<Shared>>) -> Result<AppInfo> {
     let shared = shared.inner().clone();
     off_main("app_info", move || info(&shared)).await
+}
+
+#[tauri::command]
+pub async fn credential_store_status(
+    shared: State<'_, Arc<Shared>>,
+) -> Result<crate::secrets::CredentialStoreStatus> {
+    let shared = shared.inner().clone();
+    off_main("credential_store_status", move || {
+        shared
+            .secrets
+            .configure_providers(&shared.settings().providers);
+        Ok(shared.secrets.status())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn migrate_saved_credentials(
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<AppInfo> {
+    let shared = shared.inner().clone();
+    off_main("migrate_saved_credentials", move || {
+        // User authentication can take arbitrarily long; hold no engine/capture locks here.
+        let migrated = shared
+            .secrets
+            .migrate_saved(&shared.settings().providers)
+            .map_err(err);
+        let _ = app.emit("settings-changed", ());
+        migrated?;
+        #[cfg(target_os = "macos")]
+        if !shared.preview {
+            legacy_migration_finish(&shared, &app)?;
+        }
+        crate::cloud::poke(&app);
+        info(&shared)
+    })
+    .await
+}
+
+#[cfg(target_os = "macos")]
+fn legacy_migration_finish(shared: &Shared, app: &AppHandle) -> Result<()> {
+    crate::legacy_migration::finish(
+        &shared.engine,
+        &shared.secrets,
+        &shared.data_dir,
+        &app.path().home_dir().map_err(err)?,
+    )
+    .map_err(err)
 }
 
 #[tauri::command]
@@ -360,7 +411,7 @@ pub async fn remove_provider(
         let mut settings = shared.settings();
         settings.providers.retain(|p| p.id != id);
         shared.engine.update_settings(settings).map_err(err)?;
-        let _ = shared.secrets.set(&id, "");
+        shared.secrets.set(&id, "").map_err(err)?;
         drop(_inference_mutation);
         refresh_cleanup_verification(&app);
         info(&shared)
@@ -411,7 +462,15 @@ pub async fn provider_models(
         {
             return Ok(Vec::new());
         }
-        pennel_core::provider_models(account.base_url.clone(), shared.secrets.get(&id)).map_err(err)
+        let key = if pennel_core::requires_key(account.kind) {
+            shared.secrets.get_checked(&id).map_err(err)?
+        } else {
+            None
+        };
+        if account.kind == ProviderKind::PennelCloud {
+            shared.secrets.ensure_cloud_access().map_err(err)?;
+        }
+        pennel_core::provider_models(account.base_url.clone(), key).map_err(err)
     })
     .await
 }
@@ -632,7 +691,7 @@ pub async fn test_provider_task(
     let task = model_task(&slot)?;
     let shared = shared.inner().clone();
     blocking(move || {
-        pennel_core::test_provider_task(shared.engine.clone(), task, shared.keys())
+        pennel_core::test_provider_task(shared.engine.clone(), task, shared.keys_for_task(task)?)
             .map(|mut result| {
                 result.message = crate::ui::message(result.message);
                 result
@@ -650,15 +709,21 @@ pub async fn test_provider_task_choice(
 ) -> Result<pennel_core::ProviderTaskTestResult> {
     let task = model_task(&slot)?;
     let shared = shared.inner().clone();
-    blocking(move || {
-        pennel_core::test_provider_task_choice(shared.engine.clone(), task, choice, shared.keys())
-            .map(|mut result| {
-                result.message = crate::ui::message(result.message);
-                result
-            })
-            .map_err(err)
-    })
-    .await
+    blocking(move || test_task_choice(&shared, task, choice)).await
+}
+
+fn test_task_choice(
+    shared: &Shared,
+    task: ProviderTask,
+    choice: ModelChoice,
+) -> Result<pennel_core::ProviderTaskTestResult> {
+    let keys = shared.keys_for(&[choice.provider_id.as_str()])?;
+    pennel_core::test_provider_task_choice(shared.engine.clone(), task, choice, keys)
+        .map(|mut result| {
+            result.message = crate::ui::message(result.message);
+            result
+        })
+        .map_err(err)
 }
 
 fn model_task(slot: &str) -> Result<ProviderTask> {
@@ -674,7 +739,12 @@ fn model_task(slot: &str) -> Result<ProviderTask> {
 pub async fn retry_history(id: String, shared: State<'_, Arc<Shared>>) -> Result<String> {
     let shared = shared.inner().clone();
     blocking(move || {
-        let keys = shared.keys();
+        let settings = shared.settings();
+        let mut providers = vec![settings.dictation_stt.provider_id.as_str()];
+        if settings.mode == pennel_core::DictationMode::Clean {
+            providers.push(settings.llm.provider_id.as_str());
+        }
+        let keys = shared.keys_for(&providers)?;
         shared.engine.retry(id, keys).map(|r| r.text).map_err(err)
     })
     .await
@@ -1221,7 +1291,7 @@ pub async fn summarize_meeting(
         let _library_job = meeting_runtime::LibraryJob::new(&shared)?;
         checked_meeting_dir(&shared.engine, &id)?;
         require_inactive_meeting(&shared, &id)?;
-        let keys = shared.keys();
+        let keys = shared.keys_for_task(ProviderTask::Llm)?;
         shared
             .engine
             .summarize_meeting(id, template_id, keys)
@@ -1244,7 +1314,7 @@ pub async fn retranscribe_meeting(
         let _library_job = meeting_runtime::LibraryJob::new(&shared)?;
         checked_meeting_dir(&shared.engine, &id)?;
         require_inactive_meeting(&shared, &id)?;
-        let keys = shared.keys();
+        let keys = shared.keys_for_task(ProviderTask::MeetingStt)?;
         shared.engine.retranscribe_failed(id, keys).map_err(err)
     })
     .await?;
@@ -1420,7 +1490,12 @@ pub async fn ask_meetings(
         }
         shared
             .engine
-            .ask_meetings(question, history, meeting_id, shared.keys())
+            .ask_meetings(
+                question,
+                history,
+                meeting_id,
+                shared.keys_for_task(ProviderTask::Llm)?,
+            )
             .map_err(err)
     })
     .await
@@ -1792,6 +1867,101 @@ pub fn hide_window(window: tauri::Window) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draft_provider_test_uses_saved_key_before_the_provider_is_assigned_to_a_task() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::time::{Duration, Instant};
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= deadline {
+                            return None;
+                        }
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("fixture server: {error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 4096];
+            let header_end = loop {
+                let length = stream.read(&mut buffer).unwrap();
+                assert!(length > 0);
+                request.extend_from_slice(&buffer[..length]);
+                if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                    break end + 4;
+                }
+            };
+            let headers = String::from_utf8_lossy(&request[..header_end]).into_owned();
+            let length: usize = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse().unwrap())
+                })
+                .unwrap_or(0);
+            while request.len() < header_end + length {
+                let length = stream.read(&mut buffer).unwrap();
+                assert!(length > 0);
+                request.extend_from_slice(&buffer[..length]);
+            }
+            let body = r#"{"choices":[{"message":{"content":"OK"}}]}"#;
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            Some(headers)
+        });
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        let mut settings = shared.settings();
+        let provider = pennel_core::ProviderAccount {
+            id: "unassigned-fixture".into(),
+            kind: ProviderKind::Groq,
+            name: "Fixture".into(),
+            base_url: format!("http://{address}/v1"),
+        };
+        assert_ne!(settings.dictation_stt.provider_id, provider.id);
+        assert_ne!(settings.meeting_stt.provider_id, provider.id);
+        assert_ne!(settings.llm.provider_id, provider.id);
+        settings.providers.push(provider.clone());
+        shared.engine.update_settings(settings).unwrap();
+        shared
+            .secrets
+            .set(&provider.id, "synthetic-draft-key")
+            .unwrap();
+        let tested = test_task_choice(
+            &shared,
+            ProviderTask::Llm,
+            ModelChoice {
+                provider_id: provider.id,
+                model: "fixture-model".into(),
+            },
+        )
+        .unwrap();
+        let headers = server
+            .join()
+            .unwrap()
+            .expect("the draft provider received the sample");
+        assert!(tested.verified, "{}", tested.message);
+        assert!(headers.starts_with("POST /v1/chat/completions "));
+        assert!(
+            headers
+                .to_lowercase()
+                .contains("authorization: bearer synthetic-draft-key")
+        );
+    }
 
     #[test]
     fn nested_saving_failures_localize_each_owned_envelope_and_preserve_legacy_aliases() {

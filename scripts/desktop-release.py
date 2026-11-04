@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,22 +18,36 @@ DESKTOP = ROOT / "apps" / "desktop"
 UPDATES_URL = "https://pennel.app/updates/latest.json"
 
 
-def release_config(version, platform, public_key, build_number=None, previous_build=None, signing_identity=None, sign_command=None, certificate_thumbprint=None):
+def mac_signing():
+    spec = importlib.util.spec_from_file_location("pennel_mac_signing", ROOT / "scripts/mac_signing.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def release_config(version, platform, public_key, build_number=None, previous_build=None, signing_identity=None, sign_command=None, certificate_thumbprint=None, *, homebrew=False):
     if not re.fullmatch(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?", version):
         raise ValueError("Version must be a semantic version such as 0.2.0 or 0.2.0-beta.1")
-    if not public_key or not public_key.strip():
+    if homebrew and platform != "darwin":
+        raise ValueError("The Homebrew distribution path is macOS-only")
+    if not homebrew and (not public_key or not public_key.strip()):
         raise ValueError("TAURI_UPDATER_PUBLIC_KEY is required; existing keys are never generated or replaced")
     config = {
         "version": version,
-        "bundle": {"createUpdaterArtifacts": True},
-        "plugins": {"updater": {"pubkey": public_key.strip(), "endpoints": [UPDATES_URL]}},
+        "bundle": {"createUpdaterArtifacts": not homebrew},
     }
+    if not homebrew:
+        config["plugins"] = {"updater": {"pubkey": public_key.strip(), "endpoints": [UPDATES_URL]}}
     if platform == "darwin":
-        if not isinstance(build_number, int) or not isinstance(previous_build, int) or previous_build < 0 or build_number <= previous_build:
+        if homebrew and build_number is None and "-" in version:
+            raise ValueError("Prerelease Mac candidates require explicit increasing numeric native build numbers")
+        if (not homebrew or build_number is not None or previous_build is not None) and (
+            not isinstance(build_number, int) or not isinstance(previous_build, int) or previous_build < 0 or build_number <= previous_build
+        ):
             raise ValueError("Mac build number must be greater than the last distributed native or unified build number")
-        if not signing_identity or not signing_identity.startswith("Developer ID Application:"):
+        if not signing_identity or not (signing_identity.startswith("Developer ID Application:") or re.fullmatch(r"[A-Fa-f0-9]{40}", signing_identity)):
             raise ValueError("APPLE_SIGNING_IDENTITY must name an existing Developer ID Application certificate")
-        config["bundle"]["macOS"] = {"bundleVersion": str(build_number), "signingIdentity": signing_identity}
+        config["bundle"]["macOS"] = {"bundleVersion": str(build_number) if build_number is not None else version, "signingIdentity": signing_identity}
     elif platform == "win32":
         if sign_command:
             if "%1" not in sign_command:
@@ -152,16 +167,31 @@ def main():
     parser.add_argument("--previous-build-number", type=int)
     parser.add_argument("--prepare-only", action="store_true", help="Validate inputs and write the generated release configuration only")
     parser.add_argument("--legacy-sparkle", action="store_true", help="Also prepare the archive/appcast understood by existing native Mac installations")
+    parser.add_argument("--homebrew", action="store_true", help="Build a notarized Mac DMG independently of Windows and Tauri updater credentials")
     args = parser.parse_args()
     platform = sys.platform
     try:
+        env = os.environ.copy()
+        signing = mac_signing() if platform == "darwin" else None
+        plan = None
+        if signing:
+            # Profiles and entitlements enter the bundle before its first signature.
+            plan = signing.prepare("production", ROOT / "build/mac-signing/production", env)
+            signing.notary_arguments(env)
         config = release_config(
             args.version, platform, os.environ.get("TAURI_UPDATER_PUBLIC_KEY"),
             args.build_number, args.previous_build_number,
-            os.environ.get("APPLE_SIGNING_IDENTITY") or os.environ.get("PENNEL_SIGN_IDENTITY"),
+            plan["identity"] if plan else os.environ.get("APPLE_SIGNING_IDENTITY") or os.environ.get("PENNEL_SIGN_IDENTITY"),
             os.environ.get("PENNEL_WINDOWS_SIGN_COMMAND"),
             os.environ.get("PENNEL_WINDOWS_CERTIFICATE_THUMBPRINT"),
+            homebrew=args.homebrew,
         )
+        if plan:
+            overlay = json.loads(Path(plan["config"]).read_text())
+            config["identifier"] = overlay["identifier"]
+            config["bundle"]["macOS"].update(overlay["bundle"]["macOS"])
+            # The updater archive must contain the final stapled app; create it below.
+            config["bundle"]["createUpdaterArtifacts"] = False
         target = {"darwin": "aarch64-apple-darwin", "win32": "x86_64-pc-windows-msvc", "linux": "x86_64-unknown-linux-gnu"}[platform]
         output = ROOT / "build" / "desktop-release" / args.version / target
         output.mkdir(parents=True, exist_ok=True)
@@ -172,25 +202,29 @@ def main():
             return
         if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip():
             raise ValueError("Signed candidates require a clean checkout so the source revision identifies exactly what was built")
-        if not os.environ.get("TAURI_SIGNING_PRIVATE_KEY"):
+        if not args.homebrew and not os.environ.get("TAURI_SIGNING_PRIVATE_KEY"):
             raise ValueError("TAURI_SIGNING_PRIVATE_KEY must reference the existing updater signing key")
-        env = os.environ.copy()
         if platform == "darwin":
-            env["APPLE_SIGNING_IDENTITY"] = config["bundle"]["macOS"]["signingIdentity"]
-            api_auth = all(env.get(key) for key in ("APPLE_API_ISSUER", "APPLE_API_KEY", "APPLE_API_KEY_PATH"))
-            id_auth = all(env.get(key) for key in ("APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID"))
-            if not (api_auth or id_auth):
-                raise ValueError("Existing Apple notarization credentials are required (API key or Apple ID environment variables)")
+            build_env = signing.build_environment(env, plan["identity"])
+        else:
+            build_env = env
         npx = shutil.which("npx.cmd" if platform == "win32" else "npx")
         if not npx:
             raise ValueError("Node.js/npm must be available to run the Tauri CLI")
-        bundles = {"darwin": "app,dmg", "win32": "nsis,msi", "linux": "deb,appimage"}[platform]
-        native_baseline = build_distributable(npx, target, bundles, config_path, env, platform)
+        bundles = {"darwin": "app", "win32": "nsis,msi", "linux": "deb,appimage"}[platform]
+        native_baseline = build_distributable(npx, target, bundles, config_path, build_env, platform)
         bundle_dir = DESKTOP / "src-tauri" / "target" / target / "release" / "bundle"
         if platform == "darwin":
             app = bundle_dir / "macos" / "Pennel.app"
-            run(sys.executable, ROOT / "scripts" / "verify-desktop-bundle.py", app, "--require-developer-id")
-            run("xcrun", "stapler", "validate", app)
+            run(sys.executable, ROOT / "scripts" / "verify-desktop-bundle.py", app, "--require-developer-id", "--require-private-keychain")
+            dmg = bundle_dir / "dmg" / f"Pennel_{args.version}_aarch64.dmg"
+            mac_receipt = signing.finish_distribution(app, dmg, plan, env)
+            mac_receipt["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+            (output / "mac-notarization.json").write_text(json.dumps(mac_receipt, indent=2) + "\n")
+            if not args.homebrew:
+                archive = bundle_dir / "macos" / "Pennel.app.tar.gz"
+                run("tar", "-czf", archive, "-C", app.parent, app.name)
+                sign_detached(npx, archive, args.version, env)
             if args.legacy_sparkle:
                 prepare_sparkle(app, args.version, output)
         elif platform == "win32":
@@ -201,6 +235,8 @@ def main():
                 sign_detached(npx, artifact, args.version, env)
         for extension in ("*.dmg", "*.exe", "*.msi", "*.app.tar.gz", "*.AppImage", "*.deb", "*.sig"):
             for artifact in bundle_dir.rglob(extension):
+                if platform == "darwin" and artifact not in ({dmg} if args.homebrew else {dmg, archive, archive.with_name(archive.name + ".sig")}):
+                    continue
                 if platform == "win32" and artifact.suffix in (".exe", ".msi"):
                     verify_windows_signature(artifact)
                 shutil.copy2(artifact, output / artifact.name)
@@ -217,11 +253,14 @@ def main():
         updater_folder, updater_pattern = {
             "darwin": ("macos", "*.app.tar.gz"), "win32": ("nsis", "*.exe"), "linux": ("appimage", "*.AppImage"),
         }[platform]
-        updater_artifacts = list((bundle_dir / updater_folder).glob(updater_pattern))
-        if len(updater_artifacts) != 1 or not updater_artifacts[0].with_name(updater_artifacts[0].name + ".sig").is_file():
-            raise ValueError("Expected exactly one signed updater artifact for the candidate")
-        receipt["updater_artifact"] = updater_artifacts[0].name
-        receipt["sha256"] = hashlib.sha256(updater_artifacts[0].read_bytes()).hexdigest()
+        if not args.homebrew:
+            updater_artifacts = list((bundle_dir / updater_folder).glob(updater_pattern))
+            if len(updater_artifacts) != 1 or not updater_artifacts[0].with_name(updater_artifacts[0].name + ".sig").is_file():
+                raise ValueError("Expected exactly one signed updater artifact for the candidate")
+            receipt["updater_artifact"] = updater_artifacts[0].name
+            receipt["sha256"] = hashlib.sha256(updater_artifacts[0].read_bytes()).hexdigest()
+        if plan:
+            receipt["mac_notarization"] = "mac-notarization.json"
         receipt["installer_artifacts"] = {
             path.name: hashlib.sha256(path.read_bytes()).hexdigest()
             for path in output.iterdir()

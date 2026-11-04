@@ -2518,6 +2518,31 @@ impl PennelEngine {
         Ok(RecoverySlot(&self.unsaved_history))
     }
 
+    pub(crate) fn retain_failed_dictation(
+        &self,
+        request: &DictationRequest,
+        error: &PennelError,
+        progress: &LiveDictationSession,
+    ) -> Result<(), PennelError> {
+        if !has_speech(&request.samples, request.sample_rate) {
+            return Err(PennelError::NoSpeech);
+        }
+        let _slot = self.reserve_history()?;
+        let wav = encode_wav(&request.samples, request.sample_rate);
+        progress.with_active(|| {
+            self.history
+                .lock()
+                .unwrap()
+                .insert_failed(
+                    request.app_bundle_id.as_deref(),
+                    &wav,
+                    &error.to_string(),
+                    now_ms(),
+                )
+                .map(|_| ())
+        })
+    }
+
     fn persist_transcript(
         &self,
         mut entry: HistoryEntry,
