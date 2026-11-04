@@ -149,5 +149,8 @@
   "dictation.home.recent_empty": "Your dictations appear here after you use your shortcut or try it in Pennel.",
   "dictation.history.search": "Search dictation history",
   "dictation.history.none_found": "No dictations match your search.",
-  "dictation.processing.title": "Dictation processing"
+  "dictation.processing.title": "Dictation processing",
+  "dictation.home.ready_intro": "Click a text field in another app, then use your shortcut.",
+  "dictation.home.finish_setup": "Finish setup",
+  "dictation.home.processing_details": "Speech and text processing"
 }

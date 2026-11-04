@@ -257,10 +257,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     processing: () => !!reviewDetail?.retranscription_status?.running,
     canReview: () => !composing && !notes.dirty && notes.status !== "saving" && !titleDraft.dirty && titleDraft.status !== "saving" });
   panels.get("summary")!.append(summary.root);
-  const automation = summaryAutomationChoice(ctx, { compact: true });
+  const automation = summaryAutomationChoice(ctx, { compact: true, configure: () => openTools("automation") });
   const automationNudge = h("div", { class: "meeting-automation-nudge", hidden: !finalized }, automation.root);
   const tools = meetingWorkspaceTools(ctx, { id: () => owner.id, finished: () => finalized, flush, refresh: loadReview,
-    template: () => selectedTemplate, setTemplate: value => { selectedTemplate = value; }, speakers: speakerControls, people: peopleControls,
+    template: () => selectedTemplate, setTemplate: value => { selectedTemplate = value; }, speakers: speakerControls, people: peopleControls, close: returnToDocument,
     processingChanged: value => { if (reviewDetail) reviewDetail.retranscription_status = value; summary.readiness(); } });
   const exportPreview = meetingExportPreview(ctx, { id: () => owner.id, template: () => selectedTemplate, flush });
   panels.get("tools")!.append(tools.root, exportPreview.root);
@@ -406,6 +406,13 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   }
   function selectPane(pane: LivePane, openingSource = false) { if (!openingSource) ++sourceNavigation; panes.select(pane); updatePanes(); }
   function openTools(section?: string) { tools.root.hidden = false; exportPreview.root.hidden = true; selectPane("tools"); tools.reveal(section); }
+  function returnToDocument() {
+    ++sourceNavigation;
+    panes.closeCompanion(); updatePanes();
+    if (panes.primary === "notes" && !preview) editor.focus({ preventScroll: true });
+    else if (panes.primary === "summary" && summary.editing()) summary.editor.focus({ preventScroll: true });
+    else tabButtons.get(panes.primary)?.focus({ preventScroll: true });
+  }
   function openExport(scope: "shareable" | "personal") { if (!finalized) return; tools.root.hidden = true; exportPreview.open(scope); selectPane("tools"); }
   function showPreview(value: boolean) {
     if (composing) return;

@@ -1,5 +1,5 @@
 import { bindLocalization, l, t, localizeBackendText, formatDateTime } from "../i18n.ts";
-import { api, listen, type DictationSessionSnapshot, type PillState, type SetupReadiness } from "../api";
+import { api, listen, type DictationSessionSnapshot, type HistoryEntry, type PillState, type SetupReadiness } from "../api";
 import { SerialQueue } from "../async";
 import { controlButton, errorText, h } from "../dom";
 import { OwnedDictationSession } from "../dictation-session";
@@ -166,15 +166,17 @@ function dictationHome(ctx: Context): HTMLElement {
   let latestReadiness: SetupReadiness | null = null;
   const introduction = h("p", { class: "dictation-home-intro muted" }, l("dictation.home.intro"));
   const shortcutInstruction = h("span", { class: "muted" }, l("dictation.home.shortcut"));
+  let practicePending = false;
   const repair = controlButton({ class: "btn dictation-home-repair", hidden: true, onclick: () => {
     if (latestReadiness?.configured) void api.showWindow("onboarding", "dictation-permissions").catch(ctx.report);
     else ctx.openSetup("dictation_stt");
   } }, l("dictation.pad.setup"));
-  const practice = controlButton({ class: "btn primary", onclick: async () => {
+  const practice = controlButton({ class: "btn dictation-home-practice", disabled: true, title: l("dictation.home.practice_help"), onclick: async () => {
+    practicePending = true;
     practice.disabled = true;
     try { await api.showWindow("onboarding", "practice"); }
     catch (error) { ctx.report(error); }
-    finally { practice.disabled = false; }
+    finally { practicePending = false; practice.disabled = !latestReadiness?.can_record; }
   } }, icon("mic"), l("dictation.home.try_here"));
   const processing = h("dl", { class: "help processing-path compact-processing", "aria-label": l("dictation.processing.title") });
   const currentVerification = h("p", { class: "help", role: "status", hidden: true });
@@ -185,32 +187,67 @@ function dictationHome(ctx: Context): HTMLElement {
     currentVerification.textContent = activeDictation?.cleanup_verification ? cleanupVerificationCurrent(activeDictation.cleanup_verification) : "";
   };
   const recent = h("div", { class: "recent-dictations", role: "list", "data-recent-dictations": true });
-  const root = h("div", { class: "pad-workspace dictation-home" },
+  const recentLoadStatus = h("p", { class: "error recent-load-status", role: "status", hidden: true });
+  const recentFeedback = h("p", { class: "help recent-copy-status", role: "status", "aria-live": "polite", hidden: true });
+  const processingDetails = h("details", { class: "dictation-processing-details" }, h("summary", {}, l("dictation.home.processing_details")), processing);
+  const root = h("div", { class: "pad-workspace dictation-home", "data-dictation-readiness": "checking" },
     h("h1", {}, l("dictation.home.title")),
     introduction,
     h("div", { class: "dictation-home-shortcut" }, key, shortcutInstruction),
-    readiness, detail, repair,
-    h("div", { class: "dictation-home-actions row" }, practice,
+    readiness, detail,
+    h("div", { class: "dictation-home-actions row" }, repair, practice,
       h("button", { class: "text-button dictation-home-settings", onclick: () => ctx.navigate("dictation") }, l("dictation.pad.settings"))),
-    h("p", { class: "help" }, l("dictation.home.practice_help")), processing, currentVerification,
+    currentVerification, processingDetails,
     h("section", { class: "dictation-recent" }, h("div", { class: "row" }, h("h2", { class: "grow" }, l("dictation.home.recent")),
-      h("button", { class: "text-button", "data-action": "all-history", onclick: () => ctx.navigate("history") }, l("dictation.home.all_history"))), recent),
+      h("button", { class: "text-button", "data-action": "all-history", onclick: () => ctx.navigate("history") }, l("dictation.home.all_history"))), recent, recentLoadStatus, recentFeedback),
     h("div", { class: "dictation-pad-option" }, h("button", { class: "text-button", onclick: () => ctx.navigate("dictation-pad") }, l("dictation.home.open_pad")),
       h("p", { class: "help" }, l("dictation.home.pad_help"))));
   let disposed = false;
   let revision = 0;
   let recentRevision = 0;
+  let recentRowId = 0;
+  const recentRows = new Map<string, { row: HTMLElement; text: HTMLElement; time: HTMLElement; entry: HistoryEntry }>();
   ctx.onDispose(() => { disposed = true; });
   const refreshRecent = async () => {
     const mine = ++recentRevision;
     try {
       const entries = recentDictations(await api.history(200));
       if (disposed || mine !== recentRevision) return;
-      recent.replaceChildren(...entries.map((entry) => h("div", { role: "listitem", "data-recent-id": entry.id },
-        h("button", { class: "recent-dictation", onclick: () => ctx.navigate("history", entry.id) }, h("span", {}, entry.text),
-          h("small", { class: "help" }, formatDateTime(entry.created_at_ms, { dateStyle: "medium", timeStyle: "short" }))))),
-        ...(!entries.length ? [h("p", { class: "help" }, l("dictation.home.recent_empty"))] : []));
-    } catch (error) { if (!disposed && mine === recentRevision) recent.replaceChildren(h("p", { class: "error", role: "status" }, errorText(error))); }
+      recentLoadStatus.hidden = true; recentLoadStatus.textContent = "";
+      const ids = new Set(entries.map(entry => entry.id));
+      for (const [id, item] of recentRows) {
+        if (!ids.has(id)) {
+          if (item.row.contains(document.activeElement)) root.querySelector<HTMLButtonElement>('[data-action="all-history"]')?.focus({ preventScroll: true });
+          item.row.remove(); recentRows.delete(id);
+        }
+      }
+      recent.querySelector(".recent-dictations-empty")?.remove();
+      for (const [index, entry] of entries.entries()) {
+        let item = recentRows.get(entry.id);
+        if (!item) {
+          const text = h("span", { id: `recent-dictation-${++recentRowId}` });
+          const time = h("small", { class: "help" });
+          const row = h("div", { class: "recent-dictation-entry", role: "listitem", "data-recent-id": entry.id });
+          const current = { row, text, time, entry };
+          const copy = controlButton({ class: "text-button recent-dictation-copy", "aria-label": l("dictation.history.copy"), "aria-describedby": text.id, onclick: async () => {
+            copy.disabled = true;
+            try {
+              await api.copyText(current.entry.text);
+              if (!disposed) { recentFeedback.textContent = t("dictation.pad.copied"); recentFeedback.classList.remove("error"); }
+            } catch (error) {
+              if (!disposed) { recentFeedback.textContent = errorText(error); recentFeedback.classList.add("error"); }
+            } finally { copy.disabled = false; if (!disposed) recentFeedback.hidden = false; }
+          } }, icon("copy"), l("common.copy"));
+          row.append(h("button", { class: "recent-dictation", onclick: () => ctx.navigate("history", current.entry.id) }, text, time), copy);
+          recentRows.set(entry.id, current); item = current;
+        }
+        item.entry = entry;
+        item.text.textContent = entry.text;
+        item.time.textContent = formatDateTime(entry.created_at_ms, { dateStyle: "medium", timeStyle: "short" });
+        if (recent.children[index] !== item.row) recent.insertBefore(item.row, recent.children[index] ?? null);
+      }
+      if (!entries.length) recent.append(h("p", { class: "help recent-dictations-empty" }, l("dictation.home.recent_empty")));
+    } catch (error) { if (!disposed && mine === recentRevision) { recentLoadStatus.textContent = errorText(error); recentLoadStatus.hidden = false; } }
   };
   void listen("history-changed", () => { void refreshRecent(); }).then((unlisten) => { if (disposed) unlisten(); else ctx.onDispose(unlisten); }).catch(ctx.report);
   void listen<PillState>("dictation-state", (event) => {
@@ -230,19 +267,25 @@ function dictationHome(ctx: Context): HTMLElement {
       latestReadiness = ready;
       const shortcut = shortcutAccessHint(ready, ctx.info.capabilities.global_hotkey);
       const anywhere = ready.can_record && ready.can_use_shortcut && ready.can_paste_externally;
+      root.dataset.dictationReadiness = ready.can_record ? "ready" : "blocked";
       readiness.textContent = ready.can_record ? t(anywhere ? "dictation.home.ready" : "dictation.home.ready_here") : t("dictation.home.needs_setup");
       readiness.classList.toggle("success", anywhere);
-      introduction.textContent = t(ready.can_record && !ready.can_paste_externally ? "dictation.home.copy_intro" : "dictation.home.intro");
+      introduction.textContent = t(ready.can_record && !ready.can_paste_externally ? "dictation.home.copy_intro" : ready.can_record ? "dictation.home.ready_intro" : "dictation.home.intro");
       shortcutInstruction.textContent = t(ready.can_record && !ready.can_paste_externally ? "dictation.home.shortcut_copy" : "dictation.home.shortcut");
       detail.textContent = ready.can_record ? shortcut?.message ?? "" : ready.reason ? localizeBackendText(ready.reason) : t("dictation.home.speech_setup");
       detail.hidden = !detail.textContent;
       repair.hidden = ready.can_record && !shortcut?.recoverable;
-      repair.textContent = ready.can_record ? t("dictation.access.check") : t("dictation.pad.setup");
+      repair.textContent = ready.can_record ? t("dictation.access.check") : t("dictation.home.finish_setup");
+      repair.classList.toggle("primary", !repair.hidden);
+      practice.classList.toggle("primary", repair.hidden);
+      practice.disabled = !ready.can_record || practicePending;
     } catch (error) { if (!disposed && mine === revision) {
       latestReadiness = null;
+      root.dataset.dictationReadiness = "blocked";
       readiness.textContent = t("dictation.home.needs_setup"); readiness.classList.remove("success");
       detail.textContent = errorText(error); detail.hidden = false;
-      repair.hidden = false; repair.textContent = t("dictation.pad.setup");
+      repair.hidden = false; repair.textContent = t("dictation.home.finish_setup"); repair.classList.add("primary");
+      practice.classList.remove("primary"); practice.disabled = true;
     } }
   };
   ctx.onInfoChange(() => { void refresh(); });

@@ -8,11 +8,21 @@
 .conversation-input { width: 100%; min-height: 52px; max-height: 140px; resize: vertical; }
 .conversation-composer { display: flex; flex-direction: column; gap: 8px; }
 .conversation-composer > .row { flex-wrap: wrap; }
+.conversation-entry { display: flex; align-items: flex-end; gap: 8px; min-width: 0; }
+.conversation-entry > .conversation-input { flex: 1; min-width: 0; width: auto; }
+.conversation-entry > .row { flex-shrink: 0; flex-direction: column; align-items: stretch; }
+.conversation-question-context { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.conversation-scope { color: var(--muted); font-size: var(--font-caption); line-height: 1.4; }
+.conversation-starters { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.conversation-starter { min-height: 28px; padding: 4px 8px; border-radius: var(--radius-pill); color: var(--muted); font-size: var(--font-caption); }
+.conversation-starter:hover { background: var(--hover); color: var(--foreground); }
 .conversation-panel .chat-history { min-height: 80px; }
 .conversation-panel [hidden] { display: none; }
 .conversation-panel .conversation-incomplete { white-space: pre-wrap; }
 .conversation-source-notice blockquote { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .live-conversation-panel .conversation-toolbar { padding: 0 4px 6px; }
+.live-conversation-panel .chat-history { min-height: 64px; }
+.live-conversation-panel .chat-setup { padding: 4px; gap: 4px 8px; }
 .live-conversation-panel .conversation-storage { padding: 0 4px 6px; }
 .live-conversation-panel .conversation-error, .live-conversation-panel .conversation-source-notice, .live-conversation-panel .conversation-older { margin: 4px; }
 .live-conversation-panel .conversation-toolbar .btn { min-width: 0; font-size: var(--font-caption); }
