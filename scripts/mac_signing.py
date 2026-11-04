@@ -206,6 +206,15 @@ def release_requirement(identifier=None):
             f'certificate leaf[subject.OU] = "{PERSONAL_TEAM}"')
 
 
+def signed_certificate(app):
+    with tempfile.TemporaryDirectory(prefix="pennel-signed-cert-") as temporary:
+        prefix = str(Path(temporary) / "cert")
+        # This optional codesign argument must be attached; a separate prefix is
+        # interpreted as another code object rather than an output location.
+        command(["codesign", "-d", "--extract-certificates=" + prefix, app])
+        return Path(prefix + "0").read_bytes()
+
+
 def inspect_signed_app(app, *, identifier=IDENTIFIERS["production"], developer_id=True):
     app = Path(app)
     arguments = ["codesign", "--verify", "--deep", "--strict"]
@@ -222,10 +231,7 @@ def inspect_signed_app(app, *, identifier=IDENTIFIERS["production"], developer_i
     if developer_id and "Authority=Developer ID Application:" not in metadata:
         raise ValueError("Packaged app requires a Developer ID Application signature")
     entitlements = plistlib.loads(command(["codesign", "-d", "--entitlements", ":-", app], binary=True))
-    with tempfile.TemporaryDirectory(prefix="pennel-signed-cert-") as temporary:
-        prefix = str(Path(temporary) / "cert")
-        command(["codesign", "-d", "--extract-certificates", prefix, app])
-        certificate = Path(prefix + "0").read_bytes()
+    certificate = signed_certificate(app)
     profile_path = app / "Contents/embedded.provisionprofile"
     attributes = validate_profile(decode_profile(profile_path), identifier, certificate, developer_id=developer_id)
     expected = {"com.apple.application-identifier": attributes["application_identifier"],

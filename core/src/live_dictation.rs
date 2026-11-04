@@ -222,26 +222,32 @@ impl LiveDictationSession {
         let mut ids = vec![self.settings.dictation_stt.provider_id.as_str()];
         if command || self.settings.mode == DictationMode::Clean {
             ids.push(self.settings.llm.provider_id.as_str());
-            if self.settings.cleanup_verification_enabled {
-                ids.extend(
-                    self.settings
-                        .decision
-                        .as_ref()
-                        .map(|config| config.provider_id.as_str()),
-                );
-                ids.extend(
-                    self.settings
-                        .reranking
-                        .as_ref()
-                        .map(|config| config.provider_id.as_str()),
-                );
-            }
         }
         self.settings
             .providers
             .iter()
             .filter(|provider| ids.contains(&provider.id.as_str()))
             .cloned()
+            .collect()
+    }
+
+    /// An unavailable optional verifier must not prevent speech recognition or command capture.
+    pub fn optional_credential_providers(&self) -> Vec<crate::ProviderAccount> {
+        if self.settings.mode != DictationMode::Clean || !self.settings.cleanup_verification_enabled
+        {
+            return Vec::new();
+        }
+        self.settings
+            .decision
+            .as_ref()
+            .into_iter()
+            .filter_map(|config| {
+                self.settings
+                    .providers
+                    .iter()
+                    .find(|provider| provider.id == config.provider_id)
+                    .cloned()
+            })
             .collect()
     }
 
@@ -666,6 +672,42 @@ mod tests {
             !providers
                 .iter()
                 .any(|provider| provider.id == "new-provider")
+        );
+        session.cancel();
+    }
+
+    #[test]
+    fn verification_credentials_are_optional_and_never_required_for_commands() {
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        settings.mode = DictationMode::Clean;
+        settings.cleanup_verification_enabled = true;
+        settings.providers.push(crate::ProviderAccount {
+            id: "verification-only".into(),
+            kind: ProviderKind::OpenRouter,
+            name: "Verification".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+        });
+        settings.decision = Some(serde_json::from_value(serde_json::json!({
+            "provider_id":"verification-only", "protocol":"open_router_decisions", "model":"fixture",
+        })).unwrap());
+        engine.update_settings(settings).unwrap();
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        for command in [false, true] {
+            assert!(
+                !session
+                    .credential_providers(command)
+                    .iter()
+                    .any(|provider| provider.id == "verification-only")
+            );
+        }
+        assert!(
+            session
+                .optional_credential_providers()
+                .iter()
+                .any(|provider| provider.id == "verification-only")
         );
         session.cancel();
     }
