@@ -88,3 +88,10 @@ export function ownedFailureText(language: InterfaceLanguage, message: string, c
   const selected = code && aliases[code.toLowerCase()] ? code : legacyOwnedCodes.get(message);
   return selected ? localizedFailure(language, { code: selected, message }) : ownedMetadata(language, message, 'mobile.errors.operation_failed');
 }
+
+/** Expo wraps native failures in an envelope; prefer known owned reasons before generic code guidance. */
+export function ownedNativeFailureText(language: InterfaceLanguage, error: unknown): string {
+  const value = nativeFailure(error);
+  const specific = ownedFailureText(language, value.message);
+  return specific === translate(language, 'mobile.errors.operation_failed') ? localizedFailure(language, value) : specific;
+}

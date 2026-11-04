@@ -136,7 +136,7 @@ pub(crate) fn localized_utterance_speaker_label(
 }
 
 /// Desktop request evidence; this is deliberately independent of the persisted/UniFFI records.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MeetingSourceAnchor {
     pub passage: Passage,
     pub segment_keys: Vec<String>,

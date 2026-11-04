@@ -11,6 +11,8 @@ mod cleanup_verification;
 mod cli_agent;
 mod cloud;
 mod command;
+mod conversation_engine;
+mod conversations;
 mod cpu_support;
 mod diarize;
 mod dictation_pad;

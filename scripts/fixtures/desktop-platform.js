@@ -139,6 +139,7 @@
   const listeners = new Map();
   const calls = [];
   const frontendFlushes = [];
+  const copiedTexts = [];
   const unknown = [];
   const setupTrace = { samples: [], savedChoices: [], appliedTasks: [], catalogRequests: [] };
   const catalogAttempts = new Map();
@@ -219,6 +220,8 @@
   let recordingStopped = false;
   let transcriptRevision = 1;
   let saveFailure = Boolean(options.live_save_error);
+  let noteSaveDelay = options.note_save_delay_ms || 0;
+  const pendingNoteSaves = new Set();
   const liveRequests = new Map();
   let meetingUid = "qa-meeting-stable-uid";
   let liveSession = "qa-recording";
@@ -280,7 +283,93 @@
   const insightJobs = new Map();
   let insightSequence = 100;
   const insightId = () => `00000000-0000-7000-8000-${String(++insightSequence).padStart(12, "0")}`;
-  const uidFor = id => retainedMeetings.get(id)?.meeting_uid || (id === activeMeetingId ? meetingUid : "qa-meeting-stable-uid");
+  const libraryUids = new Map(library.map((info, index) => [info.id, info.id === meetingId ? "qa-meeting-stable-uid" : `qa-library-meeting-${index}`]));
+  const deletedMeetingUids = new Set();
+  const uidFor = id => retainedMeetings.get(id)?.meeting_uid || (id === activeMeetingId ? meetingUid : libraryUids.get(id));
+  const meetingIdForUid = uid => deletedMeetingUids.has(uid) ? null : uid === meetingUid ? activeMeetingId
+    : [...retainedMeetings.entries()].find(([, value]) => value.meeting_uid === uid)?.[0] || [...libraryUids.entries()].find(([, value]) => value === uid)?.[0] || null;
+  const recordForId = id => {
+    if (deletedMeetingUids.has(uidFor(id))) return null;
+    const retained = retainedMeetings.get(id), info = retained?.info || meetingInfo(id);
+    return { id, uid: uidFor(id), info, notes: retained?.notes ?? (id === activeMeetingId ? notes : `Synthetic notes for ${info.title}.`),
+      transcript: retained?.transcript || transcript, summary };
+  };
+  let conversationFixture, conversationFixtureLoading, conversationStorageFailure = Boolean(options.conversation_storage_error);
+  const conversationCommands = { conversation_snapshot: "snapshot", update_conversation: "update", begin_conversation_question: "begin", cancel_conversation_question: "cancel", conversation_source: "source" };
+  async function conversations() {
+    if (conversationFixture) return conversationFixture;
+    conversationFixtureLoading ??= (async () => {
+      const factory = globalThis.__PENNEL_CREATE_CONVERSATION_FIXTURE__ || (await import(options.conversation_fixture_url)).createConversationFixture;
+      conversationFixture = factory({ now, storage: globalThis.localStorage, storageKey: profileKey ? `${profileKey}:conversations:v1` : null,
+        storageUnavailable: () => conversationStorageFailure, libraryContext: () => settings.meetings_dir,
+        storageReason: () => options.conversation_storage_reason || "Conversation storage is unavailable. Unsaved text is kept in this app; retry saving or copy it before quitting.",
+        autoComplete: !options.live_question_manual && !options.conversation_manual, answerDelay: options.live_question_delay_ms ?? 80,
+        capture: captureConversationEvidence, resolveSource: resolveConversationSource,
+        requestIsCurrent: evidence => (!evidence.session_id || evidence.session_id === (evidence.meeting_uid === meetingUid ? liveSession
+          : [...retainedMeetings.values()].find(value => value.meeting_uid === evidence.meeting_uid)?.session_id))
+          && (!evidence.meeting_uid || !deletedMeetingUids.has(evidence.meeting_uid))
+          && evidence.sources.every(source => !deletedMeetingUids.has(source.passage.meeting_uid)),
+        completed: (snapshot, answer, error) => emit("live-question-result", { snapshot, answer, error }),
+        resolveScope: scope => {
+          if (scope.kind === "library") return { scope: { kind: "library" }, current_meeting_id: null };
+          const currentId = meetingIdForUid(scope.meeting_uid) || (scope.meeting_id && uidFor(scope.meeting_id) && !deletedMeetingUids.has(uidFor(scope.meeting_id)) ? scope.meeting_id : null);
+          if (!currentId) throw Error("This meeting is no longer available.");
+          return { scope: { kind: "meeting", meeting_uid: uidFor(currentId) }, current_meeting_id: currentId };
+        } });
+      return conversationFixture;
+    })();
+    return conversationFixtureLoading;
+  }
+  async function conversationSourceRevision(anchor, record) {
+    if (anchor.passage.kind === "transcript") {
+      const ids = anchor.passage.utterance_ids;
+      const rows = ids?.length ? ids.map(id => record.transcript.find(row => row.utterance_id === id))
+        : record.transcript.filter(row => row.start_ms === anchor.passage.start_ms && row.text === anchor.source_text);
+      if (!rows.length || rows.some(row => !row)) return null;
+      return fingerprint(JSON.stringify(await Promise.all(rows.map(async row => [await fingerprint(JSON.stringify(evidenceValue(row))), row.attribution_revision || 0, row.confirmed_speaker_name || null]))));
+    }
+    return fingerprint(anchor.passage.kind === "notes" ? record.notes : record.summary);
+  }
+  async function resolveConversationSource(source) {
+    const id = meetingIdForUid(source.passage.meeting_uid), record = id ? recordForId(id) : null;
+    const revision = record && source.anchor ? await conversationSourceRevision(source.anchor, record) : null;
+    return { status: revision === null ? "unavailable" : revision === source.revision ? "current" : "stale",
+      passage: clone(source.passage), anchor: clone(source.anchor), current_meeting_id: id };
+  }
+  async function captureConversationEvidence(request) {
+    const id = request.scope.kind === "meeting" ? meetingIdForUid(request.scope.meeting_uid) : activeMeetingId;
+    const record = id ? recordForId(id) : null;
+    if (!record) throw Error("The meeting source is no longer available.");
+    if (request.session_id && request.session_id !== liveSession) throw Error("This question belongs to another recording session.");
+    const notesRevision = await fingerprint(record.notes);
+    if (request.expected_notes_revision && request.expected_notes_revision !== notesRevision) throw Error("The saved notes changed. Your question was not sent.");
+    const anchors = [];
+    for (const row of record.transcript) {
+      if (row.failed || !row.text.trim()) continue;
+      const rowFingerprint = await fingerprint(JSON.stringify(evidenceValue(row)));
+      const passage = { meeting_id: request.session_id ? record.uid : record.id, meeting_uid: record.uid, title: record.info.title, start_iso: record.info.start_iso,
+        kind: "transcript", start_ms: row.start_ms, text: `${row.speaker === "me" ? "Ik" : "Anderen"}: ${row.text}`, snippet: row.text.slice(0, 180),
+        ...(row.utterance_id ? { utterance_ids: [row.utterance_id], utterance_fingerprints: [rowFingerprint] } : {}) };
+      anchors.push({ passage, segment_keys: [row.utterance_id ? `utterance:${row.utterance_id}` : `${row.speaker}:${row.start_ms}:0`],
+        segment_fingerprints: [rowFingerprint], notes_start: null, notes_end: null, source_text: row.text });
+    }
+    let offset = 0;
+    for (const line of record.notes.split("\n")) {
+      if (line.trim()) anchors.push({ passage: { meeting_id: record.id, meeting_uid: record.uid, title: record.info.title, start_iso: record.info.start_iso,
+        kind: "notes", start_ms: null, text: line, snippet: line.slice(0, 180) }, segment_keys: [], segment_fingerprints: [],
+        notes_start: offset, notes_end: offset + line.length, source_text: line });
+      offset += line.length + 1;
+    }
+    const selected = options.live_question_selected_scope ? anchors.slice(0, Math.max(1, Math.floor(anchors.length / 2))) : anchors;
+    const cutoff = Math.max(0, ...record.transcript.filter(row => !row.failed && row.text.trim()).map(row => row.end_ms));
+    const sources = await Promise.all(selected.map(async (anchor, index) => ({ number: index + 1, passage: clone(anchor.passage), anchor: clone(anchor),
+      status: "current", included_through_ms: cutoff, revision: await conversationSourceRevision(anchor, record) })));
+    return { request_id: request.request_id, meeting_uid: request.scope.kind === "meeting" ? record.uid : null, session_id: request.session_id || null,
+      transcript_revision: transcriptRevision, notes_revision: notesRevision, included_through_ms: cutoff, pending_transcription: request.session_id ? meetingStatus().pending : 0,
+      anchors: clone(selected), sources, selection: { scope: options.live_question_selected_scope ? "selected_excerpts" : "whole_meeting",
+        available_sources: anchors.length, included_sources: selected.length, available_history_turns: options.live_question_selected_scope ? 8 : request.history_turns,
+        included_history_turns: options.live_question_selected_scope ? 2 : Math.min(6, request.history_turns), history_reduced: Boolean(options.live_question_selected_scope) || request.history_turns > 6 } };
+  }
   const peopleStores = new Map();
   const peoplePendingConfirmation = new Set();
   const peopleTrace = [];
@@ -513,6 +602,10 @@
 
   async function invoke(command, args = {}) {
     calls.push(command);
+    if (conversationCommands[command]) {
+      if (!args.request || typeof args.request !== "object" || Array.isArray(args.request)) throw Error("The conversation request is invalid.");
+      return (await conversations()).invoke(conversationCommands[command], args.request);
+    }
     if (options.rich_utterances && (["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings"].includes(command) || command.includes("insight") || command.includes("people"))) await refreshFingerprints();
     if (command === "meeting_people_snapshot") {
       const store = peopleStore(args.id);
@@ -615,6 +708,7 @@
       case "dictation_state": return clone(pillSnapshot);
       case "frontend_ready": globalThis.__PENNEL_FIXTURE_READY__ = true; return null;
       case "frontend_flushed": frontendFlushes.push(clone(args)); return null;
+      case "copy_text": copiedTexts.push(String(args.text ?? "")); return null;
       case "app_identity": return null;
       case "history": return clone(history);
       case "delete_history": {
@@ -728,6 +822,10 @@
       }
       case "set_meeting_title": meeting.title = String(args.title ?? ""); return null;
       case "set_meeting_notes": case "save_meeting_notes": {
+        if (noteSaveDelay) await new Promise(resolve => {
+          const finish = () => { clearTimeout(timer); pendingNoteSaves.delete(finish); resolve(); };
+          const timer = setTimeout(finish, noteSaveDelay); pendingNoteSaves.add(finish);
+        });
         if (saveFailure) throw new Error("Synthetic notes storage unavailable.");
         if (args.id && args.id !== activeMeetingId && retainedMeetings.has(args.id)) { retainedMeetings.get(args.id).notes = String(args.text ?? ""); return null; }
         if (args.insightReceipt) {
@@ -790,10 +888,13 @@
         emit("meeting-updated", null); return null;
       }
       case "meetings": return options.empty ? [] : clone(library);
-      case "meeting_detail": return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? notes, summary, transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", source_id: "microphone", available: !!options.saved_audio }, { speaker: "others", source_id: "system", available: !!options.saved_audio }],
-        ...(options.rich_utterances ? { meeting_uid: meetingUid, metadata_status: metadataStatus, revision: transcriptRevision } : {}),
+      case "meeting_detail": {
+        if (deletedMeetingUids.has(uidFor(args.id))) throw Error("This meeting is no longer available.");
+        return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? (args.id === activeMeetingId ? notes : recordForId(args.id).notes), summary, transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", source_id: "microphone", available: !!options.saved_audio }, { speaker: "others", source_id: "system", available: !!options.saved_audio }],
+        ...(options.rich_utterances ? { meeting_uid: uidFor(args.id), metadata_status: metadataStatus, revision: transcriptRevision } : {}),
         summary_outdated: summaryOutdated, retranscription_status: clone(retranscriptionStatus),
         retranscription_plan: { recognition: frozenMeetingRecognition(), available: !!options.saved_audio && !retranscriptionStatus?.running && frozenMeetingRecognition().provider_kind === "local", reason: options.saved_audio ? null : "Er is geen bewaarde audio om opnieuw te transcriberen." } };
+      }
       case "search_library": return { meetings: options.empty ? [] : clone(library), passages: [] };
       case "ask_meetings": return { text: "De planning wordt maandag afgerond. Jij bevestigt de volgende afspraak.", citations: [{ number: 1, passage: { meeting_id: meetingId, title: "Projectoverleg", start_iso: meeting.start_iso, kind: "transcript", start_ms: 0, text: transcript[0].text, snippet: transcript[0].text,
         ...(transcript[0].utterance_id ? { meeting_uid: meetingUid, utterance_ids: [transcript[0].utterance_id], utterance_fingerprints: [transcript[0].source_fingerprint] } : {}) } }] };
@@ -814,7 +915,21 @@
       case "pick_style_application": return options.style_picker_cancelled ? null : { id: "com.apple.mail", name: "Mail" };
       case "start_meeting": return meetingId;
       case "save_template": return "qa-template";
-      case "rename_meeting": return meetingId;
+      case "rename_meeting": {
+        const uid = uidFor(args.id), renamed = `qa-renamed-${String(args.title || "Meeting").replace(/[^\p{L}\p{N} -]/gu, "").trim()}`;
+        if (!uid || deletedMeetingUids.has(uid)) throw Error("This meeting is no longer available.");
+        const info = library.find(info => info.id === args.id); if (info) { info.id = renamed; info.title = args.title; }
+        if (retainedMeetings.has(args.id)) { const value = retainedMeetings.get(args.id); value.info = { ...value.info, id: renamed, title: args.title }; retainedMeetings.delete(args.id); retainedMeetings.set(renamed, value); }
+        libraryUids.delete(args.id); libraryUids.set(renamed, uid);
+        if (activeMeetingId === args.id) { activeMeetingId = renamed; meeting.id = renamed; meeting.title = args.title; }
+        emit("library-changed", null); return renamed;
+      }
+      case "delete_meeting": {
+        const uid = uidFor(args.id); if (!uid) throw Error("This meeting is no longer available.");
+        deletedMeetingUids.add(uid); retainedMeetings.delete(args.id);
+        const index = library.findIndex(info => info.id === args.id); if (index >= 0) library.splice(index, 1);
+        conversationFixture?.deleteMeeting(uid); emit("library-changed", null); return null;
+      }
       case "summarize_meeting": return summary;
       case "retranscribe_meeting": return 0;
       case "retranscribe_meeting_audio": {
@@ -896,10 +1011,10 @@
       case "cloud_sync_disable": settings.cloud_sync = false; syncSetupPhase = "paused"; emit("sync-changed", syncReport()); return null;
       case "cloud_rename_device": case "cloud_revoke_device": case "cloud_sync_confirm_deletes":
       case "delete_conflict_copy": case "open_url": case "copy_secret_text": return null;
-      case "show_window": case "show_workspace": case "copy_text": case "play_meeting_audio": case "stop_audio":
+      case "show_window": case "show_workspace": case "play_meeting_audio": case "stop_audio":
       case "answer_record_prompt": case "toggle_dictation": case "install_update": case "share_meeting": case "open_log": case "open_path":
       case "set_meeting_attendees": case "rename_speaker":
-      case "delete_meeting": case "delete_template": case "test_apple_intelligence": return null;
+      case "delete_template": case "test_apple_intelligence": return null;
       default: unknown.push(command); throw new Error(`Onbekend fixturecommando: ${command}`);
     }
   }
@@ -916,7 +1031,19 @@
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
-  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes),
+  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
+    conversations: { complete: async (requestId, result) => (await conversations()).complete(requestId, result),
+      requests: () => conversationFixture?.requests() || [], failStorage: value => { conversationStorageFailure = value; },
+      beginDelay: value => { if (!conversationFixture) throw Error("Load the synthetic conversation before setting its response delay."); conversationFixture.beginDelay(value); },
+      pendingBeginResponses: () => conversationFixture?.pendingBeginResponses() || 0, releaseBegins: () => conversationFixture?.releaseBegins(),
+      cancelDelay: value => { if (!conversationFixture) throw Error("Load the synthetic conversation before setting its response delay."); conversationFixture.cancelDelay(value); },
+      pendingCancelResponses: () => conversationFixture?.pendingCancelResponses() || 0, releaseCancels: () => conversationFixture?.releaseCancels(),
+      checkpoint: value => {
+        if (!profileKey) throw Error("A conversation reload checkpoint requires its own synthetic profile.");
+        const key = `${profileKey}:conversation-qa-checkpoint`;
+        if (value !== undefined) globalThis.localStorage.setItem(key, JSON.stringify(value));
+        return JSON.parse(globalThis.localStorage.getItem(key) || "null");
+      } },
     people: { read: () => peopleRead(activeMeetingId), trace: () => clone(peopleTrace), failWrites: value => { peopleWriteFailure = value; },
       insertDelay: value => { peopleInsertDelay = value; }, pendingInsertResponses: () => pendingInsertResponses.size,
       releaseInserts: () => { for (const finish of [...pendingInsertResponses]) finish(); },
@@ -936,11 +1063,12 @@
         const track = previewTracks.find(track => track.source === source);
         if (track?.chunk_start_ms === chunkStart) { track.text = ""; track.revision = ++previewRevision; }
       },
-      requests: () => [...liveRequests.values()].map(request => clone(request.snapshot)), complete: completeLiveQuestion,
-      forceComplete: requestId => completeLiveQuestion(requestId, true),
+      requests: () => [...liveRequests.values()].map(request => clone(request.snapshot)).concat(conversationFixture?.requests() || []),
+      complete: requestId => liveRequests.has(requestId) ? completeLiveQuestion(requestId) : conversationFixture?.complete(requestId),
+      forceComplete: requestId => liveRequests.has(requestId) ? completeLiveQuestion(requestId, true) : conversationFixture?.complete(requestId),
       replaceTranscript: segments => { transcript.splice(0, transcript.length, ...clone(segments)); transcriptRevision++; },
       restart: (next = { id: "qa-next-meeting", uid: "qa-next-uid", session: "qa-next-session", title: "Next synthetic meeting", notes: "New meeting notes", transcript: [] }) => {
-        retainedMeetings.set(activeMeetingId, { info: { ...meeting, id: activeMeetingId }, meeting_uid: meetingUid, notes, transcript: recordingStopped ? storedTranscript(transcript) : clone(transcript) });
+        retainedMeetings.set(activeMeetingId, { info: { ...meeting, id: activeMeetingId }, meeting_uid: meetingUid, session_id: liveSession, notes, transcript: recordingStopped ? storedTranscript(transcript) : clone(transcript) });
         activeMeetingId = next.id; meetingUid = next.uid; liveSession = next.session; meeting.title = next.title;
         notes = next.notes ?? ""; transcript.splice(0, transcript.length, ...clone(next.transcript ?? []));
         transcriptRevision = 1; recordingStopped = false; recordingRecovered = false;
@@ -949,5 +1077,7 @@
         for (const track of previewTracks) Object.assign(track, { revision: 1, epoch: 0, chunk_start_ms: 0, start_ms: 0, end_ms: 0, text: "", state: settings.live_text_enabled ? "ready" : "disabled" });
         return { id: activeMeetingId, meeting_uid: meetingUid, session_id: liveSession, notes };
       },
-      failSaves: value => { saveFailure = value; }, notes: () => notes, recording: () => meetingStatus().recording } };
+      failSaves: value => { saveFailure = value; }, notes: () => notes, recording: () => meetingStatus().recording,
+      notesDelay: value => { noteSaveDelay = value; }, pendingNoteSaves: () => pendingNoteSaves.size,
+      releaseNotes: () => { for (const finish of [...pendingNoteSaves]) finish(); } } };
 })();

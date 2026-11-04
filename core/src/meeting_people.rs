@@ -258,6 +258,8 @@ fn open(data: &Path) -> Result<Connection, PennelError> {
 }
 
 fn library(store: &crate::meetings::MeetingStore) -> Result<String, PennelError> {
+    // Existing people records use this absolute namespace. Changing it requires an explicit
+    // migration that preserves those records and never guesses between distinct libraries.
     Ok(hash(
         &store
             .root()

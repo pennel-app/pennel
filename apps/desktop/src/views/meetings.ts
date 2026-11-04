@@ -1,6 +1,6 @@
 import { bindLocalization, l, t, formatNumber, localizeBackendText, type UiText } from "../i18n.ts";
 import { meetingDate as dateLabel, speakerLabel, speakerUiLabel, sourceSpeakerLabel, templateUiLabel } from "../meeting-labels.ts";
-import { api, fixtureClient, listen, type MeetingAnswer, type MeetingDetail, type MeetingFinished, type MeetingStatus, type MeetingVoice, type Passage, type Segment, type SpeakerRecognition, type MeetingRetranscriptionStatus, type MeetingTemplate, type SpeakerSetup } from "../api";
+import { api, fixtureClient, listen, type MeetingDetail, type MeetingFinished, type MeetingStatus, type MeetingVoice, type Segment, type SpeakerRecognition, type MeetingRetranscriptionStatus, type MeetingTemplate, type SpeakerSetup } from "../api";
 import { SerialQueue, orFallback, persistAll } from "../async";
 import { controlButton, textField, askText, confirmDialog, errorText, formatClock, h, markdown, menuButton, select } from "../dom";
 import { recognitionSummary } from "../speaker-state";
@@ -21,6 +21,8 @@ import { insightSourceMatches, insertionStillCurrent, utf8Range, type InsightNot
 import { liveMeetingWorkspace, retainedMeetingWorkspace, getRetainedMeetingWorkspace, acknowledgeRetainedNotes, flushLiveWorkspaces, finishLiveWorkspace, displayedLiveWorkspaceSession } from "../live-workspace";
 import { openPeoplePicker, peopleNoteControls } from "../people-picker";
 import { canAcknowledgePeopleNotes, speakerLinkUtteranceIds, type PeopleSnapshot } from "../people-state";
+import { conversationPanel, flushConversations, restoreConversationPanel } from "../conversation-panel";
+import type { ConversationScope } from "../../../../assets/contracts/meeting-conversations";
 
 const notesQueue = new SerialQueue();
 const drafts = new Map<string, MeetingDraft>();
@@ -32,9 +34,7 @@ const sessionMeetingIds = new Map<string, string>();
 type MeetingTab = "notes" | "transcript" | "ask" | "insights";
 const detailState = new Map<string, { tab: MeetingTab; template: string; working: boolean; message: string; recognition?: SpeakerRecognition;
   scrollTop: Record<MeetingTab, number>; ownNotesOpen?: boolean; noteSelection?: { start: number; end: number; direction: "forward" | "backward" | "none" } }>();
-interface Exchange { question: string; answer?: MeetingAnswer; error?: string }
-const conversations = new Map<string, { exchanges: Exchange[]; draft: string; scrollTop: number | null }>();
-let answerReturn: { scope: string | null; sourceMeetingId: string } | null = null;
+let answerReturn: { scope: string | null; conversationScope: ConversationScope; conversationId: string; messageId: string; sourceMeetingId: string } | null = null;
 let panelNumber = 0;
 
 function schedule(ctx: Context, interval: number, work: () => Promise<void>) {
@@ -66,6 +66,7 @@ async function flushLiveTitle() {
 export async function flushMeetingDrafts(includeLiveWorkspaces = true) {
   await persistAll([
     flushReviewedInsights,
+    flushConversations,
     ...includeLiveWorkspaces ? [flushLiveWorkspaces] : [],
     async () => { await titleQueue.drain(); await flushLiveTitle(); },
     async () => {
@@ -94,8 +95,6 @@ export function finishMeetingDrafts(event: MeetingFinished) {
   if (oldId && oldId !== event.id) {
     const reading = detailState.get(oldId);
     if (reading) { detailState.set(event.id, reading); detailState.delete(oldId); }
-    const conversation = conversations.get(oldId);
-    if (conversation) { conversations.set(event.id, conversation); conversations.delete(oldId); }
     if (answerReturn?.scope === oldId) answerReturn.scope = event.id;
     if (answerReturn?.sourceMeetingId === oldId) answerReturn.sourceMeetingId = event.id;
   }
@@ -295,12 +294,6 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
   return { element, update };
 }
 
-function citationLabel(passage: Passage) {
-  const place = passage.kind === "transcript" ? passage.start_ms === null ? t("meetings.source_transcript") : formatClock(passage.start_ms / 1000)
-    : passage.kind === "summary" ? t("meetings.source_summary") : t("meetings.source_notes");
-  return `${passage.title} · ${dateLabel(passage.start_iso)} · ${place}`;
-}
-
 function recoveryNotice(ctx: Context, status: MeetingStatus, latest = () => status, includeTranscription = true): HTMLElement | null {
   const primary = status.persistence_error ?? status.terminal_error ?? status.error;
   let actionError: string | null = null;
@@ -341,71 +334,21 @@ function meetingProcessingNotice(ctx: Context, latest: () => MeetingStatus | und
   return { element, refresh };
 }
 
-function chat(ctx: Context, meetingId: string | null) {
-  const key = meetingId ?? "__all__";
-  let conversation = conversations.get(key);
-  if (!conversation) { conversation = { exchanges: [], draft: "", scrollTop: null }; conversations.set(key, conversation); }
-  const state = conversation;
-  const busy = state.exchanges.some((exchange) => !exchange.answer && !exchange.error);
-  const history = h("div", { class: "chat-history", role: "log", "aria-live": "polite" });
-  history.addEventListener("scroll", () => { state.scrollTop = history.scrollTop; });
-  if (!state.exchanges.length) history.append(h("div", { class: "chat-placeholder" },
-    h("h1", {}, meetingId ? l("meetings.ask_this") : l("meetings.ask_all")),
-    h("p", { class: "muted" }, meetingId ? l("meetings.ask_example_this") : l("meetings.ask_example_all"))));
-  for (const exchange of state.exchanges) {
-    let response: HTMLElement;
-    if (exchange.answer) response = markdown(exchange.answer.text);
-    else if (exchange.error) {
-      response = h("p", { class: "error" }, localizeBackendText(exchange.error));
-      bindLocalization(response, () => { response.textContent = localizeBackendText(exchange.error ?? ""); });
-    } else response = h("progress", { "aria-label": l("meetings.writing_answer") });
-    const citations = exchange.answer ? h("div", { class: "citations" }, exchange.answer.citations.map((citation) => {
-      const label = () => `[${citation.number}] ${citationLabel(citation.passage)}`;
-      const button = h("button", { class: "text-button citation", onclick: () => {
-        state.scrollTop = history.scrollTop;
-        answerReturn = { scope: meetingId, sourceMeetingId: citation.passage.meeting_id };
-        ctx.navigate("meetings", citation.passage.meeting_id, citation.passage.kind === "transcript" ? citation.passage.start_ms ?? undefined : undefined,
-          { kind: citation.passage.kind, start_ms: citation.passage.start_ms, text: citation.passage.text,
-            ...(citation.passage.meeting_uid ? { meeting_uid: citation.passage.meeting_uid } : {}),
-            ...(citation.passage.utterance_ids != null ? { utterance_ids: citation.passage.utterance_ids, utterance_fingerprints: citation.passage.utterance_fingerprints } : {}) });
-      } }, label());
-      bindLocalization(button, () => { button.textContent = label(); });
-      return button;
-    })) : null;
-    history.append(h("div", { class: "chat-exchange" }, h("p", { class: "chat-question" }, exchange.question), response, citations));
-  }
-  const input = textField({ type: "text", class: "grow", value: state.draft, disabled: busy,
-    placeholder: meetingId ? l("meetings.ask_placeholder_this") : l("meetings.ask_placeholder_all"), "aria-label": l("meetings.your_question") });
-  const submit = controlButton({ class: "btn", disabled: busy || !state.draft.trim() || !languageModelConfigured(ctx.info) }, busy ? l("meetings.working") : l("meetings.ask"));
-  const setup = h("div", { class: "meeting-setup chat-setup help", role: "status" }, h("span", { class: "meeting-setup-reason" }, l("meetings.questions_setup_help")),
-    h("button", { class: "text-button", onclick: () => ctx.openSetup("llm") }, l("meetings.set_up_questions")));
-  const refreshReadiness = () => {
-    const ready = languageModelConfigured(ctx.info);
-    input.disabled = busy || !ready;
-    submit.disabled = busy || !ready || !input.value.trim();
-    setup.hidden = ready;
-  };
-  ctx.onInfoChange(refreshReadiness);
-  refreshReadiness();
-  input.addEventListener("input", () => { state.draft = input.value; refreshReadiness(); });
-  const ask = async () => {
-    const question = input.value.trim();
-    if (!question || !languageModelConfigured(ctx.info) || state.exchanges.some((exchange) => !exchange.answer && !exchange.error)) return;
-    const history = state.exchanges.flatMap((exchange) => exchange.answer ? [{ question: exchange.question, answer: exchange.answer.text }] : []);
-    const exchange: Exchange = { question };
-    state.exchanges.push(exchange);
-    state.draft = "";
-    state.scrollTop = null;
-    ctx.rerender();
-    try { exchange.answer = await api.askMeetings(question, meetingId, history); }
-    catch (error) { exchange.error = errorText(error); }
-    ctx.rerender();
-  };
-  submit.addEventListener("click", () => { void ask(); });
-  input.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); void ask(); } });
-  const result = h("section", { class: "chat" }, history, setup, h("div", { class: "chat-composer row" }, input, submit));
-  requestAnimationFrame(() => { history.scrollTop = state.scrollTop ?? history.scrollHeight; });
-  return result;
+function chat(ctx: Context, meetingId: string | null, meetingUid?: string, prepare?: () => Promise<{ expected_notes_revision?: string }>) {
+  const panel = conversationPanel(ctx, {
+    scope: meetingId ? { kind: "meeting", meeting_uid: meetingUid ?? meetingId, meeting_id: meetingId } : { kind: "library" },
+    prepare,
+    source: (source, _origin, message) => {
+      if (source.status !== "current" || !source.current_meeting_id) return false;
+      answerReturn = { scope: meetingId, conversationScope: panel.model.scope, conversationId: message.conversation_id, messageId: message.id, sourceMeetingId: source.current_meeting_id };
+      ctx.navigate("meetings", source.current_meeting_id, source.passage.kind === "transcript" ? source.passage.start_ms ?? undefined : undefined,
+        { kind: source.passage.kind, start_ms: source.passage.start_ms, text: source.passage.text,
+          ...(source.passage.meeting_uid ? { meeting_uid: source.passage.meeting_uid } : {}),
+          ...(source.passage.utterance_ids != null ? { utterance_ids: source.passage.utterance_ids, utterance_fingerprints: source.passage.utterance_fingerprints } : {}) });
+      return true;
+    },
+  });
+  return panel.root;
 }
 
 export async function meetingsView(ctx: Context): Promise<HTMLElement> {
@@ -548,7 +491,11 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
       button.tabIndex = button.dataset.tab === current.tab ? 0 : -1;
     });
     panel.setAttribute("aria-labelledby", `${panelId}-${current.tab}`);
-    if (current.tab === "ask") { questions ??= chat(ctx, id); panel.replaceChildren(questions); return; }
+    if (current.tab === "ask") { questions ??= chat(ctx, id, detail.meeting_uid, async () => {
+      await notes.flush();
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(notes.current().text));
+      return { expected_notes_revision: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("") };
+    }); panel.replaceChildren(questions); return; }
     if (current.tab === "insights") {
       if (active) { panel.replaceChildren(h("p", { class: "help" }, l("insights.finished_only"))); return; }
       insights ??= reviewedInsights(ctx, { id, meetingUid: detail.meeting_uid ?? id, notes: {
@@ -775,11 +722,14 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
       const origin = answerReturn;
       answerReturn = null;
       if (!origin) return;
-      if (origin.scope) {
-        const state = detailState.get(origin.scope);
-        if (state) state.tab = "ask";
-        ctx.navigate("meetings", origin.scope);
-      } else ctx.navigate("chat");
+      void restoreConversationPanel(ctx, origin.conversationScope, origin.conversationId, origin.messageId).then(currentId => {
+        if (origin.scope) {
+          const id = currentId ?? origin.scope;
+          const state = detailState.get(id) ?? detailState.get(origin.scope);
+          if (state) { state.tab = "ask"; detailState.set(id, state); }
+          ctx.navigate("meetings", id);
+        } else ctx.navigate("chat");
+      }).catch(ctx.report);
     } }, l("meetings.back_answer")) : null,
     h("header", { class: "meeting-header" }, h("div", { class: "grow" }, h("h1", {}, meetingInfo.title),
       metadata), tabs),

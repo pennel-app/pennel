@@ -184,6 +184,38 @@ fn canonical_transcript_passages(
     passages
 }
 
+/// Admission uses the same rendering as retrieval, so a refreshed name cannot validate old text.
+pub(crate) fn frozen_passage_matches(
+    passage: &Passage,
+    rows: &[crate::MeetingUtterance],
+    names: &[SpeakerName],
+    metadata_status: crate::TranscriptMetadataStatus,
+    text: Option<&str>,
+) -> bool {
+    if passage.kind != PassageKind::Transcript {
+        return text.is_some_and(|text| {
+            text_passages(text)
+                .iter()
+                .any(|(_, part)| part == &passage.text)
+        });
+    }
+    let snapshot = crate::MeetingTranscriptSnapshot {
+        meeting_uid: passage.meeting_uid.clone().unwrap_or_default(),
+        revision: 0,
+        transcript_digest: String::new(),
+        metadata_digest: None,
+        metadata_status,
+        utterances: rows.to_vec(),
+    };
+    canonical_transcript_passages(&snapshot, names)
+        .iter()
+        .any(|current| {
+            current.text == passage.text
+                && current.utterance_ids == passage.utterance_ids
+                && current.utterance_fingerprints == passage.utterance_fingerprints
+        })
+}
+
 fn transcript_source_stamp(store: &MeetingStore, id: &str) -> Result<String, PennelError> {
     let root = store.dir_of(id);
     let mut stamps = Vec::new();

@@ -8,6 +8,8 @@ import type { WorkspaceRoute } from "./workspace-state";
 import { localizeUiResponse } from "./ui-response.ts";
 import type { DesktopCommandState, DesktopEnvironment } from "./desktop-chrome-state.ts";
 import type { PeopleSnapshot, PeopleRequest, PeopleUpdateResult, ContactPickResult } from "./people-state";
+import type { ConversationSnapshotRequest, ConversationUpdateRequest, ConversationBeginRequest, ConversationCancelRequest,
+  ConversationSourceRequest, ConversationSnapshot, ConversationResolvedSource } from "../../../assets/contracts/meeting-conversations";
 export type { PeopleSnapshot, PeopleRequest, PeopleUpdateResult, ContactPickResult } from "./people-state";
 import type { InsightSnapshot, InsightAvailability, InsightJob, InsightLanguagePolicy, InsightReviewRequest, InsightClaimRequest,
   InsightInsertionRequest, InsightInsertionPreparation, InsightReassociationRequest, InsightInsertionResolution } from "../../../assets/contracts/meeting-insights";
@@ -817,6 +819,11 @@ export const api = {
   searchLibrary: (query: string) => invoke<LibrarySearch>("search_library", { query }),
   askMeetings: (question: string, meetingId: string | null, history: ChatTurn[]) =>
     invoke<MeetingAnswer>("ask_meetings", { question, meetingId, history }),
+  conversationSnapshot: (request: ConversationSnapshotRequest) => invoke<ConversationSnapshot>("conversation_snapshot", { request }),
+  updateConversation: (request: ConversationUpdateRequest) => invoke<ConversationSnapshot>("update_conversation", { request }),
+  beginConversationQuestion: (request: ConversationBeginRequest) => invoke<ConversationSnapshot>("begin_conversation_question", { request }),
+  cancelConversationQuestion: (request: ConversationCancelRequest) => invoke<ConversationSnapshot>("cancel_conversation_question", { request }),
+  conversationSource: (request: ConversationSourceRequest) => invoke<ConversationResolvedSource>("conversation_source", { request }),
   beginLiveQuestion: (request: LiveQuestionRequest) => invoke<LiveQuestionSnapshot>("begin_live_question", { ...request }),
   cancelLiveQuestion: (requestId: string, meetingUid: string, sessionId: string) =>
     invoke<boolean>("cancel_live_question", { requestId, meetingUid, sessionId }),

@@ -40,14 +40,14 @@ use crate::wav::{decode_wav, encode_wav};
 
 const MAX_PROMPT_CHARS: usize = 800;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingQuestionScope {
     WholeMeeting,
     SelectedExcerpts,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MeetingQuestionSelection {
     pub scope: MeetingQuestionScope,
     pub available_sources: u32,
@@ -117,6 +117,7 @@ pub struct PreparedMeetingQuestion {
     admission: crate::ForegroundQuestionAdmission,
     _registration: Option<PreparedInferenceRegistration>,
     source_guard: Option<QuestionSourceGuard>,
+    conversation_guard: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     cloud_guard: Option<(Arc<Session>, u64)>,
     selection: MeetingQuestionSelection,
 }
@@ -234,6 +235,14 @@ fn utf16_source_slice(text: &str, start: usize, end: usize) -> Option<&str> {
 }
 
 impl PreparedMeetingQuestion {
+    pub(crate) fn with_conversation_guard(
+        mut self,
+        guard: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Self {
+        self.source_guard = None;
+        self.conversation_guard = Some(guard);
+        self
+    }
     pub fn sources(&self) -> &[Passage] {
         &self.sources
     }
@@ -263,6 +272,7 @@ impl PreparedMeetingQuestion {
                         .source_guard
                         .as_ref()
                         .is_none_or(QuestionSourceGuard::current)
+                    && self.conversation_guard.as_ref().is_none_or(|guard| guard())
                     && self
                         .cloud_guard
                         .as_ref()
@@ -362,6 +372,7 @@ pub struct PennelEngine {
     #[cfg(test)]
     pub(crate) cleanup_language_evidence: Mutex<Option<String>>,
     history: Mutex<HistoryStore>,
+    pub(crate) conversations: Mutex<crate::conversations::State>,
     unsaved_history: Mutex<RecoveryState>,
     dictation_pad: Mutex<DictationPad>,
     pub(crate) models: ModelStore,
@@ -1284,10 +1295,19 @@ impl PennelEngine {
         let _edit = self.edit_meeting(&id)?;
         let store = self.meeting_store();
         let uid = store.uid_of(&id);
+        let conversation_uid = uid.clone().or_else(|| {
+            store
+                .read_transcript_snapshot(&id)
+                .ok()
+                .map(|snapshot| snapshot.meeting_uid)
+        });
         if let Some(uid) = uid.as_deref() {
             self.discard_speaker_jobs_for(uid)?;
         }
         store.delete(&id)?;
+        if let Some(uid) = conversation_uid.as_deref() {
+            self.discard_meeting_conversations(uid);
+        }
         let _ = self
             .voice_store()
             .forget_meeting(uid.as_deref().unwrap_or(&id));
@@ -2077,6 +2097,31 @@ impl PennelEngine {
             .map(|meeting| meeting.id)
     }
 
+    pub(crate) fn conversation_live_session(&self, uid: &str) -> Option<Arc<MeetingSession>> {
+        self.active_sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(Weak::upgrade)
+            .find(|session| {
+                !session.is_finalized() && self.meeting_uid(session.id()).as_deref() == Some(uid)
+            })
+    }
+
+    pub(crate) fn register_conversation_inference(
+        &self,
+        cancellation: &Arc<crate::InferenceCancellation>,
+    ) -> u64 {
+        let _gate = self.meeting_gate.lock().unwrap();
+        let mut state = self.inference_requests.lock().unwrap();
+        if state.mutation_depth > 0 {
+            cancellation.cancel();
+        }
+        state.requests.retain(|request| request.strong_count() > 0);
+        state.requests.push(Arc::downgrade(cancellation));
+        state.generation
+    }
+
     pub fn meeting_notes_checked(&self, id: &str) -> Result<String, PennelError> {
         match std::fs::read_to_string(self.meeting_store().dir_of(id).join("notes.md")) {
             Ok(text) => Ok(text),
@@ -2323,6 +2368,7 @@ impl PennelEngine {
             admission: preparation.admission,
             _registration: preparation.registration,
             source_guard: preparation.source_guard,
+            conversation_guard: None,
             cloud_guard: preparation.cloud_guard,
             selection,
         })
@@ -2714,6 +2760,7 @@ impl PennelEngine {
             #[cfg(test)]
             cleanup_language_evidence: Mutex::new(None),
             history: Mutex::new(history),
+            conversations: Mutex::new(crate::conversations::State::default()),
             unsaved_history: Mutex::new(RecoveryState::default()),
             dictation_pad: Mutex::new(dictation_pad),
             models,

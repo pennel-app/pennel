@@ -48,6 +48,8 @@ export async function checkLiveCancellationAndSources() {
   root.querySelector(".live-question-cancel").click();
   await until(() => root.querySelector(".live-question-cancel").hidden, "Cancellation did not release the composer.");
   assert(root.querySelector(".live-question-input").value === "Synthetic cancelled question", "Cancellation lost the question draft.");
+  assert(await fixture.conversations.complete(cancelled.request.request_id, { text: "Late cancelled answer must never appear", citations: [] }) === false,
+    "The durable request accepted a late cancelled completion.");
   fixture.emit("live-question-result", { snapshot: cancelled.request,
     answer: { text: "Late cancelled answer must never appear", citations: [] }, error: null });
   await frame();
@@ -94,11 +96,15 @@ export async function checkLiveAfterStopAndNextMeeting() {
   await until(() => document.querySelector(".live-workspace")?.dataset.sessionId === next.session_id, "The next meeting did not mount independently.");
   const nextRoot = document.querySelector(".live-workspace");
   assert(nextRoot !== root && nextRoot.querySelector(".live-notes").value === next.notes, "The next meeting reused previous notes or workspace identity.");
-  fixture.workspace.complete(original.request.request_id);
-  await until(() => original.turn.textContent.includes("Synthetic frozen answer"), "The original answer did not finish after Stop.");
+  await fixture.workspace.complete(original.request.request_id);
+  await until(async () => {
+    const state = await window.__PENNEL_PLATFORM__.invoke("conversation_snapshot", { request: { scope: { kind: "meeting", meeting_uid: oldStatus.meeting_uid }, conversation_id: original.request.conversation_id } });
+    return state.messages.some(message => message.request_id === original.request.request_id && message.role === "assistant" && message.status === "completed");
+  }, "The original answer was not stored after Stop.");
   assert(!nextRoot.textContent.includes("Synthetic frozen answer") && !nextRoot.textContent.includes(original.request.request_id), "The old result entered the next meeting.");
   fixture.emit("workspace-navigate", { section: "meetings", tab: null, meeting_id: oldStatus.id, jump_ms: null });
   await until(() => document.querySelector(".live-workspace") === root, "Returning to the old meeting did not restore its workspace.");
+  await until(() => original.turn.textContent.includes("Synthetic frozen answer"), "Returning to the old meeting did not restore its completed answer.");
   assert(root.querySelector(`[data-request-id="${original.request.request_id}"]`) === original.turn, "Returning lost the original conversation.");
   return record("stop_next_meeting", { stoppedDuringGeneration: true, originalAnswerCompleted: true, nextMeetingIsolated: true, conversationRetained: true, syntheticOnly: true });
 }

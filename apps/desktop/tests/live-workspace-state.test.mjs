@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LivePaneState, formatSelection, LiveRequestState, LiveStatusEpoch, segmentEvidenceValue } from "../src/live-workspace-state.ts";
+import { LivePaneState, formatSelection, LiveStatusEpoch, segmentEvidenceValue } from "../src/live-workspace-state.ts";
 
 test("the deliberately selected pane survives wide and narrow transitions", () => {
   const panes = new LivePaneState();
@@ -19,17 +19,6 @@ test("the deliberately selected pane survives wide and narrow transitions", () =
 test("format helpers preserve source text and the selected content", () => {
   assert.deepEqual(formatSelection("one two", 4, 7, "bold"), { value: "one **two**", start: 6, end: 9 });
   assert.deepEqual(formatSelection("one\ntwo", 1, 6, "task"), { value: "- [ ] one\n- [ ] two", start: 7, end: 18 });
-});
-
-test("cancelled or replaced requests cannot accept a late result", () => {
-  const state = new LiveRequestState("meeting", "session");
-  state.begin("first");
-  assert.equal(state.accepts("meeting", "session", "first"), true);
-  state.cancel(); state.begin("second");
-  assert.equal(state.accepts("meeting", "session", "first"), false);
-  assert.equal(state.accepts("other", "session", "second"), false);
-  assert.equal(state.accepts("meeting", "next", "second"), false);
-  assert.equal(state.accepts("meeting", "session", "second"), true);
 });
 
 test("finishing or rebinding rejects already requested status and Stop results", async () => {

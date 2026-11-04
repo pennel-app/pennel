@@ -33,13 +33,13 @@ pub struct ChatTurn {
 }
 
 /// A passage the answer cites, with the `[number]` used in the answer text.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize, serde::Deserialize)]
 pub struct Citation {
     pub number: u32,
     pub passage: Passage,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record, serde::Serialize, serde::Deserialize)]
 pub struct MeetingAnswer {
     pub text: String,
     pub citations: Vec<Citation>,

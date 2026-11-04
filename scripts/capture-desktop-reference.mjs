@@ -39,7 +39,7 @@ const meetingId = "2026-10-24 0900 Projectoverleg";
 const windowSizes = { workspace: [980, 640], settings: [980, 640], history: [980, 640], dictation: [980, 640], onboarding: [640, 660] };
 const urlFor = (base, item, appearance, locale) => {
   const url = new URL(item.window === "pill" ? "/pill.html" : "/index.html", base);
-  for (const [key, value] of Object.entries({ qa: item.name, theme: appearance, locale, window: item.window, section: item.section, tab: item.tab, meeting_id: item.meeting_tab ? meetingId : undefined, meeting_tab: item.meeting_tab })) if (value) url.searchParams.set(key, value);
+  for (const [key, value] of Object.entries({ qa: item.name, theme: appearance, locale, window: item.window, section: item.section, tab: item.tab, meeting_id: item.meeting_tab ? meetingId : undefined, meeting_tab: item.meeting_tab, profile: item.profile })) if (value) url.searchParams.set(key, value);
   return url.href;
 };
 const { createServer } = await import(pathToFileURL(join(appRoot, "node_modules/vite/dist/node/index.js")).href);
@@ -63,7 +63,7 @@ const server = await createServer({
         const item = cases.find(item => item.name === url.searchParams.get("qa"));
         if (!item) return;
         const appearance = url.searchParams.get("theme") === "dark" ? "dark" : "light";
-        const data = JSON.stringify({ ...item, appearance, locale: url.searchParams.get("locale") || "nl", ui_language: url.searchParams.get("ui_language") || undefined, profile: url.searchParams.get("profile") || undefined, model_state_delay_ms: Math.min(2000, Math.max(0, Number(url.searchParams.get("model_state_delay_ms")) || 0)), local_models: localModels, recording_app_ids: recordingAppIds }).replaceAll("<", "\\u003c");
+        const data = JSON.stringify({ ...item, appearance, locale: url.searchParams.get("locale") || "nl", ui_language: url.searchParams.get("ui_language") || undefined, profile: url.searchParams.get("profile") || undefined, conversation_fixture_url: `/@fs/${join(root, "scripts/fixtures/meeting-conversations.mjs").replaceAll("\\", "/")}`, model_state_delay_ms: Math.min(2000, Math.max(0, Number(url.searchParams.get("model_state_delay_ms")) || 0)), local_models: localModels, recording_app_ids: recordingAppIds }).replaceAll("<", "\\u003c");
         return [{ tag: "script", attrs: { "data-pennel-fixture": item.name }, children: `globalThis.__PENNEL_FIXTURE_OPTIONS__=${data};\n${fixtureScript}`, injectTo: "head-prepend" }];
       },
     },
@@ -159,14 +159,33 @@ if (options.serve) {
         await send("Runtime.evaluate", { expression: "(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));})()", awaitPromise: true, returnByValue: true });
         await new Promise(resolve => setTimeout(resolve, 250));
         for (const step of item.steps || []) {
-          if (step.key) {
+          if (step.reload) {
+            const previous = (await send("Page.getFrameTree")).frameTree.frame.loaderId;
+            await send("Page.reload", { ignoreCache: true });
+            let ready = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+              try {
+                if ((await send("Page.getFrameTree")).frameTree.frame.loaderId !== previous) {
+                  const state = await send("Runtime.evaluate", { expression: "Boolean(window.__PENNEL_FIXTURE__ && document.getElementById('app')?.textContent.trim())", returnByValue: true });
+                  if (state.result.value) { ready = true; break; }
+                }
+              } catch (error) { if (!String(error).includes("context")) throw error; }
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            if (!ready) throw Error(`${item.name}: the owned fixture did not reopen after reload`);
+            await send("Runtime.evaluate", { expression: "(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));})()", awaitPromise: true });
+          } else if (step.key) {
             const key = { key: step.key, code: step.code || step.key, windowsVirtualKeyCode: step.keyCode };
             const text = step.text ?? (step.key === "Enter" ? "\r" : step.key.length === 1 ? step.key : undefined);
             await send("Input.dispatchKeyEvent", { type: "keyDown", ...key, ...text ? { text, unmodifiedText: text } : {} });
             await send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
           } else {
             const result = await send("Runtime.evaluate", { expression: step.eval, awaitPromise: true });
-            if (result.exceptionDetails) throw new Error(`${item.name}: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`);
+            if (result.exceptionDetails) {
+              const failed = await send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
+              await writeFile(join(options.output, locale, appearance, `${item.name}-failure.png`), Buffer.from(failed.data, "base64"));
+              throw new Error(`${item.name}: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`);
+            }
           }
           await new Promise(resolve => setTimeout(resolve, step.wait || 300));
         }
@@ -175,6 +194,8 @@ if (options.serve) {
         metadata.result.value.live_acceptance = acceptance.result.value;
         const peopleAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_PEOPLE_ACCEPTANCE__ || null", returnByValue: true });
         metadata.result.value.people_acceptance = peopleAcceptance.result.value;
+        const conversationAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_CONVERSATION_ACCEPTANCE__ || null", returnByValue: true });
+        metadata.result.value.conversation_acceptance = conversationAcceptance.result.value;
         const image = await send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
         const file = `${locale}/${appearance}/${item.name}.png`;
         await writeFile(join(options.output, file), Buffer.from(image.data, "base64"));
