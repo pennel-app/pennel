@@ -345,14 +345,42 @@ public func calendarSnapshot() -> UnsafeMutablePointer<CChar>? {
     onMain {
         if calendarProvider == nil { calendarProvider = CalendarProvider() }
         let provider = calendarProvider!
-        let current: Any = provider.currentEvent().map { event in
-            ["title": event.title, "calendar_id": event.calendarId, "calendar_name": event.calendarName, "attendees": event.attendees] as [String: Any]
-        } ?? NSNull()
+        let current: Any = provider.currentEvent().map(\.json) ?? NSNull()
         return bridgeJSON([
             "has_access": provider.hasAccess,
             "calendars": provider.calendars().map { ["id": $0.id, "name": $0.name] },
             "current_event": current,
         ])
+    }
+}
+
+@_cdecl("pennel_mac_calendar_source_available")
+func calendarSourceAvailable(_ rawCalendarId: UnsafePointer<CChar>?, _ rawSourceId: UnsafePointer<CChar>?) -> Bool {
+    guard let calendarId = decodeString(rawCalendarId) else { return false }
+    let sourceId = decodeString(rawSourceId)
+    return onMain {
+        if calendarProvider == nil { calendarProvider = CalendarProvider() }
+        return calendarProvider!.sourceAvailable(calendarId: calendarId, sourceId: sourceId)
+    }
+}
+
+@_cdecl("pennel_mac_pick_meeting_contact")
+func pickMeetingContactJSON(_ rawOwner: UnsafeMutableRawPointer?, _ sink: @escaping TextSink, _ context: UnsafeMutableRawPointer?) {
+    guard let rawOwner else {
+        completion(sink, context, value: nil, error: "The contact picker has no owning window.")
+        return
+    }
+    let owner = onMain { Unmanaged<NSWindow>.fromOpaque(rawOwner).takeUnretainedValue() }
+    Task { @MainActor in
+        guard let selection = await pickMeetingContact(owner: owner) else {
+            completion(sink, context, value: "null")
+            return
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: selection.json) else {
+            completion(sink, context, value: nil, error: "The selected contact could not be read.")
+            return
+        }
+        completion(sink, context, value: String(decoding: data, as: UTF8.self))
     }
 }
 

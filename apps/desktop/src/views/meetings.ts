@@ -2,7 +2,7 @@ import { bindLocalization, l, t, formatNumber, localizeBackendText, type UiText 
 import { meetingDate as dateLabel, speakerLabel, speakerUiLabel, sourceSpeakerLabel, templateUiLabel } from "../meeting-labels.ts";
 import { api, fixtureClient, listen, type MeetingAnswer, type MeetingDetail, type MeetingFinished, type MeetingStatus, type MeetingVoice, type Passage, type Segment, type SpeakerRecognition, type MeetingRetranscriptionStatus, type MeetingTemplate, type SpeakerSetup } from "../api";
 import { SerialQueue, orFallback, persistAll } from "../async";
-import { controlButton, textField, askText, askTextWithSwitch, confirmDialog, errorText, formatClock, h, markdown, menuButton, select } from "../dom";
+import { controlButton, textField, askText, confirmDialog, errorText, formatClock, h, markdown, menuButton, select } from "../dom";
 import { recognitionSummary } from "../speaker-state";
 import { MeetingDraft } from "../meeting-draft";
 import type { Context } from "../main";
@@ -19,6 +19,8 @@ import { attributionEditable, attributionNoticeKey, segmentAudioAvailable } from
 import { reviewedInsights, flushReviewedInsights } from "../reviewed-insights";
 import { insightSourceMatches, insertionStillCurrent, utf8Range, type InsightNoteLatch, type InsightSource } from "../../../../assets/contracts/meeting-insights.ts";
 import { liveMeetingWorkspace, retainedMeetingWorkspace, getRetainedMeetingWorkspace, acknowledgeRetainedNotes, flushLiveWorkspaces, finishLiveWorkspace, displayedLiveWorkspaceSession } from "../live-workspace";
+import { openPeoplePicker, peopleNoteControls } from "../people-picker";
+import { canAcknowledgePeopleNotes, speakerLinkUtteranceIds, type PeopleSnapshot } from "../people-state";
 
 const notesQueue = new SerialQueue();
 const drafts = new Map<string, MeetingDraft>();
@@ -105,6 +107,7 @@ function editNotes(ctx: Context, draft: MeetingDraft, id: string, rows = 8) {
   const input = h("textarea", { rows, placeholder: l("meetings.notes_placeholder"), "aria-label": l("meetings.your_notes") });
   const saveError = h("p", { class: "error insight-note-save-error", hidden: true, role: "status" }, l("insights.error_notes_not_saved"));
   input.value = draft.value;
+  const draftOwner = draft.sessionId;
   let timer: number | undefined;
   let composing = false, revision = 0, selectionRevision = 0, selection = "";
   const observeSelection = () => { const next = `${input.selectionStart}:${input.selectionEnd}`; if (selection !== next) { selection = next; ++selectionRevision; } };
@@ -122,35 +125,45 @@ function editNotes(ctx: Context, draft: MeetingDraft, id: string, rows = 8) {
   ctx.onFlush(flush);
   input.addEventListener("blur", () => { void flush().catch(ctx.report); });
   ctx.onDispose(() => { void flush().catch(ctx.report); });
-  return { input, error: saveError, flush, current: (): InsightNoteLatch => {
+  ctx.onDispose(draft.subscribe(() => {
+    if (draft.sessionId !== draftOwner || composing || input.value === draft.value) return;
+    const start = input.selectionStart, end = input.selectionEnd, direction = input.selectionDirection, scroll = input.scrollTop;
+    input.value = draft.value; input.setSelectionRange(start, end, direction); input.scrollTop = scroll;
+  }));
+  const current = (): InsightNoteLatch => {
     observeSelection();
     return { text: draft.value, revision, selection_start: input.selectionStart, selection_end: input.selectionEnd, selection_revision: selectionRevision, composing };
-  }, stage: async (value: string, attempt: string, before: InsightNoteLatch): Promise<boolean> => {
+  };
+  const people = peopleNoteControls({ id: () => id, platform: ctx.info.platform, valid: () => input.isConnected && !input.disabled,
+    report: ctx.report, notes: { current, flush, saved: (result, before) => {
+      if (result.notes === undefined) return;
+      if (!canAcknowledgePeopleNotes(before, current(), result.notes, draftOwner, draft.sessionId)) { ctx.report(new Error(t("people.selection_changed"))); return; }
+      ++revision; draft.sync(id, result.notes); input.value = result.notes; acknowledgeRetainedNotes(id, result.notes);
+      input.setSelectionRange(result.selection_start ?? before.selection_start, result.selection_end ?? before.selection_end);
+      saveError.hidden = true;
+    } } });
+  return { input, people, error: saveError, flush, current, stage: async (value: string, attempt: string, before: InsightNoteLatch): Promise<boolean> => {
     if (composing || !draft.stageInsightInsertion(value, attempt, before.text)) return false;
     ++revision; input.value = value; input.focus({ preventScroll: true }); input.setSelectionRange(before.text.length, value.length);
     try { await flush(); return true; } catch { saveError.hidden = false; return false; }
   } };
 }
 
-/** Names a voice in this meeting; remembered voices receive the same name in future meetings. */
-async function nameVoice(id: string, voice: number, suggested: string, current: MeetingVoice | undefined, remembering = false): Promise<boolean> {
-  if (!current?.can_remember) {
-    const name = await askText(l("meetings.voice_name"), suggested, l("meetings.voice_name_help"));
-    if (name === null) return false;
-    await api.renameSpeaker(id, voice, name);
-    return true;
-  }
-  const answer = await askTextWithSwitch(l("meetings.voice_name"), suggested,
-    l("meetings.voice_remember_help"), l("meetings.remember_voice"), remembering || current.remembered);
-  if (!answer) return false;
-  if (answer.on && answer.text) await api.rememberSpeaker(id, voice, answer.text);
-  else await api.renameSpeaker(id, voice, answer.text);
+async function nameVoice(id: string, voice: number, suggested: string, remembering = false): Promise<boolean> {
+  const name = await askText(l(remembering ? "people.remember" : "people.rename"), suggested,
+    l(remembering ? "meetings.voice_remember_help" : "meetings.voice_name_help"));
+  if (name === null || remembering && !name) return false;
+  if (remembering) await api.rememberSpeaker(id, voice, name);
+  else await api.renameSpeaker(id, voice, name);
   return true;
 }
 
 function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id?: string, initialVoices: MeetingVoice[] | null = []) {
   const element = h("div", { class: "transcript" });
   let voices = initialVoices;
+  let people: PeopleSnapshot | null = null;
+  let disposed = false;
+  ctx.onDispose(() => { disposed = true; });
   const rows = new Map<string, { segment: Segment; element: HTMLElement; update: (segment: Segment, index: number, speakersChanged: boolean) => void }>();
   const empty = h("p", { class: "muted" }, l("meetings.empty_transcript"));
   const create = (initialSegment: Segment, index: number) => {
@@ -167,26 +180,26 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
     const makeSpeaker = () => {
       const speakerColor = segment.attribution && segment.attribution.kind !== "single" ? "var(--foreground)" : segment.speaker === "me" ? "var(--accent)" : segment.voice === null ? "var(--foreground)" : `var(--voice-${(segment.voice + 3) % 4 + 1})`;
       let speaker: HTMLElement = h("span", { class: "speaker", style: `color:${speakerColor}` }, speakerUiLabel(segment, detail));
-      if (id && segment.voice !== null && segment.speaker === "others" && voices !== null && (!segment.attribution || segment.attribution.kind === "single") && attributionEditable(detail?.metadata_status)) {
+      const canRename = segment.voice !== null && segment.speaker === "others" && voices !== null;
+      if (id && (segment.utterance_id || canRename) && (!segment.attribution || segment.attribution.kind === "single") && attributionEditable(detail?.metadata_status)) {
         const currentName = segment.confirmed_speaker_name ?? detail?.speakers.find((item) => item.voice === segment.voice)?.name ?? "";
-        const names = detail?.attendees ?? [];
-        const chosen = names.indexOf(currentName);
-        const original = chosen >= 0 ? `name:${chosen}` : "current";
         const voice = voices?.find((item) => item.voice === segment.voice);
-        const offerRemember = !!voice?.can_remember && !voice.remembered && !!currentName;
+        const offerRemember = canRename && !!voice?.can_remember;
         const picker = select([
-          ...chosen < 0 ? [["current", speakerUiLabel(segment, detail)] as [string, UiText]] : [],
-          ...names.map((name, index) => [`name:${index}`, name] as [string, string]), ["custom", l("meetings.other_name")],
-          ...offerRemember ? [["remember", l("meetings.remember_voice_action")] as [string, UiText]] : [],
-        ], original, (value) => {
+          ["current", speakerUiLabel(segment, detail)], ...segment.utterance_id ? [["person", l("people.link_title")] as [string, UiText]] : [],
+          ...canRename ? [["rename", l("people.rename")] as [string, UiText]] : [],
+          ...offerRemember ? [["remember", l("people.remember")] as [string, UiText]] : [],
+        ], "current", (value) => {
           void (async () => {
-            const suggested = value.startsWith("name:") ? names[Number(value.slice(5))] : currentName;
             try {
-              const changed = value.startsWith("name:") && !voice?.can_remember
-                ? (await api.renameSpeaker(id, segment.voice!, suggested), true)
-                : await nameVoice(id, segment.voice!, suggested, voice, value === "remember");
-              if (changed) ctx.rerender(); else picker.value = original;
-            } catch (error) { picker.value = original; ctx.report(error); }
+              if (value === "person") {
+                const ids = speakerLinkUtteranceIds(segment, detail?.transcript ?? [segment]);
+                if (!ids.length) throw new Error(t("people.no_stable_speaker"));
+                await openPeoplePicker({ id: () => id, platform: ctx.info.platform, valid: () => !disposed, report: ctx.report,
+                  changed: snapshot => { people = snapshot; updateLinkedStates(); } }, { kind: "speaker", utteranceIds: ids });
+              } else if (value !== "current" && await nameVoice(id, segment.voice!, currentName, value === "remember")) ctx.rerender();
+              picker.value = "current";
+            } catch (error) { picker.value = "current"; ctx.report(error); }
           })();
         }, "menu");
         picker.classList.add("speaker", "speaker-picker");
@@ -215,9 +228,16 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
     const provisional = h("span", { class: "live-speaker-provisional", hidden: segment.attribution?.provisional !== true || !!segment.confirmed_speaker_name,
       title: l("meetings.live_speakers_provisional_help") }, l("meetings.live_speakers_provisional_tag"));
     const correction = h("p", { class: "help transcript-correction-review", hidden: !segment.correction_review_required }, l("meetings.attribution_correction_review"));
+    const linked = h("span", { class: "people-link-state", hidden: true });
+    const updateLink = () => {
+      const link = people?.speaker_links.find(link => !!segment.utterance_id && link.utterance_ids.includes(segment.utterance_id));
+      linked.hidden = !link; linked.textContent = link ? t(link.state === "needs_review" ? "people.review" : "people.linked") : "";
+    };
+    bindLocalization(linked, updateLink);
     const row = h("div", { class: "transcript-line", "data-start-ms": segment.start_ms, "data-transcript-index": index,
       "data-source-id": segment.source_id ?? "", title: segment.source_id ? l(`meetings.attribution_source_${segment.source_id}`) : "" },
-      stamp, h("div", { class: "live-transcript-speaker" }, speaker, provisional), body, correction);
+      stamp, h("div", { class: "live-transcript-speaker" }, speaker, provisional, linked), body, correction);
+    updateLink();
     return { segment, element: row, update: (next: Segment, nextIndex: number, speakersChanged: boolean) => {
       const bodyChanged = next.text !== segment.text || next.failed !== segment.failed;
       const speakerChanged = speakersChanged || next.voice !== segment.voice || next.speaker !== segment.speaker
@@ -232,10 +252,20 @@ function transcript(ctx: Context, initial: Segment[], detail?: MeetingDetail, id
       row.dataset.sourceId = segment.source_id ?? "";
       row.title = segment.source_id ? t(`meetings.attribution_source_${segment.source_id}`) : "";
       if (bodyChanged) drawBody();
+      updateLink();
       if (speakerChanged) { const replacement = makeSpeaker(); speaker.replaceWith(replacement); speaker = replacement; }
       row.dataset.transcriptIndex = String(nextIndex);
     } };
   };
+  function updateLinkedStates() {
+    for (const row of rows.values()) {
+      const linked = row.element.querySelector<HTMLElement>(".people-link-state");
+      if (!linked) continue;
+      const link = people?.speaker_links.find(link => !!row.segment.utterance_id && link.utterance_ids.includes(row.segment.utterance_id));
+      linked.hidden = !link; linked.textContent = link ? t(link.state === "needs_review" ? "people.review" : "people.linked") : "";
+    }
+  }
+  if (id) void api.meetingPeople(id).then(snapshot => { if (!disposed) { people = snapshot; updateLinkedStates(); } }).catch(() => undefined);
   const update = (segments: Segment[], nextVoices = voices) => {
     const speakersChanged = nextVoices !== voices;
     voices = nextVoices;
@@ -560,7 +590,7 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
       return;
     }
     panel.replaceChildren(detail.summary ? enhanced : detail.notes.trim() ? h("div", { class: "markdown" }, detail.notes) : h("p", { class: "muted" }, l("meetings.empty_summary")));
-    const ownNotes = h("details", { class: "own-notes", open: current.ownNotesOpen ?? !detail.summary }, h("summary", {}, l("meetings.your_notes")), notes.input, notes.error);
+    const ownNotes = h("details", { class: "own-notes", open: current.ownNotesOpen ?? !detail.summary }, h("summary", {}, l("meetings.your_notes")), notes.people, notes.input, notes.error);
     ownNotes.addEventListener("toggle", () => { if (ownNotes.isConnected) current.ownNotesOpen = ownNotes.open; });
     panel.append(ownNotes);
   };

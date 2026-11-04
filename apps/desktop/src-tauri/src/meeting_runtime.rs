@@ -277,6 +277,16 @@ pub fn start(
     detected_app: Option<String>,
     attendees: Vec<String>,
 ) -> Result<String, String> {
+    start_with_calendar(shared, title, detected_app, attendees, None)
+}
+
+pub fn start_with_calendar(
+    shared: &Arc<Shared>,
+    title: String,
+    detected_app: Option<String>,
+    attendees: Vec<String>,
+    calendar_context: Option<serde_json::Value>,
+) -> Result<String, String> {
     let token = begin_recording(shared, detected_app.clone())?;
     #[cfg(target_os = "macos")]
     let _tray_update = crate::macos_tray::UpdateOnDrop;
@@ -320,6 +330,14 @@ pub fn start(
         }
     };
     let id = session.id();
+    if let Some(context) = calendar_context
+        && shared
+            .engine
+            .set_meeting_calendar_context_json(id.clone(), context.to_string())
+            .is_err()
+    {
+        LOG.error("Calendar participant details could not be saved. Recording will continue.");
+    }
     *shared.meeting_context.lock().unwrap() = Some(MeetingContext {
         token: token.clone(),
         uid: shared

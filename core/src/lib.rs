@@ -35,6 +35,7 @@ mod meeting_evidence;
 mod meeting_index;
 mod meeting_insight_engine;
 mod meeting_insights;
+mod meeting_people;
 mod meeting_preview;
 mod meeting_qualification;
 mod meeting_recording;

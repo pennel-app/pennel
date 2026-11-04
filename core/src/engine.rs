@@ -2828,6 +2828,20 @@ impl PennelEngine {
         })
     }
 
+    /// Owner-local identity metadata can change during capture, without opening transcript edits.
+    pub(crate) fn people_metadata_guard(
+        &self,
+        id: &str,
+    ) -> Result<std::sync::MutexGuard<'_, ()>, PennelError> {
+        let gate = self.meeting_gate.lock().unwrap();
+        if self.meeting_jobs.lock().unwrap().contains(id) {
+            return Err(PennelError::storage(
+                "This meeting is being processed. Wait until processing has finished.",
+            ));
+        }
+        Ok(gate)
+    }
+
     pub(crate) fn edit_voice_settings(&self) -> Result<std::sync::MutexGuard<'_, ()>, PennelError> {
         let gate = self.meeting_gate.lock().unwrap();
         if !self.meeting_jobs.lock().unwrap().is_empty() {

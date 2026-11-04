@@ -7,6 +7,8 @@ export type { ClaudeStatus };
 import type { WorkspaceRoute } from "./workspace-state";
 import { localizeUiResponse } from "./ui-response.ts";
 import type { DesktopCommandState, DesktopEnvironment } from "./desktop-chrome-state.ts";
+import type { PeopleSnapshot, PeopleRequest, PeopleUpdateResult, ContactPickResult } from "./people-state";
+export type { PeopleSnapshot, PeopleRequest, PeopleUpdateResult, ContactPickResult } from "./people-state";
 import type { InsightSnapshot, InsightAvailability, InsightJob, InsightLanguagePolicy, InsightReviewRequest, InsightClaimRequest,
   InsightInsertionRequest, InsightInsertionPreparation, InsightReassociationRequest, InsightInsertionResolution } from "../../../assets/contracts/meeting-insights";
 
@@ -830,6 +832,9 @@ export const api = {
   retranscribeMeetingAudio: (id: string) => invoke<number>("retranscribe_meeting_audio", { id }),
   saveMeetingNotes: (id: string, text: string, insightReceipt?: string) => invoke<void>("save_meeting_notes", { id, text, insightReceipt }),
   setMeetingAttendees: (id: string, attendees: string[]) => invoke<void>("set_meeting_attendees", { id, attendees }),
+  meetingPeople: (id: string) => invoke<PeopleSnapshot>("meeting_people_snapshot", { id }),
+  updateMeetingPeople: (id: string, request: PeopleRequest, sessionId?: string) => invoke<PeopleUpdateResult>("update_meeting_people", { id, request, sessionId }),
+  pickMeetingContact: () => invoke<ContactPickResult>("pick_meeting_contact"),
   renameSpeaker: (id: string, voice: number, name: string) => invoke<void>("rename_speaker", { id, voice, name }),
   recognizeSpeakers: (id: string) => invoke<SpeakerRecognition>("diarize_meeting", { id }),
   meetingVoices: (id: string) => invoke<MeetingVoice[]>("meeting_voices", { id }),

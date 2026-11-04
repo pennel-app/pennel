@@ -22,6 +22,8 @@ pub struct RecordPrompt {
     pub expires_at_ms: u64,
     #[serde(skip)]
     attendees: Vec<String>,
+    #[serde(skip)]
+    calendar_context: Option<serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -78,6 +80,23 @@ fn dismiss(app: &AppHandle) {
     }
 }
 
+fn revalidated_calendar_context(
+    saved: Option<serde_json::Value>,
+    current: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    let saved = saved?;
+    if current.get("has_access").and_then(|value| value.as_bool()) != Some(true)
+        || saved
+            .get("source_revision")
+            .and_then(|value| value.as_str())
+            .is_none_or(str::is_empty)
+        || current.get("current_event")?.get("calendar_context")? != &saved
+    {
+        return None;
+    }
+    Some(saved)
+}
+
 fn offer(app: &AppHandle, shared: &Arc<Shared>, app_id: String) {
     if shared.updating.load(Ordering::SeqCst)
         || shared.quitting.load(Ordering::SeqCst)
@@ -110,14 +129,19 @@ fn offer(app: &AppHandle, shared: &Arc<Shared>, app_id: String) {
                 .collect()
         })
         .unwrap_or_default();
+    let calendar_context = event
+        .and_then(|event| event.get("calendar_context"))
+        .filter(|value| value.is_object())
+        .cloned();
     match pennel_core::decide_recording(settings, app_id.clone(), calendar_id, title.clone()) {
         RecordAction::Never => {}
         RecordAction::Always => {
-            if crate::meeting_runtime::start(
+            if crate::meeting_runtime::start_with_calendar(
                 shared,
                 title.unwrap_or_else(|| "Meeting".into()),
                 Some(app_id),
                 attendees,
+                calendar_context,
             )
             .is_ok()
             {
@@ -135,6 +159,7 @@ fn offer(app: &AppHandle, shared: &Arc<Shared>, app_id: String) {
                 title,
                 expires_at_ms: now_ms() + 60_000,
                 attendees,
+                calendar_context,
             };
             *app.state::<DetectionState>().prompt.lock().unwrap() = Some(prompt.clone());
             crate::show_window(app, "prompt", None);
@@ -184,11 +209,23 @@ pub fn answer(
     }
     match answer {
         "yes" => {
-            let started = crate::meeting_runtime::start(
+            let had_calendar_context = prompt.calendar_context.is_some();
+            let calendar_context = if shared.settings().calendar_enabled {
+                revalidated_calendar_context(prompt.calendar_context, &calendar())
+            } else {
+                None
+            };
+            let attendees = if !had_calendar_context || calendar_context.is_some() {
+                prompt.attendees
+            } else {
+                Vec::new()
+            };
+            let started = crate::meeting_runtime::start_with_calendar(
                 shared,
                 prompt.title.unwrap_or_else(|| "Meeting".into()),
                 Some(prompt.app_id),
-                prompt.attendees,
+                attendees,
+                calendar_context,
             );
             if started.is_err() {
                 // The prompt is already gone; the recording view shows why it did not start.
@@ -283,4 +320,53 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>) {
             }
         })
         .expect("call observer thread");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn prompt_keeps_only_unchanged_authorized_calendar_context() {
+        let saved = json!({"source":"eventkit","source_id":"account-a","calendar_id":"calendar","event_id":"event","source_revision":"revision-a","participants":[]});
+        let current = json!({"has_access":true,"current_event":{"calendar_context":saved}});
+        assert_eq!(
+            revalidated_calendar_context(Some(saved.clone()), &current),
+            Some(saved.clone())
+        );
+        let mut changed = current.clone();
+        changed["current_event"]["calendar_context"]["source_id"] = json!("account-b");
+        assert!(revalidated_calendar_context(Some(saved.clone()), &changed).is_none());
+        changed = current.clone();
+        changed["current_event"]["calendar_context"]["source_revision"] = json!("revision-b");
+        assert!(revalidated_calendar_context(Some(saved.clone()), &changed).is_none());
+        changed = current.clone();
+        changed["has_access"] = json!(false);
+        assert!(revalidated_calendar_context(Some(saved.clone()), &changed).is_none());
+        assert!(
+            revalidated_calendar_context(
+                Some(saved),
+                &json!({"has_access":false,"current_event":null})
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn prompt_payload_never_exposes_private_calendar_participant_details() {
+        let prompt = RecordPrompt {
+            id: 1,
+            app_id: "call-app".into(),
+            app_name: "Call".into(),
+            title: Some("Meeting".into()),
+            expires_at_ms: 100,
+            attendees: vec!["Els".into()],
+            calendar_context: Some(json!({"participants":[{"email":"private@example.test"}]})),
+        };
+        let payload = serde_json::to_string(&prompt).unwrap();
+        assert!(!payload.contains("private@example.test"));
+        assert!(!payload.contains("attendees"));
+        assert!(!payload.contains("calendar_context"));
+    }
 }
