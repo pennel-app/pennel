@@ -438,6 +438,7 @@ class ReadRobustnessTests(unittest.TestCase):
         stream, process, selector = MagicMock(), MagicMock(), MagicMock()
         process.stdout = stream
         process.poll.return_value = 0
+        process.wait.return_value = 0
         selector.__enter__.return_value = selector
         selector.select.return_value = [(stream, 1)]
         with patch.object(CI.subprocess, 'Popen', return_value=process) as popen, \
@@ -447,6 +448,77 @@ class ReadRobustnessTests(unittest.TestCase):
         self.assertIn('--allow-escape-sequences', popen.call_args.args[0])
         self.assertEqual(identity['image'], 'macos-26-arm64')
         self.assertNotIn('\x1b', json.dumps(identity))
+
+    def log_process(self, timeout=False, returncode=0):
+        process, selector = MagicMock(), MagicMock()
+        process.poll.return_value = returncode
+        process.wait.return_value = returncode
+        selector.__enter__.return_value = selector
+        selector.select.return_value = [] if timeout else [(process.stdout, 1)]
+        return process, selector
+
+    def test_log_timeout_retries_same_read_then_recovers_observed_identity(self):
+        api = CI.GitHub(REPO)
+        first, first_selector = self.log_process(timeout=True)
+        second, second_selector = self.log_process()
+        prefix = b'##[group]Runner Image\nImage: ubuntu-24.04\nVersion: 20261101.360.1\n##[endgroup]\n'
+        with patch.object(CI.subprocess, 'Popen', side_effect=[first, second]) as popen, \
+                patch.object(CI.selectors, 'DefaultSelector', side_effect=[first_selector, second_selector]), \
+                patch.object(CI.os, 'read', side_effect=[prefix, b'']), patch.object(CI.time, 'sleep'):
+            identity = api.job_identity({'id': 123, 'runner_name': 'hosted', 'status': 'completed'})
+        self.assertEqual(identity['image_version'], '20261101.360.1')
+        self.assertEqual(popen.call_count, 2)
+        self.assertEqual(popen.call_args_list[0].args, popen.call_args_list[1].args)
+        self.assertLessEqual(first_selector.select.call_args.args[0], 25)
+        self.assertEqual([r['status'] for r in api.read_trace], ['timeout', 'recovered'])
+        self.assertEqual([r['retrying'] for r in api.read_trace], [True, False])
+
+    def test_exhausted_log_timeouts_leave_unknown_identity_with_all_attempt_traces(self):
+        api = CI.GitHub(REPO)
+        attempts = [self.log_process(timeout=True) for _ in range(3)]
+        with patch.object(CI.subprocess, 'Popen', side_effect=[a[0] for a in attempts]) as popen, \
+                patch.object(CI.selectors, 'DefaultSelector', side_effect=[a[1] for a in attempts]), \
+                patch.object(CI.time, 'sleep'):
+            identity = api.job_identity({'id': 123, 'runner_name': 'hosted', 'status': 'completed'})
+        self.assertEqual(identity, {})
+        self.assertEqual(popen.call_count, 3)
+        self.assertEqual([r['attempt'] for r in api.read_trace], [1, 2, 3])
+        self.assertEqual([r['retrying'] for r in api.read_trace], [True, True, False])
+        self.assertTrue(all(r['bytes'] == 0 and r['error_kind'] == 'timeout' for r in api.read_trace))
+
+    def test_complete_missing_image_and_deliberately_bounded_logs_do_not_retry(self):
+        for bounded in (False, True):
+            api = CI.GitHub(REPO)
+            process, selector = self.log_process()
+            prefix = b'complete log with no runner image\n'
+            with self.subTest(bounded=bounded), \
+                    patch.object(CI.subprocess, 'Popen', return_value=process) as popen, \
+                    patch.object(CI.selectors, 'DefaultSelector', return_value=selector), \
+                    patch.object(CI.os, 'read', side_effect=[prefix, b'']), \
+                    patch.object(CI, 'LOG_LIMIT', len(prefix) if bounded else 262144):
+                identity = api.job_identity({'id': 123, 'runner_name': 'hosted', 'status': 'completed'})
+            self.assertIsNone(identity['image'])
+            self.assertEqual(popen.call_count, 1)
+            self.assertEqual(api.read_trace[-1]['status'], 'bounded' if bounded else 'complete')
+            self.assertFalse(api.read_trace[-1]['retrying'])
+
+    def test_empty_log_http_transience_is_classified_without_preserving_diagnostics(self):
+        for status, expected_attempts in ((None, 3), (503, 3), (404, 1), (403, 1)):
+            api = CI.GitHub(REPO)
+            process, selector = self.log_process(returncode=0 if status is None else 1)
+            def start(*args, **kwargs):
+                if status is not None:
+                    kwargs['stderr'].write(f'HTTP {status} token=DO-NOT-STORE'.encode())
+                return process
+            with self.subTest(status=status), \
+                    patch.object(CI.subprocess, 'Popen', side_effect=start) as popen, \
+                    patch.object(CI.selectors, 'DefaultSelector', return_value=selector), \
+                    patch.object(CI.os, 'read', return_value=b''), patch.object(CI.time, 'sleep'):
+                identity = api.job_identity({'id': 123, 'runner_name': 'hosted', 'status': 'completed'})
+            self.assertEqual(identity, {})
+            self.assertEqual(popen.call_count, expected_attempts)
+            self.assertNotIn('DO-NOT-STORE', json.dumps(api.read_trace))
+            self.assertEqual(api.read_trace[-1]['http_status'], status)
 
 
 if __name__ == '__main__':

@@ -18,6 +18,7 @@ import selectors
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 
@@ -183,41 +184,55 @@ class GitHub:
     def job_identity(self, job):
         if not job.get('runner_name') or job.get('status') != 'completed':
             return {}
-        process = subprocess.Popen(['gh', 'api', '--method', 'GET',
-                                    self.prefix + f"actions/jobs/{job['id']}/logs",
-                                    '--allow-escape-sequences'],
-                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        prefix = bytearray()
-        timed_out = False
-        try:
-            with selectors.DefaultSelector() as selector:
-                selector.register(process.stdout, selectors.EVENT_READ)
-                deadline = time.monotonic() + 45
-                while len(prefix) < LOG_LIMIT:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0 or not selector.select(remaining):
-                        timed_out = True
-                        break
-                    chunk = os.read(process.stdout.fileno(), min(65536, LOG_LIMIT - len(prefix)))
-                    if not chunk:
-                        break
-                    prefix.extend(chunk)
-        finally:
-            process.stdout.close()
-            if process.poll() is None:
-                process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        if timed_out or not prefix or len(prefix) == LOG_LIMIT:
+        endpoint = f"actions/jobs/{job['id']}/logs"
+        for attempt in range(1, READ_ATTEMPTS + 1):
+            prefix = bytearray()
+            timed_out = False
+            with tempfile.TemporaryFile() as diagnostics:
+                process = subprocess.Popen(['gh', 'api', '--method', 'GET', self.prefix + endpoint,
+                                            '--allow-escape-sequences'],
+                                           stdout=subprocess.PIPE, stderr=diagnostics)
+                try:
+                    with selectors.DefaultSelector() as selector:
+                        selector.register(process.stdout, selectors.EVENT_READ)
+                        deadline = time.monotonic() + READ_TIMEOUT
+                        while len(prefix) < LOG_LIMIT:
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0 or not selector.select(remaining):
+                                timed_out = True
+                                break
+                            chunk = os.read(process.stdout.fileno(), min(65536, LOG_LIMIT - len(prefix)))
+                            if not chunk:
+                                break
+                            prefix.extend(chunk)
+                finally:
+                    process.stdout.close()
+                    if process.poll() is None:
+                        process.terminate()
+                    try:
+                        returncode = process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        returncode = process.wait()
+                diagnostics.seek(0)
+                kind, status, transient = read_failure(diagnostics.read(8192))
+            bounded = len(prefix) == LOG_LIMIT
+            retrying = (not bounded and (timed_out or (not prefix and (returncode == 0 or transient)))
+                        and attempt < READ_ATTEMPTS)
             self.read_trace.append({'kind': 'log-prefix-read',
-                                    'endpoint': f"actions/jobs/{job['id']}/logs",
-                                    'status': 'timeout' if timed_out else 'empty' if not prefix else 'bounded',
-                                    'bytes': len(prefix),
+                                    'endpoint': endpoint, 'attempt': attempt,
+                                    'status': 'bounded' if bounded else 'timeout' if timed_out else (
+                                        'empty' if not prefix else 'recovered' if attempt > 1 else 'complete'),
+                                    'bytes': len(prefix), 'retrying': retrying,
+                                    'error_kind': 'timeout' if timed_out else kind if not prefix and returncode else None,
+                                    'http_status': status if not prefix else None,
                                     'recorded_at': datetime.now(timezone.utc).isoformat()})
-        return log_identity(prefix.decode('utf-8', errors='replace'))
+            if retrying:
+                time.sleep(min(attempt, 2))
+                continue
+            if timed_out or not prefix:
+                return {}
+            return log_identity(prefix.decode('utf-8', errors='replace'))
 
 
 def run_spec(value):
