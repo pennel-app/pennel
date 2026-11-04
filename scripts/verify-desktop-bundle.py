@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import importlib.util
 from pathlib import Path
 import plistlib
 import subprocess
@@ -48,6 +49,7 @@ def main():
     parser.add_argument("app", type=Path)
     parser.add_argument("--identifier", default="dev.pennel.Pennel")
     parser.add_argument("--require-developer-id", action="store_true")
+    parser.add_argument("--require-private-keychain", action="store_true", help="Verify personal-team profile and the app's private Data Protection Keychain group")
     parser.add_argument("--designated-requirement", help="Exact requirement the release signature must carry")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -66,12 +68,20 @@ def main():
             raise ValueError(f"Designated requirement changed: {requirement!r}; macOS would forget granted permissions")
         if args.require_developer_id and not developer_id:
             raise ValueError("Release must be signed with Developer ID; an ad-hoc/development signature is not sufficient")
+        private_keychain = None
+        if args.require_developer_id or args.require_private_keychain:
+            spec = importlib.util.spec_from_file_location("pennel_mac_signing", Path(__file__).with_name("mac_signing.py"))
+            signing = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(signing)
+            private_keychain = signing.inspect_signed_app(args.app, identifier=args.identifier, developer_id=args.require_developer_id)
         receipt = {
             "bundle": str(args.app.resolve()), "identifier": args.identifier,
             "version": plist.get("CFBundleShortVersionString"), "build_number": plist.get("CFBundleVersion"),
             "architectures": architectures, "signature_valid": True,
             "developer_id": developer_id, "designated_requirement": requirement, "app_launched": False, "device_tests_performed": False,
         }
+        if private_keychain:
+            receipt.update(private_keychain)
         rendered = json.dumps(receipt, indent=2) + "\n"
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)

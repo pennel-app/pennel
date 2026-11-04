@@ -894,6 +894,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         secrets::Secrets::new(preview)
     });
+    secrets.configure_providers(&engine.settings().providers);
     engine.set_secret_store(secrets.clone())?;
     #[cfg(target_os = "macos")]
     let migration_warning = if preview {
@@ -1135,6 +1136,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             capture::capture_snapshot,
             commands::app_info,
+            commands::credential_store_status,
+            commands::migrate_saved_credentials,
             commands::save_settings,
             commands::apply_task_model_choice,
             commands::add_provider,

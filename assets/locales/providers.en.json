@@ -95,5 +95,15 @@
   "providers.local.languages": "{count} languages ›",
   "providers.local.downloading_model": "Downloading {model}",
   "providers.local.download_failed": "Download failed: {error}",
-  "providers.local.all_models": "All models ({count})"
+  "providers.local.all_models": "All models ({count})",
+  "credentials.title": "Saved access",
+  "credentials.migration_required": "Approve access to your saved credentials once to keep Pennel connected after updates. macOS may ask once for each saved item.",
+  "credentials.pending": "Saved items to update: {count}.",
+  "credentials.update": "Update saved access",
+  "credentials.updating": "Updating saved access…",
+  "credentials.locked": "Unlock your Mac, then try again. Your saved access is still protected.",
+  "credentials.denied": "Access was not approved. Try again and approve the macOS request to update saved access.",
+  "credentials.unavailable": "Saved access is unavailable right now. Try again. Your credentials have been kept.",
+  "credentials.retry": "Try again",
+  "credentials.failed": "Saved access could not be updated. Try again."
 }

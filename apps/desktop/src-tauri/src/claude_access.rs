@@ -262,27 +262,51 @@ struct EngineRelay(Arc<Shared>);
 
 impl Relay for EngineRelay {
     fn active(&self) -> bool {
-        should_run(
-            self.0.engine.cloud_signed_in(),
-            self.0.settings().claude_access,
-        )
+        self.0.secrets.ensure_cloud_access().is_ok()
+            && should_run(
+                self.0.engine.cloud_signed_in(),
+                self.0.settings().claude_access,
+            )
     }
 
     fn poll(&self) -> Result<Vec<RelayRequest>, PennelError> {
+        self.0
+            .secrets
+            .ensure_cloud_access()
+            .map_err(|message| PennelError::Storage { message })?;
         self.0
             .engine
             .cloud_relay_poll(format!("pennel-desktop/{}", self.0.version))
     }
 
     fn answer(&self, request: &RelayRequest) -> RelayAnswer {
+        let settings = self.0.settings();
+        let providers = if request.tool == "ask_meetings" {
+            vec![settings.llm.provider_id.as_str()]
+        } else {
+            Vec::new()
+        };
+        let keys = match self.0.keys_for(&providers) {
+            Ok(keys) => keys,
+            Err(message) => {
+                return RelayAnswer::Failed {
+                    code: "credential_store".into(),
+                    message,
+                };
+            }
+        };
         self.0.engine.claude_access_answer(
             request.tool.clone(),
             request.arguments_json.clone(),
-            self.0.keys(),
+            keys,
         )
     }
 
     fn respond(&self, id: &str, answer: &RelayAnswer) -> Result<(), PennelError> {
+        self.0
+            .secrets
+            .ensure_cloud_access()
+            .map_err(|message| PennelError::Storage { message })?;
         self.0.engine.cloud_relay_respond(id.into(), answer.clone())
     }
 }
@@ -316,17 +340,29 @@ pub fn claude_access(app: AppHandle, shared: State<'_, Arc<Shared>>) -> ClaudeAc
     view(&app, &shared)
 }
 
+fn change_access(shared: &Shared, enabled: bool) -> Result<(), crate::cloud::CloudError> {
+    if enabled {
+        shared
+            .secrets
+            .ensure_cloud_access()
+            .map_err(crate::cloud::CloudError::credential)?;
+    }
+    shared
+        .engine
+        .set_claude_access(enabled)
+        .map_err(crate::cloud::CloudError::from)
+}
+
 #[tauri::command]
 pub async fn set_claude_access(
     enabled: bool,
     app: AppHandle,
     shared: State<'_, Arc<Shared>>,
 ) -> Result<ClaudeAccessView, crate::cloud::CloudError> {
-    let engine = shared.engine.clone();
-    tauri::async_runtime::spawn_blocking(move || engine.set_claude_access(enabled))
+    let worker = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || change_access(&worker, enabled))
         .await
-        .map_err(crate::cloud::CloudError::other)?
-        .map_err(crate::cloud::CloudError::from)?;
+        .map_err(crate::cloud::CloudError::other)??;
     poke(&app);
     let _ = app.emit("settings-changed", ());
     Ok(view(&app, &shared))
@@ -401,6 +437,91 @@ mod tests {
             sink.lock().unwrap().push(status)
         });
         (runner, seen)
+    }
+
+    #[test]
+    fn engine_relay_pauses_before_polling_or_responding_when_saved_access_is_blocked() {
+        use crate::secrets::CredentialState;
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        shared
+            .engine
+            .set_secret_store(shared.secrets.clone())
+            .unwrap();
+        shared
+            .secrets
+            .set("pennel-cloud-refresh", "synthetic-refresh")
+            .unwrap();
+        let mut settings = shared.settings();
+        settings.claude_access = true;
+        shared.engine.update_settings(settings).unwrap();
+        let relay = EngineRelay(shared.clone());
+        assert!(relay.active());
+        for state in [
+            CredentialState::MigrationRequired,
+            CredentialState::Denied,
+            CredentialState::Locked,
+            CredentialState::Unavailable,
+        ] {
+            *shared.secrets.access_failure.lock().unwrap() = Some(state);
+            assert!(!relay.active());
+            assert!(matches!(relay.poll(), Err(PennelError::Storage { .. })));
+            assert!(matches!(
+                relay.respond(
+                    "synthetic-request",
+                    &RelayAnswer::Text {
+                        text: "fixture".into()
+                    }
+                ),
+                Err(PennelError::Storage { .. })
+            ));
+        }
+        *shared.secrets.access_failure.lock().unwrap() = None;
+        assert!(relay.active());
+        assert_eq!(
+            shared.secrets.get("pennel-cloud-refresh").as_deref(),
+            Some("synthetic-refresh")
+        );
+    }
+
+    #[test]
+    fn relay_reads_do_not_require_an_unrelated_provider_key_and_questions_fail_safely() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        let mut settings = shared.settings();
+        let provider =
+            pennel_core::new_account(pennel_core::ProviderKind::Groq, settings.providers.clone());
+        settings.llm.provider_id = provider.id.clone();
+        settings.providers.push(provider);
+        shared.engine.update_settings(settings).unwrap();
+        *shared.secrets.access_failure.lock().unwrap() =
+            Some(crate::secrets::CredentialState::Denied);
+        let relay = EngineRelay(shared);
+        assert!(matches!(
+            relay.answer(&request("read-only")),
+            RelayAnswer::Text { .. }
+        ));
+        let mut ask = request("ask");
+        ask.tool = "ask_meetings".into();
+        ask.arguments_json = r#"{"question":"What happened?"}"#.into();
+        assert!(
+            matches!(relay.answer(&ask), RelayAnswer::Failed { code, .. } if code == "credential_store")
+        );
+    }
+
+    #[test]
+    fn disabling_claude_access_remains_available_when_the_store_is_blocked() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        let mut settings = shared.settings();
+        settings.claude_access = true;
+        shared.engine.update_settings(settings).unwrap();
+        *shared.secrets.access_failure.lock().unwrap() =
+            Some(crate::secrets::CredentialState::Locked);
+        assert!(change_access(&shared, false).is_ok());
+        assert!(!shared.settings().claude_access);
+        assert!(change_access(&shared, true).is_err());
+        assert!(!shared.settings().claude_access);
     }
 
     #[test]

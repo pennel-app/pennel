@@ -102,10 +102,10 @@ fn dispatch(shared: &Shared, operation: Operation, mut request: Value) -> Result
     let result = match operation {
         Operation::Snapshot => shared.engine.conversation_snapshot_json(request),
         Operation::Update => shared.engine.update_conversation_json(request),
-        Operation::Begin => shared
-            .engine
-            .clone()
-            .begin_conversation_question_json(request, shared.keys()),
+        Operation::Begin => shared.engine.clone().begin_conversation_question_json(
+            request,
+            shared.keys_for_task(pennel_core::ProviderTask::Llm)?,
+        ),
         Operation::Cancel => shared.engine.cancel_conversation_question_json(request),
         Operation::Source => shared.engine.conversation_source_json(request),
     }

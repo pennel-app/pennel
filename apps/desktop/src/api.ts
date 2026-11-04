@@ -281,6 +281,11 @@ export interface KindInfo {
   availability: Capability;
 }
 
+export interface CredentialStoreStatus {
+  status: "ready" | "migration_required" | "locked" | "denied" | "unavailable";
+  pending: number;
+}
+
 export interface AppInfo {
   interface_language: "en" | "nl";
   system_interface_language: "en" | "nl";
@@ -303,6 +308,7 @@ export interface AppInfo {
   diarizer_model_id: string;
   preview: boolean;
   migration_warning: string | null;
+  credential_store: CredentialStoreStatus;
 }
 
 export interface RemoteModel {
@@ -718,6 +724,8 @@ export interface CloudError {
 }
 
 export const api = {
+  credentialStoreStatus: () => invoke<CredentialStoreStatus>("credential_store_status"),
+  migrateSavedCredentials: () => invoke<AppInfo>("migrate_saved_credentials"),
   insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
   insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),
   beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy }),

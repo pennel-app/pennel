@@ -176,7 +176,8 @@
       reason_code: settings.cleanup_verification_enabled && settings.mode === "clean" ? config ? "unqualified" : "unconfigured" : "disabled",
       provider_id: config?.provider_id ?? null, model: config?.model ?? null, endpoint: account ? `${account.base_url}/decisions` : null };
   };
-  const info = () => ({ interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+  let credentialStore = clone(options.credential_store || { status: "ready", pending: 0 });
+  const info = () => ({ interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), credential_store: clone(credentialStore), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
     unsaved_history_count: history.filter(entry => entry.status === "unsaved").length,
     kinds: clone(kinds), platform: options.platform || "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
     log_path: "/QA/Pennel Preview/pennel.log", data_dir: "/QA/Pennel Preview", capabilities: clone(capabilities), recording_app_ids: options.recording_app_ids || [], diarizer_model_id: diarizer.id, preview: true, migration_warning: null });
@@ -633,6 +634,11 @@
       };
       case "set_desktop_command_state": globalThis.__PENNEL_DESKTOP_COMMAND_STATE__ = clone(args.state); return null;
       case "app_info": if (options.app_info_fail) throw new Error("Synthetic startup failure"); if (options.app_info_delay_ms) await new Promise(resolve => setTimeout(resolve, options.app_info_delay_ms)); return info();
+      case "credential_store_status": return clone(credentialStore);
+      case "migrate_saved_credentials":
+        if (options.credential_migration_error) throw new Error("Synthetic credential migration failure");
+        credentialStore = { status: "ready", pending: 0 };
+        return info();
       case "save_settings": {
         if (options.settings_save_error) throw new Error(options.settings_save_error);
         settings = clone(args.settings);

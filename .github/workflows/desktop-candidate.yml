@@ -15,6 +15,14 @@ on:
         description: Highest Mac CFBundleVersion already distributed
         required: true
         type: string
+      mac_only:
+        description: Build only the Mac candidate, independently of Windows/Linux release credentials
+        type: boolean
+        default: true
+      updater_artifacts:
+        description: Also require the existing Tauri updater keys and produce signed updater archives
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,13 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+        include: ${{ fromJSON(inputs.mac_only && '[{"os":"macos-15","target":"aarch64-apple-darwin"}]' || '[{"os":"macos-15","target":"aarch64-apple-darwin"},{"os":"windows-latest","target":"x86_64-pc-windows-msvc"},{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -83,22 +85,39 @@ jobs:
             libasound2-dev libx11-dev libxtst-dev libxi-dev libdbus-1-dev patchelf cmake file \
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
             pulseaudio-utils x11-utils wl-clipboard
-      - name: Write existing Apple API credential to the temporary runner directory
+      - name: Prepare existing personal-team Mac signing and notarization credentials
         if: runner.os == 'macOS'
         env:
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.PENNEL_MAC_NOTARY_API_KEY_CONTENT }}
+          APPLE_CERTIFICATE: ${{ secrets.PENNEL_MAC_DEVELOPER_ID_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.PENNEL_MAC_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          RELEASE_IDENTITY: ${{ vars.PENNEL_MAC_DEVELOPER_ID_IDENTITY }}
+          PENNEL_MAC_PROVISIONING_PROFILE_BASE64: ${{ secrets.PENNEL_MAC_PROVISIONING_PROFILE_BASE64 }}
         shell: python
         run: |
           import os
+          import base64
+          import subprocess
           from pathlib import Path
+          required = ("APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "RELEASE_IDENTITY", "PENNEL_MAC_PROVISIONING_PROFILE_BASE64")
+          if not all(os.environ.get(key) for key in required):
+              raise SystemExit("Personal Developer ID certificate and macOS profile are required")
+          directory = Path(os.environ["RUNNER_TEMP"])
+          keychain = directory / "pennel-signing.keychain-db"
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"PENNEL_SIGNING_KEYCHAIN={keychain}\n")
+          subprocess.run(["bash", "scripts/import-mac-signing-cert.sh", os.environ["RELEASE_IDENTITY"], str(keychain)], check=True)
+          profile = directory / "pennel.provisionprofile"
+          profile.write_bytes(base64.b64decode(os.environ["PENNEL_MAC_PROVISIONING_PROFILE_BASE64"], validate=True))
+          profile.chmod(0o600)
           content = os.environ.get("APPLE_API_KEY_CONTENT", "")
-          if not content:
-              raise SystemExit("APPLE_API_KEY_CONTENT must contain an existing notarization key")
-          path = Path(os.environ["RUNNER_TEMP"]) / "pennel-notarization.p8"
-          path.write_text(content, encoding="utf-8")
-          path.chmod(0o600)
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
-              output.write(f"APPLE_API_KEY_PATH={path}\n")
+              output.write(f"PENNEL_MAC_PROVISIONING_PROFILE={profile}\n")
+              if content:
+                  path = directory / "pennel-notarization.p8"
+                  path.write_text(content, encoding="utf-8")
+                  path.chmod(0o600)
+                  output.write(f"APPLE_API_KEY_PATH={path}\n")
       - name: Import existing Windows signing certificate on the temporary runner
         if: runner.os == 'Windows'
         env:
@@ -119,21 +138,26 @@ jobs:
       - name: Build and verify signed Mac candidate, without publication
         if: runner.os == 'macOS'
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.PENNEL_MAC_DEVELOPER_ID_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.PENNEL_MAC_NOTARY_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.PENNEL_MAC_NOTARY_API_KEY }}
+          APPLE_ID: ${{ secrets.PENNEL_MAC_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.PENNEL_MAC_NOTARY_APPLE_PASSWORD }}
+          APPLE_TEAM_ID: B538Q2K76C
+          PENNEL_UPDATER_ARTIFACTS: ${{ inputs.updater_artifacts }}
         shell: python
         run: |
           import os
           import subprocess
           import sys
-          subprocess.run([
+          arguments = [
               sys.executable, "scripts/desktop-release.py", os.environ["PENNEL_CANDIDATE_VERSION"],
               "--build-number", os.environ["PENNEL_MAC_BUILD"],
               "--previous-build-number", os.environ["PENNEL_PREVIOUS_MAC_BUILD"],
-          ], check=True)
+          ]
+          if os.environ["PENNEL_UPDATER_ARTIFACTS"] != "true":
+              arguments.append("--homebrew")
+          subprocess.run(arguments, check=True)
       - name: Build and verify signed Windows candidate, without publication
         if: runner.os == 'Windows'
         env:
@@ -165,3 +189,9 @@ jobs:
             build/desktop-release/**/*.deb
             build/desktop-release/**/*.sig
             build/desktop-release/**/candidate.json
+            build/desktop-release/**/mac-notarization.json
+      - name: Remove temporary Mac credentials
+        if: always() && runner.os == 'macOS' && env.PENNEL_SIGNING_KEYCHAIN != ''
+        run: |
+          security delete-keychain "$PENNEL_SIGNING_KEYCHAIN"
+          rm -f "$RUNNER_TEMP/pennel.provisionprofile" "$RUNNER_TEMP/pennel-notarization.p8"

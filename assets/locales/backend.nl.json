@@ -1,4 +1,8 @@
 {
+  "backend.saved_access_migration_required": "Werk je bewaarde toegang bij in Instellingen voordat je deze verbinding gebruikt.",
+  "backend.saved_access_locked": "Ontgrendel je Mac en probeer de bewaarde toegang opnieuw in Instellingen.",
+  "backend.saved_access_denied": "Toegang is niet goedgekeurd. Probeer opnieuw in Instellingen wanneer je zover bent.",
+  "backend.saved_access_unavailable": "Je bewaarde toegang is niet beschikbaar. Probeer opnieuw in Instellingen of controleer de installatie van deze app.",
   "backend.live_question_too_large": "Je vraag is te lang voor deze configuratie. Ze werd niet ingekort of verstuurd. Maak je vraag korter en probeer opnieuw.",
   "backend.retranscription_unknown_tracks": "De oorspronkelijke opnamesporen konden niet worden vastgesteld. Voor oudere transcripties met sprekerlabels zijn beide sporen nodig.",
   "backend.retranscription_local_model_required": "Kies een lokaal spraakmodel voor het opnieuw transcriberen van een opname.",
