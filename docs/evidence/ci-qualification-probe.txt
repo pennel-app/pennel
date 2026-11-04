@@ -1,0 +1,1 @@
+Synthetic docs qualification input. No runtime behavior or dependency change.
