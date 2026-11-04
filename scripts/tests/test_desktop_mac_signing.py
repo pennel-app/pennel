@@ -6,7 +6,9 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -156,8 +158,9 @@ class MacSigningPolicyTests(unittest.TestCase):
                     self.assertTrue(arguments[arguments.index("-R") + 1].startswith("="), "codesign treats unprefixed requirements as filenames")
                 if "--entitlements" in arguments:
                     return plistlib.dumps(claims)
-                if "--extract-certificates" in arguments:
-                    Path(str(arguments[3]) + "0").write_bytes(CERTIFICATE)
+                for argument in arguments:
+                    if str(argument).startswith("--extract-certificates="):
+                        Path(str(argument).partition("=")[2] + "0").write_bytes(CERTIFICATE)
                 return ""
             with mock.patch.object(signing.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", metadata)), mock.patch.object(signing, "command", side_effect=execute), mock.patch.object(signing, "decode_profile", return_value=profile()):
                 verified = signing.inspect_signed_app(app)
@@ -184,6 +187,12 @@ class MacSigningPolicyTests(unittest.TestCase):
         with mock.patch.object(signing.subprocess, "run", return_value=failed), self.assertRaises(ValueError) as raised:
             signing.command(["xcrun", "notarytool", "--password", secret])
         self.assertNotIn(secret, str(raised.exception))
+
+    @unittest.skipUnless(sys.platform == "darwin" and shutil.which("codesign") and Path("/System/Applications/Calculator.app").is_dir(), "Requires the macOS signature inspection tool and a system signed application")
+    def test_actual_codesign_extracts_public_certificate_to_the_requested_location(self):
+        certificate = signing.signed_certificate(Path("/System/Applications/Calculator.app"))
+        self.assertGreater(len(certificate), 128)
+        self.assertEqual(certificate[0], 0x30)
 
 
 class PreviewFirstBuildTests(unittest.TestCase):

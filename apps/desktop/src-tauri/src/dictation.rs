@@ -1660,6 +1660,16 @@ impl Controller {
         } else {
             self.shared.secrets.keys_checked(&providers)
         };
+        let mut keys = keys;
+        if !is_command && let Ok(keys) = &mut keys {
+            for provider in session.optional_credential_providers() {
+                if !keys.by_provider.contains_key(&provider.id)
+                    && let Ok(Some(key)) = self.shared.secrets.get_checked(&provider.id)
+                {
+                    keys.by_provider.insert(provider.id, key);
+                }
+            }
+        }
         let credential_error = keys.as_ref().err().cloned();
         let request = DictationRequest {
             samples,
