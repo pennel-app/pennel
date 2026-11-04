@@ -486,7 +486,7 @@
   "meetings.export_shareable": "Deelbare kopie",
   "meetings.export_personal": "Persoonlijke kopie",
   "meetings.export_shareable_help": "Alleen het transcript. Privénotities en je bewerkbare samenvatting worden uitgesloten.",
-  "meetings.export_personal_help": "Een persoonlijke kopie bevat je privénotities en samenvatting. Controleer deze voordat je ze met iemand deelt.",
+  "meetings.export_personal_help": "Een persoonlijke kopie kan privé-inhoud uit je notities of samenvatting bevatten. Controleer de tekst voordat je deze met iemand deelt.",
   "meetings.export_include_transcript": "Transcript toevoegen",
   "meetings.export_preparing": "Exacte kopie voorbereiden…",
   "meetings.export_missing_shareable": "Nog geen geverifieerde deelbare samenvatting. Maak er een van het transcript of kies expliciet een persoonlijke kopie.",

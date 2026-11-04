@@ -486,7 +486,7 @@
   "meetings.export_shareable": "Shareable copy",
   "meetings.export_personal": "Personal copy",
   "meetings.export_shareable_help": "Transcript only. Private notes and your editable summary are excluded.",
-  "meetings.export_personal_help": "Personal copy includes your private notes and summary. Review it before sending it to anyone.",
+  "meetings.export_personal_help": "Personal copy may contain private material from your notes or summary. Review it before sending it to anyone.",
   "meetings.export_include_transcript": "Include transcript",
   "meetings.export_preparing": "Preparing the exact copy…",
   "meetings.export_missing_shareable": "No verified shareable summary yet. Create one from the transcript, or choose an explicit Personal copy.",
