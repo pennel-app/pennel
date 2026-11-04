@@ -22,6 +22,11 @@ on:
       - "scripts/ci-xcode-cache.py"
       - "scripts/ci-xcodebuild.sh"
       - "scripts/tests/test_ci_xcode_cache.py"
+      - "scripts/ci-mobile-status.py"
+      - "scripts/tests/test_ci_mobile_status.py"
+      - "scripts/ci-mode.py"
+      - "scripts/tests/test_ci_mode.py"
+      - ".github/workflows/changes.yml"
       - "Makefile"
       - ".github/workflows/mobile.yml"
       - ".github/workflows/mobile-testflight.yml"
@@ -53,7 +58,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/changes.yml
+
   ios-generated-build:
+    needs: changes
     name: iOS generated build (${{ matrix.repetition }})
     strategy:
       fail-fast: false
@@ -63,6 +72,12 @@ jobs:
     timeout-minutes: 90
     env:
       PENNEL_VARIANT: preview
+      PENNEL_CI_MODE: ${{ needs.changes.outputs.ci_mode }}
+      PENNEL_DEPENDENCY_CACHE: ${{ needs.changes.outputs.dependency_cache }}
+      PENNEL_QUALIFICATION_ID: ${{ needs.changes.outputs.qualification_id }}
+      PENNEL_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PENNEL_CI_LANE: ${{ github.event_name != 'workflow_dispatch' && (needs.changes.outputs.ci_mode == 'candidate' && 'release' || 'serial') || '' }}
+      PENNEL_CI_JOB_NAME: iOS generated build (${{ matrix.repetition }})
       PENNEL_XCODE_CACHE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.xcode_cache || 'off' }}
       CACHE_REPETITIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.repetitions || '1' }}
       CACHE_GENERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_generation || 'pilot-1' }}
@@ -78,7 +93,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: ${{ needs.changes.outputs.dependency_cache != 'cold' && 'npm' || '' }}
           cache-dependency-path: apps/mobile/package-lock.json
       - uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -99,10 +114,13 @@ jobs:
         with:
           toolchain: '1.99.1'
           targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore mobile Rust dependencies
+        if: needs.changes.outputs.dependency_cache != 'cold'
+        id: rust-cache
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: core
-          key: expo-mobile-lean
+          shared-key: expo-mobile-lean-ios-generated-build
           save-if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
       - name: Install mobile dependencies
         working-directory: apps/mobile
@@ -110,6 +128,7 @@ jobs:
       - name: Typecheck and regression tests
         run: |
           python3 -B -m unittest discover -s scripts/tests -p 'test_ci_xcode_cache.py'
+          python3 -B -m unittest discover -s scripts/tests -p 'test_ci_mobile_status.py'
           python3 -B -m unittest discover -s scripts/tests -p 'test_mobile*.py'
           python3 -B scripts/ci-xcode-cache.py time --phase typecheck-and-tests -- make mobile-test
       - name: Generate and validate the preview workspace
@@ -143,6 +162,7 @@ jobs:
           PENNEL_IOS_DESTINATION: generic/platform=iOS
         run: python3 -B scripts/ci-xcode-cache.py time --phase release-device -- npm --prefix apps/mobile run build:ios
       - name: Pick an available iPhone simulator
+        if: env.PENNEL_CI_LANE != 'release'
         run: |
           xcrun simctl list devices available --json > "$RUNNER_TEMP/pennel-simulators.json"
           python3 - "$RUNNER_TEMP/pennel-simulators.json" "$GITHUB_ENV" <<'PY'
@@ -161,6 +181,7 @@ jobs:
               environment.write(f"IOS_DESTINATION=platform=iOS Simulator,id={device}\n")
           PY
       - name: Native runtime and keyboard regression tests
+        if: env.PENNEL_CI_LANE != 'release'
         run: python3 -B scripts/ci-xcode-cache.py time --phase debug-runtime-and-keyboard -- make mobile-native-test
       - name: Free completed native outputs before packing the seed
         if: success() && env.PENNEL_XCODE_CACHE_MODE == 'cold'
@@ -185,12 +206,148 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EXACT_CACHE_HIT: ${{ steps.restore-compiler-cache.outputs.cache-hit }}
+          PENNEL_RUST_CACHE_EXACT_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
         run: python3 -B scripts/ci-xcode-cache.py report --hit "$EXACT_CACHE_HIT"
       - name: Upload mobile timing receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mobile-ci-${{ env.PENNEL_XCODE_CACHE_MODE }}-${{ matrix.repetition }}
+          name: ${{ github.event_name == 'workflow_dispatch' && format('mobile-ci-{0}-{1}', env.PENNEL_XCODE_CACHE_MODE, matrix.repetition) || format('mobile-ci-{0}-{1}-attempt-{2}', env.PENNEL_CI_LANE, env.PENNEL_CI_MODE, github.run_attempt) }}
           path: build/ci-performance/mobile.json
+          if-no-files-found: error
+          retention-days: 7
+
+  ios-native-tests:
+    name: iOS Debug runtime and keyboard tests
+    needs: changes
+    if: github.event_name != 'workflow_dispatch' && needs.changes.outputs.ci_mode == 'candidate'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      PENNEL_VARIANT: preview
+      PENNEL_XCODE_CACHE_MODE: off
+      CACHE_REPETITIONS: '1'
+      CACHE_GENERATION: pilot-1
+      PENNEL_CI_MODE: ${{ needs.changes.outputs.ci_mode }}
+      PENNEL_DEPENDENCY_CACHE: ${{ needs.changes.outputs.dependency_cache }}
+      PENNEL_QUALIFICATION_ID: ${{ needs.changes.outputs.qualification_id }}
+      PENNEL_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PENNEL_CI_LANE: runtime
+      PENNEL_CI_JOB_NAME: iOS Debug runtime and keyboard tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compiler-cache pilot inputs
+        run: python3 -B scripts/ci-xcode-cache.py validate --mode "$PENNEL_XCODE_CACHE_MODE" --repetitions "$CACHE_REPETITIONS" --generation "$CACHE_GENERATION"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: ${{ needs.changes.outputs.dependency_cache != 'cold' && 'npm' || '' }}
+          cache-dependency-path: apps/mobile/package-lock.json
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.6'
+      - name: Prepare the locked CocoaPods version
+        run: |
+          pod_version="$(sed -n 's/^COCOAPODS: //p' apps/mobile/Podfile.lock)"
+          if ! pod "_${pod_version}_" --version >/dev/null 2>&1; then
+            gem install --user-install cocoapods --version "$pod_version" --no-document
+          fi
+          gem_bin="$(ruby -r rubygems -e 'puts Gem.user_dir')/bin"
+          echo "$gem_bin" >> "$GITHUB_PATH"
+          export PATH="$gem_bin:$PATH"
+          pod "_${pod_version}_" --version
+      - name: Prepare canonical icon converter
+        run: command -v rsvg-convert >/dev/null || brew install librsvg
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+          targets: aarch64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim
+      - name: Restore mobile Rust dependencies
+        if: needs.changes.outputs.dependency_cache != 'cold'
+        id: rust-cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+          shared-key: expo-mobile-lean-ios-generated-build
+          save-if: 'false'
+      - name: Install mobile dependencies
+        working-directory: apps/mobile
+        run: npm ci
+      - name: Typecheck and regression tests
+        run: |
+          python3 -B -m unittest discover -s scripts/tests -p 'test_ci_xcode_cache.py'
+          python3 -B -m unittest discover -s scripts/tests -p 'test_ci_mobile_status.py'
+          python3 -B -m unittest discover -s scripts/tests -p 'test_mobile*.py'
+          python3 -B scripts/ci-xcode-cache.py time --phase typecheck-and-tests -- make mobile-test
+      - name: Generate and validate the preview workspace
+        env:
+          CI: "1"
+        run: python3 -B scripts/ci-xcode-cache.py time --phase native-preparation -- make mobile-prebuild
+      - name: Fingerprint the native compiler-cache experiment
+        id: compiler-cache
+        run: python3 -B scripts/ci-xcode-cache.py prepare --mode "$PENNEL_XCODE_CACHE_MODE" --repetitions "$CACHE_REPETITIONS" --generation "$CACHE_GENERATION" --repetition '1'
+      - name: Pick an available iPhone simulator
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/pennel-simulators.json"
+          python3 - "$RUNNER_TEMP/pennel-simulators.json" "$GITHUB_ENV" <<'PY'
+          import json, re, sys
+          with open(sys.argv[1]) as source:
+              runtimes = json.load(source)["devices"]
+          candidates = []
+          for runtime, devices in runtimes.items():
+              version = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              if version and int(version[1]) >= 26:
+                  candidates.extend(((int(version[1]), int(version[2])), device["udid"]) for device in devices if device.get("isAvailable") and device["name"].startswith("iPhone "))
+          if not candidates:
+              raise SystemExit("An available iPhone simulator on iOS 26+ is required.")
+          device = max(candidates)[1]
+          with open(sys.argv[2], "a") as environment:
+              environment.write(f"IOS_DESTINATION=platform=iOS Simulator,id={device}\n")
+          PY
+      - name: Native runtime and keyboard regression tests
+        run: python3 -B scripts/ci-xcode-cache.py time --phase debug-runtime-and-keyboard -- make mobile-native-test
+      - name: Report mobile phase and cache timings
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PENNEL_RUST_CACHE_EXACT_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
+        run: python3 -B scripts/ci-xcode-cache.py report
+      - name: Upload mobile timing receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ci-runtime-candidate-attempt-${{ github.run_attempt }}
+          path: build/ci-performance/mobile.json
+          if-no-files-found: error
+          retention-days: 7
+
+  required:
+    name: Complete mobile validation
+    needs: [changes, ios-generated-build, ios-native-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PENNEL_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PENNEL_XCODE_CACHE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.xcode_cache || 'off' }}
+      CACHE_REPETITIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.repetitions || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download this attempt's mobile phase receipts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ github.event_name == 'workflow_dispatch' && format('mobile-ci-{0}-*', env.PENNEL_XCODE_CACHE_MODE) || format('mobile-ci-*-attempt-{0}', github.run_attempt) }}
+          path: build/ci-performance/receipts
+      - name: Require every selected mobile job and phase
+        if: always()
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 -B scripts/ci-mobile-status.py
+      - name: Upload complete mobile validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-validation-attempt-${{ github.run_attempt }}
+          path: build/ci-performance/mobile-validation.json
           if-no-files-found: error
           retention-days: 7

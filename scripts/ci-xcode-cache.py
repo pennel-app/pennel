@@ -5,6 +5,7 @@ import argparse
 from datetime import datetime
 import hashlib
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import platform
@@ -23,6 +24,12 @@ CACHE_DIRECTORY = ROOT / 'build/xcode-compilation-cache'
 CACHE_ARCHIVE = ROOT / 'build/xcode-compilation-cache.tar.gz'
 CACHE_ALLOWANCE_BYTES = 10_000_000_000
 CACHE_RESERVE_BYTES = 100_000_000
+MOBILE_PHASES = {
+    'serial': ('typecheck-and-tests', 'native-preparation', 'release-simulator',
+               'release-device', 'debug-runtime-and-keyboard'),
+    'release': ('typecheck-and-tests', 'native-preparation', 'release-simulator', 'release-device'),
+    'runtime': ('typecheck-and-tests', 'native-preparation', 'debug-runtime-and-keyboard'),
+}
 
 
 def validate_inputs(mode, repetitions, generation):
@@ -99,8 +106,63 @@ def provenance():
     }
 
 
+def validation_context(environment):
+    lane = environment.get('PENNEL_CI_LANE', '')
+    if not lane:
+        return None
+    mode = environment.get('PENNEL_CI_MODE')
+    if lane not in MOBILE_PHASES or (mode, lane) not in (
+            ('serial', 'serial'), ('candidate', 'release'), ('candidate', 'runtime')):
+        raise ValueError('Invalid ordinary mobile validation mode or lane')
+    if environment.get('GITHUB_EVENT_NAME') not in ('pull_request', 'push'):
+        raise ValueError('Ordinary mobile lanes cannot replace manual compiler-cache experiments')
+    dependency_cache = environment.get('PENNEL_DEPENDENCY_CACHE', 'warm')
+    if dependency_cache not in ('warm', 'cold'):
+        raise ValueError('Invalid ordinary dependency-cache policy')
+    return {
+        'ci_mode': mode,
+        'dependency_cache': dependency_cache,
+        'lane': lane,
+        'qualification_id': environment.get('PENNEL_QUALIFICATION_ID', ''),
+        'repository': environment.get('GITHUB_REPOSITORY'),
+        'event_name': environment.get('GITHUB_EVENT_NAME'),
+        'source_sha': environment.get('GITHUB_SHA'),
+        'head_sha': environment.get('PENNEL_CI_HEAD_SHA'),
+        'job_id': environment.get('GITHUB_JOB'),
+        'expected_phases': list(MOBILE_PHASES[lane]),
+    }
+
+
+def phase_errors(phases, expected):
+    if not isinstance(phases, list):
+        return ['Missing mobile phase observations']
+    names = []
+    errors = []
+    for phase in phases:
+        if not isinstance(phase, dict) or not isinstance(phase.get('name'), str):
+            errors.append('Invalid mobile phase observation')
+            continue
+        name = phase['name']
+        names.append(name)
+        if phase.get('exit_code') != 0 or isinstance(phase.get('exit_code'), bool):
+            errors.append(f'{name}: validation did not succeed')
+        seconds = phase.get('seconds')
+        if (not isinstance(seconds, (int, float)) or isinstance(seconds, bool)
+                or not math.isfinite(seconds) or seconds < 0):
+            errors.append(f'{name}: invalid duration')
+    for name in expected:
+        if names.count(name) != 1:
+            errors.append(f'{name}: expected one completed observation')
+    if any(name not in expected for name in names):
+        errors.append('Unexpected mobile phase observation')
+    return errors
+
+
 def write_report(data):
     data['provenance'] = provenance()
+    validation = validation_context(os.environ)
+    if validation is not None:
+        data.update(schema=2, validation=validation)
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(data, indent=2) + '\n')
 
@@ -283,14 +345,25 @@ def report(args):
     cache['exact_hit'] = args.hit == 'true'
     cache['uncompressed_bytes'] = directory_bytes(CACHE_DIRECTORY)
     cache['archive_bytes'] = CACHE_ARCHIVE.stat().st_size if CACHE_ARCHIVE.is_file() else 0
-    if cache['mode'] != 'off' and os.environ.get('GH_TOKEN'):
+    validation = validation_context(os.environ)
+    if validation is not None:
+        exact_hit = os.environ.get('PENNEL_RUST_CACHE_EXACT_HIT', '')
+        data['rust_cache'] = {
+            'exact_hit': {'true': True, 'false': False}.get(exact_hit),
+            'shared_key': 'expo-mobile-lean-ios-generated-build',
+            'bypassed': validation['dependency_cache'] == 'cold',
+            'bypass_scope': ['rust', 'npm'] if validation['dependency_cache'] == 'cold' else [],
+        }
+    if (cache['mode'] != 'off' or validation is not None) and os.environ.get('GH_TOKEN'):
         try:
-            entries = github_json('actions/caches?per_page=100')['actions_caches']
-            matches = [entry for entry in entries if entry['key'] == cache.get('key') and entry['ref'] == os.environ.get('GITHUB_REF')]
-            if matches:
-                cache['stored_bytes'] = matches[0]['size_in_bytes']
+            if cache['mode'] != 'off':
+                entries = github_json('actions/caches?per_page=100')['actions_caches']
+                matches = [entry for entry in entries if entry['key'] == cache.get('key') and entry['ref'] == os.environ.get('GITHUB_REF')]
+                if matches:
+                    cache['stored_bytes'] = matches[0]['size_in_bytes']
             jobs = github_json(f"actions/runs/{os.environ['GITHUB_RUN_ID']}/jobs?per_page=100")['jobs']
-            name = f"iOS generated build ({data.get('repetition', '1')})"
+            name = (os.environ.get('PENNEL_CI_JOB_NAME') if validation is not None else None)
+            name = name or f"iOS generated build ({data.get('repetition', '1')})"
             for job in jobs:
                 if job['name'] != name:
                     continue
@@ -298,8 +371,21 @@ def report(args):
                     if step['name'] in ('Restore Xcode compilation cache', 'Save Xcode compilation cache') and step.get('completed_at'):
                         seconds = (datetime.fromisoformat(step['completed_at'].replace('Z', '+00:00')) - datetime.fromisoformat(step['started_at'].replace('Z', '+00:00'))).total_seconds()
                         cache['restore_seconds' if step['name'].startswith('Restore') else 'save_seconds'] = seconds
+                    elif (validation is not None and step['name'] == 'Restore mobile Rust dependencies'
+                          and step.get('conclusion') == 'success' and step.get('started_at') and step.get('completed_at')):
+                        data['rust_cache']['restore_seconds'] = (datetime.fromisoformat(step['completed_at'].replace('Z', '+00:00')) - datetime.fromisoformat(step['started_at'].replace('Z', '+00:00'))).total_seconds()
         except (OSError, KeyError, ValueError) as error:
             cache['metrics_error'] = str(error)
+    errors = []
+    if validation is not None:
+        errors = phase_errors(data.get('phases'), validation['expected_phases'])
+        if data.get('metadata', {}).get('revision') != validation['source_sha']:
+            errors.append('Missing or mismatched prepared source identity')
+        if cache['mode'] != 'off':
+            errors.append('Ordinary mobile validation cannot enable compiler caching')
+        if validation['dependency_cache'] == 'cold' and data['rust_cache']['exact_hit'] is not None:
+            errors.append('Cold dependency qualification unexpectedly ran a Rust cache restore')
+        data['validation_errors'] = errors
     write_report(data)
     summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if summary:
@@ -310,6 +396,7 @@ def report(args):
                 file.write(f"| {phase['name']} | {phase['seconds']} | {phase['exit_code']} |\n")
             file.write(f"\nExact seed hit: {cache['exact_hit']}. CAS bytes: {cache['uncompressed_bytes']}. Compressed archive bytes: {cache['archive_bytes']}.\n")
     print(json.dumps(data, indent=2))
+    return int(bool(errors))
 
 
 def main():
@@ -354,7 +441,7 @@ def main():
         elif args.command == 'preflight':
             preflight()
         elif args.command == 'report':
-            report(args)
+            return report(args)
         elif args.command == 'xcodebuild':
             mode = os.environ.get('PENNEL_XCODE_CACHE_MODE', 'off')
             directory = Path(os.environ.get('PENNEL_XCODE_CACHE_DIR', str(CACHE_DIRECTORY)))

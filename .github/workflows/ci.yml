@@ -31,6 +31,7 @@ jobs:
           targets: aarch64-apple-darwin
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        if: needs.changes.outputs.dependency_cache != 'cold'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: core

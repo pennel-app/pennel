@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -255,6 +256,101 @@ class XcodeCacheTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'empty'):
                 self.cache.unpack_snapshot(archive, destination)
             self.assertEqual((destination / 'existing').read_bytes(), b'existing')
+
+    def ordinary_environment(self, lane='serial', mode='serial', **changes):
+        return {
+            'PENNEL_CI_LANE': lane, 'PENNEL_CI_MODE': mode,
+            'PENNEL_DEPENDENCY_CACHE': 'warm',
+            'PENNEL_QUALIFICATION_ID': 'cohort-1',
+            'GITHUB_REPOSITORY': 'pennel-app/pennel', 'GITHUB_EVENT_NAME': 'pull_request',
+            'GITHUB_SHA': 'a' * 40, 'PENNEL_CI_HEAD_SHA': 'b' * 40,
+            'GITHUB_RUN_ID': '101', 'GITHUB_RUN_ATTEMPT': '2',
+            'GITHUB_JOB': 'ios-native-tests' if lane == 'runtime' else 'ios-generated-build',
+            'PENNEL_CI_JOB_NAME': 'iOS Debug runtime and keyboard tests' if lane == 'runtime' else 'iOS generated build (1)',
+            'PENNEL_RUST_CACHE_EXACT_HIT': 'true',
+        } | changes
+
+    def ordinary_report(self, root, lane='serial'):
+        data = {'schema': 1, 'phases': [
+            {'name': phase, 'seconds': 1.0, 'exit_code': 0}
+            for phase in self.cache.MOBILE_PHASES[lane]],
+            'metadata': self.metadata(), 'cache': {'mode': 'off'}, 'repetition': '1'}
+        report = root / 'mobile.json'
+        report.write_text(json.dumps(data))
+        return report
+
+    def test_ordinary_receipt_requires_the_expected_successful_native_phases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = self.ordinary_report(root, 'release')
+            environment = self.ordinary_environment('release', 'candidate')
+            with mock.patch.dict(self.cache.os.environ, environment, clear=True), mock.patch.object(self.cache, 'REPORT', report), mock.patch.object(self.cache, 'CACHE_DIRECTORY', root / 'cas'), mock.patch.object(self.cache, 'CACHE_ARCHIVE', root / 'cas.tar.gz'), mock.patch('sys.stdout', new_callable=io.StringIO):
+                self.assertEqual(self.cache.report(SimpleNamespace(hit='')), 0)
+                data = json.loads(report.read_text())
+                self.assertEqual(data['schema'], 2)
+                self.assertEqual(data['validation']['lane'], 'release')
+                self.assertEqual(data['validation']['expected_phases'], list(self.cache.MOBILE_PHASES['release']))
+                self.assertEqual(data['validation']['head_sha'], 'b' * 40)
+                self.assertEqual(data['provenance']['run_attempt'], '2')
+                self.assertTrue(data['rust_cache']['exact_hit'])
+                data['phases'].pop()
+                report.write_text(json.dumps(data))
+                self.assertEqual(self.cache.report(SimpleNamespace(hit='')), 1)
+                self.assertTrue(json.loads(report.read_text())['validation_errors'])
+
+    def test_runtime_receipt_collects_its_own_rust_restore_metrics_with_cas_off(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = self.ordinary_report(root, 'runtime')
+            environment = self.ordinary_environment('runtime', 'candidate', GH_TOKEN='test-only')
+            jobs = {'jobs': [{'name': 'iOS Debug runtime and keyboard tests', 'steps': [
+                {'name': 'Restore mobile Rust dependencies', 'conclusion': 'success', 'started_at': '2026-11-04T20:00:00Z', 'completed_at': '2026-11-04T20:00:05Z'}]}]}
+            with mock.patch.dict(self.cache.os.environ, environment, clear=True), mock.patch.object(self.cache, 'REPORT', report), mock.patch.object(self.cache, 'CACHE_DIRECTORY', root / 'cas'), mock.patch.object(self.cache, 'CACHE_ARCHIVE', root / 'cas.tar.gz'), mock.patch.object(self.cache, 'github_json', return_value=jobs) as api, mock.patch('sys.stdout', new_callable=io.StringIO):
+                self.assertEqual(self.cache.report(SimpleNamespace(hit='')), 0)
+                api.assert_called_once_with('actions/runs/101/jobs?per_page=100')
+                self.assertEqual(json.loads(report.read_text())['rust_cache']['restore_seconds'], 5)
+
+    def test_cold_dependency_bypass_is_recorded_without_inventing_a_cache_hit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = self.ordinary_report(root)
+            environment = self.ordinary_environment(PENNEL_DEPENDENCY_CACHE='cold', PENNEL_RUST_CACHE_EXACT_HIT='')
+            with mock.patch.dict(self.cache.os.environ, environment, clear=True), mock.patch.object(self.cache, 'REPORT', report), mock.patch.object(self.cache, 'CACHE_DIRECTORY', root / 'cas'), mock.patch.object(self.cache, 'CACHE_ARCHIVE', root / 'cas.tar.gz'), mock.patch('sys.stdout', new_callable=io.StringIO):
+                self.assertEqual(self.cache.report(SimpleNamespace(hit='')), 0)
+                data = json.loads(report.read_text())
+                self.assertEqual(data['validation']['dependency_cache'], 'cold')
+                self.assertTrue(data['rust_cache']['bypassed'])
+                self.assertIsNone(data['rust_cache']['exact_hit'])
+                self.assertEqual(data['rust_cache']['bypass_scope'], ['rust', 'npm'])
+                self.cache.os.environ['PENNEL_RUST_CACHE_EXACT_HIT'] = 'true'
+                self.assertEqual(self.cache.report(SimpleNamespace(hit='')), 1)
+
+    def test_legacy_manual_receipt_contract_and_job_lookup_are_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = self.ordinary_report(root)
+            data = json.loads(report.read_text())
+            data['cache'] = {'mode': 'warm', 'key': 'exact-seed'}
+            report.write_text(json.dumps(data))
+            environment = {'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_RUN_ID': '101',
+                           'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_REF': 'refs/heads/benchmark', 'GH_TOKEN': 'test-only'}
+            jobs = {'jobs': [{'name': 'iOS generated build (1)', 'steps': [
+                {'name': 'Restore Xcode compilation cache', 'started_at': '2026-11-04T20:00:00Z', 'completed_at': '2026-11-04T20:00:03Z'}]}]}
+            with mock.patch.dict(self.cache.os.environ, environment, clear=True), mock.patch.object(self.cache, 'REPORT', report), mock.patch.object(self.cache, 'CACHE_DIRECTORY', root / 'cas'), mock.patch.object(self.cache, 'CACHE_ARCHIVE', root / 'cas.tar.gz'), mock.patch.object(self.cache, 'github_json', side_effect=[{'actions_caches': []}, jobs]), mock.patch('sys.stdout', new_callable=io.StringIO):
+                self.assertEqual(self.cache.report(SimpleNamespace(hit='true')), 0)
+                result = json.loads(report.read_text())
+                self.assertEqual(result['schema'], 1)
+                self.assertNotIn('validation', result)
+                self.assertNotIn('rust_cache', result)
+                self.assertEqual(result['cache']['restore_seconds'], 3)
+
+    def test_manual_or_mismatched_lane_cannot_emit_an_ordinary_contract(self):
+        self.assertIsNone(self.cache.validation_context({'GITHUB_EVENT_NAME': 'workflow_dispatch'}))
+        for environment in (
+                self.ordinary_environment('release', 'serial'),
+                self.ordinary_environment('runtime', 'candidate', GITHUB_EVENT_NAME='workflow_dispatch')):
+            with self.assertRaises(ValueError):
+                self.cache.validation_context(environment)
 
 
 if __name__ == '__main__':

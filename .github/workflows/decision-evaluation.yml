@@ -18,7 +18,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/changes.yml
+
   offline:
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +41,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        if: needs.changes.outputs.dependency_cache != 'cold'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: core -> ../build/evaluation-core-target
