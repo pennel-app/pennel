@@ -26,7 +26,7 @@ export function conversationOrigin(params: Record<string, unknown>): Conversatio
 
 export function conversationReturnRoute(origin: ConversationNavigationOrigin, currentMeetingId?: string) {
   const params = { conversation_id: origin.conversation_id, message_id: origin.message_id };
-  if (origin.scope === 'library') return { pathname: '/(tabs)/ask' as const, params };
+  if (origin.scope === 'library') return { pathname: '/(tabs)' as const, params: { ...params, pane: 'questions' } };
   if (!currentMeetingId) return null;
   return { pathname: '/meeting/[id]' as const, params: { ...params, id: currentMeetingId, pane: 'questions' } };
 }

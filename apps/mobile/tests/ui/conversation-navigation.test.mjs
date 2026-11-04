@@ -15,7 +15,7 @@ test('durable source navigation carries only source and answer identities and ca
 
 test('library answer return stays in the library route and malformed source origins are ignored', () => {
   const origin = { conversation_id: 'library-conversation', message_id: 'answer', citation_number: 1, scope: 'library', meeting_uid: null };
-  assert.deepEqual(conversationReturnRoute(origin), { pathname: '/(tabs)/ask', params: { conversation_id: 'library-conversation', message_id: 'answer' } });
+  assert.deepEqual(conversationReturnRoute(origin), { pathname: '/(tabs)', params: { conversation_id: 'library-conversation', message_id: 'answer', pane: 'questions' } });
   for (const change of [{ citation_number: '0' }, { citation_number: '1.5' }, { conversation_id: '' }, { origin_scope: 'unknown' }, { origin_meeting_uid: '' }]) {
     const meeting = { ...origin, scope: 'meeting', meeting_uid: 'origin' };
     assert.equal(conversationOrigin({ ...conversationSourceRoute('target', meeting).params, ...change }), null);

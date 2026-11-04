@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { FlatList, Modal, Pressable, Share, Text, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter, usePreventRemove } from 'expo-router';
-import type { MeetingDetail, MeetingTemplate, SpeakerJob } from '../domain';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { FlatList, Modal, Pressable, View } from 'react-native';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter, usePreventRemove } from 'expo-router';
+import type { MeetingDetail, SpeakerJob } from '../domain';
 import { useQuery, useReducedMotion, useRuntime } from '../runtime';
 import { meetingDetail, speakerJob } from '../normalize';
 import { clock, dateLabel, recognitionActions } from '../format';
@@ -9,14 +9,15 @@ import { conversationOrigin, conversationReturnRoute, rememberSource, resolveSou
 import { useNoteDraft } from '../use-note-draft';
 import { saveThenRename } from '../meeting-rename';
 import { localizedFailure, ownedFailureText } from '../errors';
-import { templateLabel } from '../owned-labels';
 import { ActionMenu, Actions, Body, Button, Empty, Field, Loading, NativeChoice, Notice, Page, Row, Section, confirm } from '../components/ui';
 import { TextDialog } from '../components/TextDialog';
-import { Markdown } from '../components/Markdown';
 import { AskPanel } from '../components/AskPanel';
 import { conversationRequests, type ConversationResolvedSource, type ConversationSnapshot } from '../../../../assets/contracts/meeting-conversations';
 import { workflowText } from '../workflow-copy';
-import { summaryHasHeading } from '../workflow-state';
+import { useMeetingSummary } from '../use-meeting-summary';
+import { MeetingSummary } from '../components/MeetingSummary';
+import { MeetingExport } from '../components/MeetingExport';
+import { SummaryAutomation } from '../components/SummaryAutomation';
 import { useHapticFeedback } from '../haptics';
 import { attributionEditable, transcriptKeys, transcriptSpeakerLabel, transcriptPlayback, transcriptAttributionProvisional } from '../transcript-state';
 import { InsightReview } from '../components/InsightReview';
@@ -38,7 +39,6 @@ export default function Meeting() {
   const [showSpeakers, setShowSpeakers] = useState(false);
   const [playRequested, setPlayRequested] = useState(false);
   const query = useQuery<MeetingDetail>('meetings.read', { id }, Boolean(id && snapshot?.ready));
-  const templates = useQuery<MeetingTemplate[]>('meetings.templates', {}, Boolean(snapshot?.ready));
   const detail = useMemo(() => query.value?.info ? meetingDetail(query.value) : null, [query.value]);
   const [pane, setPane] = useState<Pane>('notes');
   const origin = conversationOrigin(params);
@@ -47,6 +47,9 @@ export default function Meeting() {
   const originConversation = useQuery<ConversationSnapshot>('conversations.read', { request: origin ? conversationRequests.snapshot(originScope, origin.conversation_id) : null }, Boolean(origin && snapshot?.ready));
   const returnRoute = origin ? conversationReturnRoute(origin, originConversation.value?.conversation.id === origin.conversation_id ? originConversation.value.current_meeting_id ?? undefined : undefined) : null;
   const draft = useNoteDraft(id, detail?.notes ?? '');
+  const summary = useMeetingSummary(id);
+  useFocusEffect(useCallback(() => { void query.refresh(); void summary.query.refresh(); }, [query.refresh, summary.query.refresh]));
+  const [exportShown, setExportShown] = useState(false);
   const insightHolder = useRef<InsightReviewModel | null>(null);
   if (!insightHolder.current || detail?.meeting_uid && insightHolder.current.meetingUid !== detail.meeting_uid) {
     insightHolder.current = new InsightReviewModel(id, detail?.meeting_uid ?? id, mobileInsightService(store.client));
@@ -70,7 +73,6 @@ export default function Meeting() {
     },
   };
   const notes = draft.draft;
-  const [template, setTemplate] = useState(snapshot?.settings.default_template ?? 'general');
   const [editor, setEditor] = useState<Editor>(null);
   const [viewConflict, setViewConflict] = useState<{ name: string; text: string } | null>(null);
   const [currentJob, setCurrentJob] = useState<SpeakerJob | null>(null);
@@ -84,8 +86,8 @@ export default function Meeting() {
   const dirty = draft.dirty;
   const remoteChanged = draft.conflict;
   useEffect(() => { if (draft.dirty || draft.failed || draft.conflict) setEditingNotes(true); }, [draft.dirty, draft.failed, draft.conflict]);
-  const disableRemoval = usePreventRemove(dirty || insightModel.dirty, ({ repeat }) => confirm(t(insightModel.dirty ? 'insights.edit_unsaved_leave' : 'mobile.notes.leave_title'),
-    t(insightModel.dirty ? 'insights.edit_unsaved_help' : 'mobile.notes.leave_help'), t('common.delete'), t('common.cancel'), () => { draft.discard(); insightModel.discardLocalEdits(); repeat(); }, true));
+  const disableRemoval = usePreventRemove(dirty || insightModel.dirty || summary.dirty, ({ repeat }) => confirm(t(summary.dirty ? 'mobile.simple.summary_leave' : insightModel.dirty ? 'insights.edit_unsaved_leave' : 'mobile.notes.leave_title'),
+    t(summary.dirty ? 'mobile.simple.summary_leave_help' : insightModel.dirty ? 'insights.edit_unsaved_help' : 'mobile.notes.leave_help'), t('common.delete'), t('common.cancel'), () => { draft.discard(); summary.model.discard(); insightModel.discardLocalEdits(); repeat(); }, true));
   useEffect(() => {
     const revision = snapshot?.insight_revisions?.[insightModel.meetingUid];
     if (revision !== undefined && revision > (insightState.snapshot?.revision ?? 0) && pane === 'insights') void insightModel.load();
@@ -132,7 +134,6 @@ export default function Meeting() {
     if (!detail || remoteChanged) return;
     if (await draft.save()) { setNotice(t('mobile.saved')); setEditingNotes(false); await query.refresh(); }
   };
-  const summarize = async () => { const result = await run('summary', 'meetings.summarize', { id, template }); if (result !== undefined) await query.refresh(); };
   const recognize = () => confirm(t('mobile.speakers.consent_title'), t('mobile.speakers.consent'), t('mobile.speakers.allow'), t('common.cancel'), () => { void run<SpeakerJob>('recognition-start', 'recognition.start', { id, consent: true }).then((value) => { if (value) setCurrentJob(speakerJob(value)); }); });
   const resume = () => {
     if (!job) return;
@@ -140,11 +141,8 @@ export default function Meeting() {
     if (job.stage === 'response_unknown') confirm(t('mobile.speakers.retry_title'), t('mobile.speakers.retry_help'), t('common.retry'), t('common.cancel'), perform);
     else perform();
   };
-  const exportMeeting = async (format: 'formatted' | 'markdown' | 'transcript' | 'share') => {
-    const result = await run<{ title: string; markdown: string; html: string }>('export', 'meetings.export', { id, include_transcript: format === 'transcript' });
-    if (!result) return;
-    if (format === 'share') { try { await Share.share({ title: result.title, message: result.markdown }); } catch { setNotice(t('mobile.error')); } }
-    else { const copied = await run('copy', 'dictation.copy', { text: result.markdown, html: format === 'formatted' ? result.html : null }); if (copied !== undefined) { setNotice(t('meetings.copied')); haptic('resultDelivered'); } }
+  const exportMeeting = async () => {
+    if (await draft.save() && await summary.model.save()) setExportShown(true);
   };
   if (!detail) return <Page title={t('navigation.meetings')} inset={false}>
     {origin && <Section><Notice>{t('conversations.source_unavailable')}</Notice><Body selectable>{durableSource.value?.anchor?.source_text ?? durableSource.value?.passage.text}</Body>{returnRoute && <Button title={t('conversations.return_to_answer')} subtle onPress={() => router.replace(returnRoute)} />}</Section>}
@@ -160,10 +158,8 @@ export default function Meeting() {
   const speakerEnabled = snapshot?.cloud.signed_in && !active && canPlay && !jobBusy && canEditAttribution;
   const deleteMeeting = () => confirm(t('meetings.delete_title', { title: detail.info.title }), t('meetings.delete_help'), t('common.delete'), t('common.cancel'), () => { void draft.save().then((saved) => saved ? run('delete-meeting', 'meetings.delete', { id }) : undefined).then((value) => { if (value !== undefined) { draft.discard(); disableRemoval(); router.replace('/(tabs)'); } }); }, true);
   return <Page subtitle={`${dateLabel(detail.info.start_iso, language)} · ${t('meetings.duration_minutes', { count: detail.info.duration_min })}`} inset={false} scroll={pane !== 'transcript'} scrollKey={`${id}:${pane}`} action={<ActionMenu label={copy('moreActions')} actions={[
-    { label: t('meetings.share_action'), onPress: () => void exportMeeting('share') },
-    { label: t('meetings.copy_formatted'), onPress: () => void exportMeeting('formatted') },
-    { label: t('meetings.copy_markdown'), onPress: () => void exportMeeting('markdown') },
-    { label: t('meetings.copy_with_transcript'), onPress: () => void exportMeeting('transcript') },
+    { label: t('mobile.simple.preview_title'), onPress: () => void exportMeeting() },
+    { label: t('insights.title'), onPress: () => setPane('insights') },
     { label: t('meetings.rename_action'), onPress: () => setEditor({ type: 'rename' }) },
     { label: t('meetings.delete_action'), onPress: deleteMeeting, destructive: true, disabled: active },
   ]} />}>
@@ -173,10 +169,11 @@ export default function Meeting() {
     {sourceIssue !== null && <Section><Notice>{t('meetings.source_changed')}</Notice>{sourceIssue ? <Body selectable>{sourceIssue}</Body> : null}</Section>}
     {detail.interruption && <Section><Notice error>{ownedFailureText(language, detail.interruption, detail.interruption_code)}</Notice></Section>}
     {(detail.conflicts ?? []).length > 0 && <Section description={t('meetings.conflict_notice')}>{detail.conflicts?.map((conflict) => <Row key={conflict.name} title={conflict.name} onPress={() => setViewConflict({ name: conflict.name, text: conflict.text ?? '' })} />)}</Section>}
-    <View style={{ marginBottom: theme.space[5] }}><NativeChoice label={copy('content')} segmented value={pane} options={(['notes', 'transcript', 'questions', 'insights'] as const).map((value) => ({ value, label: t(value === 'insights' ? 'insights.title' : `meetings.${value}`) }))} onChange={value => { ++interactions.current; setPane(value); }} /></View>
+    <View style={{ marginBottom: theme.space[5] }}><NativeChoice label={copy('content')} segmented value={pane} options={(['notes', 'transcript', 'questions'] as const).map((value) => ({ value, label: t(`meetings.${value}`) }))} onChange={value => { ++interactions.current; setPane(value); }} /></View>
     {pane === 'notes' && <>
-      <Section title={summaryHasHeading(detail.summary) ? undefined : t('mobile.summary')}>{detail.summary_outdated && <Notice>{t('meetings.summary_outdated')}</Notice>}{detail.summary ? <Markdown text={detail.summary} /> : <><Body muted>{t('meetings.empty_summary')}</Body><Button title={copy('viewTranscript')} subtle onPress={() => setPane('transcript')} /></>}<NativeChoice label={t('meetings.template')} value={template} options={(templates.value ?? []).map((value) => ({ value: value.id, label: templateLabel(value, language) }))} onChange={setTemplate} /><Button title={t(detail.summary ? 'meetings.regenerate' : 'meetings.summarize')} subtle busy={busy.has('summary')} disabled={active || !snapshot?.settings.llm.provider_id} onPress={() => void summarize()} />{!snapshot?.settings.llm.provider_id && <Button title={t('meetings.set_up_summaries')} subtle onPress={() => router.push({ pathname: '/settings/[section]', params: { section: 'models' } })} />}</Section>
-      <Section title={t('meetings.your_notes')}>{editingNotes ? <Field label={copy('notesPlaceholder')} multiline value={notes} onChangeText={value => { ++interactions.current; draft.setDraft(value); }} onFocus={() => { noteFocused.current = true; }} onBlur={() => { noteFocused.current = false; }} onSelectionChange={event => { const value = event.nativeEvent.selection; if (value.start !== noteSelection.current.start || value.end !== noteSelection.current.end) noteSelection.current = { ...value, revision: noteSelection.current.revision + 1 }; }} placeholder={t('meetings.notes_placeholder')} style={{ minHeight: 180 }} autoFocus /> : <Body selectable muted={!notes.trim()}>{notes.trim() ? notes : copy('noNotes')}</Body>}{!editingNotes && <Button title={copy(notes.trim() ? 'editNotes' : 'addNote')} subtle icon="create-outline" onPress={() => setEditingNotes(true)} />}{remoteChanged && <><Notice error>{t('mobile.notes.remote_change')}</Notice><Button title={t('mobile.refresh')} subtle onPress={() => confirm(t('mobile.notes.leave_title'), t('mobile.notes.leave_help'), t('mobile.refresh'), t('common.cancel'), draft.discard)} /></>}{editingNotes && <Button title={copy('finishEditing')} busy={draft.saving} disabled={remoteChanged} onPress={() => void save()} />}</Section>
+      <Section title={t('mobile.simple.personal_notes')} description={t('mobile.simple.private_notes_help')}>{editingNotes ? <Field label={copy('notesPlaceholder')} multiline value={notes} onChangeText={value => { ++interactions.current; draft.setDraft(value); }} onFocus={() => { noteFocused.current = true; }} onBlur={() => { noteFocused.current = false; }} onSelectionChange={event => { const value = event.nativeEvent.selection; if (value.start !== noteSelection.current.start || value.end !== noteSelection.current.end) noteSelection.current = { ...value, revision: noteSelection.current.revision + 1 }; }} placeholder={t('meetings.notes_placeholder')} style={{ minHeight: 180 }} autoFocus /> : <Body selectable muted={!notes.trim()}>{notes.trim() ? notes : copy('noNotes')}</Body>}{!editingNotes && <Button title={copy(notes.trim() ? 'editNotes' : 'addNote')} subtle icon="create-outline" onPress={() => setEditingNotes(true)} />}{remoteChanged && <><Notice error>{t('mobile.notes.remote_change')}</Notice><Button title={t('mobile.refresh')} subtle onPress={() => confirm(t('mobile.notes.leave_title'), t('mobile.notes.leave_help'), t('mobile.refresh'), t('common.cancel'), draft.discard)} /></>}{editingNotes && <Button title={copy('finishEditing')} busy={draft.saving} disabled={remoteChanged} onPress={() => void save()} />}</Section>
+      <MeetingSummary id={id} summary={summary} active={active} sourceBusy={draft.dirty || draft.saving || draft.conflict || editingNotes} beforeGenerate={draft.save} />
+      {snapshot?.settings.summary_automation === 'unanswered' && <SummaryAutomation />}
     </>}
     {pane === 'transcript' && <>
       <Actions><Button title={copy('manageSpeakers')} subtle icon="people-outline" onPress={() => setShowSpeakers(true)} />{canPlay && playRequested && <Button title={t('mobile.playback.stop')} subtle onPress={() => void run('playback', 'meetings.stopPlayback').then((value) => { if (value !== undefined) setPlayRequested(false); })} />}</Actions>
@@ -191,8 +188,10 @@ export default function Meeting() {
     </>}
     {pane === 'questions' && <AskPanel meetingId={id} meetingUid={detail.meeting_uid} targetConversationId={origin ? undefined : params.conversation_id} targetMessageId={origin ? undefined : params.message_id}
       beforeAsk={draft.save} onInteraction={() => { ++interactions.current; }} />}
+    {pane === 'insights' && <Section title={t('insights.title')}><Button title={t('meetings.notes')} subtle onPress={() => setPane('notes')} /></Section>}
+    {exportShown && <MeetingExport key={id} id={id} visible onClose={() => setExportShown(false)} />}
     {pane === 'insights' && (active ? <Notice>{t('insights.finished_only')}</Notice> : <View onTouchStart={() => { ++interactions.current; }}><InsightReview model={insightModel} notes={insightNotes} /></View>)}
-    <Modal visible={showSpeakers} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => { setShowSpeakers(false); setEditor(null); }}><Page title={copy('manageSpeakers')} bottomInset action={<Button title={t('common.close')} subtle onPress={() => { setShowSpeakers(false); setEditor(null); }} />}>
+    <Modal visible={showSpeakers} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => { setShowSpeakers(false); setEditor(null); }}><Page title={copy('manageSpeakers')} bottomInset recordingStatus={false} action={<Button title={t('common.close')} subtle onPress={() => { setShowSpeakers(false); setEditor(null); }} />}>
       {editor?.type === 'speaker' ? <Section description={t('mobile.speakers.name_help')}><Field label={t('mobile.speakers.name')} value={editor.initial} onChangeText={(initial) => setEditor((current) => current?.type === 'speaker' ? { ...current, initial } : current)} autoFocus /><Actions><Button title={t('common.save')} busy={busy.has('rename-speaker')} disabled={!canEditAttribution} onPress={() => { void run('rename-speaker', 'recognition.renameSpeaker', { id, voice: editor.voice, name: editor.initial.trim(), remember: false }).then((value) => { if (value !== undefined) { setEditor(null); return query.refresh(); } }); }} /><Button title={t('common.cancel')} subtle onPress={() => setEditor(null)} /></Actions></Section> : <>
       <Section title={t('mobile.speakers.choice')}>
         <Button title={t('mobile.speakers.manual')} busy={busy.has('recognition-start')} disabled={!speakerEnabled} onPress={recognize} />
@@ -206,10 +205,10 @@ export default function Meeting() {
     </Page></Modal>
     <TextDialog visible={editor?.type === 'rename'} title={t(editor?.type === 'rename' ? 'meetings.rename_title' : 'meetings.voice_name')} label={t(editor?.type === 'rename' ? 'meetings.meeting_title_label' : 'mobile.speakers.name')} initial={editor?.type === 'speaker' ? editor.initial : detail.info.title} help={editor?.type === 'speaker' ? t('mobile.speakers.name_help') : undefined} onClose={() => setEditor(null)} onSave={async (value) => {
       if (!editor) return false;
-      if (editor.type === 'rename') { if (!value.trim()) return false; const renamed = await saveThenRename(draft.save, () => run<string>('rename-meeting', 'meetings.rename', { id, title: value.trim() })); if (renamed !== undefined) { router.setParams({ id: renamed }); return true; } }
+      if (editor.type === 'rename') { if (!value.trim()) return false; const renamed = await saveThenRename(async () => await draft.save() && await summary.model.save(), () => run<string>('rename-meeting', 'meetings.rename', { id, title: value.trim() })); if (renamed !== undefined) { router.setParams({ id: renamed }); return true; } }
       else { const saved = await run('rename-speaker', 'recognition.renameSpeaker', { id, voice: editor.voice, name: value.trim(), remember: false }); if (saved !== undefined) { await query.refresh(); return true; } }
       return false;
     }} />
-    <Modal visible={viewConflict !== null} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => setViewConflict(null)}><Page title={viewConflict?.name} bottomInset><Body selectable>{viewConflict?.text}</Body><Actions><Button title={t('common.close')} subtle onPress={() => setViewConflict(null)} /><Button title={t('common.delete')} subtle destructive onPress={() => confirm(t('meetings.delete_conflict_title'), t('meetings.file_will_delete', { name: viewConflict?.name ?? '' }), t('common.delete'), t('common.cancel'), () => { void run('conflict-delete', 'meetings.conflictDelete', { id, name: viewConflict?.name }).then(() => { setViewConflict(null); return query.refresh(); }); }, true)} /></Actions></Page></Modal>
+    <Modal visible={viewConflict !== null} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => setViewConflict(null)}><Page title={viewConflict?.name} bottomInset recordingStatus={false}><Body selectable>{viewConflict?.text}</Body><Actions><Button title={t('common.close')} subtle onPress={() => setViewConflict(null)} /><Button title={t('common.delete')} subtle destructive onPress={() => confirm(t('meetings.delete_conflict_title'), t('meetings.file_will_delete', { name: viewConflict?.name ?? '' }), t('common.delete'), t('common.cancel'), () => { void run('conflict-delete', 'meetings.conflictDelete', { id, name: viewConflict?.name }).then(() => { setViewConflict(null); return query.refresh(); }); }, true)} /></Actions></Page></Modal>
   </Page>;
 }

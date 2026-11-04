@@ -1,4 +1,5 @@
 export interface NoteSnapshot { baseline: string; draft: string; remote: string; dirty: boolean; conflict: boolean; saving: boolean; failed: boolean; revision: number }
+export interface NoteHandoff { notes: string; expected_notes: string; pending_notes?: string }
 export class NoteSession {
   private state: NoteSnapshot;
   private listeners = new Set<() => void>();
@@ -11,6 +12,13 @@ export class NoteSession {
     this.state = { baseline: initial, draft: initial, remote: initial, dirty: false, conflict: false, saving: false, failed: false, revision: 0 };
   }
   getSnapshot = () => this.state;
+  captureHandoff = (): NoteHandoff => ({ notes: this.state.draft, expected_notes: this.state.baseline, ...(this.writing === null ? {} : { pending_notes: this.writing }) });
+  settle = (): Promise<boolean> => this.pending ?? Promise.resolve(true);
+  acknowledgeHandoff = (handoff: NoteHandoff, persisted: string): boolean => {
+    if (persisted !== handoff.notes) { this.adoptRemote(persisted); return false; }
+    this.update({ baseline: persisted, remote: persisted, failed: false });
+    return true;
+  };
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   private update(patch: Partial<NoteSnapshot>) {
     const next = { ...this.state, ...patch };

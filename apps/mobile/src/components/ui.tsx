@@ -5,14 +5,18 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Host, Menu, Picker, Button as NativeButton, Text as NativeText } from '@expo/ui/swift-ui';
 import { accessibilityLabel, buttonStyle, disabled as nativeDisabled, font, frame, pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
 import { useRuntime } from '../runtime';
-import { localizedFailure } from '../errors';
+import { ownedNativeFailureText } from '../errors';
+import { useRouter } from 'expo-router';
+import { clock } from '../format';
+import { recordingPresentation } from '../workflow-state';
+import { workflowText } from '../workflow-copy';
 
 export function Body({ children, muted = false, style, ...props }: TextProps & { muted?: boolean }) {
   const { theme } = useRuntime();
   return <Text {...props} style={[{ color: muted ? theme.colors.muted : theme.colors.foreground, fontFamily: theme.font.regular, fontSize: theme.size.section, lineHeight: theme.space[6] }, style]}>{children}</Text>;
 }
 
-export function Page({ title, subtitle, children, action, scroll = true, inset = true, bottomInset = false, scrollKey }: { title?: string; subtitle?: string; children: React.ReactNode; action?: React.ReactNode; scroll?: boolean; inset?: boolean; bottomInset?: boolean; scrollKey?: string }) {
+export function Page({ title, subtitle, children, action, footer, scroll = true, inset = true, bottomInset = false, scrollKey, recordingStatus = true }: { title?: string; subtitle?: string; children: React.ReactNode; action?: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; inset?: boolean; bottomInset?: boolean; scrollKey?: string; recordingStatus?: boolean }) {
   const { theme, error, store, t, language } = useRuntime();
   const scrollView = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const offsets = useRef(new Map<string, number>());
@@ -23,10 +27,23 @@ export function Page({ title, subtitle, children, action, scroll = true, inset =
   }, [scroll, scrollKey]);
   const content = <>
     {(title || subtitle || action) && <View style={{ paddingBottom: theme.space[5], flexDirection: 'row', alignItems: 'center', gap: theme.space[3] }}><View style={{ flex: 1 }}>{title && <Text accessibilityRole="header" style={{ fontFamily: theme.font.display, fontSize: theme.size['display-title'], color: theme.colors.foreground }}>{title}</Text>}{subtitle && <Body muted style={{ marginTop: title ? theme.space[2] : 0 }}>{subtitle}</Body>}</View>{action}</View>}
-    {error && <View accessibilityRole="alert" style={{ padding: theme.space[3], marginBottom: theme.space[4], backgroundColor: theme.colors.subtle, borderRadius: theme.radius.control }}><Body style={{ color: theme.colors.accent }}>{localizedFailure(language, error)}</Body><Button title={t('common.close')} subtle onPress={store.clearError} /></View>}
+    {error && <View accessibilityRole="alert" style={{ padding: theme.space[3], marginBottom: theme.space[4], backgroundColor: theme.colors.subtle, borderRadius: theme.radius.control }}><Body style={{ color: theme.colors.accent }}>{ownedNativeFailureText(language, error)}</Body><Button title={t('common.close')} subtle onPress={store.clearError} /></View>}
     {children}
   </>;
-  return <SafeAreaView edges={[...(inset ? ['top' as const] : []), 'left', 'right', ...(bottomInset ? ['bottom' as const] : [])]} style={{ flex: 1, backgroundColor: theme.colors.surface }}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>{scroll ? <ScrollView ref={scrollView} keyboardShouldPersistTaps="handled" onScroll={scrollKey ? (event) => { offsets.current.set(scrollKey, event.nativeEvent.contentOffset.y); } : undefined} scrollEventThrottle={32} contentContainerStyle={{ padding: theme.space[5], paddingBottom: theme.space[10] }} automaticallyAdjustKeyboardInsets>{content}</ScrollView> : <View style={{ flex: 1, padding: theme.space[5], paddingBottom: bottomInset ? theme.space[3] : 0 }}>{content}</View>}</KeyboardAvoidingView></SafeAreaView>;
+  return <SafeAreaView edges={[...(inset ? ['top' as const] : []), 'left', 'right', ...(bottomInset ? ['bottom' as const] : [])]} style={{ flex: 1, backgroundColor: theme.colors.surface }}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>{recordingStatus && <RecordingStatus />}{scroll ? <ScrollView ref={scrollView} keyboardShouldPersistTaps="handled" onScroll={scrollKey ? (event) => { offsets.current.set(scrollKey, event.nativeEvent.contentOffset.y); } : undefined} scrollEventThrottle={32} contentContainerStyle={{ padding: theme.space[5], paddingBottom: theme.space[10] }} automaticallyAdjustKeyboardInsets>{content}</ScrollView> : <View style={{ flex: 1, padding: theme.space[5], paddingBottom: bottomInset ? theme.space[3] : 0 }}>{content}</View>}{footer && <View style={{ paddingHorizontal: theme.space[5], paddingVertical: theme.space[3], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.border, backgroundColor: theme.colors.surface }}>{footer}</View>}</KeyboardAvoidingView></SafeAreaView>;
+}
+
+function RecordingStatus() {
+  const { snapshot, theme, t, language } = useRuntime();
+  const router = useRouter();
+  const meeting = snapshot?.meeting;
+  if (!meeting || !meeting.id && !meeting.retained_id || meeting.phase === 'idle' && !meeting.retained_id) return null;
+  const retained = Boolean(meeting.retained_id);
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${t('mobile.simple.recording_return')}. ${meeting.title}`} accessibilityHint={t('mobile.simple.recording_return_help')} onPress={() => router.push('/recording')} style={{ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.space[3], paddingVertical: theme.space[3], marginHorizontal: theme.space[5], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border }}>
+    <Ionicons accessible={false} name={retained ? 'alert-circle-outline' : 'radio-button-on'} size={20} color={theme.colors.accent} />
+    <View style={{ flex: 1 }}><Body style={{ fontFamily: theme.font.medium }}>{t('mobile.simple.recording_return')}</Body><Body muted style={{ fontSize: theme.size.content }}>{retained ? t('mobile.simple.recording_retained') : `${workflowText(language, recordingPresentation(meeting.phase).status)} · ${clock(meeting.elapsed_secs)}`}</Body></View>
+    <Ionicons accessible={false} name="chevron-forward" size={18} color={theme.colors.muted} />
+  </Pressable>;
 }
 
 export function Section({ title, description, children }: { title?: string; description?: string; children?: React.ReactNode }) {

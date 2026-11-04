@@ -7,7 +7,7 @@ import type { RuntimeClient } from './domain';
 import { LatestRequest, RuntimeStore, failure } from './state';
 import { resolveLanguage, translate } from './localization';
 import { makeTheme } from './theme';
-import { localizedFailure } from './errors';
+import { ownedNativeFailureText } from './errors';
 
 const client: RuntimeClient = {
   bootstrap: () => PennelMobile.bootstrap(),
@@ -67,7 +67,7 @@ export function useQuery<T>(method: MobileCommand, payload: Record<string, unkno
     setLoading(true); setError(null);
     try {
       await latest.current.run(() => store.client.invoke<T>(method, JSON.parse(payloadKey) as Record<string, unknown>), (next) => { setValue(next); setValueKey(queryKey); setLoading(false); });
-    } catch (error) { setError(localizedFailure(language, failure(error))); setLoading(false); }
+    } catch (error) { setError(ownedNativeFailureText(language, failure(error))); setLoading(false); }
   }, [enabled, language, method, payloadKey, queryKey, store]);
   useEffect(() => { setValue(null); void refresh(); return () => latest.current.cancel(); }, [refresh]);
   return { value: valueKey === queryKey ? value : null, loading, error, refresh };

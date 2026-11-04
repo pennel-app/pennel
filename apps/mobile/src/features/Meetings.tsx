@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, SectionList, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useQuery, useRuntime } from '../runtime';
-import type { MeetingInfo, RuntimeSnapshot } from '../domain';
+import type { MeetingDetail, MeetingInfo, RuntimeSnapshot } from '../domain';
 import { clock, dateLabel, meetingGroups } from '../format';
-import { Body, Button, Empty, Field, Loading, Notice, Page, Row, Section } from '../components/ui';
+import { Body, Button, Empty, Field, Loading, NativeChoice, Notice, Page, Row, Section } from '../components/ui';
+import { AskPanel } from '../components/AskPanel';
 import { useHapticFeedback } from '../haptics';
 import { recordingPresentation } from '../workflow-state';
 import { workflowText } from '../workflow-copy';
@@ -16,8 +17,13 @@ export default function Meetings() {
   const [title, setTitle] = useState('');
   const [search, setSearch] = useState('');
   const router = useRouter();
+  const params = useLocalSearchParams<{ pane?: string; conversation_id?: string; message_id?: string }>();
+  const [workspace, setWorkspace] = useState<'library' | 'questions'>(params.pane === 'questions' ? 'questions' : 'library');
+  const [questionMeetingId, setQuestionMeetingId] = useState('');
+  useEffect(() => { if (params.pane === 'questions') { setWorkspace('questions'); setQuestionMeetingId(''); } }, [params.pane, params.conversation_id, params.message_id]);
   const haptic = useHapticFeedback();
   const meetings = useQuery<MeetingInfo[]>('meetings.list', { query: search }, Boolean(snapshot?.ready));
+  const questionMeeting = useQuery<MeetingDetail>('meetings.read', { id: questionMeetingId }, Boolean(snapshot?.ready && questionMeetingId));
   useEffect(() => { const timer = setTimeout(() => setSearch(query.trim()), 180); return () => clearTimeout(timer); }, [query]);
   useFocusEffect(useCallback(() => { void meetings.refresh(); void store.refresh(); }, [meetings.refresh, store]));
   const phase = snapshot?.meeting.phase;
@@ -33,7 +39,16 @@ export default function Meetings() {
     if (value !== undefined) { setTitle(''); haptic('recordingStarted'); router.push('/recording'); }
     else haptic('error');
   };
+  const workspaceControl = <View style={{ marginBottom: theme.space[5] }}><NativeChoice label={t('navigation.meetings')} segmented value={workspace} options={[{ value: 'library', label: t('mobile.simple.library') }, { value: 'questions', label: t('mobile.simple.questions') }]} onChange={value => { setWorkspace(value); router.setParams({ pane: value }); }} /></View>;
+  if (workspace === 'questions') return <Page title={t('navigation.meetings')}>
+    {workspaceControl}
+    <Section description={t('mobile.simple.scope_help')}><NativeChoice label={t('mobile.simple.scope')} value={questionMeetingId} options={[{ value: '', label: t('mobile.simple.scope_all') }, ...(meetings.value ?? []).map(meeting => ({ value: meeting.id, label: meeting.title }))]} onChange={setQuestionMeetingId} /></Section>
+    {questionMeetingId && questionMeeting.loading && <Loading />}
+    {questionMeeting.error && <><Notice error>{questionMeeting.error}</Notice><Button title={t('common.retry')} subtle onPress={() => void questionMeeting.refresh()} /></>}
+    {snapshot?.ready && (!questionMeetingId || questionMeeting.value?.meeting_uid) && <AskPanel meetingId={questionMeetingId || undefined} meetingUid={questionMeeting.value?.meeting_uid} targetConversationId={!questionMeetingId ? params.conversation_id : undefined} targetMessageId={!questionMeetingId ? params.message_id : undefined} />}
+  </Page>;
   const header = <>
+    {workspaceControl}
     {connecting && !snapshot && <Loading />}
     {!snapshot && !connecting && <Section><Notice error>{t('mobile.unavailable')}</Notice><Button title={t('common.retry')} subtle onPress={() => void store.connect()} /></Section>}
     <Section title={t('meetings.new_meeting')} description={t('mobile.recording.help')}>

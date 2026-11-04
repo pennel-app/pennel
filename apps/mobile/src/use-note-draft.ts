@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { NoteSession } from './note-session';
 import { useRuntime } from './runtime';
 
-export function useNoteDraft(id: string | null | undefined, remote: string, sessionKey = id) {
+export function useNoteDraft(id: string | null | undefined, remote: string, sessionKey = id, autosave = true) {
   const { run } = useRuntime();
   const target = useRef(id);
   target.current = id;
@@ -15,10 +15,11 @@ export function useNoteDraft(id: string | null | undefined, remote: string, sess
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   useEffect(() => session.adoptRemote(remote), [remote, session]);
   useEffect(() => {
-    if (!state.dirty || state.conflict || state.failed || state.saving) return;
+    if (!autosave || !state.dirty || state.conflict || state.failed || state.saving) return;
     const timer = setTimeout(() => void session.save(), 500);
     return () => clearTimeout(timer);
-  }, [session, state]);
+  }, [autosave, session, state]);
   return { ...state, setDraft: session.edit, save: session.save, discard: session.discard, getCurrent: session.getSnapshot,
+    captureHandoff: session.captureHandoff, acknowledgeHandoff: session.acknowledgeHandoff, settle: session.settle,
     stageInsightInsertion: session.stageInsightInsertion, retarget: (meetingId: string) => { target.current = meetingId; } };
 }
