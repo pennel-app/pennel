@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "pr": 138,
+  "sources": {
+    "before": "3b6d0524a353fd671648652008ad270679814a9b",
+    "after": "68c432646878557fbf9067073a136ed931914587"
+  },
+  "label": "Owned Chromium MOCK RENDER of the production desktop frontend with an identical synthetic fixture backend. No user screen, data, browser profile, native runtime, or live provider was used.",
+  "viewport": [
+    980,
+    640
+  ],
+  "locale": "en",
+  "same_input_checks": "Exact normalized runtime fixture options and exact runtime meeting/library data have matching SHA-256 hashes for each before/after appearance pair. Only conversation_fixture_url was omitted from options because it names each archive directory; its module content is identical.",
+  "canonical_synthetic_data_sha256": "bc3e5797e089f445f812f3915e89425f88cb5b254a2cc2b8cbb9adf93f62a5db",
+  "files": [
+    {
+      "path": "pr-138/background-en-light.png",
+      "blob_sha": "b79d84ffd9b37627384315b878a34ce0ba0c2274",
+      "sha256": "93284f62f9f36ee90c3892c5d8ff8ea1ceb6374ac4545b94244577e210fe5bd3"
+    },
+    {
+      "path": "pr-138/mobile-completed-en-light.png",
+      "blob_sha": "1a53b768ddffd7bfa1764ef253f34979d03a22e0",
+      "sha256": "5327600858904550969de1f93306021774e6757ddd48cbae55c0851992796ff3"
+    },
+    {
+      "path": "pr-138/mobile-interrupted-nl-dark.png",
+      "blob_sha": "d97bf1b460b3b7d1db41f24d3a94d5ddfcbc9722",
+      "sha256": "1027e22ad79d224a4f6a065a1ad470466b72d2732eef5e832f382940cd55b144"
+    },
+    {
+      "path": "pr-138/recovery-nl-dark.png",
+      "blob_sha": "507300d8ab2b3be007088d1362098861429c4ef1",
+      "sha256": "2407ddadad2271d95dbd03ca98b10630c9ff4404c6eddae208dc28dfb18f407d"
+    },
+    {
+      "path": "pr-138/source-return-en-light.png",
+      "blob_sha": "3d2c361b36522b477f198fa5a762e8cd37e1d1a5",
+      "sha256": "7b969606a29a138b88d2972d202c0e3c4e141835cdfba25f9b39857ae1dd2a1c"
+    },
+    {
+      "path": "pr-138/before-light.png",
+      "blob_sha": "dee4c733300ad9798ab437431d6ad59902ec270d",
+      "sha256": "18a46c07bab0b885949419e50b07c9c74b731678a38cace66df816cc08cd6b2e"
+    },
+    {
+      "path": "pr-138/before-dark.png",
+      "blob_sha": "1d33c3a4df39d830439d6aec23dcbbe2695114b4",
+      "sha256": "7109e08f8ace9e054b58df18457d78fc952e8e4de753112844d1ba577c25ecea"
+    },
+    {
+      "path": "pr-138/after-light.png",
+      "blob_sha": "ee311ce6a9dbfba78994d9cae0d9022668899d16",
+      "sha256": "f8ae6e6246d6599eb87073b99ca789263e47809d9aed1fff63e0471f5c38d677"
+    },
+    {
+      "path": "pr-138/after-dark.png",
+      "blob_sha": "4a6c01595fd555c23afffa351568f73a58d8d61d",
+      "sha256": "a805a6769af8484f73ac51ce136f66195aff4ce429cf4f359bcb8983a42f68e9"
+    }
+  ],
+  "limits": "Synthetic frontend renders only. These images do not establish physical-device, native OS integration, persisted native storage, signed-upgrade, Cloud, real-call, or store acceptance."
+}

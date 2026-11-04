@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "pr": 137,
+  "sources": {
+    "before": "97a1bf89dab7d17776bd9bf14433746961cbfd78",
+    "after": "3b6d0524a353fd671648652008ad270679814a9b"
+  },
+  "label": "Owned Chromium MOCK RENDER of the production desktop frontend with an identical synthetic fixture backend. No user screen, data, browser profile, native runtime, or live provider was used.",
+  "viewport": [
+    980,
+    640
+  ],
+  "locale": "en",
+  "same_input_checks": "Exact normalized runtime fixture options and exact runtime meeting/library data have matching SHA-256 hashes for each before/after appearance pair. Only conversation_fixture_url was omitted from options because it names each archive directory; its module content is identical.",
+  "canonical_synthetic_data_sha256": "bc3e5797e089f445f812f3915e89425f88cb5b254a2cc2b8cbb9adf93f62a5db",
+  "files": [
+    {
+      "path": "pr-137/delayed-insert-en-light.png",
+      "blob_sha": "7448aeb14533fe6c80c67dd23e87c917dc1be4e9",
+      "sha256": "7dc81f037c4a2941e93adbe42bc093a842e74468a0eb2aa43c2576f01d60324d"
+    },
+    {
+      "path": "pr-137/mentions-nl-dark.png",
+      "blob_sha": "9a1bcb090ebf12c6cd3aaf2bd01b4ca4593b5c67",
+      "sha256": "696614d5db46b72094184d51da0b049608aed37cb3cca25727f3539f981c593c"
+    },
+    {
+      "path": "pr-137/speakers-en-light.png",
+      "blob_sha": "83b31d07710fba688917d39c5bd3905fb728cf93",
+      "sha256": "e3cfaedecd1957cce1ee1fda2bd0063a42ca5ed937890f613ccba54bcff5b720"
+    },
+    {
+      "path": "pr-137/before-light.png",
+      "blob_sha": "8fa2926e213954a294ccab8f9377bc749e2cba39",
+      "sha256": "e2681974e933bacbfc95105a829ff585b489c201cc51bed03cb73c4ba3aee4b7"
+    },
+    {
+      "path": "pr-137/before-dark.png",
+      "blob_sha": "ee502b6c42963671ffedc00c411856911bd6b2da",
+      "sha256": "e5e52f7e73510fda034b624a51b201b6202d881ec75d779c9289ed693795fe8c"
+    },
+    {
+      "path": "pr-137/after-light.png",
+      "blob_sha": "0b8a2f140dac820cc3f1a2509c20f089221225b2",
+      "sha256": "e88b56104593d15351fbcf282db7afcecb7390d0e8c466f026ae5187f7e5ce27"
+    },
+    {
+      "path": "pr-137/after-dark.png",
+      "blob_sha": "6d625c9705930112c8a46551438478139d643fdf",
+      "sha256": "a262153cf012394951a00ffe0398ecfc70d1f4d02446e52c073106959a963184"
+    }
+  ],
+  "limits": "Synthetic frontend renders only. These images do not establish physical-device, native OS integration, persisted native storage, signed-upgrade, Cloud, real-call, or store acceptance."
+}
