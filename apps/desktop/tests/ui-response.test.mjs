@@ -15,6 +15,18 @@ test("metadata follows the response locale without changing runtime state or spe
   setInterfaceLanguage("en");
 });
 
+test("saved-access migration localizes only owned metadata and preserves the credential status", () => {
+  const credential_store = { status: "migration_required", pending: 2 };
+  const settings = { ui_language: "nl", language: "en", dictionary: ["Choose a speech model."] };
+  const response = localizeUiResponse("migrate_saved_credentials", {
+    interface_language: "nl", settings, kinds: [], capabilities: {}, credential_store,
+    migration_warning: "Choose a speech model.",
+  });
+  assert.equal(response.migration_warning, "Kies een spraakmodel.");
+  assert.deepEqual(response.credential_store, credential_store);
+  assert.deepEqual(response.settings, settings);
+});
+
 test("only known UI message fields translate; identical user words and machine states do not", () => {
   setInterfaceLanguage("en");
   const content = "Kies een spraakmodel.";

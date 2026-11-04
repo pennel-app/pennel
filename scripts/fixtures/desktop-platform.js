@@ -302,7 +302,8 @@
     return clone(options.shortcuts?.find(value => value.id === id) || row);
   });
   let shortcutCapture = null, shortcutGeneration = 0;
-  const info = () => ({ pill_position_supported: options.pill_position_supported !== false, shortcuts: shortcutRows(), interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+  let credentialStore = clone(options.credential_store || { status: "ready", pending: 0 });
+  const info = () => ({ pill_position_supported: options.pill_position_supported !== false, shortcuts: shortcutRows(), interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), credential_store: clone(credentialStore), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
 
     unsaved_history_count: history.filter(entry => entry.status === "unsaved").length,
     kinds: clone(kinds), platform: options.platform || "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
@@ -1127,6 +1128,11 @@
         if (args.action === "record") settings.record_shortcut_enabled = JSON.stringify(binding) === JSON.stringify(row.default_binding);
         emit("settings-changed", null); return info();
       }
+      case "credential_store_status": return clone(credentialStore);
+      case "migrate_saved_credentials":
+        if (options.credential_migration_error) throw new Error("Synthetic credential migration failure");
+        credentialStore = { status: "ready", pending: 0 };
+        return info();
       case "save_settings": {
         if (options.settings_save_error) throw new Error(options.settings_save_error);
         settings = clone(args.settings);

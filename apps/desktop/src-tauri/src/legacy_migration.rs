@@ -516,7 +516,7 @@ mod tests {
     fn finish_keeps_the_legacy_meeting_folder_and_is_idempotent_without_credentials() {
         let root = tempfile::tempdir().unwrap();
         let (engine, destination, home) = imported_engine(root.path());
-        let secrets = Secrets::new(false);
+        let secrets = Secrets::in_memory_canonical();
         finish(&engine, &secrets, &destination, &home).unwrap();
         assert_eq!(
             engine.settings().meetings_dir,

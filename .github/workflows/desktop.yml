@@ -78,6 +78,8 @@ jobs:
           done
           if [ -n "$missing" ]; then
             sudo apt-get -o DPkg::Lock::Timeout=600 update
+            # missing is an intentional list of package names.
+            # shellcheck disable=SC2086
             sudo apt-get -o DPkg::Lock::Timeout=600 install -y $missing
           fi
       - name: Rust toolchain (Linux)
@@ -133,9 +135,6 @@ jobs:
       CMAKE_ARGS: ${{ vars.CMAKE_ARGS }}
       # linuxdeploy is itself an AppImage; self-hosted boxes may lack FUSE.
       APPIMAGE_EXTRACT_AND_RUN: "1"
-      # SHA-1 of the "Pennel Release Signing" certificate. Replacing the certificate resets every
-      # user's macOS privacy approvals, so it must be a deliberate change here.
-      PENNEL_RELEASE_CERT_SHA1: 5b347dcd6dc39a096da00c42aad7639a30320f62
     defaults:
       run:
         working-directory: apps/desktop
@@ -220,26 +219,53 @@ jobs:
       - name: Rust tests
         if: needs.changes.outputs.ci_mode != 'candidate'
         run: cargo test --manifest-path src-tauri/Cargo.toml
-      # A stable certificate keeps the designated requirement, and with it the user's privacy
-      # approvals, identical across releases. Forks and runs without the secret sign ad hoc.
-      - name: Choose the Mac signing identity
-        if: runner.os == 'macOS'
+      - name: Prepare personal-team Mac distribution credentials
+        if: runner.os == 'macOS' && needs.version.outputs.release == 'true'
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          RELEASE_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.PENNEL_MAC_DEVELOPER_ID_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.PENNEL_MAC_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          RELEASE_IDENTITY: ${{ vars.PENNEL_MAC_DEVELOPER_ID_IDENTITY }}
+          PENNEL_MAC_PROVISIONING_PROFILE_BASE64: ${{ secrets.PENNEL_MAC_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.PENNEL_MAC_NOTARY_API_KEY_CONTENT }}
+        shell: python
         run: |
-          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ] || [ -z "$RELEASE_IDENTITY" ]; then
-            echo "::notice::No release signing certificate available; the Mac bundle is signed ad hoc"
-            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          keychain="$RUNNER_TEMP/pennel-signing.keychain-db"
-          bash ../../scripts/import-mac-signing-cert.sh "$RELEASE_IDENTITY" "$keychain"
-          echo "PENNEL_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
-          echo "APPLE_SIGNING_IDENTITY=$RELEASE_IDENTITY" >> "$GITHUB_ENV"
-          echo "PENNEL_EXPECTED_REQUIREMENT=identifier \"dev.pennel.Pennel\" and certificate root = H\"$PENNEL_RELEASE_CERT_SHA1\"" >> "$GITHUB_ENV"
+          import base64
+          import os
+          from pathlib import Path
+          import subprocess
+          required = ("APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "RELEASE_IDENTITY", "PENNEL_MAC_PROVISIONING_PROFILE_BASE64")
+          if not all(os.environ.get(key) for key in required):
+              raise SystemExit("Publishing requires the personal Developer ID certificate and macOS provisioning profile; ad-hoc releases are disabled")
+          directory = Path(os.environ["RUNNER_TEMP"])
+          keychain = directory / "pennel-signing.keychain-db"
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"PENNEL_SIGNING_KEYCHAIN={keychain}\n")
+          subprocess.run(["bash", "../../scripts/import-mac-signing-cert.sh", os.environ["RELEASE_IDENTITY"], str(keychain)], check=True)
+          profile = directory / "pennel.provisionprofile"
+          profile.write_bytes(base64.b64decode(os.environ["PENNEL_MAC_PROVISIONING_PROFILE_BASE64"], validate=True))
+          profile.chmod(0o600)
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"PENNEL_MAC_PROVISIONING_PROFILE={profile}\n")
+              if os.environ.get("APPLE_API_KEY_CONTENT"):
+                  key = directory / "pennel-notarization.p8"
+                  key.write_text(os.environ["APPLE_API_KEY_CONTENT"])
+                  key.chmod(0o600)
+                  output.write(f"APPLE_API_KEY_PATH={key}\n")
+      - name: Build and verify the notarized Mac Homebrew distribution
+        if: runner.os == 'macOS' && needs.version.outputs.release == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.PENNEL_MAC_DEVELOPER_ID_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.PENNEL_MAC_NOTARY_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.PENNEL_MAC_NOTARY_API_KEY }}
+          APPLE_ID: ${{ secrets.PENNEL_MAC_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.PENNEL_MAC_NOTARY_APPLE_PASSWORD }}
+          APPLE_TEAM_ID: B538Q2K76C
+          PENNEL_RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          python3 ../../scripts/desktop-release.py "$PENNEL_RELEASE_VERSION" --homebrew
+          cp "../../build/desktop-release/$PENNEL_RELEASE_VERSION/aarch64-apple-darwin/mac-notarization.json" ../../build/mac-notarization.json
       - name: Installers with verified non-Mac x64 CPU baseline
+        if: runner.os != 'macOS' || needs.version.outputs.release != 'true'
         env:
           PENNEL_BUILD_TARGET: ${{ matrix.target }}
           PENNEL_BUNDLE_FORMATS: ${{ matrix.bundles }}
@@ -267,7 +293,11 @@ jobs:
               config = Path("../../build/tauri.version.conf.json").resolve()
               config.parent.mkdir(parents=True, exist_ok=True)
               config.write_text(json.dumps({"version": os.environ["PENNEL_RELEASE_VERSION"]}), encoding="utf-8")
-          release.build_distributable(npx, os.environ["PENNEL_BUILD_TARGET"], os.environ["PENNEL_BUNDLE_FORMATS"], config, os.environ, sys.platform)
+          environment = dict(os.environ)
+          if sys.platform == "darwin":
+              # Non-publishing CI has no entitlement to either installed Keychain group.
+              environment["APPLE_SIGNING_IDENTITY"] = "-"
+          release.build_distributable(npx, os.environ["PENNEL_BUILD_TARGET"], os.environ["PENNEL_BUNDLE_FORMATS"], config, environment, sys.platform)
           PY
       # Tauri's hook builds frontendDist before generate_context! in backend checks.
       - name: Rust lint after packaging
@@ -278,13 +308,21 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Inspect packaged Mac app without opening it
         if: runner.os == 'macOS'
+        env:
+          PENNEL_PUBLISHING: ${{ needs.version.outputs.release }}
         run: |
+          args=()
+          if [ "$PENNEL_PUBLISHING" = true ]; then
+            args+=(--require-developer-id --require-private-keychain)
+          fi
           python3 ../../scripts/verify-desktop-bundle.py src-tauri/target/${{ matrix.target }}/release/bundle/macos/Pennel.app \
             --output ../../build/mac-bundle-inspection.json \
-            ${PENNEL_EXPECTED_REQUIREMENT:+--designated-requirement "$PENNEL_EXPECTED_REQUIREMENT"}
+            "${args[@]}"
       - name: Remove the signing keychain
         if: always() && runner.os == 'macOS' && env.PENNEL_SIGNING_KEYCHAIN != ''
-        run: security delete-keychain "$PENNEL_SIGNING_KEYCHAIN"
+        run: |
+          security delete-keychain "$PENNEL_SIGNING_KEYCHAIN"
+          rm -f "$RUNNER_TEMP/pennel.provisionprofile" "$RUNNER_TEMP/pennel-notarization.p8"
       - uses: actions/upload-artifact@v5
         with:
           name: pennel-${{ matrix.target }}-development
@@ -296,6 +334,7 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             build/mac-bundle-inspection.json
+            build/mac-notarization.json
 
       # Installers are large; do not leave them on a shared runner's disk.
       - name: Remove bundles from the runner
@@ -339,6 +378,8 @@ jobs:
             echo "::error::expected exactly one Mac DMG for $VERSION"
             exit 1
           fi
+          receipt=$(find dist -type f -name mac-notarization.json | head -1)
+          python3 scripts/desktop-auto-release.py verify-mac "$VERSION" "${files[0]}" "$receipt"
           sha256sum "${files[@]}" | sed 's#  .*/#  #' > SHA256SUMS.txt
           gh release create "v${VERSION}" "${files[@]}" SHA256SUMS.txt \
             --target "$GITHUB_SHA" --title "Pennel ${VERSION}" --generate-notes
@@ -353,13 +394,14 @@ jobs:
           fi
           dmg=$(find dist -type f -name "Pennel_${VERSION}_aarch64.dmg" | head -1)
           sha=$(sha256sum "$dmg" | cut -d' ' -f1)
+          receipt=$(find dist -type f -name mac-notarization.json | head -1)
           install -m 700 -d ~/.ssh
           printf '%s\n' "$TAP_KEY" > ~/.ssh/tap_key
           chmod 600 ~/.ssh/tap_key
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
           git clone --depth 1 git@github.com:pennel-app/homebrew-pennel.git tap
           mkdir -p tap/Casks
-          python3 scripts/desktop-auto-release.py cask "$VERSION" "$sha" --repository "$GITHUB_REPOSITORY" > tap/Casks/pennel.rb
+          python3 scripts/desktop-auto-release.py cask "$VERSION" "$sha" --repository "$GITHUB_REPOSITORY" --notarization-receipt "$receipt" > tap/Casks/pennel.rb
           cd tap
           git config user.name "pennel-release"
           git config user.email "pennel-release@users.noreply.github.com"

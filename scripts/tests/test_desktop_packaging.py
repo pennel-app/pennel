@@ -51,6 +51,21 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertEqual(config["bundle"]["macOS"]["bundleVersion"], "84")
         self.assertTrue(config["bundle"]["createUpdaterArtifacts"])
 
+    def test_mac_homebrew_distribution_is_independent_of_windows_and_updater_keys(self):
+        config = release.release_config("0.2.0", "darwin", None, signing_identity="Developer ID Application: Personal Developer", homebrew=True)
+        self.assertFalse(config["bundle"]["createUpdaterArtifacts"])
+        self.assertNotIn("plugins", config)
+        self.assertEqual(config["bundle"]["macOS"]["bundleVersion"], "0.2.0")
+        with self.assertRaises(ValueError):
+            release.release_config("0.2.0", "darwin", None, signing_identity="Apple Development: Personal Developer", homebrew=True)
+        with self.assertRaises(ValueError):
+            release.release_config("0.2.0", "win32", None, homebrew=True)
+
+    def test_explicit_native_build_numbers_still_must_increase_for_homebrew_candidate(self):
+        for next_build, previous in ((83, 83), (82, 83), (1, None)):
+            with self.subTest(next_build=next_build), self.assertRaises(ValueError):
+                release.release_config("0.2.0", "darwin", None, next_build, previous, "Developer ID Application: Personal Developer", homebrew=True)
+
     def test_windows_signing_cannot_be_silently_skipped(self):
         with self.assertRaises(ValueError):
             release.release_config("0.2.0", "win32", "key")

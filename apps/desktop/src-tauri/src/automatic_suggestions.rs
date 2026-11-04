@@ -157,7 +157,7 @@ impl Operation {
 trait Backend {
     type Admission;
     fn admit(&self, id: &str) -> Result<Option<Self::Admission>>;
-    fn keys(&self) -> ApiKeys;
+    fn keys(&self) -> std::result::Result<ApiKeys, String>;
     fn begin(&self, admission: Self::Admission, keys: ApiKeys) -> Result<Job>;
     fn poll(&self, job_id: &str) -> Result<Job>;
     fn cancel(&self, job_id: &str);
@@ -168,7 +168,7 @@ struct CoreBackend<K> {
     engine: Arc<PennelEngine>,
     read_keys: K,
 }
-impl<K: Fn() -> ApiKeys> Backend for CoreBackend<K> {
+impl<K: Fn() -> std::result::Result<ApiKeys, String>> Backend for CoreBackend<K> {
     type Admission = Arc<MeetingInsightAnalysisAdmission>;
     fn admit(&self, id: &str) -> Result<Option<Self::Admission>> {
         self.engine
@@ -176,7 +176,7 @@ impl<K: Fn() -> ApiKeys> Backend for CoreBackend<K> {
             .admit_automatic_meeting_insight_analysis(id.into())
             .map_err(Into::into)
     }
-    fn keys(&self) -> ApiKeys {
+    fn keys(&self) -> std::result::Result<ApiKeys, String> {
         (self.read_keys)()
     }
     fn begin(&self, admission: Self::Admission, keys: ApiKeys) -> Result<Job> {
@@ -278,7 +278,13 @@ fn drive<B: Backend>(
         return ProgressState::Cancelled;
     }
     publish(operation.progress(ProgressState::Started));
-    let mut job = match backend.begin(admission, backend.keys()) {
+    let Ok(keys) = backend.keys() else {
+        drop(admission);
+        refresh_durable(backend, &mut operation, &mut durable, &mut publish);
+        publish(operation.progress(ProgressState::Failed));
+        return ProgressState::Failed;
+    };
+    let mut job = match backend.begin(admission, keys) {
         Ok(job) if job.meeting_uid == operation.meeting_uid => job,
         Ok(_) => {
             // No returned identifier is owned until its meeting binding has been verified.
@@ -367,7 +373,7 @@ pub(crate) fn run_after_summary(app: AppHandle, shared: Arc<Shared>, id: String)
     };
     let backend = CoreBackend {
         engine: shared.engine.clone(),
-        read_keys: || shared.keys(),
+        read_keys: || shared.keys_for_inference(pennel_core::InferenceCapability::Decision),
     };
     drive(
         &backend,
@@ -508,11 +514,11 @@ mod tests {
             *self.durable.borrow_mut() = stamp(0, Some("pending"));
             Ok(Some(()))
         }
-        fn keys(&self) -> pennel_core::ApiKeys {
+        fn keys(&self) -> std::result::Result<pennel_core::ApiKeys, String> {
             self.trace.borrow_mut().push("keys".into());
-            pennel_core::ApiKeys {
+            Ok(pennel_core::ApiKeys {
                 by_provider: Default::default(),
-            }
+            })
         }
         fn begin(&self, _: (), _: pennel_core::ApiKeys) -> Result<Job> {
             self.trace.borrow_mut().push("begin".into());

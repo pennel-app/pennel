@@ -94,8 +94,9 @@ pub async fn begin_insights_analysis(
                     language_policy,
                     expected_configuration_fingerprint,
                 ),
-            || shared.keys(),
+            || shared.keys_for_inference(pennel_core::InferenceCapability::Decision),
         )?;
+        let keys = keys.map_err(|message| PennelError::Storage { message })?;
         shared
             .engine
             .clone()

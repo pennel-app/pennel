@@ -291,7 +291,7 @@ pub async fn begin_live_question(
                 question,
                 history,
                 &evidence,
-                shared.keys(),
+                shared.keys_for_task(pennel_core::ProviderTask::Llm)?,
                 admission,
             )
             .map_err(|error| crate::commands::localize_error_message(error.to_string()))?;

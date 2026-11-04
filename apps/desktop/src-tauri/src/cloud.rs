@@ -42,6 +42,13 @@ pub struct CloudError {
 }
 
 impl CloudError {
+    pub(crate) fn credential(message: impl std::fmt::Display) -> Self {
+        Self {
+            code: "credential_store".into(),
+            message: crate::commands::localize_error_message(message.to_string()),
+        }
+    }
+
     pub(crate) fn other(message: impl std::fmt::Display) -> Self {
         Self {
             code: "error".into(),
@@ -83,6 +90,23 @@ async fn blocking<T: Send + 'static>(
         .map_err(CloudError::other)?
 }
 
+// Core's portable SecretStore intentionally uses Option for reads. Check host access before
+// entering account/vault operations so a locked or unmigrated item never looks like no vault.
+fn admit_credentials<T>(
+    access: std::result::Result<(), String>,
+    work: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    access.map_err(CloudError::credential)?;
+    work()
+}
+
+async fn credential_blocking<T: Send + 'static>(
+    shared: Arc<Shared>,
+    work: impl FnOnce(Arc<Shared>) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    blocking(move || admit_credentials(shared.secrets.ensure_cloud_access(), || work(shared))).await
+}
+
 #[derive(Default)]
 struct Signals {
     poked: bool,
@@ -108,10 +132,12 @@ impl SyncRunner {
             move || recording_meeting_ids(&shared)
         };
         let run = move |ids: Vec<String>| {
-            if !should_run(
-                shared.settings().cloud_sync,
-                shared.engine.cloud_signed_in(),
-            ) {
+            if shared.secrets.ensure_cloud_access().is_err()
+                || !should_run(
+                    shared.settings().cloud_sync,
+                    shared.engine.cloud_signed_in(),
+                )
+            {
                 return;
             }
             let report = shared.engine.cloud_sync_run(ids);
@@ -406,9 +432,8 @@ pub async fn cloud_login_start(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<LoginStartView> {
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    settings_changed(&app);
-    blocking(move || {
+    let started = credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
         shared
             .engine
             .cloud_login_start_with_locale(
@@ -419,7 +444,9 @@ pub async fn cloud_login_start(
             .map(Into::into)
             .map_err(err)
     })
-    .await
+    .await?;
+    settings_changed(&app);
+    Ok(started)
 }
 
 #[tauri::command]
@@ -429,8 +456,11 @@ pub async fn cloud_login_poll(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<LoginPollView> {
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    let poll = blocking(move || shared.engine.cloud_login_poll(device_code).map_err(err)).await?;
+    let poll = credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
+        shared.engine.cloud_login_poll(device_code).map_err(err)
+    })
+    .await?;
     if matches!(poll, CloudLoginPoll::Done { .. }) {
         settings_changed(&app);
         poke(&app);
@@ -442,9 +472,8 @@ pub async fn cloud_login_poll(
 #[tauri::command]
 pub async fn cloud_logout(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    settings_changed(&app);
-    blocking(move || {
+    credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
         shared.engine.cloud_logout().map_err(err)?;
         Ok(())
     })
@@ -462,13 +491,16 @@ fn current_report(app: &AppHandle) -> SyncReport {
 #[tauri::command]
 pub async fn cloud_account(shared: State<'_, Arc<Shared>>) -> Result<AccountView> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_account().map(Into::into).map_err(err)).await
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_account().map(Into::into).map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn cloud_devices(shared: State<'_, Arc<Shared>>) -> Result<Vec<DeviceView>> {
     let shared = shared.inner().clone();
-    blocking(move || {
+    credential_blocking(shared, move |shared| {
         shared
             .engine
             .cloud_devices()
@@ -485,22 +517,30 @@ pub async fn cloud_rename_device(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<()> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_rename_device(id, name).map_err(err)).await
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_rename_device(id, name).map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn cloud_revoke_device(id: String, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    blocking(move || shared.engine.cloud_revoke_device(id).map_err(err)).await
+    credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
+        shared.engine.cloud_revoke_device(id).map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn cloud_delete_account(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    settings_changed(&app);
-    blocking(move || shared.engine.cloud_delete_account().map_err(err)).await?;
+    credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
+        shared.engine.cloud_delete_account().map_err(err)
+    })
+    .await?;
     let _ = app.emit("sync-changed", SyncReportView::from(current_report(&app)));
     settings_changed(&app);
     crate::claude_access::poke(&app);
@@ -510,7 +550,10 @@ pub async fn cloud_delete_account(app: AppHandle, shared: State<'_, Arc<Shared>>
 #[tauri::command]
 pub async fn cloud_sync_enable(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<String> {
     let shared = shared.inner().clone();
-    let code = blocking(move || shared.engine.cloud_sync_enable().map_err(err)).await?;
+    let code = credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_enable().map_err(err)
+    })
+    .await?;
     poke(&app);
     settings_changed(&app);
     Ok(code)
@@ -519,7 +562,10 @@ pub async fn cloud_sync_enable(app: AppHandle, shared: State<'_, Arc<Shared>>) -
 #[tauri::command]
 pub async fn cloud_sync_setup(shared: State<'_, Arc<Shared>>) -> Result<CloudSyncSetup> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_sync_setup().map_err(err)).await
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_setup().map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -528,7 +574,10 @@ pub async fn cloud_sync_prepare(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<Option<String>> {
     let shared = shared.inner().clone();
-    let code = blocking(move || shared.engine.cloud_sync_prepare().map_err(err)).await?;
+    let code = credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_prepare().map_err(err)
+    })
+    .await?;
     settings_changed(&app);
     Ok(code)
 }
@@ -536,7 +585,10 @@ pub async fn cloud_sync_prepare(
 #[tauri::command]
 pub async fn cloud_sync_activate(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_sync_activate().map_err(err)).await?;
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_activate().map_err(err)
+    })
+    .await?;
     settings_changed(&app);
     poke(&app);
     Ok(())
@@ -548,7 +600,10 @@ pub async fn cloud_recovery_code_context(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<String> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_recovery_code_context(code).map_err(err)).await
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_recovery_code_context(code).map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -559,7 +614,7 @@ pub async fn cloud_recovery_confirm(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<()> {
     let shared = shared.inner().clone();
-    blocking(move || {
+    credential_blocking(shared, move |shared| {
         shared
             .engine
             .cloud_recovery_confirm(code, context)
@@ -574,7 +629,10 @@ pub async fn cloud_recovery_confirm(
 #[tauri::command]
 pub async fn cloud_sync_resume(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<()> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_sync_resume().map_err(err)).await?;
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_resume().map_err(err)
+    })
+    .await?;
     settings_changed(&app);
     poke(&app);
     Ok(())
@@ -600,7 +658,10 @@ pub async fn cloud_link_availability(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<CloudLinkAvailability> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_link_availability().map_err(err)).await
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_link_availability().map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -610,8 +671,8 @@ pub async fn cloud_link_start(
 ) -> Result<CloudLinkView> {
     let role = link_role(&role)?;
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    blocking(move || {
+    credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
         shared
             .engine
             .cloud_link_start(role, device_name(), platform().into())
@@ -628,8 +689,8 @@ pub async fn cloud_link_join(
 ) -> Result<CloudLinkView> {
     let role = link_role(&role)?;
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    blocking(move || {
+    credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
         shared
             .engine
             .cloud_link_join(code, role, device_name(), platform().into())
@@ -644,8 +705,11 @@ pub async fn cloud_link_poll(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<CloudLinkView> {
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    let view = blocking(move || shared.engine.cloud_link_poll().map_err(err)).await?;
+    let view = credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
+        shared.engine.cloud_link_poll().map_err(err)
+    })
+    .await?;
     link_changed(&app, &view);
     Ok(view)
 }
@@ -662,8 +726,11 @@ pub async fn cloud_link_approve(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<CloudLinkView> {
     let shared = shared.inner().clone();
-    let _mutation = identity_mutation(&shared);
-    let view = blocking(move || shared.engine.cloud_link_approve().map_err(err)).await?;
+    let view = credential_blocking(shared, move |shared| {
+        let _mutation = identity_mutation(&shared);
+        shared.engine.cloud_link_approve().map_err(err)
+    })
+    .await?;
     link_changed(&app, &view);
     Ok(view)
 }
@@ -682,7 +749,10 @@ pub async fn cloud_sync_unlock(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<()> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_sync_unlock(code).map_err(err)).await?;
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_unlock(code).map_err(err)
+    })
+    .await?;
     poke(&app);
     settings_changed(&app);
     Ok(())
@@ -691,13 +761,19 @@ pub async fn cloud_sync_unlock(
 #[tauri::command]
 pub async fn cloud_sync_new_recovery_code(shared: State<'_, Arc<Shared>>) -> Result<String> {
     let shared = shared.inner().clone();
-    blocking(move || shared.engine.cloud_sync_new_recovery_code().map_err(err)).await
+    credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_new_recovery_code().map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn cloud_sync_reset(app: AppHandle, shared: State<'_, Arc<Shared>>) -> Result<String> {
     let shared = shared.inner().clone();
-    let code = blocking(move || shared.engine.cloud_sync_reset().map_err(err)).await?;
+    let code = credential_blocking(shared, move |shared| {
+        shared.engine.cloud_sync_reset().map_err(err)
+    })
+    .await?;
     poke(&app);
     settings_changed(&app);
     Ok(code)
@@ -719,8 +795,12 @@ pub async fn cloud_sync_now(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<SyncReportView> {
     let shared = shared.inner().clone();
+    let report = credential_blocking(shared, move |shared| {
+        Ok(shared.engine.cloud_sync_last().into())
+    })
+    .await?;
     poke(&app);
-    blocking(move || Ok(shared.engine.cloud_sync_last().into())).await
+    Ok(report)
 }
 
 #[tauri::command]
@@ -819,6 +899,88 @@ mod tests {
             .unwrap();
         assert_eq!(changing, account_epoch(&shared));
         drop(mutation);
+    }
+
+    #[test]
+    fn inaccessible_credentials_reject_work_before_identity_or_vault_changes() {
+        use crate::secrets::CredentialState;
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        shared
+            .secrets
+            .set("pennel-cloud-vault-key", "synthetic-existing-key")
+            .unwrap();
+        for state in [
+            CredentialState::MigrationRequired,
+            CredentialState::Denied,
+            CredentialState::Locked,
+            CredentialState::Unavailable,
+        ] {
+            let before = shared.settings();
+            *shared.secrets.access_failure.lock().unwrap() = Some(state);
+            let mut called = false;
+            let result = admit_credentials(shared.secrets.ensure_cloud_access(), || {
+                called = true;
+                let _mutation = identity_mutation(&shared);
+                shared
+                    .secrets
+                    .set("pennel-cloud-vault-key", "replacement")
+                    .map_err(CloudError::other)
+            });
+            assert_eq!(result.unwrap_err().code, "credential_store");
+            assert!(!called, "{state:?} must not enter core account/vault work");
+            assert_eq!(shared.settings().cloud_sync, before.cloud_sync);
+        }
+        *shared.secrets.access_failure.lock().unwrap() = None;
+        assert_eq!(
+            shared.secrets.get("pennel-cloud-vault-key").as_deref(),
+            Some("synthetic-existing-key")
+        );
+    }
+
+    #[test]
+    fn absent_credentials_allow_first_time_cloud_setup() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        assert!(shared.secrets.get("pennel-cloud-refresh").is_none());
+        let mut called = false;
+        let result = admit_credentials(shared.secrets.ensure_cloud_access(), || {
+            called = true;
+            Ok(())
+        });
+        assert!(result.is_ok());
+        assert!(called);
+    }
+
+    #[test]
+    fn background_admission_pauses_and_resumes_without_losing_saved_access() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        shared
+            .secrets
+            .set("pennel-cloud-vault-key", "synthetic-existing-key")
+            .unwrap();
+        *shared.secrets.access_failure.lock().unwrap() =
+            Some(crate::secrets::CredentialState::MigrationRequired);
+        let passes = Arc::new(AtomicU64::new(0));
+        let worker = shared.clone();
+        let worker_passes = passes.clone();
+        let runner = SyncRunner::with_runner(Duration::from_secs(3600), Vec::new, move |_| {
+            let _ = admit_credentials(worker.secrets.ensure_cloud_access(), || {
+                worker_passes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            });
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(passes.load(Ordering::SeqCst), 0);
+        *shared.secrets.access_failure.lock().unwrap() = None;
+        runner.poke();
+        wait_until(|| passes.load(Ordering::SeqCst) == 1);
+        assert_eq!(
+            shared.secrets.get("pennel-cloud-vault-key").as_deref(),
+            Some("synthetic-existing-key")
+        );
+        runner.stop();
     }
 
     #[test]

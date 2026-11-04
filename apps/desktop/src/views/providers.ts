@@ -7,6 +7,7 @@ import { VisibilityPoll } from "../window-lifecycle";
 import { providerDestination } from "../processing-state";
 import { providerVerification } from "../provider-verification";
 import type { SetupTask } from "../task-setup-state";
+import { credentialAccess } from "../credential-access";
 
 let selected: string | null = null;
 
@@ -40,6 +41,7 @@ export async function providersView(ctx: Context): Promise<HTMLElement> {
   }), "provider-add");
   list.append(add);
   return h("div", {},
+    credentialAccess(ctx),
     ctx.info.migration_warning ? section(l("providers.api_keys"), null,
       h("p", { class: "help", role: "status" }, liveText(() => localizeBackendText(ctx.info.migration_warning ?? ""))),
       h("p", { class: "help" }, l("providers.migration_help"))) : null,

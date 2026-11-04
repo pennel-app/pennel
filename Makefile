@@ -11,7 +11,12 @@ verify-core: core
 	$(MAKE) test
 
 desktop: theme
-	cd apps/desktop && npm ci && ../../scripts/with-toolchain.sh npx tauri build
+	cd apps/desktop && npm ci
+	@if [ "$$(uname -s)" = Darwin ]; then \
+		scripts/with-toolchain.sh python3 scripts/mac_signing.py --flavor production --output build/mac-signing/local --build; \
+	else \
+		cd apps/desktop && ../../scripts/with-toolchain.sh npx tauri build; \
+	fi
 
 desktop-preview: theme
 	scripts/build-desktop-preview.sh

@@ -45,8 +45,7 @@ unsafe extern "C" {
         context: *mut c_void,
     );
     fn pennel_mac_other_instances() -> *mut c_char;
-    fn pennel_mac_migrate_legacy_key(account: *const c_char, error: *mut *mut c_char) -> bool;
-    fn pennel_mac_credential_presence(service: *const c_char, account: *const c_char) -> i32;
+    fn pennel_mac_credential_store(request: *const c_char) -> *mut c_char;
     fn pennel_mac_read_selection(sink: TextSink, context: *mut c_void);
     fn pennel_mac_copy_text(text: *const c_char, html: *const c_char) -> bool;
     fn pennel_mac_copy_secret(text: *const c_char) -> bool;
@@ -321,26 +320,13 @@ pub fn other_instances() -> Vec<ForegroundApp> {
     serde_json::from_value(unsafe { take_json(pennel_mac_other_instances()) }).unwrap_or_default()
 }
 
-/// Checks Keychain metadata without reading the secret or requesting authentication.
-pub fn credential_presence(service: &str, account: &str) -> Result<bool, String> {
-    let service = CString::new(service).map_err(|_| "Invalid credential service")?;
-    let account = CString::new(account).map_err(|_| "Invalid credential account")?;
-    match unsafe { pennel_mac_credential_presence(service.as_ptr(), account.as_ptr()) } {
-        0 => Ok(false),
-        1 => Ok(true),
-        status => Err(format!("Credential store is unavailable ({status})")),
+pub fn credential_store(request: &Value) -> Result<Value, String> {
+    let request = c_string(&request.to_string())?;
+    let reply = unsafe { take_json(pennel_mac_credential_store(request.as_ptr())) };
+    if reply.is_null() {
+        return Err("The credential response could not be read.".into());
     }
-}
-
-/// Imports an absent legacy credential with SecItemAdd; current/racing canonical entries win.
-pub fn migrate_legacy_key(account: &str) -> Result<bool, String> {
-    let account = c_string(account)?;
-    let mut error = ptr::null_mut();
-    let copied = unsafe { pennel_mac_migrate_legacy_key(account.as_ptr(), &mut error) };
-    match unsafe { take_string(error) } {
-        Some(error) => Err(error),
-        None => Ok(copied),
-    }
+    Ok(reply)
 }
 
 unsafe extern "C" fn text_result(context: *mut c_void, value: *const c_char, error: *const c_char) {

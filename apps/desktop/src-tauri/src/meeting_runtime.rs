@@ -375,14 +375,14 @@ fn start_with_calendar_impl(
     calendar_context: Option<serde_json::Value>,
     clean_end_context: Option<(AppHandle, crate::call_detection::DetectedCall)>,
 ) -> Result<String, String> {
+    let settings = shared.settings();
+    let keys = shared.keys_for(&[settings.meeting_stt.provider_id.as_str()])?;
     let token = begin_recording(shared, detected_app.clone())?;
     #[cfg(target_os = "macos")]
     let _tray_update = crate::macos_tray::UpdateOnDrop;
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
     let title = title.trim().to_owned();
-    let settings = shared.settings();
-    let keys = shared.keys();
     if let Err(error) = shared.engine.validate_meeting_setup(keys.clone()) {
         let error = error.to_string();
         fail(shared, &token, &error);
@@ -1076,20 +1076,30 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
     }
     // The event describes preparation; admission and policy epochs remain authoritative in core.
     if shared.settings().summary_automation == pennel_core::SummaryAutomation::Automatic {
-        let progress = crate::meeting_postprocess::SummaryProgress::start(&app, &shared, &id);
-        let result = shared.engine.summarize_meeting_automatically(
-            id.clone(),
-            shared.settings().default_template,
-            shared.keys(),
-        );
-        if let Some(progress) = progress {
-            match &result {
-                Ok(None) => progress.finish(crate::meeting_postprocess::ProgressState::Skipped),
-                _ => progress.complete(&result),
+        match shared.keys_for_task(pennel_core::ProviderTask::Llm) {
+            Err(_) => {
+                LOG.error("Automatic summarization paused until saved access is available.");
             }
-        }
-        if result.is_err() {
-            LOG.error("Automatic summarization failed; transcript and notes remain saved.");
+            Ok(keys) => {
+                let progress =
+                    crate::meeting_postprocess::SummaryProgress::start(&app, &shared, &id);
+                let result = shared.engine.summarize_meeting_automatically(
+                    id.clone(),
+                    shared.settings().default_template,
+                    keys,
+                );
+                if let Some(progress) = progress {
+                    match &result {
+                        Ok(None) => {
+                            progress.finish(crate::meeting_postprocess::ProgressState::Skipped)
+                        }
+                        _ => progress.complete(&result),
+                    }
+                }
+                if result.is_err() {
+                    LOG.error("Automatic summarization failed; transcript and notes remain saved.");
+                }
+            }
         }
     }
     crate::automatic_suggestions::run_after_summary(app.clone(), shared.clone(), id.clone());
@@ -1111,10 +1121,14 @@ fn automatically_name_meeting(app: &AppHandle, shared: &Arc<Shared>, id: String)
     let Ok(_job) = LibraryJob::new(shared) else {
         return;
     };
+    let Ok(keys) = shared.keys_for_task(pennel_core::ProviderTask::Llm) else {
+        LOG.error("Automatic meeting naming paused until saved access is available.");
+        return;
+    };
     match shared
         .engine
         .clone()
-        .automatically_name_meeting(id.clone(), shared.keys())
+        .automatically_name_meeting(id.clone(), keys)
     {
         Ok(true) => {
             let _ = app.emit("meeting-updated", &id);

@@ -100,8 +100,70 @@ impl Shared {
         self.engine.settings()
     }
 
-    pub fn keys(&self) -> ApiKeys {
-        self.secrets.keys(&self.engine.settings().providers)
+    pub fn keys_for_task(&self, task: pennel_core::ProviderTask) -> Result<ApiKeys, String> {
+        let settings = self.settings();
+        let choice = match task {
+            pennel_core::ProviderTask::DictationStt => settings.dictation_stt,
+            pennel_core::ProviderTask::MeetingStt => settings.meeting_stt,
+            pennel_core::ProviderTask::Llm => settings.llm,
+        };
+        self.keys_for(&[choice.provider_id.as_str()])
+    }
+
+    pub fn keys_for_inference(
+        &self,
+        capability: pennel_core::InferenceCapability,
+    ) -> Result<ApiKeys, String> {
+        let settings = self.settings();
+        let config = match capability {
+            pennel_core::InferenceCapability::Decision => settings.decision,
+            pennel_core::InferenceCapability::Reranking => settings.reranking,
+        };
+        match config {
+            Some(config) => self.keys_for(&[config.provider_id.as_str()]),
+            None => self.keys_for(&[]),
+        }
+    }
+
+    /// Model listings must not fail because one unrelated saved key is blocked.
+    pub fn accessible_keys(&self) -> ApiKeys {
+        let settings = self.settings();
+        self.secrets.configure_providers(&settings.providers);
+        let mut keys = ApiKeys {
+            by_provider: Default::default(),
+        };
+        for provider in &settings.providers {
+            if provider.kind == pennel_core::ProviderKind::PennelCloud
+                && self.secrets.ensure_cloud_access().is_err()
+            {
+                continue;
+            }
+            if let Ok(found) = self.secrets.keys_checked(std::slice::from_ref(provider)) {
+                keys.by_provider.extend(found.by_provider);
+            }
+        }
+        keys
+    }
+
+    pub fn keys_for(&self, ids: &[&str]) -> Result<ApiKeys, String> {
+        let settings = self.settings();
+        self.secrets.configure_providers(&settings.providers);
+        let providers: Vec<_> = settings
+            .providers
+            .into_iter()
+            .filter(|p| ids.contains(&p.id.as_str()))
+            .collect();
+        if providers
+            .iter()
+            .any(|p| p.kind == pennel_core::ProviderKind::PennelCloud)
+        {
+            self.secrets
+                .ensure_cloud_access()
+                .map_err(crate::commands::localize_error_message)?;
+        }
+        self.secrets
+            .keys_checked(&providers)
+            .map_err(crate::commands::localize_error_message)
     }
 
     pub fn refresh_system_speech_availability(&self) {
@@ -114,7 +176,7 @@ impl Shared {
 
     pub fn configured_dictation_models(&self) -> Vec<pennel_core::ConfiguredDictationModel> {
         self.refresh_system_speech_availability();
-        self.engine.configured_dictation_models(self.keys())
+        self.engine.configured_dictation_models(self.accessible_keys())
     }
 
     pub fn set_meeting_dictating(&self, dictating: bool) {
@@ -127,6 +189,98 @@ impl Shared {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_task_keys_ignore_unrelated_blocked_credentials() {
+        use pennel_core::{ModelChoice, ProviderAccount, ProviderKind, ProviderTask};
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        let mut settings = shared.settings();
+        settings.providers.push(ProviderAccount {
+            id: "on-device-text".into(),
+            kind: ProviderKind::AppleIntelligence,
+            name: "On-device".into(),
+            base_url: String::new(),
+        });
+        settings.providers.push(ProviderAccount {
+            id: "blocked-speech".into(),
+            kind: ProviderKind::Groq,
+            name: "Speech".into(),
+            base_url: "https://example.invalid".into(),
+        });
+        settings.llm = ModelChoice {
+            provider_id: "on-device-text".into(),
+            model: "system".into(),
+        };
+        settings.meeting_stt = ModelChoice {
+            provider_id: "blocked-speech".into(),
+            model: "fixture".into(),
+        };
+        shared.engine.update_settings(settings).unwrap();
+        *shared.secrets.access_failure.lock().unwrap() =
+            Some(crate::secrets::CredentialState::MigrationRequired);
+        assert!(
+            shared
+                .keys_for_task(ProviderTask::Llm)
+                .unwrap()
+                .by_provider
+                .is_empty()
+        );
+        assert!(shared.keys_for_task(ProviderTask::MeetingStt).is_err());
+    }
+
+    #[test]
+    fn inference_key_resolution_checks_only_the_requested_capability() {
+        use pennel_core::{InferenceCapability, InferenceProtocol, ProviderAccount, ProviderKind};
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().to_path_buf());
+        let mut settings = shared.settings();
+        settings.providers.push(ProviderAccount {
+            id: "local-decision".into(),
+            kind: ProviderKind::LmStudio,
+            name: "Local".into(),
+            base_url: "http://127.0.0.1:1".into(),
+        });
+        settings.providers.push(ProviderAccount {
+            id: "blocked-ranking".into(),
+            kind: ProviderKind::OpenAi,
+            name: "Ranking".into(),
+            base_url: "https://example.invalid".into(),
+        });
+        settings.decision = Some(pennel_core::new_inference_config(
+            "local-decision".into(),
+            InferenceProtocol::LocalDecider,
+        ));
+        settings.reranking = Some(pennel_core::new_inference_config(
+            "blocked-ranking".into(),
+            InferenceProtocol::Tei,
+        ));
+        shared.engine.update_settings(settings).unwrap();
+        *shared.secrets.access_failure.lock().unwrap() =
+            Some(crate::secrets::CredentialState::Locked);
+        assert!(
+            shared
+                .keys_for_inference(InferenceCapability::Decision)
+                .unwrap()
+                .by_provider
+                .is_empty()
+        );
+        assert!(
+            shared
+                .keys_for_inference(InferenceCapability::Reranking)
+                .is_err()
+        );
+        let mut settings = shared.settings();
+        settings.reranking = None;
+        shared.engine.update_settings(settings).unwrap();
+        assert!(
+            shared
+                .keys_for_inference(InferenceCapability::Reranking)
+                .unwrap()
+                .by_provider
+                .is_empty()
+        );
+    }
 
     #[test]
     fn interface_preferences_keep_the_system_snapshot_and_active_session() {
