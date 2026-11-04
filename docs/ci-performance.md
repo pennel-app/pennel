@@ -128,6 +128,13 @@ observations. Mobile ordinary lane artifacts have separate lane/mode/attempt
 names and a combined `mobile-validation-attempt-<attempt>` result; legacy manual
 artifacts retain the names documented below.
 
+Archive the complete attempt's metadata, observed log identities and timing ZIPs
+before rerunning its workflows. The hosted preflight's next rerun no longer
+listed the preceding attempt's artifact names. A newer receipt must never be
+substituted for the earlier physical observation. Observer read failures may be
+retried without rerunning successful jobs; preserve those read-error snapshots
+separately from the physical performance cohort.
+
 Only a passing complete-cohort assessment permits enabling the candidate for
 ordinary validation. Until then retain the serial default. If correctness,
 cache compatibility, cold behavior or schedule-inclusive targets fail, retain

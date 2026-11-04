@@ -1,1 +1,0 @@
-Synthetic core qualification input. No runtime behavior or dependency change.
