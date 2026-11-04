@@ -1,5 +1,5 @@
 import { api, type AppInfo, type LocalModel, type PermissionInfo, type ProviderAccount, type ProviderTaskTestResult, type SetupReadiness } from "../api";
-import { controlButton, errorText, field, h, menuButton, select } from "../dom";
+import { controlButton, errorText, field, formatBytes, h, menuButton, select } from "../dom";
 import { bindLocalization, getInterfaceLanguage, l, localizeBackendText, refreshLocalization, t, type TranslationKey } from "../i18n.ts";
 import type { Context } from "../main";
 import { providerDestination } from "../processing-state";
@@ -9,6 +9,7 @@ import { accountView } from "./account";
 import { modelPicker, providerModelCatalog, type ModelPickerState } from "./model-picker";
 import { providerDetails } from "./providers";
 import { localModelDisplayName } from "../settings-presentation";
+import { recommendedSpeechModel } from "../dictation-home-state";
 
 const tasks: SetupTask[] = ["dictation_stt", "meeting_stt", "llm"];
 const titleKeys: Record<SetupTask, TranslationKey> = {
@@ -38,18 +39,18 @@ export function settingsOverview(ctx: Context): HTMLElement {
   return settingsTaskOverview(ctx);
 }
 
-export function settingsTaskOverview(ctx: Context, models = false): HTMLElement {
+export function settingsTaskOverview(ctx: Context, models = false, selectedTasks: SetupTask[] = tasks): HTMLElement {
   let disposed = false;
   const rows = new Map<SetupTask, { status: HTMLElement; selected: HTMLElement; destination: HTMLElement; action: HTMLButtonElement; revision: number; signature: string; pending: boolean; queued: boolean }>();
   const root = h("div", { class: "settings-overview" },
     models ? null : h("h2", {}, l("settings.setup.overview_title")), h("p", { class: "help" }, l(models ? "settings.setup.models_help" : "settings.setup.overview_help")),
-    ...tasks.map((task) => {
+    ...selectedTasks.map((task) => {
       const status = h("p", { class: "settings-task-status help", role: "status" }, l("common.loading"));
       const selected = h("p", { class: "settings-task-selection", "data-task-selection": task });
       const destination = h("p", { class: "settings-task-status help" });
       const action = controlButton({ class: "btn", "data-setup-task": task, onclick: () => ctx.openSetup(task) }, l("settings.setup.finish"));
       rows.set(task, { status, selected, destination, action, revision: 0, signature: "", pending: false, queued: false });
-      return h("section", { class: "settings-task-row" },
+      return h("section", { class: "settings-task-row", "data-task-row": task },
         h("div", { class: "settings-task-copy" }, h("h3", {}, l(titleKeys[task])), h("p", { class: "help" }, l(helpKeys[task])), selected, destination, status), action);
     }));
   const refreshTask = async (task: SetupTask) => {
@@ -99,12 +100,20 @@ export function settingsTaskOverview(ctx: Context, models = false): HTMLElement 
       }
     }
   };
-  const refresh = () => Promise.all(tasks.map(refreshTask));
+  const refresh = () => Promise.all(selectedTasks.map(refreshTask));
   ctx.onDispose(() => { disposed = true; for (const row of rows.values()) row.revision++; });
   ctx.onInfoChange(() => { void refresh(); });
   ctx.onFocusChange((focused) => { if (focused) void refresh(); });
   bindLocalization(root, () => { void refresh(); });
   void refresh();
+  return root;
+}
+
+/** Task readiness sits beside the settings it affects, using the same atomic chooser. */
+export function settingsTaskRows(ctx: Context, selectedTasks: SetupTask[]): HTMLElement {
+  const root = settingsTaskOverview(ctx, true, selectedTasks);
+  root.classList.add("settings-task-readiness");
+  root.querySelector(":scope > p")?.remove();
   return root;
 }
 
@@ -148,6 +157,7 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
   let closing = false;
   let accountPage = false;
   let providerOpen = false;
+  let otherOptionsOpen = false;
   let deferred = false;
   let pointerInFlight = false;
   let pointerGeneration = 0;
@@ -331,9 +341,10 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
         const account = info.settings.providers.find((provider) => provider.id === choice.provider_id);
         if (account) location = processingLocation(account.kind, account.base_url);
         const kind = info.kinds.find((item) => item.kind === account?.kind);
-        const [nextModels, nextPermissions] = await Promise.all([
+        const [nextModels, nextPermissions, speechModels] = await Promise.all([
           account?.kind === "local" ? api.localModels(null, false) : Promise.resolve([] as LocalModel[]),
           task === "llm" ? Promise.resolve([] as PermissionInfo[]) : api.permissions(),
+          task === "llm" ? Promise.resolve([] as LocalModel[]) : api.localModels(info.settings.language, true),
         ]);
         if (!state.current(mine)) { disposeView(nextView); return; }
         localModels = nextModels; permissions = nextPermissions;
@@ -403,6 +414,34 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
           }
           node.append(modelPicker(ctx, choice, localModels, pickerUi, (model) => { draft.setModel(model); changed(account.kind === "local"); }));
         }
+        if (task !== "llm") {
+          const recommended = recommendedSpeechModel(speechModels);
+          const localKind = compatible.find((item) => item.kind === "local");
+          const selected = account?.kind === "local" && choice.model === recommended?.id;
+          const recommendedPicker = selected && recommended ? modelPicker(ctx, choice, [recommended], pickerUi, () => undefined) : null;
+          if (recommendedPicker) { recommendedPicker.firstElementChild?.remove(); recommendedPicker.firstElementChild?.remove(); }
+          const options = h("details", { class: "task-setup-other-options", open: otherOptionsOpen }, h("summary", {}, l("onboarding.other_options")), node);
+          options.addEventListener("toggle", () => { otherOptionsOpen = options.open; });
+          const recommendation = recommended && localKind?.availability.status !== "unsupported" ? h("section", { class: "recommended-speech-setup", "data-recommended-speech": recommended.id },
+            h("h3", {}, l("settings.setup.recommended_speech")),
+            h("p", { class: "settings-task-selection" }, localModelDisplayName(recommended)),
+            h("p", { class: "help" }, l("settings.setup.speech_download", { size: formatBytes(recommended.size_bytes) })),
+            h("p", { class: "help" }, localizeBackendText(recommended.description)),
+            localKind?.availability.reason ? h("p", { class: "help" }, localizeBackendText(localKind.availability.reason)) : null,
+            selected ? recommendedPicker : controlButton({ class: "btn", "data-setup-recommended": true, onclick: async () => {
+              try {
+                let local = base.info.settings.providers.find((item) => item.kind === "local");
+                if (!local) {
+                  await ctx.mutate(async () => { const next = await api.addProvider("local"); local = next.settings.providers.find((item) => item.kind === "local"); return next; });
+                }
+                if (closed || !local) return;
+                draft.chooseProvider(local.id, recommended.id); draft.setModel(recommended.id); pickerUi.search = ""; pickerUi.manual = false; otherOptionsOpen = false; changed();
+              } catch (error) { report(error); }
+            } }, l("settings.setup.use_recommended")))
+            : h("p", { class: "help", "data-recommended-unavailable": true }, localKind?.availability.reason ? localizeBackendText(localKind.availability.reason) : l("onboarding.no_local_model"));
+          node = h("div", { class: "guided-setup speech-task-setup" }, recommendation,
+            h("p", { class: "help setup-current-choice" }, l("settings.setup.current_draft", { provider: account?.name ?? t("providers.not_configured"), model: choice.model || t("providers.choose_model") })), options);
+        }
         if (missingAccess()) {
           node.append(h("p", { class: "help" }, l("settings.setup.access_help")), controlButton({ "data-setup-access": true, onclick: async () => {
             try {
@@ -444,18 +483,22 @@ export function openTaskSetupDialog(base: Context, task: SetupTask, beforeClose:
     try {
       if (document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)) document.activeElement.blur();
       try { await flush(); } catch (error) { if (finish) throw error; }
+      if (closed) return;
       await beforeClose();
+      if (closed) return;
       state.settingsSaved();
       if (finish && state.failure) throw state.failure;
       if (finish) {
         const tested = sample;
         await state.track(base.mutate(async () => {
           const next = await api.info();
+          if (closed) throw new DOMException("Setup closed", "AbortError");
           if (choiceFingerprint(next, candidate) !== expected) throw new Error(t("settings.setup.changed_review"));
           const configuration = taskConfiguration(next, task, localModels.filter((model) => model.state.kind === "downloaded").map((model) => model.id), candidate);
           if (configuration.state !== "ready") throw new Error(configurationLabel(configuration));
           return api.applyTaskModelChoice(task, candidate);
         }), "settings");
+        if (closed) return;
         const applied = taskFingerprint(base.info, task);
         if (tested?.result.verified && tested.fingerprint === expected && applied === tested.fingerprint) providerVerification.set(task, applied, tested.result);
       }

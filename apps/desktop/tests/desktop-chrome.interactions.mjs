@@ -1,4 +1,5 @@
 const assert = (value, message) => { if (!value) throw new Error(message); };
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 const luminance = color => color.match(/[\d.]+/g).slice(0, 3).map(Number).map(value => {
   const channel = value / 255;
@@ -21,11 +22,12 @@ export async function checkDesktopChrome() {
   const fixture = window.__PENNEL_FIXTURE__;
   assert(location.hostname === "127.0.0.1" && fixture && window.__PENNEL_PLATFORM__, "Chrome checks require the owned fixture server.");
   const { api } = await import("/src/api.ts");
-  await until(() => document.querySelector(".own-notes textarea") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The workspace did not become ready.");
+  await until(() => document.querySelector(".live-notes") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The workspace did not become ready.");
   const original = await api.desktopEnvironment();
   const root = document.documentElement;
-  const note = document.querySelector(".own-notes textarea");
-  const container = document.querySelector(".meeting-detail");
+  const note = document.querySelector(".live-notes");
+  const container = document.querySelector(".live-workspace");
+  selectMeetingPane(container, "notes");
   const stored = localStorage.getItem("pennel.workspace.presentation.v1");
   const toggle = document.querySelector('[data-command="toggle_sidebar"]');
   const initialVisible = root.dataset.sidebarVisible !== "false";
@@ -57,14 +59,13 @@ export async function checkDesktopChrome() {
     assert(getComputedStyle(toggle).outlineStyle !== "none" && parseFloat(getComputedStyle(toggle).outlineWidth) >= 2, "Keyboard focus is not visibly distinct from the control boundary.");
     toggle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
     assert(document.activeElement?.matches(".toolbar-recording"), "Toolbar arrow navigation did not reach the recording action.");
-    note.closest("details").open = true;
     note.focus(); note.setSelectionRange(2, 9);
     const value = note.value;
     const glass = { ...original, material: "liquid_glass", reduce_transparency: false, increase_contrast: false, focused: true };
     for (const environment of [glass, { ...glass, reduce_motion: true }, { ...glass, reduce_transparency: true }, { ...glass, increase_contrast: true }, { ...glass, focused: false }, glass]) {
       fixture.emit("desktop-environment-changed", environment);
       await settle();
-      assert(document.querySelector(".meeting-detail") === container && document.querySelector(".own-notes textarea") === note, "An OS environment change remounted the document.");
+      assert(document.querySelector(".live-workspace") === container && document.querySelector(".live-notes") === note, "An OS environment change remounted the document.");
       assert(document.activeElement === note && note.value === value && note.selectionStart === 2 && note.selectionEnd === 9, "An OS environment change lost editor focus, draft or selection.");
       assert(root.dataset.nativeMaterial === (environment.reduce_transparency || environment.increase_contrast ? "opaque" : "liquid_glass"), "Accessibility preferences did not choose an opaque material.");
       if (environment.increase_contrast) {
@@ -74,12 +75,15 @@ export async function checkDesktopChrome() {
       }
     }
     assert(getComputedStyle(document.querySelector(".workspace-body")).backgroundColor !== "rgba(0, 0, 0, 0)", "The reading surface became transparent.");
-    const disabledAction = document.querySelector('.meeting-footer button.btn:disabled');
+    selectMeetingPane(container, "summary");
+    await until(() => container.querySelector('.meeting-summary-generate:disabled'), "The unavailable summary action did not render.");
+    const disabledAction = container.querySelector('.meeting-summary-generate:disabled');
     assert(disabledAction && getComputedStyle(disabledAction).opacity === '1'
       && contrast(getComputedStyle(disabledAction).color, getComputedStyle(disabledAction).backgroundColor) >= 4.5, "Disabled actions lost their readable text contrast.");
+    selectMeetingPane(container, "notes");
     const navigationControl = document.querySelector(".library-shortcuts button");
     const usesInter = control => getComputedStyle(control).fontFamily.split(",")[0].replaceAll('"', "").trim() === "Desktop Inter";
-    assert(usesInter(toggle) && usesInter(navigationControl) && usesInter(document.querySelector('.meeting-header h1')), "Desktop controls and titles must use the bundled Inter typography.");
+    assert(usesInter(toggle) && usesInter(navigationControl) && usesInter(document.querySelector('.live-title')), "Desktop controls and titles must use the bundled Inter typography.");
     assert(parseFloat(getComputedStyle(navigationControl).fontSize) >= 13 && navigationControl.getBoundingClientRect().height >= 34, "Source navigation lost its readable labels or 34 pt targets.");
     if (!initialVisible) toggle.click();
     const separator = document.querySelector(".workspace-separator");
@@ -88,11 +92,12 @@ export async function checkDesktopChrome() {
     assert(separator.getAttribute("aria-valuenow") === "320", "Sidebar keyboard resizing did not reach its maximum.");
     await settle();
     assert(document.documentElement.scrollWidth <= innerWidth, "Maximum sidebar width created horizontal overflow.");
-    assert(Math.abs(document.querySelector(".toolbar-section").getBoundingClientRect().left - document.querySelector(".meeting-header h1").getBoundingClientRect().left) < 1, "Toolbar context and the reading column lost their shared left alignment.");
-    const footer = document.querySelector(".meeting-footer").getBoundingClientRect();
-    const footerInset = parseFloat(getComputedStyle(document.querySelector(".meeting-footer")).paddingRight);
+    assert(Math.abs(document.querySelector(".toolbar-section").getBoundingClientRect().left - document.querySelector(".live-title").getBoundingClientRect().left) < 1, "Toolbar context and the reading column lost their shared left alignment.");
+    const localActions = document.querySelector(".live-recording-band .recording-controls");
+    const footer = localActions.getBoundingClientRect();
+    const footerInset = parseFloat(getComputedStyle(localActions).paddingRight);
     assert(Math.abs(recording.getBoundingClientRect().right - (footer.right - footerInset)) < 1, "The recording action and footer actions lost their shared right alignment.");
-    for (const control of document.querySelectorAll(".meeting-footer .btn,.meeting-footer .menu-button")) {
+    for (const control of localActions.querySelectorAll(".btn,.menu-button")) {
       if (!control.getClientRects().length) continue;
       const rect = control.getBoundingClientRect();
       assert(rect.height >= 28 && rect.left >= footer.left && rect.right <= footer.right && rect.bottom <= footer.bottom, `Footer actions became clipped or crowded at maximum sidebar width: ${JSON.stringify({ control: control.className, rect: rect.toJSON(), footer: footer.toJSON() })}`);
@@ -108,7 +113,7 @@ export async function checkDesktopChrome() {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true, bubbles: true, cancelable: true }));
     assert(root.dataset.sidebarVisible === "true" && document.activeElement === search && search.value === "Project", "Find did not restore and focus the same sidebar search with its retained query.");
     search.value = "";
-    assert(document.querySelector(".meeting-detail") === container, "Sidebar actions replaced the open meeting.");
+    assert(document.querySelector(".live-workspace") === container, "Sidebar actions replaced the open meeting.");
 
     toggle.focus();
     toggle.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
@@ -122,7 +127,7 @@ export async function checkDesktopChrome() {
     await until(() => document.querySelector(`[data-settings-category="${lastCategory}"][aria-current="page"]`) && !document.querySelector("#content").inert, "End did not select the last Settings category.");
     assert(document.activeElement?.dataset.settingsCategory === lastCategory, "Settings category navigation lost focus after mounting.");
     assert(Math.abs(document.querySelector(".toolbar-section").getBoundingClientRect().left - document.querySelector(".settings-title").getBoundingClientRect().left) < 1, "Settings context and content lost their shared left inset.");
-    assert(categories.length > 5, "Settings navigation unexpectedly lost categories.");
+    assert(categories.length === 5, "Settings must expose its five task-based categories.");
     await until(() => window.__PENNEL_DESKTOP_COMMAND_STATE__?.find === false, "Unavailable Settings search remained enabled in the native menu.");
     assert(!document.querySelector('.workspace-toolbar [data-command="find"]'), "Settings must not reintroduce a second search control.");
     modal = document.createElement("dialog");
@@ -132,7 +137,7 @@ export async function checkDesktopChrome() {
     assert(document.querySelector(".settings-categories") && modal.open, "A native command bypassed the modal guard.");
     modal.close(); modal.remove(); modal = null;
     fixture.emit("desktop-command", "meetings");
-    await until(() => document.querySelector(".meeting-detail") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The workspace did not reopen after closing its modal.");
+    await until(() => document.querySelector(".live-workspace") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The workspace did not reopen after closing its modal.");
     assert(document.querySelectorAll('.workspace-toolbar button[tabindex="0"]').length === 1, "Reenabling a toolbar control created multiple Tab stops.");
     return { checks: 38, native_appearance_verified: false };
   } finally {

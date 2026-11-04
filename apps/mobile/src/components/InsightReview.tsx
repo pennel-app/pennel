@@ -101,7 +101,7 @@ export function InsightReview({ model, notes, onDirtyChange }: { model: InsightR
     })}
     {model.items().length === 0 && <Body muted>{t('insights.empty')}</Body>}
     <Modal visible={sourceView !== null} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setSourceView(null)}>
-      <Page title={sourceView ? `${t('insights.open_source')} · ${clock(sourceView.source.start_ms / 1000)}` : undefined} bottomInset>
+      <Page recordingStatus={false} title={sourceView ? `${t('insights.open_source')} · ${clock(sourceView.source.start_ms / 1000)}` : undefined} bottomInset>
         {sourceView && <>{!sourceView.matched && <Notice>{t('insights.source_changed')}</Notice>}<Body selectable>{(() => {
           const range = sourceView.matched ? utf8Range(sourceView.text, sourceView.source.start_byte, sourceView.source.end_byte) : null;
           return range ? <>{sourceView.text.slice(0, range.start)}<Text style={{ backgroundColor: theme.colors.selection }}>{sourceView.text.slice(range.start, range.end)}</Text>{sourceView.text.slice(range.end)}</> : sourceView.text;
@@ -110,14 +110,14 @@ export function InsightReview({ model, notes, onDirtyChange }: { model: InsightR
       </Page>
     </Modal>
     <Modal visible={choices !== null} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setChoices(null)}>
-      <Page title={t('insights.reassociate')} bottomInset>
+      <Page recordingStatus={false} title={t('insights.reassociate')} bottomInset>
         <Body>{t('insights.reassociate_help')}</Body>
         {choices?.sources.length ? <NativeChoice label={t('insights.choose_source')} value={choices.chosen} options={[{ value: '', label: t('insights.choose_source') }, ...choices.sources.map((source, index) => ({ value: String(index), label: `${clock(source.start_ms / 1000)} · ${source.quote.slice(0, 80)} (${index + 1})` }))]} onChange={value => setChoices(current => current && ({ ...current, chosen: value }))} /> : <Notice>{t('insights.no_matching_source')}</Notice>}
         <Actions><Button title={t('insights.use_source')} disabled={!choices || choices.chosen === ''} onPress={() => { if (choices) { const source = choices.sources[Number(choices.chosen)]; void model.reassociate({ item_id: choices.item.id, item_revision: choices.item.revision, source_index: choices.sourceIndex, source, evidence_cutoff_ms: Math.max(choices.item.evidence_cutoff_ms, source.end_ms) }).then(() => setChoices(null)); } }} /><Button title={t('common.cancel')} subtle onPress={() => setChoices(null)} /></Actions>
       </Page>
     </Modal>
     <Modal visible={insertionReview !== null} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setInsertionReview(null)}>
-      <Page title={t('insights.check_insertion')} bottomInset>
+      <Page recordingStatus={false} title={t('insights.check_insertion')} bottomInset>
         <Body>{t('insights.review_insertion_help')}</Body>
         <Section title={t('insights.current_notes')}><Body selectable>{insertionReview?.notes.text}</Body></Section>
         <Section title={t('insights.intended_insertion')}><Body selectable>{insertionReview?.receipt.markdown}</Body></Section>

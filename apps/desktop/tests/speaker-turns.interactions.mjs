@@ -1,3 +1,4 @@
+import { selectMeetingPane, openMeetingTools } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -9,7 +10,7 @@ function owned() {
   return window.__PENNEL_FIXTURE__;
 }
 function edit(input, value) { input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
-function tab(root, name) { root.querySelector(`[data-live-tab="${name}"]`).click(); }
+function tab(root, name) { selectMeetingPane(root, name); }
 
 export async function checkDurableSpeakerTurns() {
   const fixture = owned();
@@ -49,7 +50,9 @@ export async function checkDurableSpeakerTurns() {
   await until(() => first.querySelector(".speaker").textContent === "Confirmed synthetic person", "A confirmed manual name lost to automatic attribution.");
   tab(root, "questions");
   root.querySelector(".citation").click();
-  await until(() => first.classList.contains("live-source-highlight"), "A valid source stopped resolving after speaker attribution changed.");
+  await until(() => !root.querySelector(".live-source-notice").hidden, "Changed speaker context did not retain the original source excerpt.");
+  assert(root.querySelector(".live-source-notice blockquote")?.textContent === request.anchors[0].source_text && !root.querySelector(".live-source-highlight"),
+    "A speaker-revised source lost its frozen excerpt or was presented as current.");
   root.querySelector(".live-source-back").click();
   assert(!root.querySelector('[data-live-pane="questions"]').hidden, "Source return lost the question pane.");
   tab(root, "transcript");
@@ -78,11 +81,11 @@ export async function checkDurableSpeakerTurns() {
 export async function checkDurablePlayback() {
   const fixture = owned();
   const { t } = await import("/src/i18n.ts");
-  await until(() => document.querySelector(".meeting-detail .transcript-line"), "The finished transcript did not mount.");
+  await until(() => document.querySelector(".live-workspace .transcript-line"), "The finished transcript did not mount.");
   fixture.workspace.attribution(0, { speaker: "me", voice: 3, attribution: { kind: "single", voices: [3] } });
   fixture.emit("meeting-updated", fixture.options.meeting_id);
-  await until(() => document.querySelector('.meeting-detail .transcript-line[data-transcript-index="0"] .speaker')?.textContent === t("meetings.speaker_number", { number: 3 }), "The changed inferred speaker did not render.");
-  const row = document.querySelector('.meeting-detail .transcript-line[data-transcript-index="0"]');
+  await until(() => document.querySelector('.live-workspace .transcript-line[data-transcript-index="0"] .speaker')?.textContent === t("meetings.speaker_number", { number: 3 }), "The changed inferred speaker did not render.");
+  const row = document.querySelector('.live-workspace .transcript-line[data-transcript-index="0"]');
   row.querySelector(".transcript-stamp").click();
   await until(() => fixture.workspace.playback(), "Playback did not use the durable utterance resolver.");
   const playback = fixture.workspace.playback();
@@ -94,15 +97,17 @@ export async function checkDurablePlayback() {
 export async function checkUnavailableSpeakerMetadata() {
   owned();
   const { t } = await import("/src/i18n.ts");
-  await until(() => document.querySelector(".meeting-detail .transcript-line"), "The readable transcript did not mount.");
-  const root = document.querySelector(".meeting-detail");
+  await until(() => document.querySelector(".live-workspace .transcript-line"), "The readable transcript did not mount.");
+  const root = document.querySelector(".live-workspace");
   assert(root.querySelectorAll(".transcript-line").length === 3, "Unavailable metadata removed spoken text.");
   assert([...root.querySelectorAll(".transcript-stamp")].every(stamp => stamp.disabled), "Unavailable metadata allowed source guessing for playback.");
   assert(!root.querySelector(".speaker-picker"), "Unsupported speaker metadata exposed a writable naming picker.");
+  assert(root.querySelector(".live-attribution-notice")?.textContent === t("meetings.attribution_metadata_unsupported"), "Unsupported metadata has no usable explanation.");
+  await openMeetingTools(root, "speakers");
+  await until(() => [...root.querySelectorAll("button")].some(button => button.textContent === t("meetings.recognize_speakers") && button.disabled), "Unsupported speaker controls did not finish loading.");
   for (const key of ["meetings.retranscribe_audio", "meetings.recognize_speakers"]) {
     const button = [...root.querySelectorAll("button")].find(button => button.textContent === t(key));
     assert(button?.disabled, `Unsupported metadata left ${key} writable.`);
   }
-  assert(root.querySelector(".attribution-notice")?.textContent === t("meetings.attribution_metadata_unsupported"), "Unsupported metadata has no usable explanation.");
   return { readableTranscript: true, playbackSourceNotGuessed: true, metadataReadOnly: true, explanation: true, syntheticOnly: true };
 }

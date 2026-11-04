@@ -264,6 +264,14 @@ struct BridgePayload: @unchecked Sendable {
     func text(_ key: String, default fallback: String = "") -> String { values[key] as? String ?? fallback }
     func flag(_ key: String, default fallback: Bool = false) -> Bool { values[key] as? Bool ?? fallback }
     func number(_ key: String, default fallback: Double = 0) -> Double { (values[key] as? NSNumber)?.doubleValue ?? fallback }
+    func positiveUInt32(_ key: String, default fallback: UInt32) throws -> UInt32 {
+        guard let raw = values[key] else { return fallback }
+        guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let value = UInt32(exactly: number.doubleValue), value > 0 else {
+            throw PennelBridgeError("invalid_request", "Invalid history limit.")
+        }
+        return value
+    }
     func required(_ key: String) throws -> String {
         guard let value = values[key] as? String, !value.isEmpty else {
             throw PennelBridgeError("invalid_request", "Missing \(key).")

@@ -17,7 +17,7 @@
   "onboarding.language_german": "German",
   "onboarding.language": "Speech language",
   "onboarding.speech_recognition": "Speech recognition",
-  "onboarding.local": "Local",
+  "onboarding.local": "On this computer",
   "onboarding.apple_dictation": "Apple dictation",
   "onboarding.own_provider": "Your provider",
   "onboarding.engine_title": "Start with your voice.",
@@ -128,5 +128,7 @@
   "onboarding.meeting_ready_help": "Your transcript and notes stay together in the same meeting. You can set up summaries afterwards.",
   "onboarding.check_setup": "Check setup",
   "onboarding.open_recording": "Continue to recording",
-  "onboarding.open_dictation": "Open dictation"
+  "onboarding.open_dictation": "Open dictation",
+  "onboarding.cloud_setup": "Set up Pennel Cloud",
+  "onboarding.cloud_setup_help": "Choose Pennel Cloud under Other options in the speech chooser, sign in, then use that setup. Your current task changes only when you apply it."
 }

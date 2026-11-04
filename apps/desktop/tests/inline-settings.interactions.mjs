@@ -1,4 +1,5 @@
 /** Run only in the owned loopback fixture server; no native windows or user data are used. */
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 function ownedFixture() {
   if (!/^(127\.0\.0\.1|localhost)$/.test(location.hostname) || !window.__PENNEL_FIXTURE__ || !window.__PENNEL_PLATFORM__) {
     throw new Error("Inline Settings checks require the owned synthetic fixture server.");
@@ -66,27 +67,24 @@ export async function checkInlineSettingsFlow() {
   const fixture = ownedFixture();
   const { api } = await import("/src/api.ts");
   const { t } = await import("/src/i18n.ts");
-  await until(() => document.querySelector(".meeting-detail"), "Use the saved meeting-notes fixture.");
+  await until(() => document.querySelector(".live-workspace"), "Use the saved meeting-notes fixture.");
   const owner = document;
   const id = fixture.options.meeting_id;
   const before = await api.meetingDetail(id);
-  const title = document.querySelector(".meeting-detail h1").textContent;
+  const title = document.querySelector(".live-workspace .live-title").value;
   const observed = observeCommands({ longTranscript: true });
   try {
     // A longer owned transcript makes reading-position restoration observable.
-    const oldArticle = document.querySelector(".meeting-detail");
     fixture.emit("workspace-navigate", { section: "meetings", tab: null, meeting_id: id, jump_ms: null });
-    await until(() => document.querySelector(".meeting-detail") !== oldArticle, "The prepared transcript did not mount.");
-    const notesTab = () => document.querySelector('.meeting-detail [role="tab"][data-tab="notes"]');
-    const transcriptTab = () => document.querySelector('.meeting-detail [role="tab"][data-tab="transcript"]');
-    click(notesTab()); await settle();
-    const own = document.querySelector(".meeting-detail .own-notes");
-    own.open = true; await settle();
-    const note = own.querySelector("textarea");
+    await until(() => document.querySelectorAll('.live-transcript .transcript-line').length >= before.transcript.length * 24, "The prepared transcript did not refresh in its retained workspace.");
+    const notesTab = () => document.querySelector('.live-workspace [role="tab"][data-live-tab="notes"]');
+    const transcriptTab = () => document.querySelector('.live-workspace [role="tab"][data-live-tab="transcript"]');
+    selectMeetingPane(document.querySelector(".live-workspace"), "notes"); await settle();
+    const note = document.querySelector(".live-notes");
     const literal = "Owned inline Settings draft. This is synthetic test text.";
     edit(note, literal); note.setSelectionRange(6, 18);
     click(transcriptTab()); await settle();
-    const panel = document.querySelector(".meeting-detail .meeting-panel");
+    const panel = document.querySelector(".live-workspace .live-transcript");
     assert(panel.scrollHeight > panel.clientHeight, "The prepared transcript needs a scrollable reading area.");
     panel.scrollTop = Math.min(120, panel.scrollHeight - panel.clientHeight); await settle();
     const readingPosition = panel.scrollTop;
@@ -105,11 +103,11 @@ export async function checkInlineSettingsFlow() {
     await until(appearanceReady, "The appearance category did not finish opening.");
     click(document.querySelector(".settings-back"));
     await until(() => transcriptTab()?.getAttribute("aria-selected") === "true", "Returning from Settings lost the selected Transcript view.");
-    await until(() => Math.abs(document.querySelector(".meeting-panel").scrollTop - readingPosition) <= 1, "Returning from Settings lost the reading position.");
-    assert(document.querySelector(".meeting-detail h1").textContent === title, "Returning selected a different meeting.");
+    await until(() => Math.abs(document.querySelector(".live-transcript").scrollTop - readingPosition) <= 1, "Returning from Settings lost the reading position.");
+    assert(document.querySelector(".live-workspace .live-title").value === title, "Returning selected a different meeting.");
     click(notesTab()); await settle();
-    const restored = document.querySelector(".own-notes textarea");
-    assert(restored.value === literal && document.querySelector(".own-notes").open, "Returning from Settings lost the note or its disclosure state.");
+    const restored = document.querySelector(".live-notes");
+    assert(restored.value === literal && !document.querySelector('[data-live-pane="notes"]').hidden, "Returning from Settings lost the note or its selected pane.");
     assert(restored.selectionStart === 6 && restored.selectionEnd === 18, "Returning from Settings lost the note selection.");
 
     settingsShortcut(fixture.info().platform);
@@ -119,7 +117,7 @@ export async function checkInlineSettingsFlow() {
     await until(() => document.querySelector(".models-settings"), "A Settings deep link did not open in the main window.");
     click(document.querySelector(".settings-back"));
     await until(() => notesTab()?.getAttribute("aria-selected") === "true", "A category deep link overwrote the previous task.");
-    assert(document.querySelector(".own-notes textarea").value === literal, "The deep-link roundtrip lost the note.");
+    assert(document.querySelector(".live-notes").value === literal, "The deep-link roundtrip lost the note.");
     assertNoWindowHop(observed.operations.slice(operationStart));
     assert(!observed.operations.some(operation => ["start_meeting", "stop_meeting"].includes(operation.command)), "Settings navigation started or stopped recording.");
     assert(!fixture.unknown.length, "Inline Settings used an unsupported fixture operation.");
@@ -147,8 +145,8 @@ export async function checkInlineSettingsRecordingFlow() {
     await until(() => document.querySelector(".settings-workspace"), "Recording Settings did not stay in the main window.");
     await until(() => visible(document.querySelector(".settings-recording")), "Inline Settings hides the active recording state.");
     assert(document.querySelector(".settings-recording").textContent.includes(t("meetings.return_recording")), "Inline Settings has no useful active-recording return action.");
-    click(button(document.querySelector(".settings-categories"), t("navigation.recording")));
-    await until(() => button(document.querySelector(".settings-categories"), t("navigation.recording"))?.getAttribute("aria-current") === "page", "The recording preference category is not available.");
+    fixture.emit("workspace-navigate", settingsRoute("recording"));
+    await until(() => document.querySelector('[data-settings-category="meeting-settings"][aria-current="page"]') && document.querySelector('[data-settings-detail="recording"][open]'), "The recording preference subsection is not available.");
     click(document.querySelector(".settings-recording"));
     await until(() => document.querySelector(".live-notes"), "The visible recording action did not return to the same active task.");
     click(document.querySelector(".library-settings"));

@@ -21,12 +21,22 @@ const enter = (input, value) => {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 };
 function click(node) {
+  if (node) reveal(node);
   assert(node?.isConnected && !node.disabled && node.getClientRects().length && !node.closest("[hidden]"), "The expected guided setup action is unavailable.");
   node.focus(); node.click();
 }
+async function taskSettings(slot = "dictation_stt") {
+  if (document.querySelector(`.settings-task-readiness button[data-setup-task="${slot}"]`)) return;
+  const tab = slot === "meeting_stt" ? "meeting-settings" : "dictation";
+  if (!document.querySelector(`[data-settings-category="${tab}"][aria-current="page"]`)) {
+    ownedFixture().emit("workspace-navigate", {section: "settings", tab, meeting_id: null, jump_ms: null});
+  }
+  await until(() => document.querySelector(`.settings-task-readiness button[data-setup-task="${slot}"]`), "Task settings did not reveal their setup action.");
+}
 async function openTask(slot) {
+  await taskSettings(slot);
   click(document.querySelector(`button[data-setup-task="${slot}"]`));
-  await until(() => dialog()?.dataset.setupTask === slot && dialog().querySelector("[data-setup-apply]"), "The selected task did not open the shared guided chooser.");
+  await until(() => dialog()?.dataset.setupTask === slot && dialog().querySelector("[data-setup-apply]") && dialog().querySelector("[data-setup-source]"), "The selected task did not open the shared guided chooser.");
   return dialog();
 }
 async function chooseModel(id) {
@@ -46,9 +56,8 @@ function reveal(input) {
 export async function checkGuidedSetup() {
   const fixture = ownedFixture();
   const before = structuredClone(assignments(fixture.info()));
-  await until(() => document.querySelectorAll(".models-settings button[data-setup-task]").length === 3, "Models does not expose the three everyday processing tasks.");
-  const experimental = document.querySelector("[data-inference-experimental]");
-  assert(experimental && !experimental.open, "Experimental connection forms are expanded in everyday model setup.");
+  await taskSettings();
+  assert(document.querySelectorAll(".settings-task-readiness button[data-setup-task]").length === 2, "Dictation must expose speech recognition and its shared text processing.");
   assert(!fixture.setupTrace.samples.length, "Opening Models ran an inference sample automatically.");
   const opener = document.querySelector('button[data-setup-task="llm"]');
   await openTask("llm");
@@ -284,8 +293,8 @@ export async function checkGuidedSetupFailedApplyCancel() {
     await until(() => !dialog(), "Cancel could not leave a failed Apply.");
     fixture.emit("workspace-navigate", { section: "settings", tab: "providers", meeting_id: null, jump_ms: null });
     await until(() => document.querySelector(".providers"), "Providers navigation did not flush and leave Models.");
-    fixture.emit("workspace-navigate", { section: "settings", tab: "models", meeting_id: null, jump_ms: null });
-    await until(() => document.querySelector(".models-settings button[data-setup-task]"), "The model overview did not reopen after a cancelled failed Apply.");
+    fixture.emit("workspace-navigate", { section: "settings", tab: "dictation", meeting_id: null, jump_ms: null });
+    await until(() => document.querySelector(".settings-task-readiness button[data-setup-task]"), "The model overview did not reopen after a cancelled failed Apply.");
     await openTask("llm");
     await until(() => dialog()?.querySelector("[data-setup-selected-model]"), "The original model did not reopen after navigation.");
     assert(attempts === 1 && same(assignments(fixture.info()), before), "Cancel or subsequent navigation retried and saved the discarded model draft.");
@@ -402,7 +411,7 @@ export async function checkGuidedSetupConnectionChangedDuringApply() {
     await until(() => !dialog() && fixture.info().settings.llm.model === "gpt-4.1-mini", "A task Apply could not complete alongside the independent shared-connection edit.");
     const after = fixture.info();
     assert(editedDuringApply && after.settings.providers.find(provider => provider.id === providerId).base_url === changedEndpoint, "Apply rolled back the independent connection edit instead of retaining its new destination.");
-    const row = () => document.querySelector('.models-settings button[data-setup-task="llm"]')?.closest("section");
+    const row = () => document.querySelector('.settings-task-readiness button[data-setup-task="llm"]')?.closest("section");
     await until(() => row()?.textContent.includes("changed-connection.example.invalid"), "The applied task summary did not show the newly saved destination.");
     assert(providerVerification.get("llm", taskFingerprint(after, "llm")) === null && !row().textContent.includes(t("providers.test_passed")), "A sample from the original endpoint falsely verified the connection saved during Apply.");
     assert(fixture.setupTrace.samples.length === 1 && fixture.setupTrace.appliedTasks.length === 1, "Changing the shared destination triggered an automatic replacement test or duplicate Apply.");
@@ -461,8 +470,8 @@ async function slowCloudSetup() {
   };
   const stop = () => { clearInterval(heartbeat); heartbeat = undefined; };
   const models = async () => {
-    fixture.emit("workspace-navigate", { section: "settings", tab: "models", meeting_id: null, jump_ms: null });
-    await until(() => document.querySelector(".models-settings"), "The model overview did not mount for delayed readiness.");
+    fixture.emit("workspace-navigate", { section: "settings", tab: "meeting-settings", meeting_id: null, jump_ms: null });
+    await until(() => document.querySelector(".meeting-task-settings"), "The model overview did not mount for delayed readiness.");
   };
   const leaveModels = async () => {
     fixture.emit("workspace-navigate", { section: "settings", tab: "providers", meeting_id: null, jump_ms: null });
@@ -478,9 +487,9 @@ async function slowCloudSetup() {
   };
 }
 
-async function knownCloudRows() {
+async function knownCloudRows(tasks = ["meeting_stt", "llm"]) {
   const { t } = await import("/src/i18n.ts");
-  for (const task of ["meeting_stt", "llm"]) {
+  for (const task of tasks) {
     await promptly(() => taskRow(task)?.querySelector('[data-task-selection]')?.textContent.includes("Pennel Cloud")
       && taskRow(task)?.querySelector('[data-task-selection]')?.textContent.includes(t("settings.setup.cloud_model"))
       && taskRow(task)?.textContent.includes("api.pennel.app"), "A delayed account check hid the saved provider, model or processing destination.");
@@ -501,14 +510,15 @@ export async function checkGuidedSetupSlowCloudOverview() {
     await scenario.models();
     await knownCloudRows();
     await until(() => scenario.counters.completed > completedBefore && taskReady("meeting_stt") && taskReady("llm"), "Repeated identical info notifications starved delayed Cloud readiness.");
-    assert(scenario.counters.events >= 2 && taskReady("dictation_stt"), "The heartbeat did not overlap delayed Cloud work or blocked independent local dictation.");
+    assert(scenario.counters.events >= 2, "The heartbeat did not overlap delayed Cloud work.");
     scenario.stop();
 
     await scenario.leaveModels();
     scenario.phase("hold");
     scenario.localAssetsAvailable(false);
-    await scenario.models();
-    await knownCloudRows();
+    scenario.fixture.emit("workspace-navigate", {section: "settings", tab: "dictation", meeting_id: null, jump_ms: null});
+    await until(() => document.querySelector(".dictation-task-settings"), "Dictation task settings did not mount.");
+    await knownCloudRows(["llm"]);
     await until(() => scenario.held.length > 0, "The old Cloud status request did not reach its controlled responder.");
     await until(() => taskRow("dictation_stt")?.querySelector('[role="status"]')?.textContent === t("settings.setup.state.download"), "The local row did not report its missing selected model independently of Cloud readiness.");
     const unchangedInfo = JSON.stringify(scenario.fixture.info());

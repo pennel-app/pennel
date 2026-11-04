@@ -27,7 +27,7 @@
   "common.open_history": "Open history",
   "common.search": "Search",
   "chrome.toolbar": "Workspace toolbar",
-  "chrome.search_unavailable": "Search is available in the meeting library.",
+  "chrome.search_unavailable": "Search is available in Dictation and Meetings.",
   "chrome.hide_sidebar": "Hide sidebar",
   "chrome.show_sidebar": "Show sidebar",
   "chrome.resize_sidebar": "Resize sidebar",
@@ -78,5 +78,6 @@
   "navigation.your_work": "Your work",
   "navigation.app": "Pennel",
   "navigation.advanced": "Advanced",
-  "appearance.zoom_help": "Text size: {modifier} + = to enlarge, {modifier} + - to reduce, and {modifier} + 0 to reset."
+  "appearance.zoom_help": "Text size: {modifier} + = to enlarge, {modifier} + - to reduce, and {modifier} + 0 to reset.",
+  "navigation.sync_account": "Sync & account"
 }

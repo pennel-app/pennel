@@ -9,6 +9,7 @@ import { clock } from '../format';
 import { ownedFailureText, ownedNativeFailureText } from '../errors';
 import { ActionMenu, Actions, Body, Button, Empty, Field, Loading, NativeChoice, Notice, Page, Row, Section, confirm } from './ui';
 import { TextDialog } from './TextDialog';
+import { SummaryDestination } from './SummaryAutomation';
 
 let requestSequence = 0;
 export function AskPanel({ meetingId, meetingUid, targetConversationId, targetMessageId, beforeAsk, onInteraction }: {
@@ -120,6 +121,10 @@ export function AskPanel({ meetingId, meetingUid, targetConversationId, targetMe
   const seeking = Boolean(focusedMessageId && !focused && !state.error);
   const messages = seeking ? [] : focused ? current?.messages.filter(message => message.id === focused.id || message.id === focused.reply_to) ?? [] : current?.messages ?? [];
   return <>
+    <Section><Body accessibilityRole="header" style={{ fontFamily: theme.font.semibold }}>{t('mobile.simple.scope')}: {t(meetingId ? 'mobile.simple.scope_this' : 'mobile.simple.scope_all')}</Body>
+      <SummaryDestination />
+      {!runtime?.settings.llm.provider_id && <><Notice>{t('meetings.questions_setup_help')}</Notice><Button title={t('meetings.set_up_questions')} subtle onPress={() => router.push({ pathname: '/settings/[section]', params: { section: 'models', task: 'llm' } })} /></>}
+    </Section>
     <Section>
       {state.snapshot && <NativeChoice label={t('conversations.select')} value={state.conversationId ?? ''}
         options={conversations.map(value => ({ value: value.id, label: value.title || t('conversations.untitled') }))}
@@ -183,7 +188,7 @@ export function AskPanel({ meetingId, meetingUid, targetConversationId, targetMe
         await model.rename(value.trim()); return model.getSnapshot().snapshot?.conversation.title === value.trim();
       }} />
     <Modal visible={sourcePreview !== null} presentationStyle="pageSheet" onRequestClose={() => setSourcePreview(null)}>
-      <Page title={t('conversations.source_quote')} bottomInset><Notice>{t(`conversations.source_${sourcePreview?.status ?? 'unavailable'}`)}</Notice>
+      <Page title={t('conversations.source_quote')} bottomInset recordingStatus={false}><Notice>{t(`conversations.source_${sourcePreview?.status ?? 'unavailable'}`)}</Notice>
         <Body selectable>{sourcePreview?.anchor?.source_text ?? sourcePreview?.passage.text}</Body><Button title={t('common.close')} subtle onPress={() => setSourcePreview(null)} />
       </Page>
     </Modal>

@@ -11,6 +11,7 @@ import { inferenceCopy } from '../../inference';
 import { InferencePanels } from './InferencePanel';
 import { CleanupVerificationPanel } from '../CleanupVerification';
 import { KeyboardPanel } from './KeyboardPanel';
+import { SummaryAutomation } from '../../components/SummaryAutomation';
 
 function useSettings() {
   const runtime = useRuntime();
@@ -142,6 +143,7 @@ export function MeetingsPanel() {
   const templates = useQuery<MeetingTemplate[]>('meetings.templates');
   const consent = () => confirm(t('mobile.speakers.consent_title'), t('mobile.speakers.consent'), t('mobile.speakers.allow'), t('common.cancel'), () => void save({ diarization: true, speaker_recognition: 'cloud' }, { cloud_audio_consent: true }));
   return <>
+    <SummaryAutomation />
     <Section><Choice label={t('meetings.template')} value={settings.default_template} options={(templates.value ?? []).map((template) => ({ value: template.id, label: templateLabel(template, language) }))} onChange={(default_template) => void save({ default_template })} /><Choice label={t('settings.audio.title')} value={settings.meeting_audio_retention_days} options={[30, 90, 365, 0].map((value) => ({ value, label: value ? t('dictation.history.days', { days: value }) : t('dictation.history.always') }))} onChange={(meeting_audio_retention_days) => void save({ meeting_audio_retention_days })} /></Section>
     <Section title={t('mobile.speakers.choice')}><Choice label={t('mobile.speakers.choice')} value={settings.speaker_recognition} options={[{ value: 'local', label: `${t('mobile.speakers.local')} · ${t('mobile.speakers.local_help')}`, disabled: true }, { value: 'cloud', label: t('mobile.speakers.cloud') }]} onChange={(speaker_recognition) => void save({ speaker_recognition })} /><Toggle title={t('mobile.speakers.auto')} value={settings.diarization && settings.speaker_recognition === 'cloud'} disabled={!snapshot?.cloud.signed_in} onChange={(enabled) => enabled ? consent() : void save({ diarization: false })} />{!snapshot?.cloud.signed_in && <Notice>{t('meetings.speaker_cloud_sign_in')}</Notice>}<Notice>{t('mobile.speakers.consent')}</Notice></Section>
     <Section><Notice>{t('mobile.microphone_only')}</Notice></Section>

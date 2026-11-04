@@ -217,8 +217,8 @@ export async function checkConversationSources() {
     assert(document.querySelector(".live-source-highlight").dataset.segmentKey === request.anchors[0].segment_keys[0], "The citation opened another utterance.");
     document.querySelector(".live-source-back").click();
   } else {
-    await until(() => document.querySelector(".source-highlight") && document.querySelector(".meeting-source-return"), "The reviewed transcript source did not open with a return path.");
-    document.querySelector(".meeting-source-return").click();
+    await until(() => document.querySelector(".live-source-highlight, .source-highlight") && document.querySelector(".live-source-back:not([hidden]), .meeting-source-return"), "The reviewed transcript source did not open with a return path.");
+    document.querySelector(".live-source-back:not([hidden]), .meeting-source-return").click();
   }
   await until(() => [...document.querySelectorAll(".conversation-panel")].some(panel => panel.offsetParent !== null && panel.querySelector(`[data-message-id="${messageId}"]`)), "Citation return lost the original conversation or message.");
   root = [...document.querySelectorAll(".conversation-panel")].find(panel => panel.offsetParent !== null);
@@ -319,8 +319,8 @@ export async function checkConversationPaginationAndReturn() {
   await until(() => root.querySelectorAll(".conversation-assistant").length === 30, "The older message page did not join without duplicates.");
   const oldRow = root.querySelector(".conversation-assistant"), oldMessage = oldRow.dataset.messageId;
   oldRow.querySelector(".citation").click();
-  await until(() => document.querySelector(".meeting-source-return") && document.querySelector(".source-highlight"), "An older answer's exact source did not open.");
-  document.querySelector(".meeting-source-return").click();
+  await until(() => document.querySelector(".live-source-back:not([hidden]), .meeting-source-return") && document.querySelector(".live-source-highlight, .source-highlight"), "An older answer's exact source did not open.");
+  document.querySelector(".live-source-back:not([hidden]), .meeting-source-return").click();
   await until(() => [...document.querySelectorAll(".conversation-panel")].some(panel => panel.offsetParent !== null && panel.querySelector(`[data-message-id="${oldMessage}"]`)), "Source return did not load the original older message through its bounded focus request.");
   root = [...document.querySelectorAll(".conversation-panel")].find(panel => panel.offsetParent !== null);
   assert(document.activeElement?.dataset.messageId === oldMessage, "Returning from an old citation did not focus its originating message.");

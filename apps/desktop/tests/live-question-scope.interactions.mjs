@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = () => new Promise(resolve => setTimeout(resolve, 25));
 async function until(check, message) {
@@ -11,7 +12,7 @@ export async function checkLiveQuestionSelection() {
   const fixture = window.__PENNEL_FIXTURE__;
   const root = document.querySelector(".live-workspace");
   const note = root.querySelector(".live-notes");
-  root.querySelector('[data-live-tab="questions"]').click();
+  selectMeetingPane(root, "questions");
   const input = root.querySelector(".live-question-input");
   input.value = "Which decisions are supported by the selected sources?";
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: input.value }));
@@ -25,6 +26,7 @@ export async function checkLiveQuestionSelection() {
   assert(localized.every(text => metadata.textContent.includes(text)), "Scope or shortened history was not localized.");
   assert(metadata.textContent.includes("2/8"), "Shortened history counts were not shown.");
   const frozenMetadata = metadata.textContent;
+  selectMeetingPane(root, "notes");
   note.value += "\nSynthetic note typed while this answer waits.";
   note.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "Synthetic note" }));
   note.setSelectionRange(2, 9, "backward");
@@ -35,6 +37,7 @@ export async function checkLiveQuestionSelection() {
   assert(metadata.textContent === frozenMetadata, "A later append changed the admitted scope/cutoff.");
   assert(root.querySelector(".live-notes") === note && note.value === expected.text, "The answer replaced typed notes.");
   assert(note.selectionStart === expected.start && note.selectionEnd === expected.end && note.selectionDirection === expected.direction, "The answer changed note selection.");
+  selectMeetingPane(root, "questions");
   window.__PENNEL_LIVE_ACCEPTANCE__ = { selected_question_scope: { sourceCounts: true, shortenedHistory: true,
     localized: true, frozenAfterAppend: true, noteSelectionPreserved: true, syntheticOnly: true } };
   return window.__PENNEL_LIVE_ACCEPTANCE__;

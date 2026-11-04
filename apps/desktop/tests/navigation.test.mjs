@@ -40,3 +40,10 @@ test("a live recording route resets only its own window", () => {
   assert.deepEqual(localNavigation("live", "meeting"), { kind: "live" });
   assert.equal(localNavigation("live", "providers"), null);
 });
+
+test("task settings retain Advanced and Appearance links without treating them as meeting IDs", () => {
+  for (const tab of ["advanced", "appearance", "overview"]) {
+    assert.deepEqual(localNavigation("settings", tab), { kind: "settings", tab, param: undefined });
+    assert.equal(localNavigation("library", tab), null);
+  }
+});

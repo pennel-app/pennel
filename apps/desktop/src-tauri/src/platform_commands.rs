@@ -357,26 +357,94 @@ pub async fn share_meeting(
             .engine
             .export_meeting(id, include_transcript)
             .map_err(|error| error.to_string())?;
-        #[cfg(target_os = "macos")]
-        {
-            let _ = app;
-            crate::macos::share(&export.markdown, &export.title, &action)
+        share_output(&app, &export.title, &export.markdown, &action)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[derive(Deserialize)]
+pub struct PreparedMeetingExport {
+    title: String,
+    markdown: String,
+    html: String,
+}
+
+fn share_output(app: &AppHandle, title: &str, markdown: &str, action: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        crate::macos::share(markdown, title, action)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if action == "share" {
+            return Err(
+                "Copy the formatted notes or export the reviewed document to share it.".into(),
+            );
         }
-        #[cfg(not(target_os = "macos"))]
-        {
-            if action == "share" {
-                return Err(
-                    "Copy the formatted notes or open the meeting folder to share them".into(),
-                );
-            }
-            let mut url = tauri::Url::parse("mailto:").map_err(|error| error.to_string())?;
-            url.query_pairs_mut()
-                .append_pair("subject", &export.title)
-                .append_pair("body", &export.markdown);
-            app.opener()
-                .open_url(url.to_string(), None::<&str>)
-                .map_err(|error| error.to_string())
-        }
+        let mut url = tauri::Url::parse("mailto:").map_err(|error| error.to_string())?;
+        url.query_pairs_mut()
+            .append_pair("subject", title)
+            .append_pair("body", markdown);
+        app.opener()
+            .open_url(url.to_string(), None::<&str>)
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// The reviewed payload is the output. Never re-read a meeting after preview approval.
+#[tauri::command]
+pub async fn share_prepared_meeting(
+    output: PreparedMeetingExport,
+    action: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    if !matches!(action.as_str(), "mail" | "share") {
+        return Err("Unknown share action".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        share_output(&app, &output.title, &output.markdown, &action)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn write_prepared_export(
+    path: &std::path::Path,
+    output: &PreparedMeetingExport,
+) -> Result<(), String> {
+    let text = if path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("html"))
+    {
+        &output.html
+    } else {
+        &output.markdown
+    };
+    std::fs::write(path, text)
+        .map_err(|error| crate::commands::localize_error_message(format!("Saving failed: {error}")))
+}
+
+#[tauri::command]
+pub async fn export_prepared_meeting(
+    output: PreparedMeetingExport,
+    app: AppHandle,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(path) = app
+            .dialog()
+            .file()
+            .set_file_name("meeting.md")
+            .add_filter("Markdown", &["md"])
+            .add_filter("HTML", &["html"])
+            .blocking_save_file()
+        else {
+            return Ok(false);
+        };
+        let path = path.into_path().map_err(|error| error.to_string())?;
+        write_prepared_export(&path, &output)?;
+        Ok(true)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -574,6 +642,22 @@ pub async fn install_update(app: AppHandle, shared: State<'_, Arc<Shared>>) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prepared_export_writes_the_exact_reviewed_payload_without_reading_a_meeting() {
+        let root = tempfile::tempdir().unwrap();
+        let output = PreparedMeetingExport {
+            title: "Reviewed output".into(),
+            markdown: "## Reviewed\n\nExact prepared document — including edits.\n".into(),
+            html: "<h2>Reviewed</h2><p>Exact prepared document — including edits.</p>".into(),
+        };
+        let markdown = root.path().join("review.md");
+        let html = root.path().join("review.HTML");
+        write_prepared_export(&markdown, &output).unwrap();
+        write_prepared_export(&html, &output).unwrap();
+        assert_eq!(std::fs::read_to_string(markdown).unwrap(), output.markdown);
+        assert_eq!(std::fs::read_to_string(html).unwrap(), output.html);
+    }
 
     #[test]
     fn utterance_playback_uses_the_physical_source_even_when_the_person_label_differs() {

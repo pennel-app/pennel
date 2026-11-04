@@ -53,6 +53,7 @@ mod speakers;
 mod state;
 mod status;
 mod style_application;
+mod summaries;
 mod ui;
 #[cfg(windows)]
 mod windows_meetings;
@@ -1187,6 +1188,15 @@ fn main() {
             commands::meeting_detail,
             commands::meeting_templates,
             commands::summarize_meeting,
+            summaries::meeting_summary,
+            summaries::save_meeting_summary,
+            summaries::accept_meeting_summary,
+            summaries::meeting_summary_history,
+            summaries::restore_meeting_summary,
+            summaries::generate_meeting_summary,
+            summaries::shareable_meeting_summary,
+            summaries::generate_shareable_meeting_summary,
+            summaries::preview_meeting_export,
             commands::retranscribe_meeting,
             commands::retranscribe_meeting_audio,
             commands::rename_meeting,
@@ -1246,6 +1256,8 @@ fn main() {
             platform_commands::frontend_flushed,
             platform_commands::mark_lines,
             platform_commands::share_meeting,
+            platform_commands::share_prepared_meeting,
+            platform_commands::export_prepared_meeting,
             platform_commands::choose_meetings_dir,
             style_application::pick_style_application,
             app_identity::app_identity,

@@ -1,4 +1,5 @@
 import commonEn from '../../../assets/locales/common.en.json' with { type: 'json' };
+import { simplerCopy } from './simpler-copy.ts';
 import commonNl from '../../../assets/locales/common.nl.json' with { type: 'json' };
 import meetingsEn from '../../../assets/locales/meetings.en.json' with { type: 'json' };
 import meetingsNl from '../../../assets/locales/meetings.nl.json' with { type: 'json' };
@@ -235,8 +236,8 @@ export const mobileCopy = {
 } satisfies Record<InterfaceLanguage, Record<string, string>>;
 
 export const dictionaries: Record<InterfaceLanguage, Record<string, string>> = {
-  en: { ...commonEn, ...meetingsEn, ...dictationEn, ...accountEn, ...providersEn, ...settingsEn, ...onboardingEn, ...mobileCopy.en, ...syncCopy.en },
-  nl: { ...commonNl, ...meetingsNl, ...dictationNl, ...accountNl, ...providersNl, ...settingsNl, ...onboardingNl, ...mobileCopy.nl, ...syncCopy.nl },
+  en: { ...commonEn, ...meetingsEn, ...dictationEn, ...accountEn, ...providersEn, ...settingsEn, ...onboardingEn, ...mobileCopy.en, ...syncCopy.en, ...simplerCopy.en },
+  nl: { ...commonNl, ...meetingsNl, ...dictationNl, ...accountNl, ...providersNl, ...settingsNl, ...onboardingNl, ...mobileCopy.nl, ...syncCopy.nl, ...simplerCopy.nl },
 };
 
 export function resolveLanguage(setting: 'system' | InterfaceLanguage, locales: readonly string[]): InterfaceLanguage {

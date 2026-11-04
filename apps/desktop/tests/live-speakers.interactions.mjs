@@ -1,3 +1,4 @@
+import { selectMeetingPane, openMeetingTools } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -5,7 +6,7 @@ async function until(check, message) {
   throw new Error(message);
 }
 function edit(input, value) { input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
-function tab(root, name) { root.querySelector(`[data-live-tab="${name}"]`).click(); }
+function tab(root, name) { selectMeetingPane(root, name); }
 async function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic fixture.");
   await until(() => document.querySelector(".live-workspace .live-notes"), "The live workspace did not mount.");
@@ -22,6 +23,7 @@ async function ask(root, fixture) {
 
 export async function checkLiveSpeakerControls() {
   const { fixture, root, toggle } = await owned();
+  await openMeetingTools(root, "speakers");
   const { t } = await import("/src/i18n.ts");
   assert(toggle && !toggle.checked && !toggle.disabled, "Live speakers did not start off with an explicit available control.");
   const configuration = JSON.stringify((await window.__PENNEL_PLATFORM__.invoke("app_info")).settings);
@@ -73,7 +75,9 @@ export async function checkLiveSpeakerControls() {
     && note.selectionEnd === before.end && note.selectionDirection === before.direction && note.scrollTop === before.scroll, "Live labels or answers changed composition, focus or selection.");
   note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   tab(root, "questions"); root.querySelector(".citation").click();
-  await until(() => first.classList.contains("live-source-highlight"), "A source stopped resolving after speaker revisions.");
+  await until(() => !root.querySelector(".live-source-notice").hidden, "Speaker revisions did not disclose the changed source context.");
+  assert(root.querySelector(".live-source-notice blockquote")?.textContent === request.anchors[0].source_text && !root.querySelector(".live-source-highlight"),
+    "A speaker-revised source lost its frozen excerpt or was presented as current.");
   root.querySelector(".live-source-back").click();
   assert(!root.querySelector('[data-live-pane="questions"]').hidden, "Source return lost the original question.");
   tab(root, "transcript");
@@ -110,7 +114,7 @@ export async function checkLiveSpeakerControls() {
   root.querySelector(".live-source-back").click();
   tab(root, "transcript");
   fixture.workspace.liveSpeakers({ enabled: true, state: "running", reason_code: null, available: true, revision: 102 });
-  await pause(550); toggle.click();
+  await pause(550); await openMeetingTools(root, "speakers"); toggle.click();
   await until(() => !toggle.checked && !toggle.disabled, "Live attribution could not be switched off explicitly.");
   assert(JSON.stringify((await window.__PENNEL_PLATFORM__.invoke("app_info")).settings) === configuration, "The live control changed the saved provider or settings.");
   root.querySelector(".live-stop").click();
@@ -119,6 +123,7 @@ export async function checkLiveSpeakerControls() {
   fixture.emit("workspace-navigate", { section: "recording", tab: null, meeting_id: next.id, jump_ms: null });
   await until(() => document.querySelector(".live-workspace")?.dataset.sessionId === next.session_id, "The next meeting did not open.");
   const nextRoot = document.querySelector(".live-workspace"); tab(nextRoot, "transcript");
+  await openMeetingTools(nextRoot, "speakers");
   assert(!nextRoot.querySelector("[data-live-speaker-toggle]").checked, "A new meeting inherited automatic live speaker processing.");
   assert(!fixture.calls.some(command => ["save_settings", "download_model", "start_voice_enrollment", "remember_speaker"].includes(command)), "Live attribution changed configuration, downloaded assets or enrolled a voice.");
   return { explicitOptIn: true, pendingAcknowledgement: true, nextMeetingOff: true, bothSources: true, honestProvisionalFinalAndManual: true,
@@ -127,8 +132,11 @@ export async function checkLiveSpeakerControls() {
 
 export async function checkLiveSpeakerStopPending() {
   const { fixture, root, toggle } = await owned();
+  const previousId = root.dataset.meetingId;
+  await openMeetingTools(root, "speakers");
   fixture.workspace.liveSpeakerDelay(1000); fixture.workspace.failSaves(true);
   toggle.click(); assert(toggle.disabled, "The delayed live request did not become pending.");
+  tab(root, "notes");
   const note = root.querySelector(".live-notes"); edit(note, "Owned dirty notes while live attribution is pending.");
   root.querySelector(".live-stop").click();
   await until(() => !fixture.workspace.recording(), "Stop waited for live attribution or a failed note save.");
@@ -137,14 +145,20 @@ export async function checkLiveSpeakerStopPending() {
   await until(() => document.querySelector(".live-workspace")?.dataset.sessionId === next.session_id, "The next meeting did not open while the old request drained.");
   await pause(1100);
   const nextRoot = document.querySelector(".live-workspace"); tab(nextRoot, "transcript");
+  await openMeetingTools(nextRoot, "speakers");
   assert(!nextRoot.querySelector("[data-live-speaker-toggle]").checked && !toggle.checked, "A late old-session toggle activated another meeting.");
   assert(note.value === "Owned dirty notes while live attribution is pending.", "Stop lost the dirty notes.");
   fixture.workspace.failSaves(false);
-  return { captureFirstStop: true, failedSaveRetained: true, lateToggleRejected: true, nextMeetingOff: true, syntheticOnly: true };
+  await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
+  const savedPrevious = await window.__PENNEL_PLATFORM__.invoke("meeting_detail", { id: previousId });
+  const current = await window.__PENNEL_PLATFORM__.invoke("meeting_status");
+  assert(savedPrevious.notes === note.value && current.notes === next.notes, "Recovering the old saved draft changed the new recording or lost the old notes.");
+  return { captureFirstStop: true, failedSaveRetained: true, lateToggleRejected: true, nextMeetingOff: true, oldDraftRecoveredIndependently: true, syntheticOnly: true };
 }
 
 export async function checkUnavailableLiveSpeakers() {
   const { fixture, root, toggle } = await owned();
+  await openMeetingTools(root, "speakers");
   assert(toggle.disabled && !toggle.checked, "An unavailable live route was enabled.");
   const explanation = root.querySelector(".live-speaker-state");
   assert(!explanation.hidden && explanation.textContent.trim(), "The unavailable route has no explanation.");
@@ -152,7 +166,7 @@ export async function checkUnavailableLiveSpeakers() {
   const request = await ask(root, fixture); fixture.workspace.complete(request.request_id);
   await until(() => root.querySelector(".citation"), "Unavailable attribution disabled ordinary questions.");
   assert(!fixture.calls.some(command => ["set_live_speaker_attribution", "save_settings", "download_model", "start_voice_enrollment"].includes(command)), "An unavailable live route triggered setup or processing automatically.");
-  tab(root, "transcript");
+  await openMeetingTools(root, "speakers");
   return { explanation: true, offAndDisabled: true, ordinaryNotesAndQuestionsUsable: true, noAutomaticProcessing: true, syntheticOnly: true };
 }
 
@@ -163,19 +177,22 @@ export async function showProvisionalLiveSpeakers() {
   fixture.workspace.attribution(2, { attribution: { kind: "mixed", voices: [1, 2], provisional: true } });
   await until(() => [...root.querySelectorAll(".live-speaker-provisional")].filter(node => !node.hidden).length === 3, "Provisional attribution states did not appear.");
   assert(toggle.checked, "The already opted-in fixture did not retain its selected state.");
-  if (root.classList.contains("live-wide")) root.querySelector(".live-speaker-details").open = true;
+  await openMeetingTools(root, "speakers");
+  root.querySelector(".live-speaker-details").open = true;
+  assert(root.querySelector(".live-speaker-destination").getClientRects().length > 0, "The destination and model details cannot be reached through More.");
+  tab(root, "transcript");
   return { qualitativeProvisionalStates: true, destinationAndModels: true, syntheticOnly: true };
 }
 
 export async function checkPersistedSpeakerQualifier() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic fixture.");
   const fixture = window.__PENNEL_FIXTURE__;
-  await until(() => document.querySelector(".meeting-detail .transcript-line"), "The finished review transcript did not mount.");
-  const visibleMarkers = () => [...document.querySelectorAll(".meeting-detail .live-speaker-provisional")].filter(node => !node.hidden);
+  await until(() => document.querySelector(".live-workspace .transcript-line"), "The finished review transcript did not mount.");
+  const visibleMarkers = () => [...document.querySelectorAll(".live-workspace .live-speaker-provisional")].filter(node => !node.hidden);
   assert(visibleMarkers().length === 3, "Persisted provisional estimates were displayed as final in review.");
   fixture.workspace.attribution(0, { confirmed_speaker_name: "Confirmed review person" });
   fixture.emit("meeting-updated", fixture.options.meeting_id);
-  await until(() => document.querySelector('.meeting-detail [data-transcript-index="0"] .speaker')?.textContent === "Confirmed review person", "The confirmed review name did not appear.");
+  await until(() => document.querySelector('.live-workspace [data-transcript-index="0"] .speaker')?.textContent === "Confirmed review person", "The confirmed review name did not appear.");
   assert(visibleMarkers().length === 2, "A confirmed manual name remained provisional in review.");
   return { persistedProvisionalQualifier: true, manualConfirmationWins: true, syntheticOnly: true };
 }
@@ -253,6 +270,7 @@ export async function checkSelectedTranscriptSplit(release = "clear") {
   if (release === "follow") assert(selection.isCollapsed && root.querySelector(".live-follow").hidden && output.scrollTop >= output.scrollHeight - output.clientHeight - 2,
     "Follow live did not explicitly leave the selection and resume the latest transcript.");
   note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  tab(root, "questions");
   root.querySelector(".citation").click();
   await until(() => !root.querySelector(".live-source-notice").hidden, "A retired source identity was silently reassociated through the split.");
   assert(root.querySelector(".live-source-notice blockquote")?.textContent === request.anchors[0].source_text

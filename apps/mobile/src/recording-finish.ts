@@ -1,15 +1,54 @@
 import type { RuntimeSnapshot } from './domain.ts';
 
 type MeetingSnapshot = RuntimeSnapshot['meeting'];
+export interface RecordingStopIntent { id: string; previousFinishedId: string | null }
+
+export function hasRecordingToReturnTo(meeting: MeetingSnapshot | undefined): boolean {
+  return Boolean(meeting && (meeting.retained_id || meeting.id && meeting.phase !== 'idle'));
+}
+
+/** Native modal dismissal must complete before a route can appear above its presenter. */
+export class RecordingSheetReturn {
+  private requested = false;
+  request = (dismiss: () => void): void => {
+    if (this.requested) return;
+    this.requested = true;
+    dismiss();
+  };
+  didDismiss = (close: () => void, returnToRecording: () => void): boolean => {
+    if (!this.requested) return false;
+    this.requested = false;
+    close();
+    returnToRecording();
+    return true;
+  };
+}
+
+export function completedRecording(meeting: MeetingSnapshot | undefined, intent: RecordingStopIntent | null): string | null {
+  const finished = meeting?.last_finished_id;
+  if (!intent || !finished || meeting?.phase !== 'idle' || meeting.retained_id || meeting.error) return null;
+  if (meeting.id && meeting.id !== intent.id) return null;
+  return finished !== intent.previousFinishedId || finished === intent.id ? finished : null;
+}
+
+export function nativeOwnsRecordingDraft(meeting: MeetingSnapshot | undefined, id: string | null | undefined, text: string, handedOff?: string): boolean {
+  if (!id || !meeting || meeting.id !== id && meeting.retained_id !== id || meeting.phase !== 'finishing' && !meeting.retained_id) return false;
+  return meeting.pending_notes === text || handedOff === text || meeting.notes === text;
+}
+
 export class RecordingIdentity {
   private meeting: MeetingSnapshot | null = null;
   private originalId: string | null = null;
   get key(): string | null { return this.originalId; }
   observe(current: MeetingSnapshot | undefined): MeetingSnapshot | null {
+    if (current?.retained_id && !current.id) current = { ...current, id: current.retained_id };
     if (!this.meeting && current?.id) { this.meeting = current; this.originalId = current.id; }
     else if (current?.id && current.id === this.meeting?.id) this.meeting = current;
     if (!this.meeting) return null;
-    if (current?.id !== this.meeting.id) return { ...this.meeting, phase: 'idle', pending: 0, error: current?.last_finished_id === this.meeting.id || current?.retained_id === this.meeting.id ? current.error : this.meeting.error };
+    if (current?.id !== this.meeting.id) {
+      if (current?.last_finished_id === this.meeting.id || current?.retained_id === this.meeting.id) this.meeting = { ...this.meeting, error: current.error, error_code: current.error_code };
+      return { ...this.meeting, phase: 'idle', pending: 0 };
+    }
     return this.meeting;
   }
   retarget(originalId: string, finishedId: string): boolean {

@@ -58,3 +58,35 @@ test('successful Stop flushes notes before the screen can navigate, while a Stop
   assert.equal(draft.getSnapshot().dirty, false);
   assert.deepEqual(await stopThenSave(async () => { throw new Error('native unavailable'); }, async () => true), { stopped: false, saved: true });
 });
+
+test('a reopened failed-save recording keeps its retained identity and native notes', () => {
+  const identity = new RecordingIdentity();
+  const retained = identity.observe(meeting({ id: null, retained_id: 'retained-recording', phase: 'idle', notes: 'Native retained notes', error: 'Save failed' }));
+  assert.equal(retained.id, 'retained-recording'); assert.equal(identity.key, 'retained-recording');
+  assert.equal(retained.notes, 'Native retained notes'); assert.equal(retained.error, 'Save failed');
+});
+
+test('Stop hands off the latest text, acknowledged source and any owned in-flight save without waiting', async () => {
+  let finish;
+  const waiting = new Promise(resolve => { finish = resolve; });
+  const draft = new NoteSession('Acknowledged text', async () => waiting);
+  draft.edit('Owned pending text'); const saving = draft.save();
+  draft.edit('Last words before Stop');
+  const handoff = draft.captureHandoff();
+  assert.deepEqual(handoff, { notes: 'Last words before Stop', expected_notes: 'Acknowledged text', pending_notes: 'Owned pending text' });
+  // Stop receives this value before the earlier storage request resolves.
+  finish(false); assert.equal(await saving, false);
+  assert.equal(draft.acknowledgeHandoff(handoff, handoff.notes), true);
+  assert.equal(draft.getSnapshot().dirty, false); assert.equal(draft.getSnapshot().failed, false);
+});
+
+test('native handoff acknowledgment preserves notes typed after Stop and cannot bless unrelated remote edits', () => {
+  const draft = new NoteSession('base', async () => true);
+  draft.edit('Captured at Stop'); const handoff = draft.captureHandoff();
+  draft.edit('Typed after Stop');
+  assert.equal(draft.acknowledgeHandoff(handoff, 'Captured at Stop'), true);
+  assert.equal(draft.getSnapshot().baseline, 'Captured at Stop');
+  assert.equal(draft.getSnapshot().draft, 'Typed after Stop'); assert.equal(draft.getSnapshot().dirty, true);
+  assert.equal(draft.acknowledgeHandoff(handoff, 'Changed elsewhere'), false);
+  assert.equal(draft.getSnapshot().draft, 'Typed after Stop'); assert.equal(draft.getSnapshot().conflict, true);
+});

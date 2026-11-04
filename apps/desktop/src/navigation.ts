@@ -3,7 +3,7 @@ export type LocalNavigation =
   | { kind: "library"; param: string | undefined }
   | { kind: "live" };
 
-const settingsTabs = new Set(["account", "providers", "models", "dictation", "meeting-settings", "recording", "dictionary", "styles"]);
+const settingsTabs = new Set(["account", "providers", "models", "dictation", "meeting-settings", "recording", "dictionary", "styles", "appearance", "advanced", "overview"]);
 const windowRoutes = new Set([...settingsTabs, "settings", "local", "meeting", "live", "history", "onboarding", "prompt", "record-prompt", "pill"]);
 
 export function localNavigation(window: string, route: unknown): LocalNavigation | null {

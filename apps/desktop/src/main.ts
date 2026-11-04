@@ -1,4 +1,5 @@
 import "./styles.css";
+import "./task-shell.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, fixtureClient, listen, listenToWindow, type AppInfo, type MeetingFinished, type MeetingRuntimeStatus, type Settings, type UpdateInfo } from "./api";
 import { LatestRequest, SerialQueue, afterPaint, fillWhenReady, persistAll } from "./async";
@@ -7,7 +8,7 @@ import { dictationView, dictionaryView, stylesView } from "./views/dictation";
 import { historyView } from "./views/history";
 import { displayedMeetingSession, finishMeetingDrafts, flushMeetingDrafts, meetingView, meetingsView } from "./views/meetings";
 import { FrontendBarrier, canShowFinished, type FrontendBarrierKind } from "./session-events";
-import { deliveredRouteApplies, historyEntryId, historyRoute, legacyWorkspaceRoute, parseWorkspaceRoute, routeKey, samePadRoute, settingTabs, WorkspaceNavigation, windowForSection, windowMode, windowTitles, workspaceRoute, type WorkspaceRoute, type MeetingSourceTarget } from "./workspace-state";
+import { deliveredRouteApplies, historyEntryId, historyRoute, legacyWorkspaceRoute, parseWorkspaceRoute, resumesOtherCapture, routeKey, samePadRoute, settingTabs, settingsCategory, WorkspaceNavigation, windowForSection, windowMode, windowTitles, workspaceRoute, type WorkspaceRoute, type MeetingSourceTarget } from "./workspace-state";
 import { LibrarySidebar } from "./views/library";
 import { recordingEntry } from "./voice-flow-state";
 import { PadNavigationBlocked } from "./dictation-session-state";
@@ -19,7 +20,7 @@ import { meetingSettingsView, recordingSettingsView } from "./views/settings";
 import { promptView } from "./views/welcome";
 import { onboardingView } from "./views/onboarding";
 import { padView } from "./views/pad";
-import { openTaskSetupDialog, settingsOverview, type TaskSetupDialog } from "./views/setup";
+import { openTaskSetupDialog, settingsTaskRows, type TaskSetupDialog } from "./views/setup";
 import type { SetupTask } from "./task-setup-state";
 import { appInfoContentEqual } from "./presentation";
 import { VisibilityPoll } from "./window-lifecycle";
@@ -63,19 +64,24 @@ interface Mounted {
 }
 
 const tabs: [string, TranslationKey, View][] = [
-  ["overview", "navigation.overview", settingsOverview],
-  ["providers", "navigation.providers", providersView], ["models", "navigation.models", modelsView],
-  ["dictation", "navigation.dictation", dictationView], ["meeting-settings", "navigation.meetings", meetingSettingsView],
-  ["recording", "navigation.recording", recordingSettingsView], ["dictionary", "navigation.dictionary", dictionaryView],
-  ["styles", "navigation.styles", stylesView], ["appearance", "navigation.appearance", appearanceView],
-  ["account", "navigation.account", accountView],
+  ["dictation", "navigation.dictation", dictationSettings], ["meeting-settings", "navigation.meetings", meetingTaskSettings],
+  ["appearance", "navigation.appearance", appearanceView], ["account", "navigation.sync_account", accountView],
+  ["advanced", "navigation.advanced", advancedSettings],
 ];
 const query = new URLSearchParams(location.search);
 const requestedWindow = query.get("window") ?? "workspace";
 const mode = requestedWindow === "onboarding" ? "onboarding" : ["prompt", "record-prompt"].includes(requestedWindow) ? "prompt" : windowMode(requestedWindow);
 const windowKind = mode === "onboarding" || mode === "prompt" ? "workspace" : mode;
 const legacyWindow = ["settings", "dictation", "history"].includes(requestedWindow) ? requestedWindow : windowKind;
-const navigation = new WorkspaceNavigation(legacyWorkspaceRoute(legacyWindow, query.get("tab")) ?? workspaceRoute("meetings"));
+const navigationStorageKey = "pennel.workspace.navigation.v1";
+function restoredNavigation(): WorkspaceNavigation | null {
+  if (fixtureClient()) return null;
+  try { return WorkspaceNavigation.restore(JSON.parse(localStorage.getItem(navigationStorageKey) ?? "null")); }
+  catch { return null; }
+}
+const explicitRoute = requestedWindow !== "workspace" || query.has("tab");
+const navigation = explicitRoute ? new WorkspaceNavigation(legacyWorkspaceRoute(legacyWindow, query.get("tab")) ?? workspaceRoute("dictation", "home"))
+  : restoredNavigation() ?? new WorkspaceNavigation();
 if (fixtureClient() && query.has("section")) {
   const route = parseWorkspaceRoute({ section: query.get("section"), tab: query.get("tab"), meeting_id: query.get("meeting_id"), jump_ms: query.has("jump_ms") ? Number(query.get("jump_ms")) : null });
   if (route && windowForSection(route.section) === windowKind) navigation.set(route);
@@ -186,7 +192,7 @@ function sidebarSeparator(): HTMLElement {
 
 function desktopCommands(): DesktopCommandState {
   const ready = booted && mode === "workspace" && !barrier.locked && !pendingRoute && !taskSetup && !setupOpening && !document.querySelector("dialog[open]");
-  return { ready, settings: ready, new_recording: ready && !!toolbarRecording && !toolbarRecording.disabled,
+  return { ready, settings: ready, new_recording: ready && !!toolbarRecording && !toolbarRecording.hidden && !toolbarRecording.disabled,
     find: ready && !!library && navigation.current.section !== "settings", toggle_sidebar: ready,
     dictation: ready, meetings: ready, history: ready, sidebar_visible: sidebar.visible,
     recording_active: !!currentMeetingStatus && recordingEntry(currentMeetingStatus).kind !== "new" };
@@ -210,8 +216,7 @@ async function runDesktopCommand(command: DesktopCommand) {
   if (command === "new_recording") { toolbarRecording?.click(); return; }
   if (command === "find") {
     setSidebarVisible(true);
-    const search = library?.element.querySelector<HTMLInputElement>('.library-search input');
-    search?.focus(); search?.select(); return;
+    library?.focusSearch(); return;
   }
   await go(navigation.select(command));
 }
@@ -253,6 +258,7 @@ function scrollKey(route: WorkspaceRoute): string {
   return JSON.stringify([route.section, route.section === "history" ? null : route.tab, route.meeting_id]);
 }
 let taskSetup: TaskSetupDialog | null = null;
+let taskSetupCaptureSession: string | null = null;
 let setupOpening = false;
 let deferredRender = false;
 let settingsFocusRequest: string | null = null;
@@ -322,10 +328,10 @@ async function flushAll() {
   ]);
 }
 
-async function flushForNavigation() {
-  // Session-owned meeting drafts remain mounted in memory while another section is shown.
-  // Their durable barrier still runs for native hide, quit, update and capture finalization.
-  const retained = content.querySelector(".live-workspace") !== null;
+async function flushForNavigation(resumingCapture = false) {
+  // Active capture keeps its retained drafts while navigation stays responsive. Saved meetings
+  // keep the durable navigation barrier; hide, quit, updates and finalization flush every draft.
+  const retained = resumingCapture || content.querySelector('.live-workspace[data-recording="true"]') !== null;
   await persistAll([
     async () => { await settingsQueue.drain(); await settingsQueue.run(flushSettings); await settingsQueue.drain(); },
     () => flushMeetingDrafts(false),
@@ -380,10 +386,18 @@ async function go(route: WorkspaceRoute) {
   ++generation;
   showPendingNavigation(route);
   try {
-    content.inert = content.querySelector(".live-workspace") === null;
+    let resumingCapture = false;
+    const previousWorkspace = content.querySelector<HTMLElement>('.live-workspace[data-recording="false"]');
+    if (route.section === "recording" && previousWorkspace) {
+      const runtime = await api.meetingRuntimeStatus();
+      if (mine !== navigationGeneration) return;
+      resumingCapture = resumesOtherCapture(route, previousWorkspace.dataset.sessionId, runtime);
+      currentMeetingStatus = runtime; updateSettingsRecording();
+    }
+    content.inert = !resumingCapture && content.querySelector('.live-workspace[data-recording="true"]') === null;
     await afterPaint();
     if (mine !== navigationGeneration) return;
-    await flushForNavigation();
+    await flushForNavigation(resumingCapture);
     if (mine !== navigationGeneration) return;
     await persistAll(mounted?.leave ?? []);
     if (mine !== navigationGeneration) return;
@@ -410,19 +424,20 @@ function restoreSettingsFocus() {
 
 function contextFor(target: Mounted, reportError: (error: unknown) => void = report): Context {
   const route = navigation.current;
+  const taskPreferences = route.section === "settings" && ["dictation", "meeting-settings"].includes(settingsCategory(route.tab));
   return {
     get info() { return visibleInfo(); },
     save: (change) => {
       pendingSettings.push(change);
       applyAppearance();
       return settingsQueue.run(async () => { await flushSettings(); banner.hidden = true; }).then(async () => {
-        if (target.info.length || mounted !== target) return;
+        if (mounted !== target || target.info.length && !taskPreferences) return;
         if (editing()) { needsRefresh = true; return; }
         await render();
       }).catch((error: unknown) => { reportError(error); throw error; });
     },
     mutate: (work) => settingsQueue.run(async () => { await flushSettings(); info = await work(); notifyInfo(); banner.hidden = true; }).then(async () => {
-      if (!target.info.length && mounted === target) await render();
+      if ((!target.info.length || taskPreferences) && mounted === target) await render();
     }).catch((error: unknown) => { reportError(error); throw error; }),
     update: (next) => { info = next; notifyInfo(); },
     refresh,
@@ -454,18 +469,21 @@ async function openSetup(task: SetupTask, origin: Mounted) {
   if (setupOpening || mounted !== origin) return;
   setupOpening = true;
   publishDesktopCommands();
+  const captureSession = content.querySelector<HTMLElement>('.live-workspace[data-recording="true"]')?.dataset.sessionId ?? null;
   try {
     await flushForNavigation();
     if (mounted !== origin) return;
+    const runtime = await api.meetingRuntimeStatus();
+    if (mounted !== origin) return;
+    currentMeetingStatus = runtime;
+    updateSettingsRecording();
+    if (captureSession && (runtime.session_id !== captureSession || !runtime.recording)) return;
+    if (captureSession && content.querySelector<HTMLElement>('.live-workspace[data-recording="true"]')?.dataset.sessionId !== captureSession) return;
     const scope: Mounted = { key: `setup:${task}`, scrollKey: origin.scrollKey, cleanup: [], flush: [], leave: [], info: [], focus: [], visibility: [] };
     // The setup owns error presentation; a repaired task must not leave an error behind its dialog.
-    taskSetup = openTaskSetupDialog(contextFor(scope, () => undefined), task, flushForNavigation, () => {
-      taskSetup = null;
-      publishDesktopCommands();
-      const refreshNeeded = deferredRender || needsRefresh;
-      deferredRender = false; needsRefresh = false;
-      if (refreshNeeded && (!mounted?.info.length || mounted.key !== routeKey(navigation.current))) void render().catch(report);
-    });
+    taskSetupCaptureSession = captureSession;
+    // Closing this capture-local chooser leaves its retained draft behind, including after Stop.
+    taskSetup = openTaskSetupDialog(contextFor(scope, () => undefined), task, () => flushForNavigation(!!captureSession), taskSetupClosed);
     if (currentMeetingStatus?.recording) {
       document.querySelector(".task-setup-footer")?.prepend(captureStopControl("btn"));
       updateCaptureControls();
@@ -473,8 +491,24 @@ async function openSetup(task: SetupTask, origin: Mounted) {
   } finally { setupOpening = false; publishDesktopCommands(); }
 }
 
+function taskSetupClosed() {
+  taskSetup = null;
+  taskSetupCaptureSession = null;
+  publishDesktopCommands();
+  const refreshNeeded = deferredRender || needsRefresh;
+  deferredRender = false; needsRefresh = false;
+  if (refreshNeeded && (!mounted?.info.length || mounted.key !== routeKey(navigation.current))) void render().catch(report);
+}
+
+function cancelCaptureSetup(session: string) {
+  if (!taskSetup || taskSetupCaptureSession !== session) return;
+  // Dispose the draft and late callbacks; explicit connection saves and downloads remain independent.
+  taskSetup.dispose();
+  taskSetupClosed();
+}
+
 async function settingsView(ctx: Context): Promise<HTMLElement> {
-  const current = navigation.current.tab === "local" ? "providers" : navigation.current.tab ?? "overview";
+  const current = settingsCategory(navigation.current.tab);
   const tabButton = ([id, label]: [string, TranslationKey, View]) => h("button", {
     "aria-current": id === current ? "page" : null, tabindex: id === current ? 0 : -1, "data-settings-category": id, onclick: (event: Event) => {
       settingsFocusRequest = id;
@@ -483,17 +517,13 @@ async function settingsView(ctx: Context): Promise<HTMLElement> {
       navigate(id);
     },
   }, l(label));
-  const group = (label: TranslationKey, ids: string[]) => [h("p", { class: "settings-nav-group" }, l(label)), ...ids.map((id) => tabButton(tabs.find((tab) => tab[0] === id)!))];
   const nav = h("nav", { id: "settings-navigation", class: "settings-categories", "aria-label": l("navigation.settings_categories") },
     h("button", { class: "settings-back", "data-action": "back-to-work", onclick: () => navigate("settings-back") }, icon("arrowLeft"), l("navigation.back_to_work")),
     h("button", { class: "settings-recording", hidden: true, onclick: async () => {
       try { const status = await api.meetingRuntimeStatus(); currentMeetingStatus = status; const entry = recordingEntry(status); await go(entry.kind === "new" ? navigation.settingsBack() : workspaceRoute("recording", null, entry.meetingId)); }
       catch (error) { report(error); }
     } }),
-    tabButton(tabs[0]),
-    ...group("navigation.your_work", ["models", "dictation", "meeting-settings", "recording", "dictionary", "styles"]),
-    ...group("navigation.app", ["appearance", "account"]),
-    ...group("navigation.advanced", ["providers"]));
+    ...tabs.map(tabButton));
   nav.addEventListener("keydown", (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
     const target = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-settings-category]");
@@ -509,7 +539,7 @@ async function settingsView(ctx: Context): Promise<HTMLElement> {
   const selected = tabs.find(([id]) => id === current) ?? tabs[0];
   const pane = h("section", { class: "settings-pane" });
   const positionKey = scrollKey(navigation.current);
-  const content = async () => [...(current === "overview" ? [] : [h("h2", { class: "settings-title" }, l(selected[1]))]), await selected[2](ctx), settingsFooter(ctx)];
+  const content = async () => [h("h2", { class: "settings-title" }, l(selected[1])), await selected[2](ctx), settingsFooter(ctx)];
   // A re-render of the same category keeps its old content until the new one is ready, so the
   // scroll position survives; a new category appears at once and fills in as its data arrives.
   if (rerendering) pane.append(...await content());
@@ -600,6 +630,7 @@ async function render(allowed: () => boolean = () => true, request?: number) {
 }
 
 function updateNavigation() {
+  try { if (!fixtureClient()) localStorage.setItem(navigationStorageKey, JSON.stringify(navigation.snapshot())); } catch { /* Task navigation stays available without persistence. */ }
   if (library) library.element.hidden = navigation.current.section === "settings";
   const separator = app.querySelector<HTMLElement>(".workspace-separator");
   if (separator) separator.hidden = navigation.current.section === "settings";
@@ -612,7 +643,31 @@ function updateNavigation() {
   syncSidebarPresentation();
 }
 
+function settingsDisclosure(title: TranslationKey, child: HTMLElement, id: string, expanded = false): HTMLElement {
+  return h("details", { class: "task-settings-detail", open: expanded, "data-settings-detail": id }, h("summary", {}, l(title)), child);
+}
+
+function dictationSettings(ctx: Context): HTMLElement {
+  const tab = navigation.current.tab;
+  return h("div", { class: "task-settings dictation-task-settings" }, settingsTaskRows(ctx, ["dictation_stt", "llm"]), dictationView(ctx),
+    settingsDisclosure("navigation.dictionary", dictionaryView(ctx), "dictionary", tab === "dictionary"),
+    settingsDisclosure("navigation.styles", stylesView(ctx), "styles", tab === "styles"));
+}
+
+async function meetingTaskSettings(ctx: Context): Promise<HTMLElement> {
+  return h("div", { class: "task-settings meeting-task-settings" }, settingsTaskRows(ctx, ["meeting_stt", "llm"]), await meetingSettingsView(ctx),
+    settingsDisclosure("settings.recording.options", await recordingSettingsView(ctx), "recording", navigation.current.tab === "recording"));
+}
+
+async function advancedSettings(ctx: Context): Promise<HTMLElement> {
+  const tab = navigation.current.tab;
+  return h("div", { class: "task-settings advanced-task-settings" }, h("p", { class: "help" }, l("settings.advanced.help")),
+    settingsDisclosure("settings.advanced.connections", await providersView({ ...ctx, get info() { return ctx.info; }, param: tab === "local" ? "__local__" : undefined }), "providers", tab === "providers" || tab === "local"),
+    settingsDisclosure("settings.advanced.models", await modelsView(ctx), "models", tab === "models"));
+}
+
 function updateSettingsRecording() {
+  if (taskSetupCaptureSession && currentMeetingStatus?.session_id === taskSetupCaptureSession && !currentMeetingStatus.recording) cancelCaptureSetup(taskSetupCaptureSession);
   updateCaptureControls();
   const button = content.querySelector<HTMLButtonElement>(".settings-recording");
   if (!button || !currentMeetingStatus) return;
@@ -629,7 +684,7 @@ function captureStopControl(className: string): HTMLButtonElement {
     const button = event.currentTarget as HTMLButtonElement;
     button.dataset.stoppingSession = session;
     button.disabled = true;
-    try { await api.stopMeeting(session); }
+    try { await api.stopMeeting(session); cancelCaptureSetup(session); }
     catch (error) {
       report(error);
       if (button.dataset.stoppingSession === session) { delete button.dataset.stoppingSession; button.disabled = false; }
@@ -728,6 +783,7 @@ function prepareFlush(requestId: number, kind: FrontendBarrierKind) {
 
 function meetingFinished(event: MeetingFinished) {
   finishMeetingDrafts(event);
+  cancelCaptureSetup(event.session_id);
   void finishedRequests.run(api.meetingRuntimeStatus, (status) => {
     const accepted = canShowFinished(status, event.session_id, displayedMeetingSession());
     if (accepted && event.id) navigation.recordingFinished(event.id);
@@ -902,7 +958,10 @@ async function boot() {
   }
 }
 
-content.addEventListener("focusout", () => { window.setTimeout(() => { if (needsRefresh && !editing() && !mounted?.info.length) void render(); }, 0); });
+content.addEventListener("focusout", () => { window.setTimeout(() => {
+  const taskPreferences = navigation.current.section === "settings" && ["dictation", "meeting-settings"].includes(settingsCategory(navigation.current.tab));
+  if (needsRefresh && !editing() && (!mounted?.info.length || taskPreferences)) void render();
+}, 0); });
 window.addEventListener("unhandledrejection", (event) => { event.preventDefault(); report(event.reason); });
 window.addEventListener("beforeunload", () => { chromeCleanup.forEach((cleanup) => cleanup()); sidebarPoll?.dispose(); runtimePoll?.dispose(); library?.dispose(); mounted?.cleanup.forEach((cleanup) => cleanup()); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (info) applyAppearance(); });

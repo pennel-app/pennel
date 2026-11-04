@@ -816,68 +816,21 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
     if shared.quitting.load(Ordering::SeqCst) {
         return;
     }
-    let settings = shared.settings();
-    let keys = shared.keys();
-    let apple_available = settings.resolve(&settings.llm).is_some_and(|(account, _)| {
-        account.kind != pennel_core::ProviderKind::AppleIntelligence
-            || crate::capabilities::snapshot(None)
-                .apple_intelligence
-                .status
-                == crate::capabilities::CapabilityStatus::Available
-    });
-    if optional_summary(
-        summary_configuration_ready(&settings, &keys, apple_available),
-        || {
-            shared
-                .engine
-                .summarize_meeting(id.clone(), settings.default_template, keys)
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        },
-    )
-    .is_err()
+    // Admission belongs to the core: readiness is not consent, and a failed attempt must
+    // not be repeated by another finish event or after restarting a host.
+    if shared
+        .engine
+        .summarize_meeting_automatically(
+            id.clone(),
+            shared.settings().default_template,
+            shared.keys(),
+        )
+        .is_err()
     {
         LOG.error("Automatic summarization failed; transcript and notes remain saved.");
     }
     let _ = app.emit("meeting-updated", id);
     crate::cloud::poke(&app);
-}
-
-fn summary_configuration_ready(
-    settings: &pennel_core::Settings,
-    keys: &pennel_core::ApiKeys,
-    apple_available: bool,
-) -> bool {
-    let Some((account, model)) = settings.resolve(&settings.llm) else {
-        return false;
-    };
-    if model.trim().is_empty()
-        || !pennel_core::supports(account.kind, pennel_core::ProviderTask::Llm)
-    {
-        return false;
-    }
-    if pennel_core::requires_key(account.kind)
-        && keys
-            .by_provider
-            .get(&account.id)
-            .is_none_or(|key| key.trim().is_empty())
-    {
-        return false;
-    }
-    if account.kind.is_cli_agent() && account.base_url.trim().is_empty() {
-        return false;
-    }
-    account.kind != pennel_core::ProviderKind::AppleIntelligence || apple_available
-}
-
-fn optional_summary(
-    configured: bool,
-    run: impl FnOnce() -> Result<(), String>,
-) -> Result<bool, String> {
-    if !configured {
-        return Ok(false);
-    }
-    run().map(|()| true)
 }
 
 /// Worker-only shutdown path. The host keeps its event loop alive while native audio is released.
@@ -1447,17 +1400,23 @@ mod tests {
         let (_root, shared, session, _token) = recording();
         assert_eq!(shared.settings().mode, pennel_core::DictationMode::Fast);
         session.stop().unwrap();
-        let settings = shared.settings();
         let keys = pennel_core::ApiKeys {
             by_provider: HashMap::new(),
         };
-        let configured = summary_configuration_ready(&settings, &keys, false);
-        assert!(!configured);
+        assert_eq!(
+            shared.settings().summary_automation,
+            pennel_core::SummaryAutomation::Unanswered
+        );
         assert!(
-            !optional_summary(configured, || panic!(
-                "An unconfigured LLM must not be called"
-            ))
-            .unwrap()
+            shared
+                .engine
+                .summarize_meeting_automatically(
+                    session.id(),
+                    shared.settings().default_template,
+                    keys
+                )
+                .unwrap()
+                .is_none()
         );
         assert_eq!(
             shared.engine.meeting_notes(session.id()),
@@ -1468,8 +1427,10 @@ mod tests {
     }
 
     #[test]
-    fn configured_summary_errors_remain_recoverable_errors() {
-        let mut settings = pennel_core::default_settings();
+    fn configured_model_never_implies_automatic_summary_consent() {
+        let (_root, shared, session, _token) = recording();
+        session.stop().unwrap();
+        let mut settings = shared.settings();
         let account = pennel_core::new_account(
             pennel_core::ProviderKind::Ollama,
             settings.providers.clone(),
@@ -1482,16 +1443,25 @@ mod tests {
         let keys = pennel_core::ApiKeys {
             by_provider: HashMap::new(),
         };
-        let configured = summary_configuration_ready(&settings, &keys, false);
-        assert!(configured);
-        assert_eq!(
-            optional_summary(configured, || Err(
-                "Provider tijdelijk niet bereikbaar".into()
-            )),
-            Err("Provider tijdelijk niet bereikbaar".into())
-        );
-        settings.llm.model.clear();
-        assert!(!summary_configuration_ready(&settings, &keys, false));
+        for policy in [
+            pennel_core::SummaryAutomation::Unanswered,
+            pennel_core::SummaryAutomation::Manual,
+        ] {
+            settings.summary_automation = policy;
+            shared.engine.update_settings(settings.clone()).unwrap();
+            assert!(
+                shared
+                    .engine
+                    .summarize_meeting_automatically(
+                        session.id(),
+                        settings.default_template.clone(),
+                        keys.clone()
+                    )
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(shared.engine.meeting_markdown(session.id()).is_none());
     }
 
     #[test]

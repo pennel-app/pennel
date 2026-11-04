@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-04",
+  "implementation_issue": 141,
+  "wayfinder_map": 142,
+  "product_code_commit": "dcb7f4766b5fe9701ff7f8f47696c45e901120f9",
+  "product_source_sha256": "d1c65eb12bb112fddd496c56c517786839f7d35b4ae03536c2b6d39a43085d4c",
+  "local_checks": {
+    "core_release_build": true,
+    "core_tests_passed": 1066,
+    "core_tests_existing_ignored": 7,
+    "typing_tests_passed": 17,
+    "core_fmt": true,
+    "core_strict_clippy_default_and_lean": true,
+    "desktop_frontend_tests_passed": 330,
+    "desktop_frontend_build": true,
+    "desktop_backend_tests_passed": 270,
+    "fixture_tests_passed": 54,
+    "packaging_tests_passed": 61,
+    "theme_check": true,
+    "mac_services_tests_passed": 146,
+    "mobilekit_tests_passed": 116,
+    "mobile_typecheck": true,
+    "mobile_ui_tests_passed": 158,
+    "mobile_plugin_tests_passed": 17,
+    "mobile_widget_tests_passed": 7,
+    "cng_clean_and_repeated": true,
+    "pod_checks_passed": 6,
+    "hosted_mobile_runtime_tests_passed": 144,
+    "hosted_keyboard_tests_passed": 36,
+    "unsigned_ios_simulator_release_build": true,
+    "unsigned_ios_device_release_build": true
+  },
+  "desktop_browser_matrix": [
+    {
+      "mode": "en-light",
+      "scenarios": 272,
+      "failures": 0,
+      "manifest_sha256": "df8f428a31f15644a34a404f2df46b47a0fe7f21ea26e0d79a072958b928b646"
+    },
+    {
+      "mode": "en-dark",
+      "scenarios": 272,
+      "failures": 0,
+      "manifest_sha256": "922b118a5104e91e15bd973eb3a782803c288078a65288138e2dfc3a7d488a34"
+    },
+    {
+      "mode": "nl-light",
+      "scenarios": 272,
+      "failures": 0,
+      "manifest_sha256": "2be44c8ae33db68b37afae12cea7543aeacdfe5ca088e228383ee87c55616a96"
+    },
+    {
+      "mode": "nl-dark",
+      "scenarios": 272,
+      "failures": 0,
+      "manifest_sha256": "4a40e64860569692b0240f6c8a2d7d8a2e9ea340e462410e0e7e4abfdff6ebc0"
+    }
+  ],
+  "native_mac": {
+    "captures": 24,
+    "actual_native_material": "liquid_glass",
+    "personal_team": "B538Q2K76C",
+    "signature": "timestamp-free personal Developer ID",
+    "actual_audio": false,
+    "actual_provider_inference": false,
+    "synthetic_capture_ipc": true
+  },
+  "native_ios": {
+    "device": "iPhone 17 / iOS 26.5 simulator",
+    "profile": "simpler-ux-141",
+    "baseline": "origin/main JavaScript on the same native candidate host",
+    "synthetic_meeting_data": true,
+    "actual_audio": false,
+    "actual_inference": false,
+    "signed_device_acceptance": false
+  },
+  "acceptance_open": [
+    "human prototype feedback",
+    "two five-person formative rounds",
+    "real calls and hardware Stop latency",
+    "physical IME/VoiceOver",
+    "installed Windows/Linux",
+    "physical iPhone keyboard and signed upgrade",
+    "mixed-version sync"
+  ],
+  "hosted_ci": "Tracked in the pull request, separate from this local receipt."
+}

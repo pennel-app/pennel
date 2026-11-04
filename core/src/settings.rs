@@ -34,6 +34,16 @@ pub enum SpeakerRecognitionMode {
     Cloud,
 }
 
+/// A deliberate owner choice; upgrading must never authorize model work.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum SummaryAutomation {
+    #[default]
+    Unanswered,
+    Manual,
+    Automatic,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingStatus {
@@ -164,6 +174,8 @@ pub struct Settings {
     #[serde(default = "default_template_id")]
     pub default_template: String,
     #[serde(default)]
+    pub summary_automation: SummaryAutomation,
+    #[serde(default)]
     pub app_rules: Vec<AppRule>,
     #[serde(default)]
     pub calendar_rules: Vec<CalendarRule>,
@@ -258,6 +270,7 @@ pub fn default_settings() -> Settings {
         local_unload_minutes: 5,
         meetings_dir: String::new(),
         meeting_audio_retention_days: 0,
+        summary_automation: SummaryAutomation::Unanswered,
         default_template: default_template_id(),
         app_rules: Vec::new(),
         calendar_rules: Vec::new(),

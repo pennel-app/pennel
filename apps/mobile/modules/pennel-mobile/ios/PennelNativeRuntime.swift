@@ -143,7 +143,11 @@ public final class PennelNativeRuntime {
     }
 
     public func stopMeeting() async {
-        await MeetingRuntime.shared.stop()
+        stopMeeting(noteHandoff: nil)
+    }
+
+    private func stopMeeting(noteHandoff: MeetingStopNotes?) {
+        MeetingRuntime.shared.requestStop(notes: noteHandoff)
         if let id = MeetingRuntime.shared.lastFinish?.id { requestNavigation("meeting", meetingId: id) }
         publish()
     }
@@ -237,7 +241,8 @@ public final class PennelNativeRuntime {
             copy(text, html: input.values["html"] as? String)
             return "null"
         case "dictation.history":
-            return try await background { try BridgeJSON.encode($0.history(limit: 200).map(BridgeJSON.history)) }
+            let limit = try input.positiveUInt32("limit", default: 200)
+            return try await background { try BridgeJSON.encode($0.history(limit: limit).map(BridgeJSON.history)) }
         case "dictation.retry":
             let id = try input.required("id")
             return try await background { engine in
@@ -420,7 +425,18 @@ public final class PennelNativeRuntime {
                     throw PennelBridgeError("meeting_changed", "This recording changed. Refresh its current state before stopping it.")
                 }
             }
-            await stopMeeting()
+            let handoff: MeetingStopNotes?
+            if let notes = input.values["notes"] {
+                guard let text = notes as? String,
+                      let expected = input.values["expected_notes"] as? String,
+                      input.values["pending_notes"] == nil || input.values["pending_notes"] is String else {
+                    // Even a malformed draft payload cannot keep capture running.
+                    stopMeeting(noteHandoff: nil)
+                    throw PennelBridgeError("invalid_request", "Reload the current notes before saving.")
+                }
+                handoff = MeetingStopNotes(text: text, expected: expected, pending: input.values["pending_notes"] as? String)
+            } else { handoff = nil }
+            stopMeeting(noteHandoff: handoff)
             return try snapshot()
         case "meetings.retrySave":
             guard try input.required("id") == MeetingRuntime.shared.retainedId else {
@@ -466,6 +482,22 @@ public final class PennelNativeRuntime {
             }
             CloudSyncRunner.shared.poke()
             return result
+        case "meetings.summary", "meetings.summary.save", "meetings.summary.accept", "meetings.summary.history", "meetings.summary.restore", "meetings.summary.generate", "meetings.shareableSummary", "meetings.shareableSummary.generate", "meetings.export.preview":
+            let mutation = ["meetings.summary.save", "meetings.summary.accept", "meetings.summary.restore", "meetings.summary.generate", "meetings.shareableSummary.generate"].contains(method)
+            if mutation, MeetingRuntime.shared.unfinalisedMeetingIds.contains(try input.required("id")) {
+                throw PennelBridgeError("meeting_busy", "Finish this recording first.")
+            }
+            let language: InterfaceLanguage = uiLanguage() == "nl" ? .dutch : .english
+            let result = try await background {
+                try invokeMeetingSummaryCommand(method: method, input: input, engine: $0, language: language, keys: Keychain.apiKeys)
+            }
+            if ["meetings.summary.save", "meetings.summary.accept", "meetings.summary.restore", "meetings.shareableSummary.generate"].contains(method) { CloudSyncRunner.shared.poke() }
+            return result
+        case "meetings.export.prepared":
+            let output = try BridgeJSON.preparedMeetingExport(input)
+            if input.flag("share") { MeetingShare.present(output) }
+            if input.flag("copy") { MeetingShare.copy(output, formatted: input.flag("formatted")) }
+            return "null"
         case "meetings.templates": return try await background { try BridgeJSON.encode($0.meetingTemplates().map(BridgeJSON.template)) }
         case "conversations.read", "conversations.update", "conversations.begin", "conversations.cancel", "conversations.source":
             let requestJSON = try BridgeJSON.encode(input.values["request"] as? [String: Any] ?? [:])
@@ -1026,10 +1058,11 @@ extension PennelNativeRuntime {
                 CloudSyncRunner.shared.poke()
             } catch { publish(); return }
         }
-        guard MeetingRuntime.languageModelReady(model.engine.settings()) else { publish(); return }
         let engine = model.engine
         let template = engine.settings().defaultTemplate
-        _ = try? await Task.detached { try engine.summarizeMeeting(id: finish.id, templateId: template, keys: Keychain.apiKeys()) }.value
+        // Core admission checks the explicit policy and durably consumes one automatic attempt.
+        // A ready model does not opt the owner in, and duplicate finish callbacks cannot retry it.
+        _ = try? await Task.detached { try engine.summarizeMeetingAutomatically(id: finish.id, templateId: template, keys: Keychain.apiKeys()) }.value
         CloudSyncRunner.shared.poke()
         publish()
     }
@@ -1235,6 +1268,7 @@ extension PennelNativeRuntime {
             "phase": phase(runtime.phase), "id": BridgeJSON.optional(runtime.activeMeetingId), "title": runtime.title,
             "retained_id": BridgeJSON.optional(runtime.retainedId), "last_finished_id": BridgeJSON.optional(runtime.lastFinish?.id),
             "elapsed_secs": Double(runtime.elapsedMs) / 1_000, "notes": runtime.notes,
+            "pending_notes": BridgeJSON.optional(runtime.pendingNotes),
             "transcript": liveTranscript?["transcript"] ?? runtime.transcript.map(BridgeJSON.segment), "pending": runtime.pending,
             "error": BridgeJSON.optional(runtime.warning ?? runtime.lastFinish?.error),
             "error_code": BridgeJSON.optional(MeetingRuntime.Message.code(for: runtime.warning ?? runtime.lastFinish?.error))]

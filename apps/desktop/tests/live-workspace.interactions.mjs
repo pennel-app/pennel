@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 30) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -12,7 +13,7 @@ function edit(input, text) {
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
-function tab(name) { document.querySelector(`[data-live-tab="${name}"]`)?.click(); }
+function tab(name) { selectMeetingPane(document.querySelector(".live-workspace"), name); }
 
 export async function checkLiveConcurrentEditing() {
   const fixture = owned();
@@ -159,15 +160,18 @@ export async function checkLiveDuplicateNotesReview() {
   assert(note.selectionEnd === repeated.length * 2 + 1, "The repeated note source range is wrong.");
   root.querySelector(".live-source-back").click();
   await window.__PENNEL_PLATFORM__.invoke("stop_meeting");
-  await until(() => !root.querySelector(".live-review").hidden, "The finished workspace has no review/export route.");
-  root.querySelector(".live-review").click();
-  await until(() => document.querySelector(".meeting-detail .meeting-footer .share-menu"), "Existing review/export controls are unavailable.");
-  const details = document.querySelector(".own-notes");
-  details.open = true;
-  const changed = "Acknowledged edits made in the existing review editor.";
-  edit(details.querySelector("textarea"), changed);
-  document.querySelector(".meeting-workspace-return").click();
-  await until(() => document.querySelector(".live-workspace") === root, "Review did not return to the retained workspace.");
-  assert(root.querySelector(".live-notes") === note && note.value === changed, "Review lost workspace identity or its confirmed edits.");
-  return { exactDuplicateSource: true, existingReviewAndExport: true, acknowledgedReviewEditsRetained: true, syntheticOnly: true };
+  await until(() => root.dataset.recording === "false" && !root.querySelector(".meeting-export-action").hidden, "The finished workspace has no copy/export control.");
+  assert(!root.querySelector(".live-review") && document.querySelector(".live-workspace") === root, "Finishing introduced a separate review workspace.");
+  tab("notes");
+  const changed = "Acknowledged edits made in the same finished meeting editor.";
+  edit(note, changed);
+  await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
+  root.querySelector(".meeting-export-action").click();
+  await until(() => root.querySelector(".meeting-export-preview")?.getClientRects().length, "The exact copy/export preview is unavailable.");
+  assert(root.querySelector(".meeting-export-preview").dataset.exportScope === "shareable", "The default copy/export did not use the private-safe scope.");
+  root.querySelector(".meeting-companion-close").click();
+  tab("notes");
+  assert(root.querySelector(".live-notes") === note && note.value === changed && fixture.workspace.notes() === changed,
+    "Copy/export lost workspace identity or acknowledged note edits.");
+  return { exactDuplicateSource: true, unifiedReviewAndExport: true, acknowledgedReviewEditsRetained: true, syntheticOnly: true };
 }
