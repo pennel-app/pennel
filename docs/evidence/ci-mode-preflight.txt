@@ -1,0 +1,1 @@
+CI qualification mode preflight. Synthetic documentation-only input; no product behavior changes.
