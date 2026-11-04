@@ -87,8 +87,8 @@ pub fn window_spec(kind: &str) -> WindowSpec {
             "record-prompt",
             "prompt",
             "Pennel",
-            (420.0, 160.0),
-            (420.0, 160.0),
+            (420.0, 144.0),
+            (420.0, 144.0),
         ),
         _ => (
             "main",
