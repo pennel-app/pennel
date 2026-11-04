@@ -849,7 +849,8 @@ button.btn.primary:active:not(:disabled) { opacity: .82; }
 .meeting-row:not(.selected):hover { background: var(--hover); }
 :root[data-window-focused="false"] :is(.library-shortcuts > button[aria-current="page"], .library-ask[aria-current], .library-record[aria-current], .settings-categories > button[aria-current="page"], .history-entry.history-selected) { background: var(--subtle); }
 :root[data-native-material="opaque"] { --window-background: var(--chrome); --navigation-surface: var(--sidebar); --chrome-surface: var(--chrome); }
-:root[data-platform="macos"]:is([data-native-material="liquid_glass"], [data-native-material="vibrancy"]) .record-prompt { background: var(--navigation-backing); box-shadow: none; }
+:root[data-platform="macos"]:is([data-native-material="liquid_glass"], [data-native-material="vibrancy"]) body[data-window="prompt"] main { padding: 0; }
+:root[data-platform="macos"]:is([data-native-material="liquid_glass"], [data-native-material="vibrancy"]) .record-prompt { min-height: 100%; padding: 22px 24px; border-radius: 0; background: transparent; box-shadow: none; }
 :root[data-platform="macos"]:not([data-window-focused="false"]) :is(.library-shortcuts, .library-settings, .library-ask) .ui-icon { color: var(--muted); }
 :root[data-platform="macos"][data-window-focused="false"] :is(.library-shortcuts, .library-settings, .library-ask) .ui-icon { color: var(--muted); }
 :root[data-increase-contrast="true"] { --muted: var(--foreground); --control-edge: var(--foreground); }
