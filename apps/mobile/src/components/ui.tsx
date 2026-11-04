@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps, type TextProps, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -10,13 +10,14 @@ import { useRouter } from 'expo-router';
 import { clock } from '../format';
 import { recordingPresentation } from '../workflow-state';
 import { workflowText } from '../workflow-copy';
+import { hasRecordingToReturnTo, RecordingSheetReturn } from '../recording-finish';
 
 export function Body({ children, muted = false, style, ...props }: TextProps & { muted?: boolean }) {
   const { theme } = useRuntime();
   return <Text {...props} style={[{ color: muted ? theme.colors.muted : theme.colors.foreground, fontFamily: theme.font.regular, fontSize: theme.size.section, lineHeight: theme.space[6] }, style]}>{children}</Text>;
 }
 
-export function Page({ title, subtitle, children, action, footer, scroll = true, inset = true, bottomInset = false, scrollKey, recordingStatus = true }: { title?: string; subtitle?: string; children: React.ReactNode; action?: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; inset?: boolean; bottomInset?: boolean; scrollKey?: string; recordingStatus?: boolean }) {
+export function Page({ title, subtitle, children, action, footer, scroll = true, inset = true, bottomInset = false, scrollKey, recordingStatus = true, onReturnToRecording }: { title?: string; subtitle?: string; children: React.ReactNode; action?: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; inset?: boolean; bottomInset?: boolean; scrollKey?: string; recordingStatus?: boolean; onReturnToRecording?: () => void }) {
   const { theme, error, store, t, language } = useRuntime();
   const scrollView = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const offsets = useRef(new Map<string, number>());
@@ -30,20 +31,35 @@ export function Page({ title, subtitle, children, action, footer, scroll = true,
     {error && <View accessibilityRole="alert" style={{ padding: theme.space[3], marginBottom: theme.space[4], backgroundColor: theme.colors.subtle, borderRadius: theme.radius.control }}><Body style={{ color: theme.colors.accent }}>{ownedNativeFailureText(language, error)}</Body><Button title={t('common.close')} subtle onPress={store.clearError} /></View>}
     {children}
   </>;
-  return <SafeAreaView edges={[...(inset ? ['top' as const] : []), 'left', 'right', ...(bottomInset ? ['bottom' as const] : [])]} style={{ flex: 1, backgroundColor: theme.colors.surface }}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>{recordingStatus && <RecordingStatus />}{scroll ? <ScrollView ref={scrollView} keyboardShouldPersistTaps="handled" onScroll={scrollKey ? (event) => { offsets.current.set(scrollKey, event.nativeEvent.contentOffset.y); } : undefined} scrollEventThrottle={32} contentContainerStyle={{ padding: theme.space[5], paddingBottom: theme.space[10] }} automaticallyAdjustKeyboardInsets>{content}</ScrollView> : <View style={{ flex: 1, padding: theme.space[5], paddingBottom: bottomInset ? theme.space[3] : 0 }}>{content}</View>}{footer && <View style={{ paddingHorizontal: theme.space[5], paddingVertical: theme.space[3], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.border, backgroundColor: theme.colors.surface }}>{footer}</View>}</KeyboardAvoidingView></SafeAreaView>;
+  return <SafeAreaView edges={[...(inset ? ['top' as const] : []), 'left', 'right', ...(bottomInset ? ['bottom' as const] : [])]} style={{ flex: 1, backgroundColor: theme.colors.surface }}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>{recordingStatus && <RecordingStatus onReturnToRecording={onReturnToRecording} />}{scroll ? <ScrollView ref={scrollView} keyboardShouldPersistTaps="handled" onScroll={scrollKey ? (event) => { offsets.current.set(scrollKey, event.nativeEvent.contentOffset.y); } : undefined} scrollEventThrottle={32} contentContainerStyle={{ padding: theme.space[5], paddingBottom: theme.space[10] }} automaticallyAdjustKeyboardInsets>{content}</ScrollView> : <View style={{ flex: 1, padding: theme.space[5], paddingBottom: bottomInset ? theme.space[3] : 0 }}>{content}</View>}{footer && <View style={{ paddingHorizontal: theme.space[5], paddingVertical: theme.space[3], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.border, backgroundColor: theme.colors.surface }}>{footer}</View>}</KeyboardAvoidingView></SafeAreaView>;
 }
 
-function RecordingStatus() {
+function RecordingStatus({ onReturnToRecording }: { onReturnToRecording?: () => void }) {
   const { snapshot, theme, t, language } = useRuntime();
   const router = useRouter();
   const meeting = snapshot?.meeting;
-  if (!meeting || !meeting.id && !meeting.retained_id || meeting.phase === 'idle' && !meeting.retained_id) return null;
+  if (!meeting || !hasRecordingToReturnTo(meeting)) return null;
   const retained = Boolean(meeting.retained_id);
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${t('mobile.simple.recording_return')}. ${meeting.title}`} accessibilityHint={t('mobile.simple.recording_return_help')} onPress={() => router.push('/recording')} style={{ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.space[3], paddingVertical: theme.space[3], marginHorizontal: theme.space[5], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border }}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${t('mobile.simple.recording_return')}. ${meeting.title}`} accessibilityHint={t('mobile.simple.recording_return_help')} onPress={onReturnToRecording ?? (() => router.push('/recording'))} style={{ minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.space[3], paddingVertical: theme.space[3], marginHorizontal: theme.space[5], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border }}>
     <Ionicons accessible={false} name={retained ? 'alert-circle-outline' : 'radio-button-on'} size={20} color={theme.colors.accent} />
     <View style={{ flex: 1 }}><Body style={{ fontFamily: theme.font.medium }}>{t('mobile.simple.recording_return')}</Body><Body muted style={{ fontSize: theme.size.content }}>{retained ? t('mobile.simple.recording_retained') : `${workflowText(language, recordingPresentation(meeting.phase).status)} · ${clock(meeting.elapsed_secs)}`}</Body></View>
     <Ionicons accessible={false} name="chevron-forward" size={18} color={theme.colors.muted} />
   </Pressable>;
+}
+
+export function useRecordingSheetReturn(onClose: () => void) {
+  const { store } = useRuntime();
+  const router = useRouter();
+  const controller = useRef(new RecordingSheetReturn());
+  const [returning, setReturning] = useState(false);
+  const requestReturn = useCallback(() => controller.current.request(() => setReturning(true)), []);
+  const didDismiss = useCallback(() => controller.current.didDismiss(() => {
+    setReturning(false);
+    onClose();
+  }, () => {
+    if (hasRecordingToReturnTo(store.getSnapshot().snapshot?.meeting)) router.push('/recording');
+  }), [onClose, router, store]);
+  return { returning, requestReturn, didDismiss };
 }
 
 export function Section({ title, description, children }: { title?: string; description?: string; children?: React.ReactNode }) {

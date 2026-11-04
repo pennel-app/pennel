@@ -8,7 +8,7 @@ import { useMeetingSummary } from '../use-meeting-summary';
 import { dateLabel } from '../format';
 import { templateLabel } from '../owned-labels';
 import { SummaryDestination, summaryDestination } from './SummaryAutomation';
-import { ActionMenu, Actions, Body, Button, Field, Loading, NativeChoice, Notice, Page, Row, Section } from './ui';
+import { ActionMenu, Actions, Body, Button, Field, Loading, NativeChoice, Notice, Page, Row, Section, useRecordingSheetReturn } from './ui';
 import { Markdown } from './Markdown';
 
 export function MeetingSummary({ id, summary, active, sourceBusy, beforeGenerate }: { id: string; summary: ReturnType<typeof useMeetingSummary>; active: boolean; sourceBusy: boolean; beforeGenerate: () => Promise<boolean> }) {
@@ -19,6 +19,8 @@ export function MeetingSummary({ id, summary, active, sourceBusy, beforeGenerate
   const [historyShown, setHistoryShown] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<MeetingSummaryRevision | null>(null);
   const [candidate, setCandidate] = useState<MeetingSummaryCandidate | null>(null);
+  const candidateReturn = useRecordingSheetReturn(() => setCandidate(null));
+  const historyReturn = useRecordingSheetReturn(() => setHistoryShown(false));
   const [candidateDestination, setCandidateDestination] = useState('');
   const [candidateChanged, setCandidateChanged] = useState(false);
   const [chooseTemplate, setChooseTemplate] = useState(false);
@@ -75,12 +77,12 @@ export function MeetingSummary({ id, summary, active, sourceBusy, beforeGenerate
       </>}
       {!ready && <><Notice>{t('meetings.questions_setup_help')}</Notice><Button title={t('meetings.set_up_summaries')} subtle onPress={() => router.push({ pathname: '/settings/[section]', params: { section: 'models', task: 'llm' } })} /></>}
     </Section>
-    <Modal visible={candidate !== null} presentationStyle="pageSheet" animationType={reduced ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => setCandidate(null)}><Page title={t('mobile.simple.summary_preview')} bottomInset recordingStatus={false} action={<Button title={t('common.close')} subtle onPress={() => setCandidate(null)} />}>
+    <Modal visible={candidate !== null && !candidateReturn.returning} presentationStyle="pageSheet" animationType={reduced ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => setCandidate(null)} onDismiss={candidateReturn.didDismiss}><Page title={t('mobile.simple.summary_preview')} bottomInset onReturnToRecording={candidateReturn.requestReturn} action={<Button title={t('common.close')} subtle onPress={() => setCandidate(null)} />}>
       <Section description={t('mobile.simple.summary_candidate_help')}><SummaryDestination destination={candidateDestination} requested />{candidate && <Markdown text={candidate.markdown} />}</Section>
       {candidateChanged && <Notice error>{t('mobile.simple.summary_conflict')}</Notice>}
       <Actions><Button title={t('mobile.simple.summary_accept')} busy={summary.saving} onPress={() => { if (candidate) void summary.model.accept(candidate).then(async saved => { if (saved) { setCandidate(null); await summary.query.refresh(); } else { setCandidateChanged(true); await summary.query.refresh(); } }); }} /><Button title={t('mobile.simple.summary_keep')} subtle onPress={() => setCandidate(null)} /></Actions>
     </Page></Modal>
-    <Modal visible={historyShown} presentationStyle="pageSheet" animationType={reduced ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => setHistoryShown(false)}><Page title={t('mobile.simple.summary_history')} bottomInset recordingStatus={false} action={<Button title={t('common.close')} subtle onPress={() => setHistoryShown(false)} />}>
+    <Modal visible={historyShown && !historyReturn.returning} presentationStyle="pageSheet" animationType={reduced ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => setHistoryShown(false)} onDismiss={historyReturn.didDismiss}><Page title={t('mobile.simple.summary_history')} bottomInset onReturnToRecording={historyReturn.requestReturn} action={<Button title={t('common.close')} subtle onPress={() => setHistoryShown(false)} />}>
       {history.loading && <Loading />}{history.error && <><Notice error>{history.error}</Notice><Button title={t('common.retry')} subtle onPress={() => void history.refresh()} /></>}
       {selectedVersion ? <Section description={t('mobile.simple.summary_restore_help')}><Markdown text={selectedVersion.markdown} /><Button title={t('mobile.simple.summary_restore')} busy={busy.has(`summary-restore-${id}`)} disabled={summary.dirty} onPress={() => void restore()} /><Button title={t('common.back')} subtle onPress={() => setSelectedVersion(null)} /></Section> : <Section>{history.value?.map(version => <Row key={version.revision} title={t('mobile.simple.summary_version', { date: dateLabel(version.created_at, language) })} onPress={() => setSelectedVersion(version)} />)}{!history.loading && history.value?.length === 0 && <Notice>{t('mobile.simple.summary_history_empty')}</Notice>}</Section>}
     </Page></Modal>

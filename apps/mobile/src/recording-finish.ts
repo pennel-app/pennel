@@ -3,6 +3,27 @@ import type { RuntimeSnapshot } from './domain.ts';
 type MeetingSnapshot = RuntimeSnapshot['meeting'];
 export interface RecordingStopIntent { id: string; previousFinishedId: string | null }
 
+export function hasRecordingToReturnTo(meeting: MeetingSnapshot | undefined): boolean {
+  return Boolean(meeting && (meeting.retained_id || meeting.id && meeting.phase !== 'idle'));
+}
+
+/** Native modal dismissal must complete before a route can appear above its presenter. */
+export class RecordingSheetReturn {
+  private requested = false;
+  request = (dismiss: () => void): void => {
+    if (this.requested) return;
+    this.requested = true;
+    dismiss();
+  };
+  didDismiss = (close: () => void, returnToRecording: () => void): boolean => {
+    if (!this.requested) return false;
+    this.requested = false;
+    close();
+    returnToRecording();
+    return true;
+  };
+}
+
 export function completedRecording(meeting: MeetingSnapshot | undefined, intent: RecordingStopIntent | null): string | null {
   const finished = meeting?.last_finished_id;
   if (!intent || !finished || meeting?.phase !== 'idle' || meeting.retained_id || meeting.error) return null;

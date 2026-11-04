@@ -4,7 +4,7 @@ import type { MeetingExport as ExportDocument } from '../domain';
 import { useQuery, useReducedMotion, useRuntime } from '../runtime';
 import { taskReadiness } from '../task-readiness';
 import { SummaryDestination } from './SummaryAutomation';
-import { Actions, Body, Button, Loading, NativeChoice, Notice, Page, Section, Toggle } from './ui';
+import { Actions, Body, Button, Loading, NativeChoice, Notice, Page, Section, Toggle, useRecordingSheetReturn } from './ui';
 
 export function MeetingExport({ id, visible, onClose }: { id: string; visible: boolean; onClose: () => void }) {
   const { t, run, busy, snapshot } = useRuntime();
@@ -12,6 +12,7 @@ export function MeetingExport({ id, visible, onClose }: { id: string; visible: b
   const [scope, setScope] = useState<'shareable' | 'personal'>('shareable');
   const [includeTranscript, setIncludeTranscript] = useState(false);
   const [notice, setNotice] = useState(false);
+  const recordingReturn = useRecordingSheetReturn(onClose);
   const preview = useQuery<ExportDocument>('meetings.export.preview', { id, scope, include_transcript: includeTranscript }, visible);
   const generate = async () => {
     const result = await run('shareable-summary', 'meetings.shareableSummary.generate', { id });
@@ -23,7 +24,7 @@ export function MeetingExport({ id, visible, onClose }: { id: string; visible: b
     const result = await run('meeting-export', 'meetings.export.prepared', { output, copy: action !== 'share', share: action === 'share', formatted: action === 'formatted' });
     if (result !== undefined && action !== 'share') setNotice(true);
   };
-  return <Modal visible={visible} presentationStyle="pageSheet" animationType={reduced ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={onClose}><Page title={t('mobile.simple.preview_title')} bottomInset recordingStatus={false} action={<Button title={t('common.close')} subtle onPress={onClose} />}>
+  return <Modal visible={visible && !recordingReturn.returning} presentationStyle="pageSheet" animationType={reduced ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={onClose} onDismiss={recordingReturn.didDismiss}><Page title={t('mobile.simple.preview_title')} bottomInset onReturnToRecording={recordingReturn.requestReturn} action={<Button title={t('common.close')} subtle onPress={onClose} />}>
     <Section description={t(scope === 'shareable' ? 'mobile.simple.preview_shareable_help' : 'mobile.simple.preview_personal_help')}>
       <NativeChoice label={t('mobile.simple.preview_scope')} value={scope} options={[{ value: 'shareable', label: t('mobile.simple.preview_shareable') }, { value: 'personal', label: t('mobile.simple.preview_personal') }]} onChange={value => { setScope(value); setNotice(false); }} />
       <Toggle title={t('mobile.simple.preview_transcript')} value={includeTranscript} onChange={value => { setIncludeTranscript(value); setNotice(false); }} />
