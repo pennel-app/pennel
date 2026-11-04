@@ -9,6 +9,7 @@ import stat
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import MagicMock, patch
 import zipfile
 
 
@@ -75,7 +76,7 @@ def observation(category='docs', mode='serial', cache='warm', pair='one', second
                'created_at': stamp(-86400), 'jobs': [job('changes / changes', seconds)],
                'artifacts': {'ci-mode-2': artifact(actual)}}
         if workflow in ('ci.yml', 'mobile.yml'):
-            run['jobs'].append(job('required', seconds))
+            run['jobs'].append(job('required' if workflow == 'ci.yml' else 'Complete mobile validation', seconds))
         if workflow == 'ci.yml' and category == 'core':
             run['jobs'].append(job('build-and-test', seconds, (
                 'Rust format', 'Rust lint', 'Rust tests', 'Local keyboard policy',
@@ -217,6 +218,13 @@ class QualificationTests(unittest.TestCase):
             with self.subTest(mutation=mutation):
                 self.assertFalse(CI.validate_observation(obs)['valid'])
 
+    def test_mobile_gate_uses_its_actual_api_display_name(self):
+        obs = observation('mobile', 'candidate')
+        gate = next(j for j in obs['runs'][-1]['jobs'] if j['name'] == 'Complete mobile validation')
+        self.assertTrue(CI.validate_observation(obs)['valid'])
+        gate['name'] = 'required'
+        self.assertFalse(CI.validate_observation(obs)['valid'])
+
     def test_core_cannot_omit_feature_or_platform_validation(self):
         obs = observation('core')
         obs['runs'][0]['jobs'][2]['steps'].pop(4)
@@ -268,6 +276,21 @@ class QualificationTests(unittest.TestCase):
         self.assertTrue(identity['rust_exact'])
         self.assertTrue(identity['node_cache_restored'])
         self.assertIsNone(CI.log_identity('Version: an-unrelated-tool')['image_version'])
+
+    def test_live_startup_fixture_distinguishes_provisioner_and_image_with_bom(self):
+        prefix = ('\ufeff2026-11-04T22:00:00.0000000Z ##[group]Runner Image Provisioner\r\n'
+                  '2026-11-04T22:00:00.0000000Z Version: 20261028.624\r\n'
+                  '2026-11-04T22:00:00.0000000Z ##[endgroup]\r\n'
+                  '2026-11-04T22:00:00.0000000Z ##[group]Runner Image\r\n'
+                  '2026-11-04T22:00:00.0000000Z Image: ubuntu-24.04\r\n'
+                  '2026-11-04T22:00:00.0000000Z Version: 20261101.360.1\r\n'
+                  '2026-11-04T22:00:00.0000000Z ##[endgroup]\r\n')
+        identity = CI.log_identity(prefix)
+        self.assertEqual(identity['image'], 'ubuntu-24.04')
+        self.assertEqual(identity['image_version'], '20261101.360.1')
+        provisioner_only = prefix.split('##[group]Runner Image\r\n')[0]
+        self.assertIsNone(CI.log_identity(provisioner_only)['image'])
+        self.assertIsNone(CI.log_identity(provisioner_only)['image_version'])
 
     def test_five_pairs_per_scope_and_cold_controls_are_required(self):
         observations = []
@@ -342,6 +365,88 @@ class QualificationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 CI.capture(args, FakeGitHub())
             self.assertEqual((Path(directory) / 'observation.json').read_bytes(), saved)
+
+
+class ReadRobustnessTests(unittest.TestCase):
+    def response(self, status=0, stdout=b'{"ok":true}', stderr=b''):
+        return SimpleNamespace(returncode=status, stdout=stdout, stderr=stderr)
+
+    def test_transient_timeout_and_tls_reads_retry_without_workflow_mutation(self):
+        api = CI.GitHub(REPO)
+        attempts = [CI.subprocess.TimeoutExpired('gh', 25),
+                    self.response(1, stderr=b'net/http: TLS handshake timeout token=DO-NOT-STORE'),
+                    self.response()]
+        with patch.object(CI.subprocess, 'run', side_effect=attempts) as run, patch.object(CI.time, 'sleep'):
+            self.assertEqual(api.request('actions/runs/1'), {'ok': True})
+        self.assertEqual(run.call_count, 3)
+        for call in run.call_args_list:
+            self.assertEqual(call.args[0][2:4], ['--method', 'GET'])
+            self.assertEqual(call.kwargs['timeout'], 25)
+        self.assertEqual(api.read_trace[-1]['status'], 'recovered')
+        self.assertNotIn('DO-NOT-STORE', json.dumps(api.read_trace))
+
+    def test_rate_limit_and_server_errors_retry_but_permission_and_missing_do_not(self):
+        api = CI.GitHub(REPO)
+        responses = [self.response(1, stderr=b'HTTP 429'), self.response(1, stderr=b'(HTTP 503)'), self.response()]
+        with patch.object(CI.subprocess, 'run', side_effect=responses) as run, patch.object(CI.time, 'sleep'):
+            api.request('actions/runs/1')
+        self.assertEqual(run.call_count, 3)
+        for status in (401, 403, 404):
+            with self.subTest(status=status), patch.object(CI.subprocess, 'run', return_value=self.response(
+                    1, stderr=f'HTTP {status} TLS handshake timeout'.encode())) as run:
+                with self.assertRaises(CI.ReadError):
+                    CI.GitHub(REPO).request('actions/runs/1')
+                self.assertEqual(run.call_count, 1)
+
+    def test_exhausted_reads_preserve_observer_trace_without_inventing_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(repository=REPO, pr=155, category='docs', head_sha=HEAD,
+                                   mode='serial', cohort='one-serial', pair='one', cache_state='warm',
+                                   requested_at=stamp(), output=directory, run=[])
+            with patch.object(CI.subprocess, 'run', side_effect=CI.subprocess.TimeoutExpired('gh', 25)) as run, \
+                    patch.object(CI.time, 'sleep'), self.assertRaises(CI.ReadError):
+                CI.capture(args)
+            self.assertEqual(run.call_count, 3)
+            trace_file = Path(directory) / 'observer-read-error.json'
+            trace = json.loads(trace_file.read_text())
+            self.assertEqual(trace['status'], 'observer-read-error')
+            self.assertEqual(len(trace['api_read_trace']), 3)
+            self.assertFalse(trace['api_read_trace'][-1]['retrying'])
+            self.assertFalse((Path(directory) / 'observation.json').exists())
+            saved = trace_file.read_bytes()
+            with self.assertRaises(ValueError):
+                CI.capture(args)
+            self.assertEqual(trace_file.read_bytes(), saved)
+
+    def test_malformed_json_and_unclassified_cli_error_fail_once(self):
+        for response in (self.response(stdout=b'not json'), self.response(1, stderr=b'Please authenticate TOKEN')):
+            api = CI.GitHub(REPO)
+            with self.subTest(response=response), patch.object(CI.subprocess, 'run', return_value=response) as run:
+                with self.assertRaises(CI.ReadError):
+                    api.request('actions/runs/1')
+                self.assertEqual(run.call_count, 1)
+                self.assertNotIn('TOKEN', json.dumps(api.read_trace))
+
+    def test_binary_and_log_reads_allow_raw_capture_without_printing_terminal_data(self):
+        api = CI.GitHub(REPO)
+        binary = b'PK\x03\x04\x1b[31m'
+        with patch.object(CI.subprocess, 'run', return_value=self.response(stdout=binary)) as run:
+            self.assertEqual(api.request('actions/artifacts/1/zip', binary=True), binary)
+        self.assertIn('--allow-escape-sequences', run.call_args.args[0])
+        prefix = (b'\x1b[31m##[group]Runner Image\x1b[0m\n'
+                  b'Image: macos-26-arm64\nVersion: 20261026.0455.2\n##[endgroup]\n')
+        stream, process, selector = MagicMock(), MagicMock(), MagicMock()
+        process.stdout = stream
+        process.poll.return_value = 0
+        selector.__enter__.return_value = selector
+        selector.select.return_value = [(stream, 1)]
+        with patch.object(CI.subprocess, 'Popen', return_value=process) as popen, \
+                patch.object(CI.selectors, 'DefaultSelector', return_value=selector), \
+                patch.object(CI.os, 'read', side_effect=[prefix, b'']):
+            identity = api.job_identity({'id': 1, 'runner_name': 'hosted', 'status': 'completed'})
+        self.assertIn('--allow-escape-sequences', popen.call_args.args[0])
+        self.assertEqual(identity['image'], 'macos-26-arm64')
+        self.assertNotIn('\x1b', json.dumps(identity))
 
 
 if __name__ == '__main__':

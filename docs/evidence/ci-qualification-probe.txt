@@ -1,1 +1,1 @@
-Synthetic docs qualification input. No runtime behavior or dependency change.
+Synthetic documentation qualification input. No runtime behavior or dependency change.
