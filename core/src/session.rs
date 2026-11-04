@@ -1360,6 +1360,21 @@ impl MeetingSession {
     pub fn set_notes(&self, text: String) -> Result<(), PennelError> {
         self.store.write_notes(&self.id, &text)
     }
+
+    pub fn set_notes_if_current(
+        &self,
+        text: String,
+        expected: String,
+        pending: Option<String>,
+    ) -> Result<(), PennelError> {
+        // Stop may race one already-admitted autosave from this editor; all other text remains a conflict.
+        let mut versions = vec![expected.as_str(), text.as_str()];
+        if let Some(pending) = pending.as_deref() {
+            versions.push(pending);
+        }
+        self.store
+            .write_notes_if_any_unchanged(&self.id, &versions, &text)
+    }
     pub fn transcript(&self) -> Vec<Segment> {
         self.progress.lock().unwrap().visible()
     }
@@ -2906,6 +2921,47 @@ mod tests {
         assert_eq!(engine.meeting_notes(session.id()), "- export naar Excel");
         assert_eq!(engine.meetings()[0].id, session.id());
         assert_eq!(engine.search_meetings("notities".into()).len(), 1);
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn final_note_handoff_accepts_its_pending_autosave_and_keeps_unrelated_external_edits() {
+        let (dir, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = engine(&dir, &server);
+        let session = engine
+            .clone()
+            .start_meeting("Final notes handoff".into(), keys())
+            .unwrap();
+        session.set_notes("Pending owned autosave".into()).unwrap();
+        session
+            .set_notes_if_current(
+                "Final typed notes".into(),
+                "Original baseline".into(),
+                Some("Pending owned autosave".into()),
+            )
+            .unwrap();
+        assert_eq!(engine.meeting_notes(session.id()), "Final typed notes");
+        session
+            .set_notes_if_current("Final typed notes".into(), "Original baseline".into(), None)
+            .unwrap();
+        std::fs::write(
+            Path::new(&session.dir()).join("notes.md"),
+            "Unrelated external edit",
+        )
+        .unwrap();
+        assert!(
+            session
+                .set_notes_if_current(
+                    "Final typed notes".into(),
+                    "Original baseline".into(),
+                    Some("Pending owned autosave".into())
+                )
+                .is_err()
+        );
+        assert_eq!(
+            engine.meeting_notes(session.id()),
+            "Unrelated external edit"
+        );
         session.stop().unwrap();
     }
 

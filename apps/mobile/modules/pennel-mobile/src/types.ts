@@ -4,6 +4,8 @@ export type { ConversationSnapshot, ConversationResolvedSource } from '../../../
 export type { InsightSnapshot, InsightAvailability, InsightJob, InsightItem, InsightSource, InsightLanguagePolicy } from '../../../../../assets/contracts/meeting-insights';
 export type InterfaceLanguage = 'en' | 'nl';
 export type Appearance = 'system' | 'light' | 'dark';
+export type SummaryAutomation = 'unanswered' | 'manual' | 'automatic';
+export type MeetingOutputScope = 'personal' | 'shareable';
 export type ProviderKind = 'open_ai' | 'open_router' | 'groq' | 'mistral' | 'ollama' | 'lm_studio' | 'custom' | 'local' | 'apple_speech' | 'apple_intelligence' | 'claude_code' | 'codex' | 'open_code' | 'copilot' | 'cursor_agent' | 'gemini_cli' | 'pennel_cloud';
 export interface Capability { status: 'available' | 'permission_required' | 'unsupported' | 'unavailable'; reason: string | null }
 export interface ModelChoice { provider_id: string; model: string }
@@ -45,6 +47,7 @@ export interface Settings {
   style_rules: { bundle_id: string; style: string }[];
   history_retention_days: number;
   default_template: string;
+  summary_automation: SummaryAutomation;
   meeting_audio_retention_days: number;
   diarization: boolean;
   speaker_recognition: 'local' | 'cloud';
@@ -68,6 +71,11 @@ export interface MeetingVoice { voice: number; name: string | null; remembered: 
 export interface MeetingDetail { info: MeetingInfo; notes: string; summary: string | null; transcript: Segment[]; speakers: { voice: number; name: string }[]; voices?: MeetingVoice[]; attendees: string[]; audio_tracks: { speaker: 'me' | 'others'; source_id?: MeetingAudioSource | null; available: boolean }[]; summary_outdated?: boolean; conflicts?: ConflictFile[]; interruption?: string | null; interruption_code?: string | null; meeting_uid?: string; metadata_status?: TranscriptMetadataStatus; revision?: number }
 export interface ConflictFile { name: string; text?: string }
 export interface MeetingTemplate { id: string; name: string; builtin: boolean; customized: boolean }
+export interface MeetingSummaryDocument { meeting_uid: string; markdown: string; revision: string; source_revision: string; edited: boolean; outdated: boolean }
+export interface MeetingSummaryCandidate { meeting_uid: string; markdown: string; revision: string; source_revision: string }
+export interface MeetingSummaryRevision { revision: string; markdown: string; source_revision: string; created_at: string }
+export interface ShareableMeetingSummary { meeting_uid: string; markdown: string; source_revision: string; generated_at: string; provider_id: string; model: string; provenance: string; outdated: boolean }
+export interface MeetingExport { title: string; markdown: string; html: string }
 export interface HistoryEntry { id: string; created_at_ms: number; raw: string; text: string; status: 'done' | 'failed' | 'unsaved'; error: string | null; has_audio: boolean }
 export interface Passage { meeting_id: string; title: string; kind: 'notes' | 'transcript' | 'summary'; start_ms: number | null; text: string; snippet: string; meeting_uid?: string | null; utterance_ids?: string[]; utterance_fingerprints?: string[] }
 export interface MeetingAnswer { text: string; citations: { number: number; passage: Passage }[] }
@@ -96,7 +104,7 @@ export interface RuntimeSnapshot {
   cleanup_verification?: CleanupVerificationAvailability;
   dictation: { phase: 'idle' | 'listening' | 'processing'; text: string | null; level: number; session_id: string | null; practice: boolean; result_session_id: string | null; error: string | null; error_code?: string | null; cleanup_verification?: CleanupVerificationAvailability | null };
   session: { phase: 'off' | 'ready' | 'listening' | 'processing'; expires_at_ms: number | null; full_access_seen: boolean; keyboard_enabled?: boolean; error: string | null; error_code?: string | null; cleanup_verification?: CleanupVerificationAvailability | null };
-  meeting: { phase: 'idle' | 'starting' | 'recording' | 'interrupted' | 'finishing' | 'error'; id: string | null; retained_id?: string | null; last_finished_id?: string | null; title: string; elapsed_secs: number; notes: string; transcript: Segment[]; pending: number; error: string | null; error_code?: string | null };
+  meeting: { phase: 'idle' | 'starting' | 'recording' | 'interrupted' | 'finishing' | 'error'; id: string | null; meeting_uid?: string | null; retained_id?: string | null; last_finished_id?: string | null; title: string; elapsed_secs: number; notes: string; pending_notes?: string | null; transcript: Segment[]; pending: number; error: string | null; error_code?: string | null };
   cloud: CloudState;
   recognition_jobs: SpeakerJob[];
   insight_jobs?: Pick<InsightJob, 'job_id' | 'meeting_uid' | 'state' | 'revision' | 'physical_running'>[];
@@ -163,10 +171,20 @@ export interface MobileCommandResults {
   'meetings.rename': string;
   'meetings.delete': void;
   'meetings.summarize': MeetingDetail;
+  'meetings.summary': MeetingSummaryDocument;
+  'meetings.summary.save': MeetingSummaryDocument;
+  'meetings.summary.accept': MeetingSummaryDocument;
+  'meetings.summary.history': MeetingSummaryRevision[];
+  'meetings.summary.restore': MeetingSummaryDocument;
+  'meetings.summary.generate': MeetingSummaryCandidate;
+  'meetings.shareableSummary': ShareableMeetingSummary | null;
+  'meetings.shareableSummary.generate': ShareableMeetingSummary;
+  'meetings.export.preview': MeetingExport;
+  'meetings.export.prepared': void;
   'meetings.templates': MeetingTemplate[];
   'meetings.ask': MeetingAnswer;
   'meetings.search': Passage[];
-  'meetings.export': { title: string; markdown: string; html: string };
+  'meetings.export': MeetingExport;
   'meetings.play': void;
   'meetings.playUtterance': void;
   'meetings.stopPlayback': void;

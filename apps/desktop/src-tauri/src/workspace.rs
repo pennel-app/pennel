@@ -501,7 +501,7 @@ pub fn legacy_route(kind: &str, tab: Option<&str>) -> Option<WorkspaceRoute> {
                     "local" => "local",
                     known @ ("overview" | "providers" | "models" | "dictation"
                     | "meeting-settings" | "recording" | "dictionary" | "styles"
-                    | "appearance" | "account") => known,
+                    | "appearance" | "account" | "advanced") => known,
                     _ => "overview",
                 }
                 .into(),
@@ -524,6 +524,7 @@ pub fn legacy_route(kind: &str, tab: Option<&str>) -> Option<WorkspaceRoute> {
                             | "styles"
                             | "appearance"
                             | "account"
+                            | "advanced"
                             | "settings"
                             | "history"
                             | "onboarding"
@@ -1050,6 +1051,19 @@ mod tests {
 
     #[test]
     fn settings_without_a_category_opens_task_readiness() {
+        assert_eq!(
+            legacy_route("settings", Some("advanced"))
+                .unwrap()
+                .tab
+                .as_deref(),
+            Some("advanced")
+        );
+        assert!(
+            legacy_route("library", Some("advanced"))
+                .unwrap()
+                .meeting_id
+                .is_none()
+        );
         assert_eq!(
             legacy_route("settings", None).unwrap().tab.as_deref(),
             Some("overview")

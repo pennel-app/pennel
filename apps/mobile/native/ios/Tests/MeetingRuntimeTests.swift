@@ -61,6 +61,79 @@ private final class FakeSessionBackend: AudioSessionBackend, @unchecked Sendable
 
 @MainActor
 struct MeetingRuntimeTests {
+    @Test func stop_handoff_includes_latest_notes_after_an_owned_inflight_autosave() async throws {
+        let h = try MeetingHarness()
+        try await h.runtime.start(title: "Final notes")
+        let id = try #require(h.runtime.activeMeetingId)
+        try h.runtime.saveLiveNotes("Acknowledged baseline")
+        // An owned autosave reached native before JS received its acknowledgement.
+        try h.runtime.saveLiveNotes("Earlier pending autosave")
+        h.speak(seconds: 3)
+        h.runtime.requestStop(notes: MeetingStopNotes(text: "Latest notes at Stop", expected: "Acknowledged baseline", pending: "Earlier pending autosave"))
+        #expect(!h.capture.running)
+        #expect(h.runtime.pendingNotes == "Latest notes at Stop")
+        #expect(throws: (any Error).self) { try h.runtime.saveLiveNotes("Late old autosave") }
+
+        await h.runtime.stop()
+        #expect(h.engine.meetingNotes(id: id) == "Latest notes at Stop")
+        #expect(h.runtime.pendingNotes == nil)
+        #expect(h.runtime.retainedId == nil)
+        #expect(h.finished.first?.error == nil)
+    }
+
+    @Test func failed_stop_note_handoff_retains_native_draft_and_never_overwrites_external_notes() async throws {
+        let h = try MeetingHarness()
+        try await h.runtime.start(title: "Note conflict")
+        let id = try #require(h.runtime.activeMeetingId)
+        let session = try #require(h.runtime.transcriptSnapshotSession())
+        try h.runtime.saveLiveNotes("Acknowledged baseline")
+        try session.setNotes(text: "Unrelated external notes")
+        h.speak(seconds: 3)
+        h.runtime.requestStop(notes: MeetingStopNotes(text: "Latest native-owned draft", expected: "Acknowledged baseline", pending: nil))
+        await h.runtime.stop()
+
+        #expect(!h.capture.running)
+        #expect(h.runtime.retainedId == id)
+        #expect(h.runtime.notes == "Acknowledged baseline")
+        #expect(h.runtime.pendingNotes == "Latest native-owned draft")
+        #expect(h.engine.meetingNotes(id: id) == "Unrelated external notes")
+        #expect(h.finished.first?.error != nil)
+        await #expect(throws: (any Error).self) { try await h.runtime.retrySave() }
+        #expect(h.runtime.pendingNotes == "Latest native-owned draft")
+        #expect(h.engine.meetingNotes(id: id) == "Unrelated external notes")
+
+        // Explicit user reconciliation makes the retained retry idempotent.
+        try session.setNotes(text: "Latest native-owned draft")
+        try await h.runtime.retrySave()
+        #expect(h.runtime.retainedId == nil)
+        #expect(h.runtime.pendingNotes == nil)
+        #expect(h.runtime.lastFinish?.error == nil)
+    }
+
+    @Test func interactive_stop_quiesces_capture_before_saving_and_is_idempotent() async throws {
+        let h = try MeetingHarness()
+        try await h.runtime.start(title: "Immediate Stop")
+        let id = try #require(h.runtime.activeMeetingId)
+        h.speak(seconds: 3)
+
+        h.runtime.requestStop()
+        #expect(h.runtime.phase == .finishing)
+        #expect(h.runtime.activeMeetingId == id)
+        #expect(h.runtime.lastFinish == nil)
+        #expect(!h.capture.running)
+        #expect(!h.audio.active)
+        #expect(h.scheduler.begun == 1)
+        #expect(h.scheduler.task.ended.isEmpty)
+        let stops = h.capture.stops
+        h.runtime.requestStop()
+        #expect(h.capture.stops == stops)
+
+        await h.runtime.stop()
+        #expect(h.runtime.phase == .idle)
+        #expect(h.finished.map(\.id) == [id])
+        #expect(h.transcript(id).count == 1)
+    }
+
     @Test func recording_diagnostics_classify_transport_without_device_identifiers() {
         #expect(MeetingRuntime.recordingTransport(.builtInMic) == .builtIn)
         #expect(MeetingRuntime.recordingTransport(.bluetoothHFP) == .bluetooth)
@@ -133,6 +206,7 @@ struct MeetingRuntimeTests {
         let h = try MeetingHarness()
         try await h.runtime.start(title: "Overleg")
         let id = try #require(h.runtime.activeMeetingId)
+        h.runtime.setNotes("Retained notes from before the failed final save")
         #expect(h.runtime.unfinalisedMeetingIds == [id])
         h.speak(seconds: 3)
 
@@ -147,6 +221,9 @@ struct MeetingRuntimeTests {
         let retained = try #require(h.runtime.retainedId)
         #expect(h.runtime.activeMeetingId == nil)
         #expect(h.runtime.unfinalisedMeetingIds == [retained])
+        #expect(h.runtime.notes == "Retained notes from before the failed final save")
+        #expect(h.runtime.title == "Overleg")
+        #expect(h.runtime.elapsedMs == 3_000)
     }
 
     @Test func termination_mid_recording_marks_the_meeting_stopped_early() async throws {

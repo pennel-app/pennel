@@ -82,6 +82,8 @@ export type AppearancePreference = "system" | "light" | "dark";
 export type OnboardingStep = "language" | "welcome" | "engine" | "permissions" | "practice" | "voice";
 export type OnboardingGoal = "dictation" | "meeting";
 export type SpeakerRecognitionMode = "local" | "cloud";
+export type SummaryAutomation = "unanswered" | "manual" | "automatic";
+export type MeetingOutputScope = "personal" | "shareable";
 
 export interface OnboardingProgress {
   version: number;
@@ -253,6 +255,7 @@ export interface Settings {
   local_unload_minutes: number;
   meetings_dir: string;
   default_template: string;
+  summary_automation: SummaryAutomation;
   meeting_audio_retention_days: number;
   app_rules: { bundle_id: string; action: RecordAction }[];
   calendar_rules: { calendar_id: string; calendar_name: string; action: RecordAction }[];
@@ -556,6 +559,40 @@ export interface MeetingExport {
   html: string;
 }
 
+export interface MeetingSummaryDocument {
+  meeting_uid: string;
+  markdown: string;
+  revision: string;
+  source_revision: string;
+  edited: boolean;
+  outdated: boolean;
+}
+
+export interface MeetingSummaryCandidate {
+  meeting_uid: string;
+  markdown: string;
+  revision: string;
+  source_revision: string;
+}
+
+export interface MeetingSummaryRevision {
+  revision: string;
+  markdown: string;
+  source_revision: string;
+  created_at: string;
+}
+
+export interface ShareableMeetingSummary {
+  meeting_uid: string;
+  markdown: string;
+  source_revision: string;
+  generated_at: string;
+  provider_id: string;
+  model: string;
+  provenance: string;
+  outdated: boolean;
+}
+
 export interface DetectedAgent {
   kind: ProviderKind;
   path: string;
@@ -775,6 +812,9 @@ export const api = {
     invoke<void>("frontend_flushed", { requestId, success, error }),
   shareMeeting: (id: string, includeTranscript: boolean, action: "mail" | "share") =>
     invoke<void>("share_meeting", { id, includeTranscript, action }),
+  sharePreparedMeeting: (output: MeetingExport, action: "mail" | "share") =>
+    invoke<void>("share_prepared_meeting", { output, action }),
+  exportPreparedMeeting: (output: MeetingExport) => invoke<boolean>("export_prepared_meeting", { output }),
   markLines: (enhanced: string, notes: string) => invoke<{ text: string; mine: boolean }[]>("mark_lines", { enhanced, notes }),
   detectCliAgents: () => invoke<DetectedAgent[]>("detect_cli_agents"),
   appIdentity: (id: string) => invoke<AppIdentity | null>("app_identity", { id }),
@@ -835,6 +875,21 @@ export const api = {
   deleteTemplate: (id: string) => invoke<void>("delete_template", { id }),
   summarizeMeeting: (id: string, templateId: string) =>
     invoke<string>("summarize_meeting", { id, templateId }),
+  meetingSummary: (id: string) => invoke<MeetingSummaryDocument>("meeting_summary", { id }),
+  saveMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
+    invoke<MeetingSummaryDocument>("save_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
+  acceptMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
+    invoke<MeetingSummaryDocument>("accept_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
+  meetingSummaryHistory: (id: string) => invoke<MeetingSummaryRevision[]>("meeting_summary_history", { id }),
+  restoreMeetingSummary: (id: string, revision: string, expectedRevision: string, expectedSourceRevision: string) =>
+    invoke<MeetingSummaryDocument>("restore_meeting_summary", { id, revision, expectedRevision, expectedSourceRevision }),
+  generateMeetingSummary: (id: string, templateId?: string) =>
+    invoke<MeetingSummaryCandidate>("generate_meeting_summary", { id, templateId }),
+  shareableMeetingSummary: (id: string) => invoke<ShareableMeetingSummary | null>("shareable_meeting_summary", { id }),
+  generateShareableMeetingSummary: (id: string, templateId?: string) =>
+    invoke<ShareableMeetingSummary>("generate_shareable_meeting_summary", { id, templateId }),
+  previewMeetingExport: (id: string, scope: MeetingOutputScope, includeTranscript: boolean, language?: "en" | "nl") =>
+    invoke<MeetingExport>("preview_meeting_export", { id, scope, includeTranscript, language }),
   retranscribeMeeting: (id: string) => invoke<number>("retranscribe_meeting", { id }),
   retranscribeMeetingAudio: (id: string) => invoke<number>("retranscribe_meeting_audio", { id }),
   saveMeetingNotes: (id: string, text: string, insightReceipt?: string) => invoke<void>("save_meeting_notes", { id, text, insightReceipt }),

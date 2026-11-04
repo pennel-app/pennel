@@ -1446,61 +1446,10 @@ impl PennelEngine {
         template_id: String,
         keys: ApiKeys,
     ) -> Result<String, PennelError> {
-        use crate::summary::{
-            BLOCK_CHARS, MAP_REDUCE_ABOVE, blocks, chunk_messages, summary_messages,
-            transcript_snapshot_text,
-        };
-        const SUMMARY_TIMEOUT_SECS: u64 = 180;
-
         self.claim_library()?;
         let _edit = self.edit_meeting(&id)?;
-
-        let store = self.meeting_store();
-        let info = store.info(&id).ok_or(PennelError::NotFound)?;
-        let notes = store.read_notes(&id);
-        let transcript = transcript_snapshot_text(
-            &store.read_transcript_snapshot(&id)?,
-            &store.speaker_names(&id),
-        );
-        if transcript.trim().is_empty() && notes.trim().is_empty() {
-            return Err(PennelError::NoSpeech);
-        }
-        let settings = self.settings();
-        let (account, model) = settings
-            .resolve(&settings.llm)
-            .ok_or(PennelError::NotFound)?;
-        let key = self.credential(&account, &keys)?;
-        if requires_key(account.kind) && key.is_none() {
-            return Err(PennelError::MissingApiKey { task: "llm".into() });
-        }
-        let provider = self.endpoint(&account, model);
-        let ask = |messages: &[crate::llm::ChatMessage]| {
-            self.complete_llm(
-                &provider,
-                key.as_deref(),
-                messages,
-                SUMMARY_TIMEOUT_SECS,
-                Reasoning::Low,
-            )
-        };
-        let spec = self.template_store().spec(&template_id);
-        let messages = if account.kind == ProviderKind::AppleIntelligence {
-            crate::summary::apple_summary_messages(&spec, &notes, &transcript, ask)?
-        } else {
-            let source = if transcript.chars().count() > MAP_REDUCE_ABOVE {
-                blocks(&transcript, BLOCK_CHARS)
-                    .iter()
-                    .map(|part| ask(&chunk_messages(part)))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .join("\n\n")
-            } else {
-                transcript
-            };
-            summary_messages(&spec, &notes, &source)
-        };
-        let body = ask(&messages)?;
-        store.write_meeting(&id, info.duration_min, &template_id, &body)?;
-        Ok(body.trim().to_owned())
+        let candidate = self.prepare_owner_summary(&id, &template_id, &keys)?;
+        self.commit_generated_summary(&id, &template_id, &candidate)
     }
 
     /// Answers from one meeting (`meeting_id`) or all meetings, citing the passages it used.
@@ -2467,6 +2416,7 @@ impl PennelEngine {
             || current.llm != settings.llm
             || current.dictionary != settings.dictionary
             || current.cleanup_verification_enabled != settings.cleanup_verification_enabled
+            || current.summary_automation != settings.summary_automation
         {
             // Invalidate queued requests before their captured destination can be used.
             self.invalidate_inference_requests();
@@ -2873,6 +2823,20 @@ impl PennelEngine {
             jobs: &self.meeting_jobs,
             id: id.to_owned(),
         })
+    }
+
+    /// Serialize the final automatic write with consent and inference-configuration changes.
+    pub(crate) fn automatic_summary_policy_guard(
+        &self,
+        cancellation: &crate::InferenceCancellation,
+    ) -> Result<std::sync::MutexGuard<'_, ()>, PennelError> {
+        let guard = self.meeting_gate.lock().unwrap();
+        if cancellation.is_cancelled()
+            || self.settings().summary_automation != crate::SummaryAutomation::Automatic
+        {
+            return Err(PennelError::Cancelled);
+        }
+        Ok(guard)
     }
 
     /// Owner-local identity metadata can change during capture, without opening transcript edits.

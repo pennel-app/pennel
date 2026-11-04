@@ -18,7 +18,7 @@ use state::{Entry, SyncState};
 
 use crate::cloud::crypto::{self, Payload, VaultKey};
 use crate::error::PennelError;
-use crate::meetings::MeetingStore;
+use crate::meetings::{MeetingStore, replacement_gate};
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum SyncStatus {
@@ -225,6 +225,9 @@ fn write_checked(
 ) -> Result<bool, PennelError> {
     let tmp = temp_path(dir);
     std::fs::write(&tmp, content).map_err(PennelError::storage)?;
+    // Local source/summary commits use the same gate. Compare only after any such commit finishes.
+    let gate = replacement_gate(dir);
+    let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
     if hash_file(target).as_deref() != expected || (expected.is_none() && target.exists()) {
         let _ = std::fs::remove_file(&tmp);
         return Ok(false);
@@ -524,6 +527,8 @@ impl Pass<'_> {
         if candidate == current {
             return None;
         }
+        let gate = replacement_gate(&self.root.join(current));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
         std::fs::rename(self.root.join(current), self.root.join(&candidate)).ok()?;
         self.folders.insert(uid.to_string(), candidate.clone());
         let _ = self.state.set_meeting_folder(uid, &nfc(&candidate));
@@ -685,6 +690,8 @@ impl Pass<'_> {
                 self.state.remove(&entry.key)?;
                 continue;
             };
+            let gate = replacement_gate(&dir);
+            let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
             if folder.as_deref().is_some_and(|f| self.is_recording(f)) {
                 self.defer(&entry.object_id)?;
                 continue;
@@ -1093,6 +1100,43 @@ mod tests {
     use crate::meetings::MeetingStore;
     use chrono::{Local, TimeZone};
     use std::path::PathBuf;
+
+    #[test]
+    fn remote_final_write_waits_for_local_summary_commit_and_then_compares_its_new_content() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store.create("Concurrent summary", Local::now()).unwrap();
+        let meeting = store.dir_of(&id);
+        let path = meeting.join(MEETING_FILE);
+        let original = hash_file(&path).unwrap();
+        let gate = replacement_gate(&meeting);
+        let held = gate.lock().unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let worker_path = path.clone();
+        let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let result =
+                write_checked(&meeting, &worker_path, b"remote overwrite", Some(&original));
+            done_tx.send(result).unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(matches!(
+            done_rx.recv_timeout(std::time::Duration::from_millis(30)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        let saved = b"Owner's exact Markdown committed while sync was waiting.\n\n";
+        crate::meetings::durable_write(&path, saved).unwrap();
+        drop(held);
+        assert!(
+            !done_rx
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap()
+                .unwrap()
+        );
+        worker.join().unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), saved);
+    }
 
     struct Device {
         _data: tempfile::TempDir,

@@ -762,5 +762,21 @@
   "backend.conversation_response_unreadable": "The conversation response could not be read.",
   "backend.conversation_worker_stopped": "The conversation worker stopped unexpectedly.",
   "backend.conversation_library_changed": "The library changed. Reopen the conversation to continue.",
-  "backend.conversation_temporary_identity": "This meeting's identity could not be saved. Conversations remain temporary; retry saving or copy text before quitting."
+  "backend.conversation_temporary_identity": "This meeting's identity could not be saved. Conversations remain temporary; retry saving or copy text before quitting.",
+  "backend.summary_changed": "The summary or its source changed. Your saved text was kept. Reload before saving.",
+  "backend.summary_invalid_metadata": "The saved summary has invalid meeting metadata.",
+  "backend.summary_nonregular_file": "A saved meeting file is not a regular local file.",
+  "backend.summary_prior_unverified": "A prior summary revision could not be verified.",
+  "backend.summary_prior_not_preserved": "The prior summary could not be preserved. Your saved text was kept.",
+  "backend.summary_finalizing": "The meeting transcript is still being finalized.",
+  "backend.summary_unrecognized_transcript": "The saved transcript has unrecognized lines. Review it before sharing.",
+  "backend.summary_unverified_provenance": "The shareable summary's source provenance could not be verified.",
+  "backend.summary_prepare_shareable": "Generate a current transcript-only summary before sharing. Personal notes were kept private.",
+  "backend.summary_transcript_metadata_limit": "The transcript contains too many metadata parts.",
+  "backend.summary_invalid_transcript_metadata": "The transcript metadata is invalid.",
+  "backend.summary_unknown_language": "Unsupported interface language.",
+  "backend.summary_unknown_scope": "Unknown output scope.",
+  "backend.summary_missing_text": "Missing summary text.",
+  "backend.summary_review_before_share": "Prepare and review the document before sharing it.",
+  "backend.summary_reviewed_export_only": "Copy the formatted notes or export the reviewed document to share it."
 }

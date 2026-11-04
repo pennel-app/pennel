@@ -762,5 +762,21 @@
   "backend.conversation_response_unreadable": "Het gespreksantwoord kon niet worden gelezen.",
   "backend.conversation_worker_stopped": "Het verwerken van het gesprek is onverwacht gestopt.",
   "backend.conversation_library_changed": "De bibliotheek is gewijzigd. Open het gesprek opnieuw om verder te gaan.",
-  "backend.conversation_temporary_identity": "De identiteit van deze meeting kon niet worden bewaard. Gesprekken blijven tijdelijk. Bewaar opnieuw of kopieer de tekst voordat je afsluit."
+  "backend.conversation_temporary_identity": "De identiteit van deze meeting kon niet worden bewaard. Gesprekken blijven tijdelijk. Bewaar opnieuw of kopieer de tekst voordat je afsluit.",
+  "backend.summary_changed": "De samenvatting of bron is gewijzigd. Je bewaarde tekst is behouden. Laad opnieuw voordat je bewaart.",
+  "backend.summary_invalid_metadata": "De bewaarde samenvatting bevat ongeldige meetinggegevens.",
+  "backend.summary_nonregular_file": "Een bewaard meetingbestand is geen gewoon lokaal bestand.",
+  "backend.summary_prior_unverified": "Een eerdere versie van de samenvatting kon niet worden gecontroleerd.",
+  "backend.summary_prior_not_preserved": "De vorige versie kon niet worden behouden. Je bewaarde tekst is behouden.",
+  "backend.summary_finalizing": "Het meetingtranscript wordt nog afgerond.",
+  "backend.summary_unrecognized_transcript": "Het bewaarde transcript bevat onbekende regels. Controleer het voordat je deelt.",
+  "backend.summary_unverified_provenance": "De bronnen van de deelbare samenvatting konden niet worden gecontroleerd.",
+  "backend.summary_prepare_shareable": "Maak eerst een actuele samenvatting op basis van het transcript. Je persoonlijke notities blijven privé.",
+  "backend.summary_transcript_metadata_limit": "Het transcript bevat te veel delen met metagegevens.",
+  "backend.summary_invalid_transcript_metadata": "De metagegevens van het transcript zijn ongeldig.",
+  "backend.summary_unknown_language": "Deze interfacetaal wordt niet ondersteund.",
+  "backend.summary_unknown_scope": "Onbekende inhoudskeuze voor uitvoer.",
+  "backend.summary_missing_text": "De tekst van de samenvatting ontbreekt.",
+  "backend.summary_review_before_share": "Bereid het document voor en controleer het voordat je deelt.",
+  "backend.summary_reviewed_export_only": "Kopieer de opgemaakte notities of exporteer het gecontroleerde document om het te delen."
 }

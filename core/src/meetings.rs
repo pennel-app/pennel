@@ -213,6 +213,14 @@ pub struct MeetingStore {
 }
 
 pub(crate) fn durable_write(path: &Path, bytes: &[u8]) -> Result<(), PennelError> {
+    durable_write_checked(path, bytes, || Ok(()))
+}
+
+pub(crate) fn durable_write_checked(
+    path: &Path,
+    bytes: &[u8],
+    verify: impl FnOnce() -> Result<(), PennelError>,
+) -> Result<(), PennelError> {
     let parent = path.parent().ok_or_else(|| PennelError::Storage {
         message: "the storage folder is missing".into(),
     })?;
@@ -229,6 +237,7 @@ pub(crate) fn durable_write(path: &Path, bytes: &[u8]) -> Result<(), PennelError
         file.write_all(bytes).map_err(PennelError::storage)?;
         file.sync_all().map_err(PennelError::storage)?;
         drop(file);
+        verify()?;
         fs::rename(&temporary, path).map_err(PennelError::storage)?;
         #[cfg(unix)]
         fs::File::open(parent)
@@ -728,6 +737,15 @@ impl MeetingStore {
         expected: &str,
         notes: &str,
     ) -> Result<(), PennelError> {
+        self.write_notes_if_any_unchanged(id, &[expected], notes)
+    }
+
+    pub(crate) fn write_notes_if_any_unchanged(
+        &self,
+        id: &str,
+        expected: &[&str],
+        notes: &str,
+    ) -> Result<(), PennelError> {
         let directory = self.dir_of(id);
         let gate = replacement_gate(&directory);
         let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
@@ -735,23 +753,32 @@ impl MeetingStore {
             return Err(PennelError::NotFound);
         }
         let path = directory.join("notes.md");
-        let before = match fs::symlink_metadata(&path) {
+        let read_current = || match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
-                fs::read_to_string(&path).map_err(PennelError::storage)?
+                fs::read_to_string(&path).map_err(PennelError::storage)
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-            _ => {
-                return Err(PennelError::storage(
-                    "The saved notes could not be verified.",
-                ));
-            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            _ => Err(PennelError::storage(
+                "The saved notes could not be verified.",
+            )),
         };
-        if before != expected {
+        let before = read_current()?;
+        if !expected.contains(&before.as_str()) {
             return Err(PennelError::storage(
                 "The notes changed. Your current text was kept.",
             ));
         }
-        durable_write(&path, notes.as_bytes())
+        if before == notes {
+            return Ok(());
+        }
+        durable_write_checked(&path, notes.as_bytes(), || {
+            if read_current()? != before {
+                return Err(PennelError::storage(
+                    "The notes changed. Your current text was kept.",
+                ));
+            }
+            Ok(())
+        })
     }
 
     pub fn summary_outdated(&self, id: &str) -> bool {
@@ -1465,6 +1492,7 @@ impl MeetingStore {
         parse_meeting(&self.read_file(id, "meeting.md"))
     }
 
+    #[cfg(test)]
     pub fn write_meeting(
         &self,
         id: &str,
@@ -1852,13 +1880,19 @@ fn render_meeting(front: &Frontmatter, body: &str) -> String {
         format!("{UID_FIELD}: {}\n", front.uid)
     };
     let extra: String = front.extra.iter().map(|line| format!("{line}\n")).collect();
+    // Once edited as a document, whitespace belongs to the owner (including trailing newlines).
+    let exact = front
+        .extra
+        .iter()
+        .any(|line| line.trim() == "pennel_summary_format: exact_v1");
+    let content = if exact {
+        body.to_owned()
+    } else {
+        format!("\n{}\n", body.trim())
+    };
     format!(
-        "---\ntitle: {}\nstart: {}\nduration_min: {}\ntemplate: {}\n{uid}{extra}---\n\n{}\n",
-        front.title,
-        front.start_iso,
-        front.duration_min,
-        front.template,
-        body.trim()
+        "---\ntitle: {}\nstart: {}\nduration_min: {}\ntemplate: {}\n{uid}{extra}---\n{}",
+        front.title, front.start_iso, front.duration_min, front.template, content
     )
 }
 
@@ -1911,7 +1945,18 @@ fn parse_meeting(text: &str) -> Option<(Frontmatter, String)> {
             .map(str::to_owned)
             .collect(),
     };
-    Some((front, body.trim().to_owned()))
+    let exact = front
+        .extra
+        .iter()
+        .any(|line| line.trim() == "pennel_summary_format: exact_v1");
+    Some((
+        front,
+        if exact {
+            body.to_owned()
+        } else {
+            body.trim().to_owned()
+        },
+    ))
 }
 
 fn parse_segment(line: &str) -> Option<Segment> {

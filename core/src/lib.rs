@@ -42,6 +42,7 @@ mod meeting_preview;
 mod meeting_qualification;
 mod meeting_recording;
 mod meeting_scheduler;
+mod meeting_summary;
 mod meeting_utterances;
 mod meetings;
 mod models;
@@ -150,6 +151,10 @@ pub use meeting_scheduler::{
     MeetingAnalysisResourceHints, MeetingAnalysisScheduleError, MeetingAnalysisState,
     MeetingAnalysisStatus, ReadyMeetingAnalysis, ScheduledMeetingSnapshot,
 };
+pub use meeting_summary::{
+    MeetingOutputScope, MeetingSummaryCandidate, MeetingSummaryDocument, MeetingSummaryRevision,
+    ShareableMeetingSummary,
+};
 pub use meeting_utterances::{
     AcousticTurn, AttributionKind, AutomaticAttribution, ManualCorrection,
     MeetingTranscriptSnapshot, MeetingUtterance, RecoveryAudioDisposition, RecoveryAudioProvenance,
@@ -178,7 +183,7 @@ pub use session::{MeetingHealth, MeetingRecognition, MeetingSession};
 pub use settings::{
     AppearancePreference, DictationMode, HotkeyTrigger, ModelChoice, OnboardingGoal,
     OnboardingProgress, OnboardingStatus, OnboardingStep, Settings, SpeakerRecognitionMode, Style,
-    StyleRule, default_settings,
+    StyleRule, SummaryAutomation, default_settings,
 };
 pub use setup::{SetupAccess, SetupFacts, SetupReadiness, dictation_readiness, meeting_readiness};
 pub use speaker_jobs::{

@@ -2,3 +2,4 @@ export type { InterfaceLanguage, Appearance, ProviderKind, Capability, ModelChoi
 export type { InferenceProtocol, InferenceCapability, InferenceConfig, InferenceProtocolInfo, InferenceAvailability, CleanupVerificationAvailability, DecisionOption, DecisionQuestion, DecisionRequest, DecisionProbability, DecisionSpan, DecisionAnswer, InferenceIdentity, InferenceUsage, DecisionResult, RerankRequest, RerankResult, InferenceVerification } from '../modules/pennel-mobile/src/types';
 export type { MeetingAudioSource, TranscriptMetadataStatus, SpeakerAttribution } from '../modules/pennel-mobile/src/types';
 export type { InsightSnapshot, InsightAvailability, InsightJob, InsightItem, InsightSource, InsightLanguagePolicy } from '../modules/pennel-mobile/src/types';
+export type { SummaryAutomation, MeetingSummaryDocument, MeetingSummaryCandidate, MeetingSummaryRevision, ShareableMeetingSummary, MeetingExport } from '../modules/pennel-mobile/src/types';

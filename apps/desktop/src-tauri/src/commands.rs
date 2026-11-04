@@ -756,7 +756,7 @@ pub(crate) fn checked_meeting_dir(engine: &pennel_core::PennelEngine, id: &str) 
     Ok(directory)
 }
 
-fn require_inactive_meeting(shared: &Shared, id: &str) -> Result<()> {
+pub(crate) fn require_inactive_meeting(shared: &Shared, id: &str) -> Result<()> {
     let lifecycle = shared.recording.lock().unwrap();
     let active_id = shared
         .meeting_context
