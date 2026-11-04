@@ -1,0 +1,62 @@
+{
+  "source_commit": "d8a35edfb8a2155dbd0d5b43132b3a7b9e4a82bb",
+  "base_commit": "b4c52d7955311f149b068a14b1852fb351634d31",
+  "capture_method": "Owned headless Chromium, production frontend and synthetic backend; no user screen or real audio/provider",
+  "browser_matrix": [
+    {
+      "locale": "en",
+      "appearance": "light",
+      "complete": true,
+      "captures": 291,
+      "runtime_errors": 0,
+      "unknown_commands": 0,
+      "horizontal_overflow_cases": 0
+    },
+    {
+      "locale": "en",
+      "appearance": "dark",
+      "complete": true,
+      "captures": 291,
+      "runtime_errors": 0,
+      "unknown_commands": 0,
+      "horizontal_overflow_cases": 0
+    },
+    {
+      "locale": "nl",
+      "appearance": "light",
+      "complete": true,
+      "captures": 291,
+      "runtime_errors": 0,
+      "unknown_commands": 0,
+      "horizontal_overflow_cases": 0
+    },
+    {
+      "locale": "nl",
+      "appearance": "dark",
+      "complete": true,
+      "captures": 291,
+      "runtime_errors": 0,
+      "unknown_commands": 0,
+      "horizontal_overflow_cases": 0
+    }
+  ],
+  "total_captures": 1164,
+  "local_checks": {
+    "frontend_tests": 332,
+    "core_tests": 1066,
+    "existing_ignored_core_tests": 7,
+    "typing_tests": 17,
+    "backend_tests": 270,
+    "mobile_ui_tests": 158,
+    "synthetic_platform_tests": 54,
+    "frontend_build": "passed",
+    "core_release_build": "passed",
+    "mobile_typecheck": "passed",
+    "core_fmt_and_strict_clippy": "passed",
+    "theme_check": "passed",
+    "impeccable_source_findings": 0
+  },
+  "comparison_images": 16,
+  "human_native_and_device_acceptance": "Not performed; remains with existing acceptance owners",
+  "enlarged_text": "Questions and export controls/content are reachable through scrolling; not all simultaneously visible"
+}
