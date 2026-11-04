@@ -13,6 +13,7 @@ mod clipboard;
 mod clipboard_system;
 mod cloud;
 mod commands;
+mod conversations;
 mod desktop_commands;
 mod desktop_environment;
 mod diagnostics;
@@ -1217,6 +1218,11 @@ fn main() {
             people::meeting_people_snapshot,
             people::update_meeting_people,
             people::pick_meeting_contact,
+            conversations::conversation_snapshot,
+            conversations::update_conversation,
+            conversations::begin_conversation_question,
+            conversations::cancel_conversation_question,
+            conversations::conversation_source,
             commands::detect_cli_agents,
             commands::check_cli_agent,
             platform_commands::get_permissions,

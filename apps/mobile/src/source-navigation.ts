@@ -1,5 +1,36 @@
 import type { MeetingDetail, Passage } from './domain.ts';
 
+export interface ConversationNavigationOrigin {
+  conversation_id: string;
+  message_id: string;
+  citation_number: number;
+  scope: 'meeting' | 'library';
+  meeting_uid: string | null;
+}
+
+export function conversationSourceRoute(id: string, origin: ConversationNavigationOrigin) {
+  return { pathname: '/meeting/[id]' as const, params: { id, conversation_id: origin.conversation_id,
+    message_id: origin.message_id, citation_number: String(origin.citation_number), origin_scope: origin.scope,
+    ...(origin.meeting_uid ? { origin_meeting_uid: origin.meeting_uid } : {}) } };
+}
+
+export function conversationOrigin(params: Record<string, unknown>): ConversationNavigationOrigin | null {
+  const identity = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\u0000-\u001f]/.test(value);
+  const scope = params.origin_scope;
+  const citation = typeof params.citation_number === 'string' && /^[1-9]\d*$/.test(params.citation_number) ? Number(params.citation_number) : NaN;
+  if (!identity(params.conversation_id) || !identity(params.message_id) || !Number.isSafeInteger(citation)
+    || scope !== 'meeting' && scope !== 'library' || scope === 'meeting' && !identity(params.origin_meeting_uid)) return null;
+  return { conversation_id: params.conversation_id, message_id: params.message_id, citation_number: citation,
+    scope, meeting_uid: scope === 'meeting' ? String(params.origin_meeting_uid) : null };
+}
+
+export function conversationReturnRoute(origin: ConversationNavigationOrigin, currentMeetingId?: string) {
+  const params = { conversation_id: origin.conversation_id, message_id: origin.message_id };
+  if (origin.scope === 'library') return { pathname: '/(tabs)/ask' as const, params };
+  if (!currentMeetingId) return null;
+  return { pathname: '/meeting/[id]' as const, params: { ...params, id: currentMeetingId, pane: 'questions' } };
+}
+
 let sequence = 0;
 const sources = new Map<string, { passage: Passage; created: number }>();
 export function rememberSource(passage: Passage, now = Date.now()): string {

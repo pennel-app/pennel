@@ -22,16 +22,6 @@ export function formatSelection(value: string, start: number, end: number, forma
   return { value: value.slice(0, from) + changed + value.slice(until), start: start + prefix.length, end: end + insertedBeforeEnd };
 }
 
-export class LiveRequestState {
-  readonly meetingUid: string;
-  readonly sessionId: string;
-  active: string | null = null;
-  constructor(meetingUid: string, sessionId: string) { this.meetingUid = meetingUid; this.sessionId = sessionId; }
-  begin(requestId: string) { this.active = requestId; }
-  cancel() { this.active = null; }
-  accepts(uid: string, sessionId: string, requestId: string) { return uid === this.meetingUid && sessionId === this.sessionId && requestId === this.active; }
-}
-
 export class LiveStatusEpoch {
   private revision = 0;
   capture() { return this.revision; }

@@ -4,6 +4,8 @@ import test from "node:test";
 import vm from "node:vm";
 import { webcrypto } from "node:crypto";
 import { visualModels } from "./model-catalog.mjs";
+import * as conversationContract from "../../assets/contracts/meeting-conversations.ts";
+import { createConversationFixture } from "./meeting-conversations.mjs";
 
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
@@ -28,10 +30,234 @@ test("accepted review export retains provenance while note staging keeps the exa
 function fixture(name, overrides = {}, storage) {
   const item = cases.find(item => item.name === name);
   const context = vm.createContext({ location: { hostname: "127.0.0.1" }, structuredClone, queueMicrotask, setTimeout, clearTimeout, TextEncoder, TextDecoder, crypto: webcrypto, localStorage: storage,
+    __PENNEL_CONVERSATION_CONTRACT__: conversationContract,
+    __PENNEL_CREATE_CONVERSATION_FIXTURE__: createConversationFixture,
     __PENNEL_FIXTURE_OPTIONS__: { ...item, appearance: "dark", ...overrides } });
   vm.runInContext(script, context);
   return context;
 }
+
+test("conversation fixture preserves selected identities and per-conversation drafts through a full reopen", async () => {
+  const values = new Map(), storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+  const options = { profile: "conversation-reopen", configured_text_provider: true, rich_utterances: true };
+  const first = fixture("meeting-transcript", options, storage), api = first.__PENNEL_PLATFORM__;
+  const scope = { kind: "meeting", meeting_uid: "qa-meeting-stable-uid" }, requests = conversationContract.conversationRequests;
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  const originalId = initial.selected_conversation_id;
+  await assert.rejects(api.invoke("update_conversation", { request: { scope, action: "draft", conversation_id: originalId, draft: "Missing CAS revision" } }));
+  const saved = await api.invoke("update_conversation", { request: requests.draft(scope, originalId, "First synthetic draft", initial.conversation.draft_revision) });
+  await assert.rejects(api.invoke("update_conversation", { request: requests.draft(scope, originalId, "Stale draft", initial.conversation.draft_revision) }));
+  const second = await api.invoke("update_conversation", { request: requests.create(scope, "Second synthetic conversation") });
+  assert.notEqual(second.selected_conversation_id, originalId);
+  await api.invoke("update_conversation", { request: requests.draft(scope, second.selected_conversation_id, "Second synthetic draft", second.conversation.draft_revision) });
+  const reopened = fixture("meeting-transcript", options, storage).__PENNEL_PLATFORM__;
+  const restored = await reopened.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.equal(restored.selected_conversation_id, second.selected_conversation_id);
+  assert.equal(restored.conversation.draft, "Second synthetic draft");
+  const selected = await reopened.invoke("update_conversation", { request: requests.select(scope, originalId) });
+  assert.equal(selected.conversation.draft, "First synthetic draft");
+  assert.equal(selected.conversation.draft_revision, saved.conversation.draft_revision);
+  const library = await reopened.invoke("conversation_snapshot", { request: requests.snapshot({ kind: "library" }) });
+  assert.notEqual(library.selected_conversation_id, originalId);
+  assert.equal(library.conversation.draft, "");
+});
+
+test("conversation fixture keeps background replies in their original conversation and restores incomplete work honestly", async () => {
+  const values = new Map(), storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+  const options = { profile: "conversation-requests", configured_text_provider: true, rich_utterances: true, live_question_manual: true };
+  const context = fixture("meeting-transcript", options, storage), api = context.__PENNEL_PLATFORM__, requests = conversationContract.conversationRequests;
+  const scope = { kind: "meeting", meeting_uid: "qa-meeting-stable-uid" };
+  const first = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) }), original = first.conversation.id;
+  const requestId = "00000000-0000-7000-8000-000000009001";
+  const pending = await api.invoke("begin_conversation_question", { request: requests.begin(scope, original, requestId, "Which synthetic decision?") });
+  assert.equal(pending.conversation.active_request_id, requestId);
+  assert.deepEqual(Array.from(pending.messages, message => message.status), ["completed", "pending"]);
+  assert.equal(pending.messages[1].evidence.included_through_ms, 21000);
+  const second = await api.invoke("update_conversation", { request: requests.create(scope, "A different conversation") });
+  assert.equal(await context.__PENNEL_FIXTURE__.conversations.complete(requestId), true);
+  const current = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.equal(current.conversation.id, second.conversation.id);
+  assert.equal(current.messages.length, 0);
+  const completed = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope, original) });
+  assert.equal(completed.messages[1].status, "completed");
+  assert.equal(completed.messages[1].evidence.included_through_ms, 21000);
+  const cancelledId = "00000000-0000-7000-8000-000000009002";
+  await api.invoke("begin_conversation_question", { request: requests.begin(scope, current.conversation.id, cancelledId, "Cancel this synthetic question") });
+  const cancelled = await api.invoke("cancel_conversation_question", { request: requests.cancel(scope, current.conversation.id, cancelledId) });
+  assert.equal(cancelled.messages.at(-1).status, "cancelled");
+  assert.equal(await context.__PENNEL_FIXTURE__.conversations.complete(cancelledId), false);
+  const interruptedId = "00000000-0000-7000-8000-000000009003";
+  await api.invoke("begin_conversation_question", { request: requests.begin(scope, current.conversation.id, interruptedId, "Pending at restart") });
+  const reopened = fixture("meeting-transcript", options, storage);
+  const restored = await reopened.__PENNEL_PLATFORM__.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.equal(restored.conversation.active_request_id, null);
+  assert.equal(restored.messages.at(-1).status, "interrupted");
+  assert.equal(restored.messages.at(-1).answer, null);
+});
+
+test("conversation fixture resolves stable source identity after rename and marks changed labels or deleted meetings", async () => {
+  const context = fixture("meeting-transcript", { configured_text_provider: true, rich_utterances: true, conversation_manual: true });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, scope = { kind: "library" }, requests = conversationContract.conversationRequests;
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) }), requestId = "00000000-0000-7000-8000-000000009010";
+  await api.invoke("begin_conversation_question", { request: requests.begin(scope, initial.conversation.id, requestId, "Which source supports this?") });
+  await control.conversations.complete(requestId);
+  const answered = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) }), message = answered.messages[1];
+  const source = requests.source(scope, initial.conversation.id, message.id, 1), original = await api.invoke("conversation_source", { request: source });
+  assert.equal(original.status, "current");
+  const renamed = await api.invoke("rename_meeting", { id: control.options.meeting_id, title: "Renamed synthetic meeting" });
+  assert.notEqual(renamed, control.options.meeting_id);
+  const moved = await api.invoke("conversation_source", { request: source });
+  assert.equal(moved.current_meeting_id, renamed);
+  assert.equal(moved.passage.meeting_uid, original.passage.meeting_uid);
+  control.workspace.attribution(0, { confirmed_speaker_name: "Corrected synthetic speaker" });
+  const stale = await api.invoke("conversation_source", { request: source });
+  assert.equal(stale.status, "stale");
+  assert.equal(stale.passage.text, original.passage.text);
+  await api.invoke("delete_meeting", { id: renamed });
+  const unavailable = await api.invoke("conversation_source", { request: source });
+  assert.equal(unavailable.status, "unavailable");
+  assert.equal(unavailable.current_meeting_id, null);
+  assert.equal((await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) })).messages[1].text, message.text);
+});
+
+test("conversation fixture note anchors use the core's UTF-16 editor offsets around Unicode", async () => {
+  const context = fixture("recording", { configured_text_provider: true, rich_utterances: true, conversation_manual: true });
+  const api = context.__PENNEL_PLATFORM__, requests = conversationContract.conversationRequests, scope = { kind: "meeting", meeting_uid: "qa-meeting-stable-uid" };
+  await api.invoke("set_meeting_notes", { text: "Préface 😀\nRepeated source.\nRepeated source.\n", sessionId: "qa-recording" });
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  const pending = await api.invoke("begin_conversation_question", { request: requests.begin(scope, initial.conversation.id,
+    "00000000-0000-7000-8000-000000009015", "Cite the second repeated note", { session_id: "qa-recording" }) });
+  const repeated = pending.messages.at(-1).evidence.anchors.filter(anchor => anchor.source_text === "Repeated source.");
+  assert.deepEqual(Array.from(repeated, anchor => [anchor.notes_start, anchor.notes_end]), [[11, 27], [28, 44]]);
+});
+
+test("conversation fixture uses the shared required wire fields and refuses stale or deleted requests", async () => {
+  const context = fixture("meeting-transcript", { configured_text_provider: true, rich_utterances: true, conversation_manual: true });
+  const api = context.__PENNEL_PLATFORM__, requests = conversationContract.conversationRequests, scope = { kind: "meeting", meeting_uid: "qa-meeting-stable-uid" };
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) }), conversationId = initial.conversation.id;
+  for (const [command, request] of [
+    ["conversation_snapshot", null], ["begin_conversation_question", { scope, conversation_id: conversationId, request_id: "request" }],
+    ["cancel_conversation_question", { scope, conversation_id: conversationId }],
+    ["conversation_source", { scope, conversation_id: conversationId, message_id: "message", citation_number: "1" }],
+  ]) await assert.rejects(api.invoke(command, request === null ? {} : { request }));
+  const requestId = "00000000-0000-7000-8000-000000009020";
+  await api.invoke("begin_conversation_question", { request: requests.begin(scope, conversationId, requestId, "Delete this conversation") });
+  await api.invoke("update_conversation", { request: requests.delete(scope, conversationId) });
+  assert.equal(await context.__PENNEL_FIXTURE__.conversations.complete(requestId), false);
+  const after = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.notEqual(after.conversation.id, conversationId);
+  assert.equal(after.messages.length, 0);
+  await assert.rejects(api.invoke("conversation_snapshot", { request: requests.snapshot(scope, conversationId) }));
+});
+
+test("conversation fixture treats an identical request retry as idempotent and rejects a different question", async () => {
+  const context = fixture("meeting-transcript", { configured_text_provider: true, rich_utterances: true, conversation_manual: true });
+  const api = context.__PENNEL_PLATFORM__, requests = conversationContract.conversationRequests, scope = { kind: "library" };
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  const request = requests.begin(scope, initial.conversation.id, "00000000-0000-7000-8000-000000009025", "An idempotent synthetic question");
+  const first = await api.invoke("begin_conversation_question", { request });
+  const retry = await api.invoke("begin_conversation_question", { request });
+  assert.deepEqual(Array.from(retry.messages, message => message.id), Array.from(first.messages, message => message.id));
+  await assert.rejects(api.invoke("begin_conversation_question", { request: { ...request, question: "A conflicting retry" } }));
+  assert.equal((await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) })).messages.length, 2);
+});
+
+test("conversation fixture retains unsaved questions and answers and retries without duplicate messages", async () => {
+  const values = new Map(), storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+  const options = { profile: "conversation-outage", configured_text_provider: true, rich_utterances: true, conversation_manual: true, conversation_storage_error: true };
+  const context = fixture("meeting-transcript", options, storage), api = context.__PENNEL_PLATFORM__, requests = conversationContract.conversationRequests, scope = { kind: "library" };
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) }), requestId = "00000000-0000-7000-8000-000000009030";
+  assert.equal(initial.storage_status, "unsaved");
+  await api.invoke("begin_conversation_question", { request: requests.begin(scope, initial.conversation.id, requestId, "Keep this unsaved question") });
+  await context.__PENNEL_FIXTURE__.conversations.complete(requestId);
+  const unsaved = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.equal(unsaved.storage_status, "unsaved");
+  assert.equal(unsaved.messages[1].status, "completed");
+  context.__PENNEL_FIXTURE__.conversations.failStorage(false);
+  const saved = await api.invoke("update_conversation", { request: requests.retry(scope, initial.conversation.id) });
+  assert.equal(saved.storage_status, "saved");
+  const reopened = fixture("meeting-transcript", { ...options, conversation_storage_error: false }, storage);
+  const restored = await reopened.__PENNEL_PLATFORM__.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.deepEqual(Array.from(restored.messages, message => message.id), Array.from(unsaved.messages, message => message.id));
+  assert.equal(restored.messages.length, 2);
+});
+
+test("conversation fixture preserves a specific temporary-storage reason without disabling ordinary questions", async () => {
+  const reason = "This meeting's identity could not be saved. Conversations remain temporary; retry saving or copy text before quitting.";
+  const context = fixture("meeting-transcript", { configured_text_provider: true, rich_utterances: true, conversation_manual: true, conversation_storage_error: true, conversation_storage_reason: reason });
+  const api = context.__PENNEL_PLATFORM__, requests = conversationContract.conversationRequests, scope = { kind: "meeting", meeting_uid: "qa-meeting-stable-uid" };
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.equal(initial.storage_status, "unsaved"); assert.equal(initial.storage_error, reason);
+  const requestId = "00000000-0000-7000-8000-000000009032";
+  await api.invoke("begin_conversation_question", { request: requests.begin(scope, initial.conversation.id, requestId, "An ordinary temporary question") });
+  await context.__PENNEL_FIXTURE__.conversations.complete(requestId);
+  const answer = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.equal(answer.storage_error, reason); assert.equal(answer.messages.at(-1).status, "completed");
+});
+
+test("conversation fixture can hold acknowledged-note preparation before question admission", async () => {
+  const context = fixture("recording", { configured_text_provider: true, rich_utterances: true, conversation_manual: true });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, before = control.workspace.notes();
+  control.workspace.notesDelay(3000);
+  const pending = api.invoke("set_meeting_notes", { text: "New acknowledged synthetic notes", sessionId: "qa-recording" });
+  try {
+    for (let attempt = 0; attempt < 100 && !control.workspace.pendingNoteSaves(); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(control.workspace.pendingNoteSaves(), 1);
+    assert.equal(control.workspace.notes(), before);
+  } finally { control.workspace.notesDelay(0); control.workspace.releaseNotes(); }
+  await pending;
+  assert.equal(control.workspace.notes(), "New acknowledged synthetic notes");
+});
+
+test("conversation fixture permits scoped cancellation before its delayed admission response returns", async () => {
+  const context = fixture("meeting-transcript", { configured_text_provider: true, rich_utterances: true, conversation_manual: true });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, requests = conversationContract.conversationRequests, scope = { kind: "library" };
+  const initial = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) }), requestId = "00000000-0000-7000-8000-000000009035";
+  control.conversations.beginDelay(3000);
+  control.conversations.cancelDelay(3000);
+  let responded = false, cancelResponded = false, pendingCancel;
+  const pending = api.invoke("begin_conversation_question", { request: requests.begin(scope, initial.conversation.id, requestId, "Delayed synthetic admission") })
+    .then(result => { responded = true; return result; });
+  try {
+    for (let attempt = 0; attempt < 100 && !control.conversations.pendingBeginResponses(); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(control.conversations.pendingBeginResponses(), 1);
+    pendingCancel = api.invoke("cancel_conversation_question", { request: requests.cancel(scope, initial.conversation.id, requestId) })
+      .then(result => { cancelResponded = true; return result; });
+    for (let attempt = 0; attempt < 100 && !control.conversations.pendingCancelResponses(); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(control.conversations.pendingCancelResponses(), 1);
+    assert.equal((await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) })).messages.at(-1).status, "cancelled");
+    assert.equal(responded, false);
+    control.conversations.beginDelay(0); control.conversations.releaseBegins(); await pending;
+    assert.equal(cancelResponded, false);
+  } finally { control.conversations.beginDelay(0); control.conversations.releaseBegins(); control.conversations.cancelDelay(0); control.conversations.releaseCancels(); }
+  await pending; await pendingCancel;
+  assert.equal((await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) })).messages.at(-1).status, "cancelled");
+});
+
+test("conversation fixture bounds conversation and message pages using opaque cursors", async () => {
+  const context = fixture("meeting-transcript", { configured_text_provider: true, rich_utterances: true, conversation_manual: true });
+  const api = context.__PENNEL_PLATFORM__, requests = conversationContract.conversationRequests, scope = { kind: "library" };
+  let state = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  for (let index = 0; index < 54; index++) state = await api.invoke("update_conversation", { request: requests.create(scope, `Synthetic conversation ${index}`) });
+  assert.equal(state.conversations.length, 50);
+  const olderConversations = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope, undefined, { conversations_before: state.next_conversations_cursor }) });
+  assert.equal(olderConversations.conversations.length, 5);
+  assert.equal(olderConversations.next_conversations_cursor, null);
+  for (let index = 0; index < 30; index++) {
+    const requestId = `00000000-0000-7000-8000-${String(9200 + index).padStart(12, "0")}`;
+    await api.invoke("begin_conversation_question", { request: requests.begin(scope, state.conversation.id, requestId, `Synthetic question ${index}`) });
+    await context.__PENNEL_FIXTURE__.conversations.complete(requestId);
+  }
+  const latest = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope) });
+  assert.equal(latest.messages.length, 50);
+  const oldest = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope, undefined, { messages_before: latest.next_messages_cursor }) });
+  assert.equal(oldest.messages.length, 10);
+  assert.equal(oldest.next_messages_cursor, null);
+  assert.equal(new Set([...latest.messages, ...oldest.messages].map(message => message.id)).size, 60);
+  const focused = await api.invoke("conversation_snapshot", { request: requests.snapshot(scope, undefined, { focus_message_id: oldest.messages[1].id }) });
+  assert.ok(focused.messages.some(message => message.id === oldest.messages[1].id));
+  assert.ok(focused.messages.length <= 50);
+});
 
 test("people fixture keeps duplicate identities and speaker links separate from names and enrollment", async () => {
   const context = fixture("meeting-transcript", { people_seeded: true, rich_utterances: true });

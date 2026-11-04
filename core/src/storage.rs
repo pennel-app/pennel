@@ -11,6 +11,53 @@ const FORMAT_VERSION: u32 = 1;
 const JOURNAL: &str = "migration.json";
 const BACKUP: &str = "migration-backup-v1";
 
+/// Private app data survives an iOS container move; the container's temporary UUID is not identity.
+pub(crate) fn private_library_key(root: &Path) -> Result<String, PennelError> {
+    #[cfg(target_os = "ios")]
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    #[cfg(not(target_os = "ios"))]
+    let home: Option<PathBuf> = None;
+    canonical_private_library_key(root, home.as_deref(), cfg!(target_os = "ios"))
+}
+
+fn canonical_private_library_key(
+    root: &Path,
+    home: Option<&Path>,
+    mobile: bool,
+) -> Result<String, PennelError> {
+    let root = root.canonicalize().map_err(PennelError::storage)?;
+    let home = if mobile {
+        home.map(Path::canonicalize)
+            .transpose()
+            .map_err(PennelError::storage)?
+    } else {
+        None
+    };
+    Ok(private_library_key_for_paths(
+        &root,
+        home.as_deref(),
+        mobile,
+    ))
+}
+
+/// Pure namespace selection over canonical paths, with an explicit platform for portable fixtures.
+fn private_library_key_for_paths(root: &Path, home: Option<&Path>, mobile: bool) -> String {
+    let namespace = if mobile
+        && let Some(home) = home
+        && let Ok(relative) = root.strip_prefix(home)
+    {
+        let relative = relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        format!("ios-sandbox:{relative}")
+    } else {
+        root.to_string_lossy().into_owned()
+    };
+    crate::evidence_revision(&namespace)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Journal {
     version: u32,
@@ -281,6 +328,83 @@ fn sync_directory(_path: &Path) -> Result<(), PennelError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mobile_library_keys_survive_sandbox_relocation_but_keep_profiles_and_external_roots_separate()
+     {
+        let first = Path::new("/private/var/mobile/Containers/Data/Application/AAA");
+        let second = Path::new("/private/var/mobile/Containers/Data/Application/BBB");
+        let first_root = first.join("Documents/QA/pilot/Meetings");
+        let second_root = second.join("Documents/QA/pilot/Meetings");
+        let original = private_library_key_for_paths(&first_root, Some(first), true);
+        assert_eq!(
+            original,
+            "a09cacd1aedb5f81a91127488e62127c272a8bc2bcabaa6f6e1a1b96a9e38648"
+        );
+        assert_eq!(
+            original,
+            private_library_key_for_paths(&second_root, Some(second), true)
+        );
+        assert_ne!(
+            original,
+            private_library_key_for_paths(
+                &second.join("Documents/QA/another/Meetings"),
+                Some(second),
+                true
+            )
+        );
+        assert_ne!(
+            private_library_key_for_paths(Path::new("/Volumes/One/Meetings"), Some(first), true),
+            private_library_key_for_paths(Path::new("/Volumes/Two/Meetings"), Some(second), true)
+        );
+        assert_eq!(
+            private_library_key_for_paths(Path::new("/Volumes/Notes/Meetings"), Some(first), true),
+            "6023fffc1261ac647b812611cdc1d5fc46c9e42d1bf6bd61909de9f0fd169146"
+        );
+    }
+
+    #[test]
+    fn desktop_library_keys_keep_the_previous_absolute_path_namespace() {
+        assert_eq!(
+            private_library_key_for_paths(
+                Path::new("/Users/lander/Pennel"),
+                Some(Path::new("/Users/lander")),
+                false
+            ),
+            "69e00598e10ed7d61e16a71108cb7b93cc9fe5ac2cf4610d4b989d44c9f04626"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mobile_library_namespace_canonicalizes_both_root_and_home_aliases() {
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().join("sandbox-home");
+        let meetings = home.join("Documents/QA/pilot/Meetings");
+        fs::create_dir_all(&meetings).unwrap();
+        let home_alias = directory.path().join("sandbox-alias");
+        std::os::unix::fs::symlink(&home, &home_alias).unwrap();
+        let expected = "a09cacd1aedb5f81a91127488e62127c272a8bc2bcabaa6f6e1a1b96a9e38648";
+        assert_eq!(
+            canonical_private_library_key(&meetings, Some(&home_alias), true).unwrap(),
+            expected
+        );
+        assert_eq!(
+            canonical_private_library_key(
+                &home_alias.join("Documents/QA/pilot/Meetings"),
+                Some(&home),
+                true
+            )
+            .unwrap(),
+            expected
+        );
+        let external = directory.path().join("sandbox-home-external/Meetings");
+        fs::create_dir_all(&external).unwrap();
+        assert_eq!(
+            canonical_private_library_key(&external, Some(&home), true).unwrap(),
+            canonical_private_library_key(&external, Some(&home), false).unwrap()
+        );
+    }
 
     #[test]
     fn directory_lease_excludes_another_owner_and_releases_on_drop() {

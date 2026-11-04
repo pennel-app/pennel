@@ -17,6 +17,9 @@ import { syncCopy } from './sync-copy.ts';
 
 export const mobileCopy = {
   en: {
+    'mobile.conversations.actions': 'Conversation actions', 'mobile.conversations.selected_answer': 'Selected answer', 'mobile.conversations.show_history': 'Show conversation',
+    'mobile.conversations.request_changed': 'Your conversation or question changed. Send again when you’re ready.',
+    'mobile.conversations.context_changed': 'The selected conversation changed. Choose the intended conversation and try again.',
     'mobile.ask': 'Ask', 'mobile.session': 'Dictation session', 'mobile.session.start': 'Start session', 'mobile.session.stop': 'Stop session',
     'mobile.session.ready': 'Ready · {time} remaining', 'mobile.session.off': 'Off', 'mobile.session.help': 'Start a session to dictate from the Pennel keyboard. The microphone stays active for the chosen duration; samples are discarded while you are not dictating.',
     'mobile.keyboard.goal': 'Keyboard-only cold start is still being verified. Starting a session in Pennel is an interim workflow.',
@@ -122,6 +125,9 @@ export const mobileCopy = {
     'mobile.errors.recording_paused': 'Recording paused by a call. Pennel resumes after the call ends.',
   },
   nl: {
+    'mobile.conversations.actions': 'Gespreksacties', 'mobile.conversations.selected_answer': 'Geselecteerd antwoord', 'mobile.conversations.show_history': 'Gesprek tonen',
+    'mobile.conversations.request_changed': 'Je gesprek of vraag is gewijzigd. Verstuur opnieuw wanneer je klaar bent.',
+    'mobile.conversations.context_changed': 'Het geselecteerde gesprek is gewijzigd. Kies het bedoelde gesprek en probeer opnieuw.',
     'mobile.ask': 'Vraag', 'mobile.session': 'Dicteersessie', 'mobile.session.start': 'Start sessie', 'mobile.session.stop': 'Stop sessie',
     'mobile.session.ready': 'Klaar · nog {time}', 'mobile.session.off': 'Uit', 'mobile.session.help': 'Start een sessie om met het Pennel-toetsenbord te dicteren. De microfoon blijft actief voor de gekozen duur; samples worden weggegooid zolang je niet dicteert.',
     'mobile.keyboard.goal': 'Starten vanuit alleen het toetsenbord wordt nog onderzocht. Een sessie starten in Pennel is een tijdelijke werkwijze.',

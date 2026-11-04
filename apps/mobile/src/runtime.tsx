@@ -56,17 +56,19 @@ export function useReducedMotion() {
 export function useQuery<T>(method: MobileCommand, payload: Record<string, unknown> = {}, enabled = true) {
   const { store, language } = useRuntime();
   const [value, setValue] = useState<T | null>(null);
+  const [valueKey, setValueKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latest = useRef(new LatestRequest());
   const payloadKey = JSON.stringify(payload);
+  const queryKey = `${method}:${payloadKey}`;
   const refresh = useCallback(async () => {
     if (!enabled) return;
     setLoading(true); setError(null);
     try {
-      await latest.current.run(() => store.client.invoke<T>(method, JSON.parse(payloadKey) as Record<string, unknown>), (next) => { setValue(next); setLoading(false); });
+      await latest.current.run(() => store.client.invoke<T>(method, JSON.parse(payloadKey) as Record<string, unknown>), (next) => { setValue(next); setValueKey(queryKey); setLoading(false); });
     } catch (error) { setError(localizedFailure(language, failure(error))); setLoading(false); }
-  }, [enabled, language, method, payloadKey, store]);
+  }, [enabled, language, method, payloadKey, queryKey, store]);
   useEffect(() => { setValue(null); void refresh(); return () => latest.current.cancel(); }, [refresh]);
-  return { value, loading, error, refresh };
+  return { value: valueKey === queryKey ? value : null, loading, error, refresh };
 }

@@ -11,6 +11,17 @@ func keysAfterInsightAdmission<Admission, Keys>(_ admit: () throws -> Admission,
     return (admission, keys())
 }
 
+func invokeConversationCommand(method: String, requestJSON: String, engine: PennelEngine, keys: () -> ApiKeys) throws -> String {
+    switch method {
+    case "conversations.read": return try engine.conversationSnapshotJson(requestJson: requestJSON)
+    case "conversations.update": return try engine.updateConversationJson(requestJson: requestJSON)
+    case "conversations.begin": return try engine.beginConversationQuestionJson(requestJson: requestJSON, keys: keys())
+    case "conversations.cancel": return try engine.cancelConversationQuestionJson(requestJson: requestJSON)
+    case "conversations.source": return try engine.conversationSourceJson(requestJson: requestJSON)
+    default: throw PennelBridgeError("unsupported_operation", "This operation is not available on this device.")
+    }
+}
+
 @MainActor
 public final class PennelNativeRuntime {
     public static let shared = PennelNativeRuntime()
@@ -456,6 +467,11 @@ public final class PennelNativeRuntime {
             CloudSyncRunner.shared.poke()
             return result
         case "meetings.templates": return try await background { try BridgeJSON.encode($0.meetingTemplates().map(BridgeJSON.template)) }
+        case "conversations.read", "conversations.update", "conversations.begin", "conversations.cancel", "conversations.source":
+            let requestJSON = try BridgeJSON.encode(input.values["request"] as? [String: Any] ?? [:])
+            return try await background {
+                try invokeConversationCommand(method: method, requestJSON: requestJSON, engine: $0, keys: Keychain.apiKeys)
+            }
         case "meetings.ask":
             let question = try input.required("question")
             let turns = (input.values["history"] as? [[String: String]] ?? []).compactMap { value -> ChatTurn? in

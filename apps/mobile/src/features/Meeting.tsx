@@ -5,7 +5,7 @@ import type { MeetingDetail, MeetingTemplate, SpeakerJob } from '../domain';
 import { useQuery, useReducedMotion, useRuntime } from '../runtime';
 import { meetingDetail, speakerJob } from '../normalize';
 import { clock, dateLabel, recognitionActions } from '../format';
-import { resolveSource } from '../source-navigation';
+import { conversationOrigin, conversationReturnRoute, rememberSource, resolveSource } from '../source-navigation';
 import { useNoteDraft } from '../use-note-draft';
 import { saveThenRename } from '../meeting-rename';
 import { localizedFailure, ownedFailureText } from '../errors';
@@ -13,7 +13,8 @@ import { templateLabel } from '../owned-labels';
 import { ActionMenu, Actions, Body, Button, Empty, Field, Loading, NativeChoice, Notice, Page, Row, Section, confirm } from '../components/ui';
 import { TextDialog } from '../components/TextDialog';
 import { Markdown } from '../components/Markdown';
-import { AskPanel, type AskSession } from '../components/AskPanel';
+import { AskPanel } from '../components/AskPanel';
+import { conversationRequests, type ConversationResolvedSource, type ConversationSnapshot } from '../../../../assets/contracts/meeting-conversations';
 import { workflowText } from '../workflow-copy';
 import { summaryHasHeading } from '../workflow-state';
 import { useHapticFeedback } from '../haptics';
@@ -26,7 +27,7 @@ import { insertionStillCurrent, type InsightNoteLatch } from '../../../../assets
 type Pane = 'notes' | 'transcript' | 'questions' | 'insights';
 type Editor = { type: 'rename' } | { type: 'speaker'; voice: number; initial: string } | null;
 export default function Meeting() {
-  const params = useLocalSearchParams<{ id: string; source?: string }>();
+  const params = useLocalSearchParams<{ id: string; source?: string; pane?: string; conversation_id?: string; message_id?: string; citation_number?: string; origin_scope?: string; origin_meeting_uid?: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const { snapshot, run, busy, t, theme, language, store } = useRuntime();
   const router = useRouter();
@@ -40,7 +41,11 @@ export default function Meeting() {
   const templates = useQuery<MeetingTemplate[]>('meetings.templates', {}, Boolean(snapshot?.ready));
   const detail = useMemo(() => query.value?.info ? meetingDetail(query.value) : null, [query.value]);
   const [pane, setPane] = useState<Pane>('notes');
-  const [askSession, setAskSession] = useState<AskSession>({ question: '', turns: [] });
+  const origin = conversationOrigin(params);
+  const originScope = origin?.scope === 'meeting' ? { kind: 'meeting' as const, meeting_uid: origin.meeting_uid! } : { kind: 'library' as const };
+  const durableSource = useQuery<ConversationResolvedSource>('conversations.source', { request: origin ? conversationRequests.source(originScope, origin.conversation_id, origin.message_id, origin.citation_number) : null }, Boolean(origin && snapshot?.ready));
+  const originConversation = useQuery<ConversationSnapshot>('conversations.read', { request: origin ? conversationRequests.snapshot(originScope, origin.conversation_id) : null }, Boolean(origin && snapshot?.ready));
+  const returnRoute = origin ? conversationReturnRoute(origin, originConversation.value?.conversation.id === origin.conversation_id ? originConversation.value.current_meeting_id ?? undefined : undefined) : null;
   const draft = useNoteDraft(id, detail?.notes ?? '');
   const insightHolder = useRef<InsightReviewModel | null>(null);
   if (!insightHolder.current || detail?.meeting_uid && insightHolder.current.meetingUid !== detail.meeting_uid) {
@@ -75,6 +80,7 @@ export default function Meeting() {
   const transcriptOffset = useRef(0);
   useEffect(() => { if (pane !== 'transcript') return; const frame = requestAnimationFrame(() => transcriptList.current?.scrollToOffset({ offset: transcriptOffset.current, animated: false })); return () => cancelAnimationFrame(frame); }, [pane]);
   const openedSource = useRef<string | null>(null);
+  useEffect(() => { if (params.pane === 'questions' && !origin) setPane('questions'); }, [params.pane, params.origin_scope]);
   const dirty = draft.dirty;
   const remoteChanged = draft.conflict;
   useEffect(() => { if (draft.dirty || draft.failed || draft.conflict) setEditingNotes(true); }, [draft.dirty, draft.failed, draft.conflict]);
@@ -97,6 +103,22 @@ export default function Meeting() {
       setTimeout(() => transcriptList.current?.scrollToIndex({ index, animated: !reducedMotion, viewPosition: 0.2 }), 300);
     }
   }, [detail, params.source, reducedMotion, t]);
+  useEffect(() => {
+    const source = durableSource.value;
+    if (!source || !origin) return;
+    const token = `conversation:${origin.conversation_id}:${origin.message_id}:${origin.citation_number}`;
+    if (openedSource.current === token) return;
+    if (source.status !== 'current' || !detail) { setSourceIssue(source.anchor?.source_text ?? source.passage.text); return; }
+    const resolved = resolveSource(rememberSource(source.passage), detail);
+    if (resolved.changed) { setSourceIssue(source.anchor?.source_text ?? source.passage.text); return; }
+    openedSource.current = token;
+    setSourceIssue(null);
+    setPane(source.passage.kind === 'transcript' ? 'transcript' : 'notes');
+    if (resolved.transcriptIndex !== null) {
+      const index = resolved.transcriptIndex;
+      setTimeout(() => transcriptList.current?.scrollToIndex({ index, animated: !reducedMotion, viewPosition: 0.2 }), 300);
+    }
+  }, [durableSource.value, detail, params.conversation_id, params.message_id, params.citation_number, reducedMotion]);
   const jobs = (snapshot?.recognition_jobs ?? []).map(speakerJob);
   const job = currentJob ? jobs.find((job) => job.id === currentJob.id) ?? currentJob : jobs.find((job) => job.meeting_id === id);
   const jobStage = job?.stage;
@@ -124,7 +146,10 @@ export default function Meeting() {
     if (format === 'share') { try { await Share.share({ title: result.title, message: result.markdown }); } catch { setNotice(t('mobile.error')); } }
     else { const copied = await run('copy', 'dictation.copy', { text: result.markdown, html: format === 'formatted' ? result.html : null }); if (copied !== undefined) { setNotice(t('meetings.copied')); haptic('resultDelivered'); } }
   };
-  if (!detail) return <Page title={t('navigation.meetings')} inset={false}>{query.loading ? <Loading /> : query.error ? <><Notice error>{query.error}</Notice><Button title={t('common.retry')} subtle onPress={() => void query.refresh()} /></> : <Empty title={t('meetings.not_found')} />}</Page>;
+  if (!detail) return <Page title={t('navigation.meetings')} inset={false}>
+    {origin && <Section><Notice>{t('conversations.source_unavailable')}</Notice><Body selectable>{durableSource.value?.anchor?.source_text ?? durableSource.value?.passage.text}</Body>{returnRoute && <Button title={t('conversations.return_to_answer')} subtle onPress={() => router.replace(returnRoute)} />}</Section>}
+    {query.loading ? <Loading /> : query.error ? <><Notice error>{query.error}</Notice><Button title={t('common.retry')} subtle onPress={() => void query.refresh()} /></> : <Empty title={t('meetings.not_found')} />}
+  </Page>;
   const voices = [...new Set(detail.transcript.flatMap((segment) => segment.voice === null ? [] : [segment.voice]))].sort((a, b) => a - b);
   const names = new Map(detail.speakers.map((speaker) => [speaker.voice, speaker.name]));
   const rowKeys = transcriptKeys(detail.transcript);
@@ -144,6 +169,7 @@ export default function Meeting() {
   ]} />}>
     <Stack.Screen options={{ title: detail.info.title }} />
     {notice && <Section><Notice>{notice}</Notice></Section>}
+    {origin && <Section>{durableSource.loading && <Loading />}{durableSource.error && <Notice error>{durableSource.error}</Notice>}{returnRoute && <Button title={t('conversations.return_to_answer')} subtle onPress={() => router.replace(returnRoute)} />}</Section>}
     {sourceIssue !== null && <Section><Notice>{t('meetings.source_changed')}</Notice>{sourceIssue ? <Body selectable>{sourceIssue}</Body> : null}</Section>}
     {detail.interruption && <Section><Notice error>{ownedFailureText(language, detail.interruption, detail.interruption_code)}</Notice></Section>}
     {(detail.conflicts ?? []).length > 0 && <Section description={t('meetings.conflict_notice')}>{detail.conflicts?.map((conflict) => <Row key={conflict.name} title={conflict.name} onPress={() => setViewConflict({ name: conflict.name, text: conflict.text ?? '' })} />)}</Section>}
@@ -163,7 +189,8 @@ export default function Meeting() {
         return <Pressable accessibilityRole="button" accessibilityLabel={`${clock(item.start_ms / 1000)} ${label}${provisional}${source ? ` · ${source}` : ''}. ${item.text}`} accessibilityState={{ disabled: !playback }} accessibilityHint={playback ? t('meetings.play_from_here') : t('meetings.passage_audio_unavailable')} disabled={!playback} onPress={() => { if (playback) void run('playback', playback.method, playback.payload).then(value => { if (value !== undefined) setPlayRequested(true); }); }} style={{ gap: theme.space[1], minHeight: 44, paddingBottom: theme.space[5] }}><Body muted style={{ fontSize: theme.size.label }}>{clock(item.start_ms / 1000)} · {label}{provisional}{source ? ` · ${source}` : ''}</Body><Body selectable style={item.failed ? { color: theme.colors.accent } : undefined}>{item.failed ? t('meetings.transcription_failed') : item.text}</Body>{item.correction_review_required && <Body muted style={{ fontSize: theme.size.label }}>{t('meetings.attribution_correction_review')}</Body>}</Pressable>;
       }} ListEmptyComponent={<Empty title={t('meetings.empty_transcript')} />} />
     </>}
-    {pane === 'questions' && <AskPanel meetingId={id} session={askSession} onSessionChange={value => { ++interactions.current; setAskSession(value); }} />}
+    {pane === 'questions' && <AskPanel meetingId={id} meetingUid={detail.meeting_uid} targetConversationId={origin ? undefined : params.conversation_id} targetMessageId={origin ? undefined : params.message_id}
+      beforeAsk={draft.save} onInteraction={() => { ++interactions.current; }} />}
     {pane === 'insights' && (active ? <Notice>{t('insights.finished_only')}</Notice> : <View onTouchStart={() => { ++interactions.current; }}><InsightReview model={insightModel} notes={insightNotes} /></View>)}
     <Modal visible={showSpeakers} presentationStyle="pageSheet" animationType={reducedMotion ? 'none' : 'slide'} allowSwipeDismissal onRequestClose={() => { setShowSpeakers(false); setEditor(null); }}><Page title={copy('manageSpeakers')} bottomInset action={<Button title={t('common.close')} subtle onPress={() => { setShowSpeakers(false); setEditor(null); }} />}>
       {editor?.type === 'speaker' ? <Section description={t('mobile.speakers.name_help')}><Field label={t('mobile.speakers.name')} value={editor.initial} onChangeText={(initial) => setEditor((current) => current?.type === 'speaker' ? { ...current, initial } : current)} autoFocus /><Actions><Button title={t('common.save')} busy={busy.has('rename-speaker')} disabled={!canEditAttribution} onPress={() => { void run('rename-speaker', 'recognition.renameSpeaker', { id, voice: editor.voice, name: editor.initial.trim(), remember: false }).then((value) => { if (value !== undefined) { setEditor(null); return query.refresh(); } }); }} /><Button title={t('common.cancel')} subtle onPress={() => setEditor(null)} /></Actions></Section> : <>

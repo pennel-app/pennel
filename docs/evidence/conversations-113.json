@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "issue": 113,
+  "pull_request": "https://github.com/pennel-app/pennel/pull/138",
+  "base_pull_request": "https://github.com/pennel-app/pennel/pull/137",
+  "base_commit": "3b6d0524a353fd671648652008ad270679814a9b",
+  "product_commit": "a6ec6f0a38769bed0a1bce3dcf3980c5c51784ba",
+  "core_native_commit": "65b5a7c9e25f695f05b90b361c57364aade1f9ea",
+  "core": {
+    "default_passed": 1043,
+    "default_existing_ignored": 7,
+    "lean_passed": 1026,
+    "lean_existing_ignored": 5,
+    "keyboard_passed": 17,
+    "release_build": "passed",
+    "format": "passed",
+    "strict_clippy": "passed"
+  },
+  "desktop": {
+    "frontend_passed": 312,
+    "backend_passed": 269,
+    "mac_platform_passed": 146,
+    "fixtures_passed": 50,
+    "packaging_passed": 61,
+    "capture_safety_passed": 11,
+    "production_build": "passed",
+    "theme": "passed",
+    "backend_format": "passed",
+    "backend_strict_clippy": "passed"
+  },
+  "browser": {
+    "captures": 108,
+    "cases": 27,
+    "languages": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "new_case_viewport": [
+      760,
+      520
+    ],
+    "source_manifest_sha256": "d7eef5519993f4931cf1fc4823b6e21d4557193eecce821bcc393dea3636b2b1",
+    "product_manifest_sha256": "3765c00ad7e643f30cccdff92a4b5340c3e3d0c59e8cb081200d65f1ad72a12b",
+    "inputs_unchanged": 114,
+    "receipt": "build/verification/conversations-113/desktop/accepted-title-ellipsis/ui-receipt.json"
+  },
+  "mobile": {
+    "simulator_release": {
+      "status": "passed",
+      "unsigned": true,
+      "receipt": "build/verification/conversations-113/mobile/ui-copy-release-simulator.json",
+      "product": {
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphonesimulator/Pennel.app",
+        "bundle_identifier": "app.pennel.ios.preview",
+        "file_count": 218,
+        "bytes": 78607644,
+        "manifest_sha256": "f38ec04e339ebf4e3fb0de410abb594741c34da0e57bcd7fe9f6bccc09372bf2",
+        "executable_sha256": "419da3f3eb705bba65f6caec5d77dcf144fffa63800d9c78ccccc22bc8014153"
+      }
+    },
+    "device_release": {
+      "status": "passed",
+      "unsigned": true,
+      "receipt": "build/verification/conversations-113/mobile/ui-copy-release-device.json",
+      "product": {
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphoneos/Pennel.app",
+        "bundle_identifier": "app.pennel.ios.preview",
+        "file_count": 187,
+        "bytes": 78220630,
+        "manifest_sha256": "d58f9fc35f8a5ab24adb33cc9849afd6292feeb6ce803275ed319bb17445077a",
+        "executable_sha256": "7a43cac71b5d0fa2686d0689f17e0ef8349b8c7b61b895d10f752e5865a8c53e"
+      }
+    },
+    "hosted_tests": {
+      "runtime_service": 137,
+      "keyboard": 36,
+      "passed": 173,
+      "core_inputs_sha256": "2dc31f2834b40fe2b1d5015a5b97551ba17c5d9cea3ec0484ec4a55c38fb8ded",
+      "receipt": "build/verification/conversations-113/mobile/scalar-fixed-hosted.json"
+    },
+    "typecheck": "passed",
+    "plugin_tests": 17,
+    "widget_tests": 7,
+    "ui_controller_tests": 130,
+    "swift_helper_tests": 116,
+    "core_swift_unchanged_after_ui_copy_fix": true,
+    "mobile_source_sha256": "65cb57e5c194421ebe4b4849b4d2f54dc1904fecb630b038c0d1181230f2c3b6",
+    "bindings_sha256": "7e9642e633c6b38c0d1e4780a324f9e80c63da0b969aa1f751391cfd2c03642b",
+    "public_receipt": {
+      "schema": 1,
+      "issue": 113,
+      "final_product_commit": "a6ec6f0a38769bed0a1bce3dcf3980c5c51784ba",
+      "native_test_commit": "65b5a7c9e25f695f05b90b361c57364aade1f9ea",
+      "core_inputs_sha256": "2dc31f2834b40fe2b1d5015a5b97551ba17c5d9cea3ec0484ec4a55c38fb8ded",
+      "final_mobile_inputs_sha256": "65cb57e5c194421ebe4b4849b4d2f54dc1904fecb630b038c0d1181230f2c3b6",
+      "native_test_mobile_inputs_sha256": "366a0304f7703e1c00dad341fc497d0d9e662b64491b25ec167aaae2e8061a15",
+      "native173_reuse": {
+        "verified_core_and_artifacts_byte_identical": true,
+        "only_changed_input": [
+          "apps/mobile/src/components/AskPanel.tsx"
+        ],
+        "explanation": "UI empty-state label only; no native/Swift/bindings/core changes."
+      },
+      "bindings_sha256": "7e9642e633c6b38c0d1e4780a324f9e80c63da0b969aa1f751391cfd2c03642b",
+      "core_only_manifest_sha256": "00fad0f622ebcaba3ba8e4be59d585df451a1256b8893827b3285d215757a9df",
+      "mobile_checks": {
+        "typecheck": "passed",
+        "plugins": 17,
+        "widgets": 7,
+        "ui_tests": 130,
+        "swift_helpers": 116,
+        "log": "mobile-test-ui-copy.log"
+      },
+      "generation": {
+        "clean_repeated_prebuild": "passed",
+        "generation_regressions": 1,
+        "pod_source_linker_ownership_checks": 6,
+        "log": "prebuild-final.log",
+        "reuse": "same CNG inputs and five-method binding shape across core-only fixes"
+      },
+      "native_checks": {
+        "runtime_service": 137,
+        "keyboard": 36,
+        "total": 173,
+        "log": "native-scalar-fixed.log"
+      },
+      "release_simulator": {
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphonesimulator/Pennel.app",
+        "bundle_identifier": "app.pennel.ios.preview",
+        "file_count": 218,
+        "bytes": 78607644,
+        "manifest_sha256": "f38ec04e339ebf4e3fb0de410abb594741c34da0e57bcd7fe9f6bccc09372bf2",
+        "executable_sha256": "419da3f3eb705bba65f6caec5d77dcf144fffa63800d9c78ccccc22bc8014153"
+      },
+      "release_device": {
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphoneos/Pennel.app",
+        "bundle_identifier": "app.pennel.ios.preview",
+        "file_count": 187,
+        "bytes": 78220630,
+        "manifest_sha256": "d58f9fc35f8a5ab24adb33cc9849afd6292feeb6ce803275ed319bb17445077a",
+        "executable_sha256": "7a43cac71b5d0fa2686d0689f17e0ef8349b8c7b61b895d10f752e5865a8c53e"
+      },
+      "qa": {
+        "status": "passed",
+        "device": "64C462E2-0904-4E38-98C0-F1F19690D2E4",
+        "runtime": "iOS26.5/iPhone17",
+        "profile": "conversations-113",
+        "derived_from": "f38ec04e339ebf4e3fb0de410abb594741c34da0e57bcd7fe9f6bccc09372bf2",
+        "derivative_manifest": "qa/derivative-ui-copy.json",
+        "provider": {
+          "kind": "ollama",
+          "model": "pennel-fixture",
+          "endpoint": "http://127.0.0.1:14813/v1",
+          "synthetic": true,
+          "model_quality_or_latency_claim": false
+        },
+        "scenarios": {
+          "library_empty_en_light": "passed after one UI-only copy repair",
+          "library_empty_nl_dark": "passed",
+          "create_switch_background_reply_original_only": "passed",
+          "rename": "passed",
+          "draft_and_selection_after_qa_product_update": "passed",
+          "citation_current_navigation_exact_answer_return": "passed",
+          "source_edit_stale_reference_readable_history": "passed",
+          "meeting_library_scope_separation": "passed",
+          "held_request_process_restart_interrupted_without_resend": "passed",
+          "old_handler_release_no_late_answer": "passed",
+          "newer_storage_reason_retry_copy_and_no_overwrite": "passed"
+        },
+        "controlled_restart": {
+          "requests_at_admission": 3,
+          "blocked_when_reopened_and_interrupted_observed": 1,
+          "requests_after_release": 3,
+          "proof": "qa/held-control-reopened-interrupted.json"
+        },
+        "container_relocation_runtime_evidence": {
+          "observed_container_changes": true,
+          "draft_and_history_retained_after_qa_product_update": true
+        },
+        "screenshots": [
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-library-en-light-restored.png",
+            "sha256": "0deb47b97ed8253d7c6dc2aea91f8f05c6bb5411093f6208d5bec9aa6869f95a"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-switch-new-empty.png",
+            "sha256": "1cec2325cc4c8b524a4208a5c36c6a33166e97ef407be6a9fdf777b9f7f8a668"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-original-completed.png",
+            "sha256": "5327600858904550969de1f93306021774e6757ddd48cbae55c0851992796ff3"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-source-current.png",
+            "sha256": "66e7e4786fa06a20a61913b49e7ef0af1cf0e7196ca91bf2092e8b2fae8fee67"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-source-stale-return.png",
+            "sha256": "7756102fa62810c1b0d44b12cb6448175b8fb1ca356da770b01b9a764a7951e6"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-controlled-restart-interrupted.png",
+            "sha256": "fd3ab415cbf769484538665b697618645dcd26ea5aa6edfec929f1a700a78f78"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-nl-dark-interrupted.png",
+            "sha256": "1027e22ad79d224a4f6a065a1ad470466b72d2732eef5e832f382940cd55b144"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-library-nl-dark-empty.png",
+            "sha256": "0e24fd1e3f13295d2f6f08196faa2fb2c5554b5dadeb3d476916562a9a409236"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-meeting-nl-dark-empty.png",
+            "sha256": "e16a3d2e93240264de5150ebc8ceb5f22927e9b7d0fbf39ec504b36410043825"
+          },
+          {
+            "path": "build/mobile/qa/device-hub/conversations-113-nl-dark-storage-recovery.png",
+            "sha256": "92379dd85735176e4f10ee9b6e290c88bce026b016670804c6343c60ba99499b"
+          }
+        ]
+      },
+      "restoration": {
+        "prior_normal_bundle_restored": true,
+        "normal_bundle_manifest_sha256": "dd97eeb3ddd8e510d12332049f49471d20e22fd136a08797fbb9b6cd56c329ee",
+        "normal_bundle_files_verified": 266,
+        "normal_core_documents_files_verified": 13,
+        "normal_data_content_identical": true,
+        "qa_database_restored": true,
+        "normal_app_left_unlaunched": true,
+        "receipt": "qa/restoration.json",
+        "hosted_simulator": "qa/simulator-restoration.json",
+        "own_dia_qa_window_closed": true,
+        "own_hub_and_mock_stopped": true
+      },
+      "limits": [
+        "Simulator/fixture evidence only; no physical iPhone or signed upgrade acceptance",
+        "No real meetings, microphone, addressbook/calendar, production service, paid inference or Android work",
+        "Software keyboard/ordinary UI operation observed; full physical IME/VoiceOver/accessibility acceptance remains open"
+      ],
+      "retained_products": [
+        "../retained-products/pre-review-18b2/retention.json",
+        "../retained-products/pre-scalar-51c/retention.json",
+        "../retained-products/scalar-fixed-65b5/retention.json"
+      ]
+    }
+  },
+  "review": {
+    "standards_remaining_hard": 0,
+    "spec_remaining_actionable": 0
+  },
+  "isolated_simulator_qa": {
+    "status": "passed",
+    "device": "64C462E2-0904-4E38-98C0-F1F19690D2E4",
+    "runtime": "iOS26.5/iPhone17",
+    "profile": "conversations-113",
+    "derived_from": "f38ec04e339ebf4e3fb0de410abb594741c34da0e57bcd7fe9f6bccc09372bf2",
+    "derivative_manifest": "qa/derivative-ui-copy.json",
+    "provider": {
+      "kind": "ollama",
+      "model": "pennel-fixture",
+      "endpoint": "http://127.0.0.1:14813/v1",
+      "synthetic": true,
+      "model_quality_or_latency_claim": false
+    },
+    "scenarios": {
+      "library_empty_en_light": "passed after one UI-only copy repair",
+      "library_empty_nl_dark": "passed",
+      "create_switch_background_reply_original_only": "passed",
+      "rename": "passed",
+      "draft_and_selection_after_qa_product_update": "passed",
+      "citation_current_navigation_exact_answer_return": "passed",
+      "source_edit_stale_reference_readable_history": "passed",
+      "meeting_library_scope_separation": "passed",
+      "held_request_process_restart_interrupted_without_resend": "passed",
+      "old_handler_release_no_late_answer": "passed",
+      "newer_storage_reason_retry_copy_and_no_overwrite": "passed"
+    },
+    "controlled_restart": {
+      "requests_at_admission": 3,
+      "blocked_when_reopened_and_interrupted_observed": 1,
+      "requests_after_release": 3,
+      "proof": "qa/held-control-reopened-interrupted.json"
+    },
+    "container_relocation_runtime_evidence": {
+      "observed_container_changes": true,
+      "draft_and_history_retained_after_qa_product_update": true
+    },
+    "screenshots": [
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-library-en-light-restored.png",
+        "sha256": "0deb47b97ed8253d7c6dc2aea91f8f05c6bb5411093f6208d5bec9aa6869f95a"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-switch-new-empty.png",
+        "sha256": "1cec2325cc4c8b524a4208a5c36c6a33166e97ef407be6a9fdf777b9f7f8a668"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-original-completed.png",
+        "sha256": "5327600858904550969de1f93306021774e6757ddd48cbae55c0851992796ff3"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-source-current.png",
+        "sha256": "66e7e4786fa06a20a61913b49e7ef0af1cf0e7196ca91bf2092e8b2fae8fee67"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-source-stale-return.png",
+        "sha256": "7756102fa62810c1b0d44b12cb6448175b8fb1ca356da770b01b9a764a7951e6"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-controlled-restart-interrupted.png",
+        "sha256": "fd3ab415cbf769484538665b697618645dcd26ea5aa6edfec929f1a700a78f78"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-nl-dark-interrupted.png",
+        "sha256": "1027e22ad79d224a4f6a065a1ad470466b72d2732eef5e832f382940cd55b144"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-library-nl-dark-empty.png",
+        "sha256": "0e24fd1e3f13295d2f6f08196faa2fb2c5554b5dadeb3d476916562a9a409236"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-meeting-nl-dark-empty.png",
+        "sha256": "e16a3d2e93240264de5150ebc8ceb5f22927e9b7d0fbf39ec504b36410043825"
+      },
+      {
+        "path": "build/mobile/qa/device-hub/conversations-113-nl-dark-storage-recovery.png",
+        "sha256": "92379dd85735176e4f10ee9b6e290c88bce026b016670804c6343c60ba99499b"
+      }
+    ],
+    "restoration": {
+      "prior_normal_bundle_restored": true,
+      "normal_bundle_manifest_sha256": "dd97eeb3ddd8e510d12332049f49471d20e22fd136a08797fbb9b6cd56c329ee",
+      "normal_bundle_files_verified": 266,
+      "normal_core_documents_files_verified": 13,
+      "normal_data_content_identical": true,
+      "qa_database_restored": true,
+      "normal_app_left_unlaunched": true,
+      "receipt": "qa/restoration.json",
+      "hosted_simulator": "qa/simulator-restoration.json",
+      "own_dia_qa_window_closed": true,
+      "own_hub_and_mock_stopped": true
+    },
+    "receipt": "build/verification/conversations-113/mobile/public-summary.json"
+  },
+  "boundaries": [
+    "Local browser fixtures use synthetic data and IPC; no installed desktop platform claim",
+    "Hosted and unsigned builds are distinct from physical iPhone/signed upgrade acceptance",
+    "No Cloud deployment, paid inference, real meeting/contact data or Android work"
+  ]
+}

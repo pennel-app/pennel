@@ -1,4 +1,6 @@
 import type { InsightSnapshot, InsightAvailability, InsightJob, InsightInsertionPreparation } from '../../../../../assets/contracts/meeting-insights';
+import type { ConversationSnapshot, ConversationResolvedSource } from '../../../../../assets/contracts/meeting-conversations';
+export type { ConversationSnapshot, ConversationResolvedSource } from '../../../../../assets/contracts/meeting-conversations';
 export type { InsightSnapshot, InsightAvailability, InsightJob, InsightItem, InsightSource, InsightLanguagePolicy } from '../../../../../assets/contracts/meeting-insights';
 export type InterfaceLanguage = 'en' | 'nl';
 export type Appearance = 'system' | 'light' | 'dark';
@@ -125,6 +127,11 @@ export interface KeyboardSettings {
 }
 
 export interface MobileCommandResults {
+  'conversations.read': ConversationSnapshot;
+  'conversations.update': ConversationSnapshot;
+  'conversations.begin': ConversationSnapshot;
+  'conversations.cancel': ConversationSnapshot;
+  'conversations.source': ConversationResolvedSource;
   'insights.read': InsightSnapshot;
   'insights.availability': InsightAvailability;
   'insights.start': InsightJob;

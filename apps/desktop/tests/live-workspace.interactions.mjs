@@ -152,7 +152,7 @@ export async function checkLiveDuplicateNotesReview() {
   const snapshot = fixture.workspace.requests()[0];
   const index = snapshot.anchors.findIndex(anchor => anchor.passage.kind === "notes" && anchor.notes_start === repeated.length + 1);
   assert(index >= 0, "The second repeated note has no distinct source anchor.");
-  fixture.emit("live-question-result", { snapshot, answer: { text: `The second note [${index + 1}]`, citations: [{ number: index + 1, passage: snapshot.anchors[index].passage }] }, error: null });
+  await fixture.conversations.complete(snapshot.request_id, { text: `The second note [${index + 1}]`, citations: [{ number: index + 1, passage: snapshot.anchors[index].passage }] });
   await until(() => root.querySelector(".citation"), "The repeated note citation did not appear.");
   root.querySelector(".citation").click();
   await until(() => note.selectionStart === repeated.length + 1, "The second note citation opened the first occurrence.");

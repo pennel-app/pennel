@@ -1,33 +1,20 @@
-import { api, listenToWindow, type MeetingStatus, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveQuestionSnapshot, type LiveQuestionResult, type LiveSourceAnchor, type MeetingAnswer, type Segment } from "./api";
+import { api, type MeetingStatus, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveSourceAnchor, type Segment } from "./api";
 import { SerialQueue, persistAll } from "./async";
 import { bindLocalization, l, t, localizeBackendText, type TranslationKey } from "./i18n";
 import { controlButton, errorText, formatClock, h, markdown, textField } from "./dom";
 import { MeetingDraft } from "./meeting-draft";
 import { RecordingRefresh, sameSegment, segmentKeys } from "./recording-refresh";
-import { LivePaneState, LiveRequestState, LiveStatusEpoch, segmentEvidenceValue, formatSelection, type LivePane } from "./live-workspace-state";
-import { languageModelConfigured } from "./presentation";
+import { LivePaneState, LiveStatusEpoch, segmentEvidenceValue, formatSelection, type LivePane } from "./live-workspace-state";
 import { speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
 import { attributionEditable, attributionNoticeKey } from "./meeting-source";
 import { LiveSpeakerControl, liveSpeakerStatusKey } from "./live-speaker-state";
-import { liveQuestionMetadata } from "./live-question-scope";
 import { reviewedInsights, type InsightReviewHost } from "./reviewed-insights";
 import { insightSourceMatches, insertionStillCurrent, utf8Range, type InsightNoteLatch, type InsightSource } from "../../../assets/contracts/meeting-insights.ts";
 import type { Context } from "./main";
 import { openPeoplePicker, peopleNoteControls, type PeopleHost } from "./people-picker";
 import { canAcknowledgePeopleNotes, speakerLinkUtteranceIds, type PeopleSnapshot } from "./people-state";
-
-interface Turn {
-  question: string;
-  requestId: string;
-  snapshot?: LiveQuestionSnapshot;
-  answer?: MeetingAnswer;
-  error?: string;
-  cancelled?: boolean;
-  element: HTMLElement;
-  response: HTMLElement;
-  metadata: HTMLElement;
-}
+import { conversationPanel } from "./conversation-panel";
 
 interface LiveWorkspace {
   root: HTMLElement;
@@ -38,22 +25,11 @@ interface LiveWorkspace {
   bind(ctx: Context): HTMLElement;
   flush(): Promise<void>;
   finish(event: MeetingFinished): void;
-  receive(result: LiveQuestionResult): void;
   savedExternally(text: string): void;
 }
 
 const workspaces = new Map<string, LiveWorkspace>();
 let displayedSession: string | null = null;
-let questionEvents: Promise<() => void> | null = null;
-
-function connectQuestions() {
-  questionEvents ??= listenToWindow<LiveQuestionResult>("live-question-result", ({ payload }) => {
-    const owner = workspaces.get(payload.snapshot.session_id);
-    if (owner?.uid === payload.snapshot.meeting_uid) owner.receive(payload);
-  });
-  return questionEvents;
-}
-
 export function getRetainedMeetingWorkspace(id?: string): HTMLElement | null {
   return [...workspaces.values()].find(owner => id ? owner.id === id || owner.aliases.has(id) : owner.session === displayedSession)?.root ?? null;
 }
@@ -93,7 +69,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   let binding = 0;
   let poll: VisibilityPoll | null = null;
   let composing = false;
-  let questionComposing = false;
   let notesTimer: number | undefined;
   let titleTimer: number | undefined;
   let preview = false;
@@ -109,7 +84,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   let observedSelection = "";
   let insertionReceipt: { text: string; attempt: string } | null = null;
   const panes = new LivePaneState();
-  const requests = new LiveRequestState(uid, session);
   const statusEpoch = new LiveStatusEpoch();
   const notes = new MeetingDraft();
   const titleDraft = new MeetingDraft();
@@ -117,7 +91,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   const titleWrites = new SerialQueue();
   const refresh = new RecordingRefresh(initial);
   const liveSpeakers = new LiveSpeakerControl(session, initial.live_speaker_attribution);
-  const turns: Turn[] = [];
   let peopleSnapshot: PeopleSnapshot | null = null;
   const rows = new Map<string, { element: HTMLElement; body: HTMLElement; speaker: HTMLElement; provisional: HTMLElement; correction: HTMLElement; segment: Segment }>();
   const root = h("article", { class: "live-workspace live-recording", "data-session-id": session, "data-meeting-uid": uid });
@@ -206,13 +179,28 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     captionOutput.append(element);
   }
   panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, follow), speakerControls, attributionNotice, transcriptOutput, captionOutput);
-  const history = h("div", { class: "live-question-history chat-history", tabindex: 0, "aria-label": l("meetings.workspace_questions") });
-  const question = h("textarea", { class: "live-question-input", rows: 2, "aria-label": l("meetings.your_question"), placeholder: l("meetings.ask_placeholder_this") });
-  const submit = controlButton({ class: "btn primary live-question-submit", onclick: () => { void ask(); } }, l("meetings.ask"));
-  const cancel = controlButton({ class: "btn live-question-cancel", hidden: true, onclick: () => { void cancelQuestion(); } }, l("common.cancel"));
-  const setup = h("div", { class: "meeting-setup chat-setup help", role: "status" }, h("span", {}, l("meetings.questions_setup_help")), h("button", { class: "text-button", onclick: () => ctx.openSetup("llm") }, l("meetings.set_up_questions")));
-  panels.get("questions")!.append(h("p", { class: "help live-question-scope" }, l("meetings.workspace_scope")), setup, history,
-    h("div", { class: "live-question-composer" }, question, h("div", { class: "row" }, submit, cancel)), h("p", { class: "help live-source-assessment" }, l("meetings.workspace_sourcecheck_unavailable")));
+  const questions = conversationPanel(ctx, {
+    scope: { kind: "meeting", meeting_uid: uid, meeting_id: initial.id! }, live: true,
+    canAsk: () => !composing,
+    prepare: async () => {
+      if (composing) throw new Error(t("meetings.workspace_composing"));
+      const target = notes.value, externalSession = finalized ? undefined : session;
+      clearTimeout(notesTimer);
+      await writes.run(() => notes.persist(writeNotes, target));
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(target));
+      const expected_notes_revision = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+      return { expected_notes_revision, ...externalSession ? { session_id: externalSession } : {} };
+    },
+    source: async (source, origin, _message, restore) => {
+      await openSource(origin, source.status === "current" ? source.anchor ?? undefined : undefined,
+        source.anchor?.source_text ?? source.passage.text, restore);
+      return true;
+    },
+  });
+  const history = questions.history;
+  panels.get("questions")!.append(h("details", { class: "conversation-context-help" }, h("summary", {}, l("conversations.context")),
+    h("p", { class: "help live-question-scope" }, l("meetings.workspace_scope")),
+    h("p", { class: "help live-source-assessment" }, l("meetings.workspace_sourcecheck_unavailable"))), questions.root);
   panels.get("suggestions")!.append(h("h2", {}, l("meetings.workspace_suggestions")), h("p", { class: "help" }, l("meetings.workspace_suggestions_unavailable")));
   const separator = h("div", { class: "live-pane-separator", role: "separator", tabindex: 0, "aria-orientation": "vertical", "aria-label": l("meetings.workspace_split"), "aria-valuemin": 35, "aria-valuemax": 75 });
   const content = h("div", { class: "live-workspace-panes" }, panels.get("notes")!, separator, panels.get("transcript")!, panels.get("questions")!, panels.get("suggestions")!);
@@ -250,10 +238,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   editor.addEventListener("blur", () => { if (!composing) void saveNotes().catch(showSaveError); });
   title.addEventListener("input", () => { titleDraft.edit(title.value); clearTimeout(titleTimer); titleTimer = window.setTimeout(() => { void saveTitle().catch(showSaveError); }, 350); });
   title.addEventListener("blur", () => { void saveTitle().catch(showSaveError); });
-  question.addEventListener("input", updateReadiness);
-  question.addEventListener("compositionstart", () => { questionComposing = true; updateReadiness(); });
-  question.addEventListener("compositionend", () => { questionComposing = false; updateReadiness(); });
-  question.addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); void ask(); } });
   transcriptOutput.addEventListener("scroll", () => {
     const position = transcriptOutput.scrollTop;
     if (intendedScroll !== null && Math.abs(position - intendedScroll) < 2) intendedScroll = null;
@@ -281,6 +265,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       next.onDispose(() => { if (mine === binding) { ++sourceNavigation; statusEpoch.invalidate(); poll?.dispose(); poll = null; } });
       next.onInfoChange(() => { if (mine === binding) updateReadiness(); });
       next.onFlush(flush);
+      questions.bind(next);
       if (finalized && insights) insights.bind(ctx, insightHost());
       const peopleId = owner.id;
       void api.meetingPeople(peopleId).then(snapshot => {
@@ -300,17 +285,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       updateStatus({ ...status, id: owner.id, busy: false, recording: false, phase: event.error && !event.id ? "error" : "idle", error: event.error, persistence_error: event.error, pending: 0 });
       if (event.flush_warning) { saveError.textContent = localizeBackendText(event.flush_warning); saveError.hidden = false; }
       if (event.id) void loadReview().catch(showSaveError);
-    },
-    receive(result) {
-      if (!requests.accepts(result.snapshot.meeting_uid, result.snapshot.session_id, result.snapshot.request_id)) return;
-      const turn = turns.find(value => value.requestId === result.snapshot.request_id);
-      if (!turn || turn.cancelled || turn.answer || turn.error) return;
-      turn.snapshot = result.snapshot;
-      if (result.answer) turn.answer = result.answer;
-      else turn.error = result.error ?? t("meetings.workspace_cancelled");
-      requests.cancel();
-      renderTurn(turn);
-      updateReadiness();
     },
     savedExternally(text) {
       if (notes.dirty || composing || notes.status === "saving") return;
@@ -375,7 +349,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   }
   async function flush() {
     clearTimeout(notesTimer); clearTimeout(titleTimer);
-    await persistAll([() => saveTitle(), () => saveNotes()]);
+    await persistAll([() => saveTitle(), () => saveNotes(), questions.flush]);
   }
   function showSaveError(error: unknown) { saveError.textContent = errorText(error); saveError.hidden = false; updateSaving(); }
   function updateSaving() {
@@ -388,11 +362,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     else if (!notes.dirty && !titleDraft.dirty) saveError.hidden = true;
   }
   function updateReadiness() {
-    const ready = languageModelConfigured(ctx.info);
-    setup.hidden = ready;
-    question.disabled = !ready;
-    submit.disabled = !ready || !!requests.active || !question.value.trim() || composing || questionComposing;
-    cancel.hidden = !requests.active;
+    questions.readiness();
     updateSaving();
   }
   function updateStatus(next: MeetingStatus) {
@@ -670,82 +640,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     }
     return anchor.segment_keys.length > 0;
   }
-  async function ask() {
-    if (!question.value.trim() || requests.active || !languageModelConfigured(ctx.info) || composing || questionComposing) return;
-    const text = question.value.trim();
-    const target = notes.value;
-    clearTimeout(notesTimer);
-    const requestId = crypto.randomUUID();
-    requests.begin(requestId);
-    const response = h("div", { class: "live-answer", role: "status" }, l("meetings.workspace_saving_question"));
-    const metadata = h("p", { class: "live-answer-cutoff help" });
-    const element = h("article", { class: "chat-exchange", "data-request-id": requestId }, h("p", { class: "chat-question" }, text), metadata, response);
-    const turn: Turn = { question: text, requestId, response, metadata, element };
-    turns.push(turn); history.append(element);
-    question.value = "";
-    history.scrollTop = history.scrollHeight;
-    updateReadiness();
-    try {
-      await writes.run(async () => {
-        if (!requests.accepts(uid, session, requestId)) return;
-        await notes.persist(writeNotes, target);
-        if (!requests.accepts(uid, session, requestId)) return;
-        await connectQuestions();
-        const previous = [];
-        for (const item of turns) if (item.answer && item.snapshot && !item.cancelled && (await Promise.all(item.snapshot.anchors.map(anchorMatches))).every(Boolean)) previous.push({ question: item.question, answer: item.answer.text });
-        if (!requests.accepts(uid, session, requestId)) return;
-        const snapshot = await api.beginLiveQuestion({ requestId, meetingUid: uid, sessionId: session, expectedNotesText: target, question: text, history: previous });
-        if (!requests.accepts(uid, session, requestId)) {
-          await api.cancelLiveQuestion(requestId, uid, session);
-          return;
-        }
-        turn.snapshot = snapshot;
-        if (!turn.answer && !turn.error) { response.replaceChildren(h("progress", { "aria-label": l("meetings.writing_answer") })); updateTurnMetadata(turn); }
-      });
-    } catch (error) {
-      if (!requests.accepts(uid, session, requestId)) return;
-      turn.error = notes.error ? t("meetings.workspace_question_save_error") : errorText(error);
-      requests.cancel();
-      if (!question.value) question.value = text;
-      renderTurn(turn);
-    } finally { updateReadiness(); }
-  }
-  async function cancelQuestion() {
-    const requestId = requests.active;
-    if (!requestId) return;
-    requests.cancel();
-    const turn = turns.find(value => value.requestId === requestId);
-    if (turn) { turn.cancelled = true; turn.error = t("meetings.workspace_cancelled"); if (!question.value) question.value = turn.question; renderTurn(turn); }
-    updateReadiness();
-    await api.cancelLiveQuestion(requestId, uid, session).catch(error => { warning.textContent = errorText(error); warning.hidden = false; });
-  }
-  function updateTurnMetadata(turn: Turn) {
-    if (!turn.snapshot) return;
-    updateTurnMetadataText(turn);
-    bindLocalization(turn.metadata, () => updateTurnMetadataText(turn));
-  }
-  function updateTurnMetadataText(turn: Turn) {
-    if (turn.snapshot) turn.metadata.textContent = liveQuestionMetadata(turn.snapshot, formatClock(turn.snapshot.included_through_ms / 1000));
-  }
-  function renderTurn(turn: Turn) {
-    const position = history.scrollTop;
-    if (turn.answer) {
-      const citations = h("div", { class: "citations" });
-      for (const citation of turn.answer.citations) {
-        const anchor = turn.snapshot?.anchors[citation.number - 1];
-        const place = citation.passage.kind === "transcript" && citation.passage.start_ms !== null ? formatClock(citation.passage.start_ms / 1000) : t("meetings.source_notes");
-        citations.append(h("button", { class: "text-button citation", onclick: () => { void openSource(turn, anchor); } }, `[${citation.number}] ${place}`));
-      }
-      turn.response.replaceChildren(markdown(turn.answer.text), citations);
-    } else {
-      turn.response.replaceChildren(h("p", { class: "error" }, localizeBackendText(turn.error ?? "")), h("button", { class: "text-button", onclick: () => { if (!requests.active) { question.value = turn.question; updateReadiness(); question.focus(); } } }, l("common.retry")));
-    }
-    updateTurnMetadata(turn);
-    history.scrollTop = position;
-  }
-  async function openSource(turn: Turn | HTMLElement, anchor?: LiveSourceAnchor, frozenText?: string, restore?: () => void, label: TranslationKey = "meetings.workspace_back_answer") {
+  async function openSource(turn: HTMLElement, anchor?: LiveSourceAnchor, frozenText?: string, restore?: () => void, label: TranslationKey = "meetings.workspace_back_answer") {
     const navigation = ++sourceNavigation;
-    sourceReturn = { pane: panes.selected, questionScroll: history.scrollTop, transcriptScroll: transcriptOutput.scrollTop, notesScroll: editor.scrollTop, start: editor.selectionStart, end: editor.selectionEnd, direction: editor.selectionDirection, turn: turn instanceof HTMLElement ? turn : turn.element, restore, label };
+    sourceReturn = { pane: panes.selected, questionScroll: history.scrollTop, transcriptScroll: transcriptOutput.scrollTop, notesScroll: editor.scrollTop, start: editor.selectionStart, end: editor.selectionEnd, direction: editor.selectionDirection, turn, restore, label };
     sourceBack.textContent = t(label);
     sourceBack.hidden = false;
     sourceNotice.hidden = true;
@@ -754,8 +651,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     const matches = !!anchor && await anchorMatches(anchor);
     if (navigation !== sourceNavigation) return;
     if (!anchor || !matches || originalSource !== currentSourceStamp(anchor)) {
-      sourceNotice.replaceChildren(h("p", { class: "help" }, l("meetings.workspace_source_changed")), h("blockquote", {}, anchor?.source_text ?? frozenText ?? (turn instanceof HTMLElement ? "" : turn.answer?.citations[0]?.passage.text) ?? ""));
+      sourceNotice.replaceChildren(h("p", { class: "help" }, l("meetings.workspace_source_changed")), h("blockquote", {}, anchor?.source_text ?? frozenText ?? ""));
+      history.append(sourceNotice);
       sourceNotice.hidden = false;
+      sourceNotice.scrollIntoView({ block: "nearest" });
       return;
     }
     if (anchor.passage.kind === "notes") {
@@ -792,6 +691,5 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   updateStatus(initial);
   updateSaving();
   updatePanes();
-  void connectQuestions().catch(error => { warning.textContent = errorText(error); warning.hidden = false; });
   return owner;
 }
