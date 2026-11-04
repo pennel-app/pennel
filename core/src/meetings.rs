@@ -717,7 +717,41 @@ impl MeetingStore {
     }
 
     pub fn write_notes(&self, id: &str, notes: &str) -> Result<(), PennelError> {
+        let gate = replacement_gate(&self.dir_of(id));
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
         self.write_file(id, "notes.md", notes)
+    }
+
+    pub(crate) fn write_notes_if_unchanged(
+        &self,
+        id: &str,
+        expected: &str,
+        notes: &str,
+    ) -> Result<(), PennelError> {
+        let directory = self.dir_of(id);
+        let gate = replacement_gate(&directory);
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+        if !directory.is_dir() {
+            return Err(PennelError::NotFound);
+        }
+        let path = directory.join("notes.md");
+        let before = match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                fs::read_to_string(&path).map_err(PennelError::storage)?
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+            _ => {
+                return Err(PennelError::storage(
+                    "The saved notes could not be verified.",
+                ));
+            }
+        };
+        if before != expected {
+            return Err(PennelError::storage(
+                "The notes changed. Your current text was kept.",
+            ));
+        }
+        durable_write(&path, notes.as_bytes())
     }
 
     pub fn summary_outdated(&self, id: &str) -> bool {

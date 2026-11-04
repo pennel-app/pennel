@@ -138,6 +138,7 @@
   const sessions = new Map();
   const listeners = new Map();
   const calls = [];
+  const frontendFlushes = [];
   const unknown = [];
   const setupTrace = { samples: [], savedChoices: [], appliedTasks: [], catalogRequests: [] };
   const catalogAttempts = new Map();
@@ -280,6 +281,133 @@
   let insightSequence = 100;
   const insightId = () => `00000000-0000-7000-8000-${String(++insightSequence).padStart(12, "0")}`;
   const uidFor = id => retainedMeetings.get(id)?.meeting_uid || (id === activeMeetingId ? meetingUid : "qa-meeting-stable-uid");
+  const peopleStores = new Map();
+  const peoplePendingConfirmation = new Set();
+  const peopleTrace = [];
+  let peopleSequence = 500;
+  let peopleWriteFailure = Boolean(options.people_write_error);
+  let peopleInsertDelay = options.people_insert_delay_ms || 0;
+  const pendingInsertResponses = new Set();
+  let contactDelay = options.people_contact_delay_ms || 0;
+  let contactResult = options.people_contact_cancelled ? { status: "cancelled" } : {
+    status: "selected", contact: { source: "macos_contacts", source_id: "qa-selected-contact", source_revision: "qa-contact-snapshot-1",
+      display_name: "Synthetic Contact", email: "contact@example.invalid", selected_at_ms: now },
+  };
+  const personId = () => `00000000-0000-7000-8000-${String(++peopleSequence).padStart(12, "0")}`;
+  const peopleNotes = id => retainedMeetings.get(id)?.notes ?? notes;
+  const peopleTranscript = id => retainedMeetings.get(id)?.transcript || transcript;
+  const peopleStore = id => {
+    const uid = uidFor(id);
+    if (!peopleStores.has(uid)) {
+      const names = options.people_seeded ? ["Alex", "Alex", "Synthetic guest"] : ["Noor", "Sam"];
+      const people = names.map((display_name, index) => ({ id: personId(), display_name, origin: "attendee", private_alias: null, email: null,
+        source: { source_id: "qa-calendar-source", account_id: "qa-calendar-account", record_id: `qa-attendee-${index}`, revision: "qa-event-1" }, source_status: "available" }));
+      if (options.people_seeded) people.push({ id: personId(), display_name: "Synthetic Contact", origin: "contact", private_alias: "Private synthetic alias",
+        email: "contact@example.invalid", source: { source_id: "macos_contacts", account_id: null, record_id: "qa-selected-contact", revision: "qa-contact-snapshot-1" }, source_status: "snapshot" });
+      const calendar = options.people_seeded ? { source: "eventkit", source_id: "qa-calendar-source", account_id: "qa-calendar-account", calendar_id: "qa-calendar",
+        event_id: "qa-event", external_event_id: null, instance_id: "2026-10-24T07:00:00Z", source_revision: "qa-event-1",
+        participants: names.map((name, index) => ({ source_id: `qa-attendee-${index}`, name, email: null, response: index === 0 ? "declined" : null, is_self: index === 1 })) } : null;
+      peopleStores.set(uid, { schema_version: 1, meeting_uid: uid, revision: 0, people, speaker_links: [], mentions: [], calendar, recovery_status: "ready" });
+    }
+    return peopleStores.get(uid);
+  };
+  const peopleRead = async id => {
+    const value = clone(peopleStore(id)), currentNotes = peopleNotes(id), rows = peopleTranscript(id);
+    value.notes_revision = await fingerprint(currentNotes);
+    value.source_revision = await fingerprint(JSON.stringify(rows.map(row => [row.utterance_id, row.source_fingerprint, row.attribution_revision])));
+    for (const link of value.speaker_links) {
+      link.state = link.utterance_ids.every((uid, index) => rows.some(row => row.utterance_id === uid && row.source_fingerprint === link._fingerprints[index])) ? "linked" : "needs_review";
+      delete link._fingerprints;
+    }
+    for (const mention of value.mentions) {
+      if (mention._notes_hash !== value.notes_revision) mention.state = "unresolved";
+      delete mention._notes_hash;
+    }
+    return value;
+  };
+  async function peopleUpdate(args) {
+    if (peopleWriteFailure) throw Error("Synthetic participant storage unavailable.");
+    if (args.sessionId && args.sessionId !== liveSession) throw Error("The recording session changed.");
+    const request = args.request || {}, before = await peopleRead(args.id), store = peopleStore(args.id);
+    if (before.revision !== request.expected_revision) throw Error("Participants changed. Refresh before saving.");
+    const findPerson = id => { const person = store.people.find(person => person.id === id); if (!person) throw Error("This person is no longer available."); return person; };
+    const findMention = id => { const mention = store.mentions.find(mention => mention.id === id); if (!mention) throw Error("This mention is no longer available."); return mention; };
+    let edited;
+    switch (request.action) {
+      case "create_person": {
+        if (!String(request.display_name || "").trim()) throw Error("Enter a name.");
+        store.people.push({ id: personId(), display_name: request.display_name, origin: request.origin || "manual", private_alias: request.private_alias || null,
+          email: request.email || null, source: request.source || null, source_status: request.origin === "contact" ? "snapshot" : "available" });
+        break;
+      }
+      case "replace_source": Object.assign(findPerson(request.person_id), { display_name: request.display_name, private_alias: request.private_alias || null,
+        email: request.email || null, source: request.source || null, source_status: "snapshot" }); break;
+      case "rename_person":
+        if (!String(request.display_name || "").trim()) throw Error("Enter a name.");
+        findPerson(request.person_id).display_name = request.display_name;
+        break;
+      case "set_private_alias": findPerson(request.person_id).private_alias = request.private_alias || null; break;
+      case "remove_person":
+        findPerson(request.person_id);
+        store.people = store.people.filter(person => person.id !== request.person_id);
+        store.speaker_links = store.speaker_links.filter(link => link.person_id !== request.person_id);
+        store.mentions = store.mentions.filter(mention => mention.person_id !== request.person_id);
+        break;
+      case "invalidate_source":
+        for (const person of store.people) if (person.source?.source_id === request.source_id && (!request.account_id || person.source.account_id === request.account_id)) person.source_status = "unavailable";
+        break;
+      case "link_speaker": {
+        findPerson(request.person_id);
+        if (before.source_revision !== request.expected_source_revision || !request.utterance_ids?.length) throw Error("The speaker source changed.");
+        const rows = request.utterance_ids.map(uid => peopleTranscript(args.id).find(row => row.utterance_id === uid));
+        if (rows.some(row => !row?.source_fingerprint)) throw Error("This speaker has no stable source.");
+        const link = request.link_id ? store.speaker_links.find(link => link.id === request.link_id) : null;
+        if (request.link_id && !link) throw Error("This speaker link is no longer available.");
+        const next = { id: link?.id || personId(), person_id: request.person_id, utterance_ids: clone(request.utterance_ids), state: "linked", _fingerprints: rows.map(row => row.source_fingerprint) };
+        if (link) Object.assign(link, next); else store.speaker_links.push(next);
+        break;
+      }
+      case "unlink_speaker": store.speaker_links = store.speaker_links.filter(link => link.id !== request.link_id); break;
+      case "insert_mention": {
+        findPerson(request.person_id);
+        if (before.notes_revision !== request.expected_notes_revision || peopleNotes(args.id) !== request.notes) throw Error("The notes changed. Your text was kept.");
+        if (saveFailure) throw Error("Synthetic notes storage unavailable.");
+        const bytes = new TextEncoder().encode(request.notes), decoder = new TextDecoder("utf-8", { fatal: true });
+        if (!Number.isInteger(request.start_byte) || !Number.isInteger(request.end_byte) || request.start_byte < 0 || request.start_byte > request.end_byte || request.end_byte > bytes.length) throw Error("The note selection changed.");
+        const prefix = decoder.decode(bytes.slice(0, request.start_byte)), suffix = decoder.decode(bytes.slice(request.end_byte));
+        const name = String(request.visible_name || "").trim();
+        if (!name) throw Error("Enter the visible name.");
+        const text = `@${name}`, result = `${prefix}${text}${suffix}`;
+        store.mentions.push({ id: personId(), person_id: request.person_id, visible_name: name, start_byte: request.start_byte,
+          end_byte: request.start_byte + new TextEncoder().encode(text).length, state: "linked", _notes_hash: await fingerprint(result) });
+        if (retainedMeetings.has(args.id)) retainedMeetings.get(args.id).notes = result; else notes = result;
+        if (options.people_confirmation_pending) { store.recovery_status = "confirmation_pending"; peoplePendingConfirmation.add(store.meeting_uid); }
+        edited = { notes: result, selection_start: prefix.length + text.length, selection_end: prefix.length + text.length };
+        break;
+      }
+      case "relink_mention": {
+        findPerson(request.person_id);
+        const mention = findMention(request.mention_id);
+        if (before.notes_revision !== request.expected_notes_revision || mention._notes_hash !== before.notes_revision) throw Error("The notes changed. Your text was kept.");
+        const bytes = new TextEncoder().encode(peopleNotes(args.id));
+        if (new TextDecoder("utf-8", { fatal: true }).decode(bytes.slice(mention.start_byte, mention.end_byte)) !== `@${mention.visible_name}`) throw Error("This mention's text changed.");
+        mention.person_id = request.person_id;
+        break;
+      }
+      case "unlink_mention": store.mentions = store.mentions.filter(mention => mention.id !== request.mention_id); break;
+      default: throw Error("Unknown synthetic participant action.");
+    }
+    peopleTrace.push(clone(request));
+    store.revision++;
+    emit("meeting-people-changed", { meeting_uid: store.meeting_uid, revision: store.revision });
+    const response = { snapshot: await peopleRead(args.id), ...edited };
+    if (request.action === "insert_mention" && peopleInsertDelay) await new Promise(resolve => {
+      const finish = () => { clearTimeout(timer); pendingInsertResponses.delete(finish); resolve(); };
+      const timer = setTimeout(finish, peopleInsertDelay);
+      pendingInsertResponses.add(finish);
+    });
+    return response;
+  }
   const insightMetadata = value => emit("meeting-insights-changed", Object.fromEntries(["meeting_uid", "revision", "job_id", "state", "physical_running"].filter(key => key in value).map(key => [key, value[key]])));
   const insightStore = id => {
     const uid = uidFor(id);
@@ -385,7 +513,17 @@
 
   async function invoke(command, args = {}) {
     calls.push(command);
-    if (options.rich_utterances && (["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings"].includes(command) || command.includes("insight"))) await refreshFingerprints();
+    if (options.rich_utterances && (["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings"].includes(command) || command.includes("insight") || command.includes("people"))) await refreshFingerprints();
+    if (command === "meeting_people_snapshot") {
+      const store = peopleStore(args.id);
+      if (peoplePendingConfirmation.delete(store.meeting_uid)) store.recovery_status = "ready";
+      return peopleRead(args.id);
+    }
+    if (command === "update_meeting_people") return peopleUpdate(args);
+    if (command === "pick_meeting_contact") {
+      if (contactDelay) await new Promise(resolve => setTimeout(resolve, contactDelay));
+      return options.platform && options.platform !== "macos" ? { status: "unavailable", reason: "System contact selection is unavailable on this platform." } : clone(contactResult);
+    }
     if (["insights_snapshot", "insights_availability", "claim_insight_edit", "review_insight", "insights_export", "insight_markdown",
       "prepare_insight_insertion", "reconcile_insight_insertions", "resolve_insight_insertion", "reassociate_insight_source",
       "begin_insights_analysis", "insights_job", "cancel_insights_analysis"].includes(command)) return insightCommand(command, args);
@@ -476,7 +614,7 @@
       }
       case "dictation_state": return clone(pillSnapshot);
       case "frontend_ready": globalThis.__PENNEL_FIXTURE_READY__ = true; return null;
-      case "frontend_flushed": return null;
+      case "frontend_flushed": frontendFlushes.push(clone(args)); return null;
       case "app_identity": return null;
       case "history": return clone(history);
       case "delete_history": {
@@ -778,7 +916,11 @@
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
-  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace,
+  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes),
+    people: { read: () => peopleRead(activeMeetingId), trace: () => clone(peopleTrace), failWrites: value => { peopleWriteFailure = value; },
+      insertDelay: value => { peopleInsertDelay = value; }, pendingInsertResponses: () => pendingInsertResponses.size,
+      releaseInserts: () => { for (const finish of [...pendingInsertResponses]) finish(); },
+      contactDelay: value => { contactDelay = value; }, contactResult: value => { contactResult = clone(value); } },
     workspace: { append: segment => { transcript.push(options.rich_utterances ? richUtterance(clone(segment), transcript.length) : clone(segment)); transcriptRevision++; },
       attribution: (index, update) => { Object.assign(transcript[index], clone(update)); transcript[index].attribution_revision = (transcript[index].attribution_revision || 0) + 1; transcriptRevision++; },
       metadata: state => { metadataStatus = state; }, playback: () => clone(playbackRequest),

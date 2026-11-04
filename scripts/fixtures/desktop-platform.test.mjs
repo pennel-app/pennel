@@ -27,11 +27,109 @@ test("accepted review export retains provenance while note staging keeps the exa
 });
 function fixture(name, overrides = {}, storage) {
   const item = cases.find(item => item.name === name);
-  const context = vm.createContext({ location: { hostname: "127.0.0.1" }, structuredClone, queueMicrotask, setTimeout, clearTimeout, TextEncoder, crypto: webcrypto, localStorage: storage,
+  const context = vm.createContext({ location: { hostname: "127.0.0.1" }, structuredClone, queueMicrotask, setTimeout, clearTimeout, TextEncoder, TextDecoder, crypto: webcrypto, localStorage: storage,
     __PENNEL_FIXTURE_OPTIONS__: { ...item, appearance: "dark", ...overrides } });
   vm.runInContext(script, context);
   return context;
 }
+
+test("people fixture keeps duplicate identities and speaker links separate from names and enrollment", async () => {
+  const context = fixture("meeting-transcript", { people_seeded: true, rich_utterances: true });
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_detail", { id });
+  let people = await api.invoke("meeting_people_snapshot", { id });
+  const duplicates = people.people.filter(person => person.display_name === "Alex");
+  assert.equal(duplicates.length, 2);
+  assert.notEqual(duplicates[0].id, duplicates[1].id);
+  const result = await api.invoke("update_meeting_people", { id, request: { action: "link_speaker", expected_revision: people.revision,
+    expected_source_revision: people.source_revision, person_id: duplicates[1].id, utterance_ids: [before.transcript[0].utterance_id] } });
+  assert.equal(result.snapshot.speaker_links[0].person_id, duplicates[1].id);
+  const after = await api.invoke("meeting_detail", { id });
+  assert.deepEqual(after.speakers, before.speakers);
+  assert.equal(context.__PENNEL_FIXTURE__.calls.includes("remember_speaker"), false);
+  assert.equal(context.__PENNEL_FIXTURE__.calls.includes("rename_speaker"), false);
+  await assert.rejects(api.invoke("update_meeting_people", { id, request: { action: "unlink_speaker", expected_revision: people.revision,
+    link_id: result.snapshot.speaker_links[0].id } }));
+  people = await api.invoke("meeting_people_snapshot", { id });
+  assert.equal(people.speaker_links.length, 1);
+});
+
+test("people fixture inserts only the chosen Markdown range and unlink preserves authored text", async () => {
+  const context = fixture("meeting-transcript", { people_seeded: true, rich_utterances: true });
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const original = "# 😀 Notes\r\n\r\n[plain Alex](https://example.invalid) and `@Alex` — HERE **kept**\r\n";
+  await api.invoke("save_meeting_notes", { id, text: original });
+  const before = await api.invoke("meeting_people_snapshot", { id });
+  const start = new TextEncoder().encode(original.slice(0, original.indexOf("HERE"))).length;
+  const result = await api.invoke("update_meeting_people", { id, request: { action: "insert_mention", expected_revision: before.revision,
+    expected_notes_revision: before.notes_revision, person_id: before.people[0].id, visible_name: "Alex", notes: original, start_byte: start, end_byte: start + 4 } });
+  const expected = original.replace("HERE", "@Alex");
+  assert.equal(result.notes, expected);
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, expected);
+  const unlink = await api.invoke("update_meeting_people", { id, request: { action: "unlink_mention", expected_revision: result.snapshot.revision,
+    mention_id: result.snapshot.mentions[0].id } });
+  assert.equal(unlink.snapshot.mentions.length, 0);
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, expected);
+  await assert.rejects(api.invoke("update_meeting_people", { id, request: { action: "insert_mention", expected_revision: unlink.snapshot.revision,
+    expected_notes_revision: before.notes_revision, person_id: before.people[0].id, visible_name: "Other", notes: original, start_byte: start, end_byte: start + 4 } }));
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, expected);
+});
+
+test("people fixture relinking requires the current note revision and an untouched mention anchor", async () => {
+  const context = fixture("meeting-transcript", { people_seeded: true, rich_utterances: true });
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_people_snapshot", { id }), notes = (await api.invoke("meeting_detail", { id })).notes;
+  const end = new TextEncoder().encode(notes).length;
+  const inserted = await api.invoke("update_meeting_people", { id, request: { action: "insert_mention", expected_revision: before.revision,
+    expected_notes_revision: before.notes_revision, person_id: before.people[0].id, visible_name: "Alex", notes, start_byte: end, end_byte: end } });
+  const request = { action: "relink_mention", expected_revision: inserted.snapshot.revision,
+    mention_id: inserted.snapshot.mentions[0].id, person_id: before.people[1].id };
+  await assert.rejects(api.invoke("update_meeting_people", { id, request }));
+  await assert.rejects(api.invoke("update_meeting_people", { id, request: { ...request, expected_notes_revision: before.notes_revision } }));
+  const relinked = await api.invoke("update_meeting_people", { id, request: { ...request, expected_notes_revision: inserted.snapshot.notes_revision } });
+  assert.equal(relinked.snapshot.mentions[0].person_id, before.people[1].id);
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, inserted.notes);
+  await api.invoke("save_meeting_notes", { id, text: `${inserted.notes}\nExternal edit.` });
+  const changed = await api.invoke("meeting_people_snapshot", { id });
+  await assert.rejects(api.invoke("update_meeting_people", { id, request: { ...request,
+    expected_revision: changed.revision, expected_notes_revision: changed.notes_revision, person_id: before.people[0].id } }));
+  assert.equal((await api.invoke("meeting_people_snapshot", { id })).mentions[0].person_id, before.people[1].id);
+});
+
+test("people fixture distinguishes written notes from pending mention confirmation without duplicate insertion", async () => {
+  const context = fixture("meeting-transcript", { people_seeded: true, rich_utterances: true, people_confirmation_pending: true });
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_people_snapshot", { id }), notes = (await api.invoke("meeting_detail", { id })).notes;
+  const end = new TextEncoder().encode(notes).length;
+  const written = await api.invoke("update_meeting_people", { id, request: { action: "insert_mention", expected_revision: before.revision,
+    expected_notes_revision: before.notes_revision, person_id: before.people[0].id, visible_name: "Alex", notes, start_byte: end, end_byte: end } });
+  assert.equal(written.notes, `${notes}@Alex`);
+  assert.equal(written.snapshot.recovery_status, "confirmation_pending");
+  const recovered = await api.invoke("meeting_people_snapshot", { id });
+  assert.equal(recovered.recovery_status, "ready");
+  assert.equal(recovered.mentions.length, 1);
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, `${notes}@Alex`);
+});
+
+test("people fixture can delay a durable mention response independently of its note write", async () => {
+  const context = fixture("meeting-transcript", { people_seeded: true, rich_utterances: true });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+  const before = await api.invoke("meeting_people_snapshot", { id }), notes = (await api.invoke("meeting_detail", { id })).notes;
+  const end = new TextEncoder().encode(notes).length;
+  control.people.insertDelay(3000);
+  let responded = false;
+  const pending = api.invoke("update_meeting_people", { id, request: { action: "insert_mention", expected_revision: before.revision,
+    expected_notes_revision: before.notes_revision, person_id: before.people[0].id, visible_name: "Alex", notes, start_byte: end, end_byte: end } })
+    .then(result => { responded = true; return result; });
+  try {
+    for (let attempt = 0; attempt < 100 && !control.people.pendingInsertResponses(); attempt++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(control.people.pendingInsertResponses(), 1);
+    assert.equal(control.workspace.notes(), `${notes}@Alex`);
+    assert.equal(responded, false);
+  } finally { control.people.releaseInserts(); }
+  assert.equal((await pending).notes, `${notes}@Alex`);
+  assert.equal(control.people.pendingInsertResponses(), 0);
+});
 
 test("every visual scenario has a unique stable identifier and valid entry", () => {
   assert.equal(new Set(cases.map(item => item.name)).size, cases.length);

@@ -39,6 +39,7 @@ mod meeting;
 mod meeting_runtime;
 mod owned_dictation;
 mod paste_queue;
+mod people;
 mod pill;
 mod platform_audio;
 mod platform_clipboard;
@@ -1213,6 +1214,9 @@ fn main() {
             commands::export_meeting,
             commands::save_meeting_notes,
             commands::set_meeting_attendees,
+            people::meeting_people_snapshot,
+            people::update_meeting_people,
+            people::pick_meeting_contact,
             commands::detect_cli_agents,
             commands::check_cli_agent,
             platform_commands::get_permissions,

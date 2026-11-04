@@ -8,12 +8,14 @@ import { LivePaneState, LiveRequestState, LiveStatusEpoch, segmentEvidenceValue,
 import { languageModelConfigured } from "./presentation";
 import { speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
-import { attributionNoticeKey } from "./meeting-source";
+import { attributionEditable, attributionNoticeKey } from "./meeting-source";
 import { LiveSpeakerControl, liveSpeakerStatusKey } from "./live-speaker-state";
 import { liveQuestionMetadata } from "./live-question-scope";
 import { reviewedInsights, type InsightReviewHost } from "./reviewed-insights";
 import { insightSourceMatches, insertionStillCurrent, utf8Range, type InsightNoteLatch, type InsightSource } from "../../../assets/contracts/meeting-insights.ts";
 import type { Context } from "./main";
+import { openPeoplePicker, peopleNoteControls, type PeopleHost } from "./people-picker";
+import { canAcknowledgePeopleNotes, speakerLinkUtteranceIds, type PeopleSnapshot } from "./people-state";
 
 interface Turn {
   question: string;
@@ -116,6 +118,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
   const refresh = new RecordingRefresh(initial);
   const liveSpeakers = new LiveSpeakerControl(session, initial.live_speaker_attribution);
   const turns: Turn[] = [];
+  let peopleSnapshot: PeopleSnapshot | null = null;
   const rows = new Map<string, { element: HTMLElement; body: HTMLElement; speaker: HTMLElement; provisional: HTMLElement; correction: HTMLElement; segment: Segment }>();
   const root = h("article", { class: "live-workspace live-recording", "data-session-id": session, "data-meeting-uid": uid });
   for (const event of ["pointerdown", "keydown", "input"]) root.addEventListener(event, () => { ++interactionRevision; }, true);
@@ -173,6 +176,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     formatting.append(button);
   }
   const noteHeading = h("div", { class: "live-note-controls" }, h("div", { class: "live-preview-toggle" }, sourceToggle, previewToggle), formatting);
+  const peopleControls = peopleNoteControls(peopleHost());
+  formatting.append(peopleControls);
   panels.get("notes")!.append(noteHeading, editor, notePreview, h("footer", { class: "live-save-controls" }, saveStatus, save), saveError);
   const follow = controlButton({ class: "btn compact live-follow", hidden: true, onclick: resumeFollowing }, l("meetings.workspace_follow"));
   const transcriptOutput = h("div", { class: "live-transcript", tabindex: 0, "aria-label": l("meetings.workspace_transcript") });
@@ -277,6 +282,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       next.onInfoChange(() => { if (mine === binding) updateReadiness(); });
       next.onFlush(flush);
       if (finalized && insights) insights.bind(ctx, insightHost());
+      const peopleId = owner.id;
+      void api.meetingPeople(peopleId).then(snapshot => {
+        if (mine === binding && owner.id === peopleId) { peopleSnapshot = snapshot; updatePeopleLinks(); }
+      }).catch(() => undefined);
       updateReadiness();
       if (finalized) void loadReview().catch(showSaveError);
       requestAnimationFrame(() => { if (mine === binding) { panes.resize(content.getBoundingClientRect().width); updatePanes(); } });
@@ -450,6 +459,26 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
     return { text: notes.value, revision: inputRevision, selection_start: editor.selectionStart, selection_end: editor.selectionEnd,
       selection_revision: selectionRevision, interaction_revision: interactionRevision, composing };
   }
+  function peopleHost(): PeopleHost {
+    return { id: () => owner.id, sessionId: () => finalized ? undefined : session, platform: ctx.info.platform,
+      valid: () => root.isConnected, report: showSaveError,
+      changed: snapshot => { peopleSnapshot = snapshot; updatePeopleLinks(); },
+      notes: { current: currentNotes, flush: async () => { await saveNotes(); await writes.drain(); }, saved: (result, before) => {
+        if (result.notes === undefined) return;
+        if (!canAcknowledgePeopleNotes(before, currentNotes(), result.notes, session, notes.sessionId)) { showSaveError(new Error(t("people.selection_changed"))); return; }
+        ++inputRevision; notes.sync(session, result.notes); editor.value = result.notes; showPreview(false);
+        editor.setSelectionRange(result.selection_start ?? before.selection_start, result.selection_end ?? before.selection_end);
+        updateSaving();
+      } } };
+  }
+  function updatePeopleLinks() {
+    for (const row of rows.values()) {
+      const linked = row.element.querySelector<HTMLElement>(".people-link-state");
+      if (!linked) continue;
+      const link = peopleSnapshot?.speaker_links.find(link => !!row.segment.utterance_id && link.utterance_ids.includes(row.segment.utterance_id));
+      linked.hidden = !link; linked.textContent = link ? t(link.state === "needs_review" ? "people.review" : "people.linked") : "";
+    }
+  }
   function insightHost(): InsightReviewHost {
     return { id: owner.id, meetingUid: uid, notes: {
       flush: async () => { try { await saveNotes(); return true; } catch { return false; } }, current: currentNotes,
@@ -559,10 +588,17 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       let row = rows.get(key);
       if (!row) {
         const body = h("div", { class: "transcript-copy" }, segment.failed ? l("meetings.transcription_failed") : segment.text);
-        const speaker = h("span", { class: "speaker" }, speakerUiLabel(segment));
+        const speaker = h("button", { class: "speaker people-speaker-action", type: "button", onclick: () => {
+          const current = rows.get(key)?.segment;
+          if (!current?.utterance_id) { showSaveError(new Error(t("people.no_stable_speaker"))); return; }
+          const ids = speakerLinkUtteranceIds(current, status.transcript);
+          if (!ids.length) { showSaveError(new Error(t("people.no_stable_speaker"))); return; }
+          void openPeoplePicker(peopleHost(), { kind: "speaker", utteranceIds: ids }).catch(showSaveError);
+        } }, speakerUiLabel(segment));
         const provisional = h("span", { class: "live-speaker-provisional", hidden: true, title: l("meetings.live_speakers_provisional_help") }, l("meetings.live_speakers_provisional_tag"));
         const correction = h("p", { class: "help transcript-correction-review", hidden: !segment.correction_review_required }, l("meetings.attribution_correction_review"));
-        const element = h("div", { class: "transcript-line", "data-segment-key": key, "data-start-ms": segment.start_ms, "data-source-id": segment.source_id ?? "" }, h("span", { class: "transcript-stamp" }, formatClock(segment.start_ms / 1000)), h("div", { class: "live-transcript-speaker" }, speaker, provisional), body, correction);
+        const linked = h("span", { class: "people-link-state", hidden: true });
+        const element = h("div", { class: "transcript-line", "data-segment-key": key, "data-start-ms": segment.start_ms, "data-source-id": segment.source_id ?? "" }, h("span", { class: "transcript-stamp" }, formatClock(segment.start_ms / 1000)), h("div", { class: "live-transcript-speaker" }, speaker, provisional, linked), body, correction);
         row = { element, body, speaker, provisional, correction, segment };
         rows.set(key, row);
       } else if (!sameSegment(row.segment, segment)) {
@@ -571,7 +607,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       }
       const label = String(speakerUiLabel(segment));
       if (row.speaker.textContent !== label) row.speaker.textContent = label;
-      row.speaker.title = label;
+      const metadataReason = !attributionEditable(status.metadata_status) ? attributionNoticeKey(status.metadata_status) : null;
+      row.speaker.title = metadataReason ? t(metadataReason) : label;
+      (row.speaker as HTMLButtonElement).disabled = !attributionEditable(status.metadata_status) || !segment.utterance_id || !!segment.failed || !!segment.attribution && segment.attribution.kind !== "single";
+      row.speaker.setAttribute("aria-label", t("meetings.voice_name_label", { name: label }));
       row.provisional.hidden = segment.attribution?.provisional !== true || !!segment.confirmed_speaker_name;
       row.correction.hidden = !segment.correction_review_required;
       row.element.dataset.sourceId = segment.source_id ?? "";
@@ -579,6 +618,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus): LiveW
       if (before !== row.element) transcriptOutput.insertBefore(row.element, before);
       before = row.element.nextElementSibling;
     }
+    updatePeopleLinks();
     if (following) scrollLive();
     else {
       const delta = first?.element.parentElement === transcriptOutput ? first.element.getBoundingClientRect().top - viewport.top - offset : null;

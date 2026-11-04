@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "issue": 102,
+  "pull_request": "https://github.com/pennel-app/pennel/pull/137",
+  "product_commit": "a16628aa9e679adfdd114829f37c25c547b466da",
+  "core": {
+    "default_passed": 1012,
+    "default_existing_ignored": 7,
+    "lean_passed": 995,
+    "lean_existing_ignored": 5,
+    "keyboard_passed": 17,
+    "release_build": "passed",
+    "format": "passed",
+    "strict_clippy": "passed"
+  },
+  "desktop": {
+    "frontend_passed": 298,
+    "backend_passed": 265,
+    "build": "passed",
+    "backend_format": "passed",
+    "backend_strict_clippy": "passed",
+    "mac_platform_passed": 146,
+    "fixtures_passed": 39,
+    "packaging_passed": 61,
+    "theme": "passed"
+  },
+  "browser": {
+    "cases": 60,
+    "languages": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "viewport": [
+      760,
+      520
+    ],
+    "source_manifest_sha256": "d2b82412683ead146f247139ba0d70016a27a23bc0249916baf2fb68d9f3d840",
+    "unchanged_inputs": 104,
+    "receipt": "build/verification/people-102/accepted-ui-reviewed-ack/ui-receipt.json"
+  },
+  "mobile": {
+    "final_mobile_test": {
+      "status": "passed",
+      "typecheck": "passed",
+      "plugin_tests": 17,
+      "widget_tests": 7,
+      "ui_tests": 121,
+      "swift_helper_tests": 116,
+      "log": "build/verification/people-102/mobile/mobile-test-final.log"
+    },
+    "final_hosted": {
+      "status": "passed",
+      "runtime_service_tests": 135,
+      "keyboard_tests": 36,
+      "log": "build/verification/people-102/mobile/mobile-native-test-final.log",
+      "result_bundle": "apps/mobile/build/TestDerivedData/Logs/Test/Test-Pennel-2026.11.04_09-48-33-+0100.xcresult",
+      "core_inputs_sha256": "b3a1a93a575c4b087ba4c309e00a1d529fd4faece175678122d28fc9c2909422"
+    },
+    "final_native_preparation": {
+      "status": "passed",
+      "core_inputs_sha256": "b3a1a93a575c4b087ba4c309e00a1d529fd4faece175678122d28fc9c2909422",
+      "core_only_sha256": "975de995627b37706c0a1fbeb5334e00b0c81eb99369de2250010b14e29a7894",
+      "bindings_sha256": "a622f1eea2e2889701ea7c4b587badc9f46e526eab68f45a5fe7b543a8d01049",
+      "matching_device_simulator_headers": {
+        "pennel_coreFFI.h": "d33a805e2b734eb0b4e3f99a2fed31ac9fd4819f9e4275a23e6951df14ea93cc",
+        "module.modulemap": "016d4e228e8d598cf6bd56f2bae18f2b92429dbdac2ee0e4b89cf35c201d4cad"
+      },
+      "actual_target_recompilation": true,
+      "both_libraries_changed": true,
+      "log": "build/verification/people-102/mobile/native-prepare-review-fixed.log"
+    },
+    "simulator_release": {
+      "status": "passed",
+      "unsigned": true,
+      "product": {
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphonesimulator/Pennel.app",
+        "bundle_identifier": "app.pennel.ios.preview",
+        "file_count": 218,
+        "bytes": 78062342,
+        "manifest_sha256": "40c72954483545a493c4fe2ed660d92a05d27e44075a137b112c0c81f28aa5bd",
+        "executable_sha256": "5cc1ca4fb7a111973a38038784a8dad40cfc3a2c74261f6d6b1cc356429dfe5a"
+      },
+      "receipt": "release-simulator.json",
+      "log": "build/verification/people-102/mobile/release-simulator.log"
+    },
+    "device_release": {
+      "status": "passed",
+      "unsigned": true,
+      "product": {
+        "path": "apps/mobile/build/DerivedData/Build/Products/Release-iphoneos/Pennel.app",
+        "bundle_identifier": "app.pennel.ios.preview",
+        "file_count": 187,
+        "bytes": 77681080,
+        "manifest_sha256": "7e3c13080c48a2eb73ad432d6074ec7a3be2f01713d1575969abe02db3e79e57",
+        "executable_sha256": "d42a8ce5bff53b5afce82337abfc8d6f755cd456357f6bae54939935f131fc95"
+      },
+      "receipt": "release-device.json",
+      "log": "build/verification/people-102/mobile/release-device.log"
+    },
+    "all_final_core_artifacts_identical": true,
+    "tracked_mobile_source_changes": []
+  },
+  "review": {
+    "standards_remaining_hard": 0,
+    "spec_remaining_actionable": 0
+  },
+  "boundaries": [
+    "Synthetic UI and native fixtures; no real contacts or meeting data",
+    "Windows/Linux are capability fixtures, not installed-package acceptance",
+    "Unsigned Release products; no physical iPhone or signed-upgrade acceptance",
+    "No Cloud deployment, sharing/MCP access or Android implementation"
+  ]
+}

@@ -29,6 +29,7 @@ unsafe extern "C" {
         sink: TextSink,
         context: *mut c_void,
     );
+    fn pennel_mac_pick_meeting_contact(owner: *mut c_void, sink: TextSink, context: *mut c_void);
     fn pennel_mac_localize_style_application_picker(title: *const c_char, prompt: *const c_char);
     fn pennel_mac_app_identity(id: *const c_char, points: i32) -> *mut c_char;
     fn pennel_mac_external_target_start();
@@ -64,6 +65,10 @@ unsafe extern "C" {
     fn pennel_mac_hotkey_stop(handle: *mut c_void);
     fn pennel_mac_call_snapshot(apps: *const c_char, browsers: *const c_char) -> *mut c_char;
     fn pennel_mac_calendar_snapshot() -> *mut c_char;
+    fn pennel_mac_calendar_source_available(
+        calendar_id: *const c_char,
+        source_id: *const c_char,
+    ) -> bool;
     fn pennel_mac_capture_start(
         source: u32,
         sink: AudioSink,
@@ -233,6 +238,19 @@ pub fn pick_style_application(
             .ok_or("The app picker did not respond.")?,
     )
     .map_err(|_| "The selected app has no usable app ID.".into())
+}
+
+pub fn pick_meeting_contact(window: &tauri::WebviewWindow) -> Result<Option<Value>, String> {
+    let owner = window.ns_window().map_err(|error| error.to_string())?;
+    let selected = wait_text(|sink, context| unsafe {
+        pennel_mac_pick_meeting_contact(owner, sink, context)
+    })?;
+    serde_json::from_str(
+        selected
+            .as_deref()
+            .ok_or("The contact picker did not respond.")?,
+    )
+    .map_err(|_| "The selected contact could not be read.".into())
 }
 
 pub fn localize_style_application_picker() -> Result<(), String> {
@@ -491,6 +509,24 @@ pub fn call_snapshot(
 
 pub fn calendar_snapshot() -> Value {
     unsafe { take_json(pennel_mac_calendar_snapshot()) }
+}
+
+pub fn calendar_source_available(calendar_id: &str, source_id: Option<&str>) -> bool {
+    let Ok(calendar_id) = CString::new(calendar_id) else {
+        return false;
+    };
+    let source_id = match source_id.map(CString::new).transpose() {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    unsafe {
+        pennel_mac_calendar_source_available(
+            calendar_id.as_ptr(),
+            source_id
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+        )
+    }
 }
 
 type AudioCallback = Mutex<Box<dyn FnMut(u32, &[f32], u64) + Send>>;
