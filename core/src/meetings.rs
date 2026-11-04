@@ -1492,7 +1492,7 @@ impl MeetingStore {
         parse_meeting(&self.read_file(id, "meeting.md"))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "evaluation"))]
     pub fn write_meeting(
         &self,
         id: &str,

@@ -262,6 +262,8 @@ fn sync_directory(directory: &Path) -> Result<(), PennelError> {
     fs::File::open(directory)
         .and_then(|file| file.sync_all())
         .map_err(PennelError::storage)?;
+    #[cfg(not(unix))]
+    let _ = directory;
     Ok(())
 }
 
