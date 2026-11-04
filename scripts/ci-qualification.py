@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Capture read-only PR cohort evidence and assess the adopted CI timing gates."""
+"""Capture PR cohort evidence before rerunning, then assess the CI timing gates.
+
+Previous-attempt artifacts may no longer be listed after a rerun. Archive each
+complete observation first; this collector never substitutes newer receipts.
+"""
 
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -35,6 +39,27 @@ SHA = re.compile(r'[0-9a-f]{40}')
 IDENTIFIER = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}')
 LOG_LIMIT = 262144
 ARCHIVE_LIMIT = 4 * 1024 * 1024
+READ_ATTEMPTS = 3
+READ_TIMEOUT = 25
+
+
+class ReadError(ValueError):
+    """An observer failure, distinct from a hosted job's execution result."""
+
+
+def read_failure(stderr):
+    text = stderr.decode('utf-8', errors='replace') if isinstance(stderr, bytes) else str(stderr)
+    matched = re.search(r'\bHTTP\s+([0-9]{3})\b', text, re.I)
+    status = int(matched[1]) if matched else None
+    if status is not None:
+        return 'http-error', status, status == 429 or status >= 500
+    transient = re.search(
+        r'tls handshake timeout|i/o timeout|context deadline exceeded|timed out|'
+        r'could not resolve host|temporary failure in name resolution|dial tcp|'
+        r'connection reset|unexpected eof|\beof\b|connection refused|'
+        r'network is unreachable|connection aborted|failed to connect|'
+        r'timeout awaiting response headers|server misbehaving|http2.*stream error', text, re.I)
+    return ('network-error', None, True) if transient else ('cli-error', None, False)
 
 
 def utc(value):
@@ -79,8 +104,9 @@ def read_json_archive(payload, filename):
 
 def log_identity(prefix):
     text = re.sub(r'\x1b\[[0-9;]*m', '', prefix)
+    text = text.removeprefix('\ufeff')
     text = re.sub(r'(?m)^\d{4}-\d\d-\d\dT\S+\s+', '', text)
-    image_group = re.search(r'##\[group\]Runner Image\s+(.*?)##\[endgroup\]', text, re.S)
+    image_group = re.search(r'##\[group\]Runner Image[ \t]*\r?\n(.*?)##\[endgroup\]', text, re.S)
     image_text = image_group[1] if image_group else ''
     def match(pattern, source=text):
         found = re.search(pattern, source, re.M)
@@ -107,14 +133,41 @@ class GitHub:
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
             raise ValueError('Invalid repository')
         self.prefix = 'repos/' + repository + '/'
+        self.read_trace = []
 
     def request(self, endpoint, binary=False):
-        result = subprocess.run(['gh', 'api', '--method', 'GET', self.prefix + endpoint],
-                                capture_output=True, timeout=45)
-        if result.returncode:
-            # Raw remote diagnostics can contain credential-bearing command context.
-            raise ValueError('Read-only GitHub request failed: ' + endpoint.split('?')[0])
-        return result.stdout if binary else json.loads(result.stdout)
+        safe_endpoint = endpoint.split('?')[0]
+        for attempt in range(1, READ_ATTEMPTS + 1):
+            try:
+                arguments = ['gh', 'api', '--method', 'GET', self.prefix + endpoint]
+                if binary:
+                    arguments.append('--allow-escape-sequences')
+                result = subprocess.run(arguments,
+                                        capture_output=True, timeout=READ_TIMEOUT)
+                if not result.returncode:
+                    try:
+                        value = result.stdout if binary else json.loads(result.stdout)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        kind, status, transient = 'invalid-json', None, False
+                    else:
+                        if attempt > 1:
+                            self.read_trace.append({'kind': 'metadata-read', 'endpoint': safe_endpoint,
+                                                    'attempt': attempt, 'status': 'recovered',
+                                                    'recorded_at': datetime.now(timezone.utc).isoformat()})
+                        return value
+                else:
+                    kind, status, transient = read_failure(result.stderr)
+            except subprocess.TimeoutExpired:
+                kind, status, transient = 'timeout', None, True
+            retrying = transient and attempt < READ_ATTEMPTS
+            # Keep only classified diagnostics: gh error text may include credentials.
+            self.read_trace.append({'kind': 'metadata-read', 'endpoint': safe_endpoint,
+                                    'attempt': attempt, 'status': 'error', 'error_kind': kind,
+                                    'http_status': status, 'retrying': retrying,
+                                    'recorded_at': datetime.now(timezone.utc).isoformat()})
+            if not retrying:
+                raise ReadError(f'Observer GitHub GET failed: {safe_endpoint} ({kind}, attempts={attempt})')
+            time.sleep(min(attempt, 2))
 
     def pages(self, endpoint, field):
         values = []
@@ -131,9 +184,11 @@ class GitHub:
         if not job.get('runner_name') or job.get('status') != 'completed':
             return {}
         process = subprocess.Popen(['gh', 'api', '--method', 'GET',
-                                    self.prefix + f"actions/jobs/{job['id']}/logs"],
+                                    self.prefix + f"actions/jobs/{job['id']}/logs",
+                                    '--allow-escape-sequences'],
                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         prefix = bytearray()
+        timed_out = False
         try:
             with selectors.DefaultSelector() as selector:
                 selector.register(process.stdout, selectors.EVENT_READ)
@@ -141,6 +196,7 @@ class GitHub:
                 while len(prefix) < LOG_LIMIT:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0 or not selector.select(remaining):
+                        timed_out = True
                         break
                     chunk = os.read(process.stdout.fileno(), min(65536, LOG_LIMIT - len(prefix)))
                     if not chunk:
@@ -155,6 +211,12 @@ class GitHub:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+        if timed_out or not prefix or len(prefix) == LOG_LIMIT:
+            self.read_trace.append({'kind': 'log-prefix-read',
+                                    'endpoint': f"actions/jobs/{job['id']}/logs",
+                                    'status': 'timeout' if timed_out else 'empty' if not prefix else 'bounded',
+                                    'bytes': len(prefix),
+                                    'recorded_at': datetime.now(timezone.utc).isoformat()})
         return log_identity(prefix.decode('utf-8', errors='replace'))
 
 
@@ -169,7 +231,7 @@ def capture(args, api=None):
     api = api or GitHub(args.repository)
     destination = Path(args.output)
     destination.mkdir(parents=True, exist_ok=True)
-    if (destination / 'observation.json').exists():
+    if any((destination / name).exists() for name in ('observation.json', 'observer-read-error.json')):
         raise ValueError('Use a fresh output directory; existing observations are preserved')
     requested = utc(args.requested_at)
     if requested > datetime.now(timezone.utc):
@@ -180,7 +242,17 @@ def capture(args, api=None):
     pair = args.pair or args.cohort
     if not IDENTIFIER.fullmatch(pair):
         raise ValueError('Invalid matched pair identity')
-    pr = api.request(f'pulls/{args.pr}')
+    def preserve_read_error(error):
+        failure = {'schema': 1, 'status': 'observer-read-error', 'repository': args.repository,
+                   'pr': args.pr, 'head_sha': args.head_sha, 'cohort': args.cohort,
+                   'requested_at': args.requested_at, 'error': str(error),
+                   'api_read_trace': list(getattr(api, 'read_trace', []))}
+        (destination / 'observer-read-error.json').write_text(json.dumps(failure, indent=2, sort_keys=True) + '\n')
+    try:
+        pr = api.request(f'pulls/{args.pr}')
+    except ReadError as error:
+        preserve_read_error(error)
+        raise
     if (pr['head']['sha'] != args.head_sha or pr['head']['repo']['full_name'] != args.repository
             or pr['base']['repo']['full_name'] != args.repository):
         raise ValueError('PR is not the requested immutable same-repository source')
@@ -201,7 +273,11 @@ def capture(args, api=None):
                 raise ValueError('Duplicate workflow selection')
             selected[workflow] = (run_id, attempt)
     else:
-        runs = api.pages(f'actions/runs?event=pull_request&head_sha={args.head_sha}', 'workflow_runs')
+        try:
+            runs = api.pages(f'actions/runs?event=pull_request&head_sha={args.head_sha}', 'workflow_runs')
+        except ReadError as error:
+            preserve_read_error(error)
+            raise
         for run in runs:
             if (run.get('head_branch') != pr['head']['ref']
                     or args.pr not in [item['number'] for item in run.get('pull_requests', [])]):
@@ -227,6 +303,8 @@ def capture(args, api=None):
                     'completed_at', 'runner_name', 'runner_group_name', 'labels', 'html_url', 'steps')}
                 job['identity'] = api.job_identity(raw_job)
                 run['jobs'].append(job)
+            # Reruns may remove earlier attempts from this listing. Missing
+            # expected artifacts remain missing; never substitute another attempt.
             artifacts = api.pages(f'actions/runs/{run_id}/artifacts', 'artifacts')
             allowed = {f'ci-mode-{attempt}': 'mode.json'}
             if workflow == 'mobile.yml':
@@ -251,6 +329,7 @@ def capture(args, api=None):
         except (KeyError, ValueError, OSError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
             observation['capture_errors'].append(f'{workflow}: {error}')
     observation['captured_at'] = datetime.now(timezone.utc).isoformat()
+    observation['api_read_trace'] = list(getattr(api, 'read_trace', []))
     validated = validate_observation(observation)
     observation['assessment'] = validated
     (destination / 'observation.json').write_text(json.dumps(observation, indent=2, sort_keys=True) + '\n')
@@ -398,8 +477,8 @@ def artifact_document(artifacts, name):
 
 def coverage_errors(category, mode, workflow, jobs):
     errors = []
-    if workflow in ('ci.yml', 'mobile.yml') and not any(
-            j.get('name') == 'required' and j.get('conclusion') == 'success' for j in jobs):
+    gate = {'ci.yml': 'required', 'mobile.yml': 'Complete mobile validation'}.get(workflow)
+    if gate and not any(j.get('name') == gate and j.get('conclusion') == 'success' for j in jobs):
         errors.append(workflow + ': final required result did not succeed')
     if workflow == 'desktop.yml':
         apps = [j for j in jobs if j.get('name', '').startswith('app (')]
@@ -568,7 +647,9 @@ def assess(observations):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
-    collect = commands.add_parser('capture')
+    collect = commands.add_parser('capture', help='Archive attempt evidence before rerunning workflows',
+                                  description='Archive complete attempt evidence before another rerun; '
+                                  'previous-attempt artifacts may disappear and are never substituted.')
     collect.add_argument('--repository', required=True)
     collect.add_argument('--pr', type=int, required=True)
     collect.add_argument('--category', choices=WORKFLOWS, required=True)
@@ -578,7 +659,7 @@ def main():
     collect.add_argument('--pair')
     collect.add_argument('--cache-state', choices=('warm', 'cold'), default='warm')
     collect.add_argument('--requested-at', required=True)
-    collect.add_argument('--run', action='append')
+    collect.add_argument('--run', action='append', help='Pin workflow.yml=RUN_ID:ATTEMPT; archive before rerunning it')
     collect.add_argument('--output', required=True)
     report = commands.add_parser('assess')
     report.add_argument('observations', nargs='+')
