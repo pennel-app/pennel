@@ -38,3 +38,5 @@ function Navigation() {
 export default function RootLayout() {
   return <SafeAreaProvider><RuntimeProvider><Navigation /></RuntimeProvider></SafeAreaProvider>;
 }
+
+// CI qualification: synthetic source edit; no runtime behavior change.
