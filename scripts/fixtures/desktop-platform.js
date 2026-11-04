@@ -27,7 +27,7 @@
     state: options.pill_state,
     preview: { session_id: "qa-" + options.name, revision: options.preview_text ? 7 : 0, text: options.preview_text || "" },
   } : { state: "hidden" };
-  let notes = "- Planning afronden\n- Volgende afspraak bevestigen";
+  let notes = options.private_notes || "- Planning afronden\n- Volgende afspraak bevestigen";
   const summary = "## Besluiten\n- De planning wordt maandag afgerond.\n\n## Actiepunten\n- [ ] Volgende afspraak bevestigen.";
   const meeting = { id: meetingId, title: "Projectoverleg", start_iso: "2026-10-24T09:00:00+02:00", duration_min: 25, has_summary: true };
   const library = [
@@ -53,6 +53,13 @@
     options.rich_attribution_states ? { attribution: { kind: ["overlap", "unknown", "mixed"][index], voices: index === 1 ? [] : [1, 2] } } : {}));
   if (options.rich_provisional) transcript.forEach(segment => { segment.attribution = { ...segment.attribution, provisional: true }; });
   if (options.insights_seeded) transcript.forEach((segment, index) => { segment.utterance_id = `00000000-0000-7000-8000-${String(index + 1).padStart(12, "0")}`; });
+  if (options.transcript_repetitions) {
+    const original = clone(transcript);
+    transcript.splice(0, transcript.length, ...Array.from({ length: Math.min(50, Math.max(1, Number(options.transcript_repetitions) || 1)) }, (_, repeat) => original.map(segment => ({
+      ...segment, start_ms: segment.start_ms + repeat * 30_000, end_ms: segment.end_ms + repeat * 30_000,
+      ...(segment.utterance_id ? { utterance_id: `${segment.utterance_id}-${repeat}` } : {}),
+    }))).flat());
+  }
   const available = () => ({ status: "available", reason: null });
   const providers = [
     { id: "local", kind: "local", name: "Lokaal", base_url: "" },
@@ -83,7 +90,7 @@
     providers, dictation_stt: { provider_id: selectedProvider, model }, meeting_stt: { provider_id: "local", model: "whisper-large-v3-turbo" },
     llm: { provider_id: "groq", model: "llama-3.3-70b-versatile" }, decision: null, reranking: null, cleanup_verification_enabled: Boolean(options.cleanup_verification_enabled), mode: options.mode || "fast", language: "nl", ui_language: options.ui_language || "system", dictionary: ["Pennel", "Studio Noord"],
     style_rules: [{ bundle_id: "com.tinyspeck.slackmacgap", style: "casual" }, { bundle_id: "com.apple.MobileSMS", style: "casual" }, { bundle_id: "com.apple.mail", style: "formal" }, { bundle_id: "com.microsoft.Word", style: "formal" }, { bundle_id: "com.apple.Terminal", style: "literal" }, { bundle_id: "com.microsoft.VSCode", style: "literal" }], history_retention_days: 30, hotkey: "fn", local_unload_minutes: 5,
-    meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", meeting_audio_retention_days: 30,
+    meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", summary_automation: options.summary_automation || "unanswered", meeting_audio_retention_days: 30,
     app_rules: [], calendar_rules: [], event_rules: [], calendar_enabled: false, echo_cancellation: true,
     record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), speaker_recognition: options.speaker_mode || "local",
     appearance: options.appearance, dictation_pad_auto_paste: false, live_text_enabled: options.live_text_enabled !== false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
@@ -187,6 +194,11 @@
     { id: "qa-dictation-0", created_at_ms: now - 26 * 60 * 60_000, app_bundle_id: "com.tinyspeck.slackmacgap", raw: "kan iemand de notities van gisteren delen", text: "Kan iemand de notities van gisteren delen?", status: "done", error: null, has_audio: false },
     { id: "qa-dictation-failed", created_at_ms: now - 27 * 60 * 60_000, app_bundle_id: "com.apple.Notes", raw: "", text: "", status: "failed", error: "Geen verbinding met de provider.", has_audio: true },
   ];
+  for (let index = 0; index < Math.min(20, Number(options.extra_history) || 0); index++) history.push({
+    id: `qa-dictation-extra-${index}`, created_at_ms: now - (48 + index) * 60 * 60_000,
+    app_bundle_id: "com.apple.mail", raw: `Synthetic earlier dictation ${index + 1}.`, text: `Synthetic earlier dictation ${index + 1}.`,
+    status: "done", error: null, has_audio: false,
+  });
   // `cloud` is unset (signed out), "synced" or "conflict"; all accounts, devices and codes are synthetic.
   let signedIn = Boolean(options.cloud) || Boolean(options.inference_cloud && options.inference_cloud !== "signed_out");
   let cloudAccountEpoch = 0;
@@ -293,6 +305,36 @@
     const retained = retainedMeetings.get(id), info = retained?.info || meetingInfo(id);
     return { id, uid: uidFor(id), info, notes: retained?.notes ?? (id === activeMeetingId ? notes : `Synthetic notes for ${info.title}.`),
       transcript: retained?.transcript || transcript, summary };
+  };
+  const summaryDocuments = new Map();
+  const summaryHistories = new Map();
+  const shareableSummaries = new Map();
+  const summarySourceRevision = async id => {
+    const record = recordForId(id);
+    if (!record?.uid) throw Error("This meeting is no longer available.");
+    return fingerprint(JSON.stringify({ notes: record.notes, transcript: record.transcript }));
+  };
+  const summaryDocument = async id => {
+    const uid = uidFor(id), source = await summarySourceRevision(id);
+    if (!summaryDocuments.has(uid)) summaryDocuments.set(uid, { meeting_uid: uid,
+      markdown: options.summary_empty ? "" : summary, revision: await fingerprint(options.summary_empty ? "" : summary),
+      source_revision: source, edited: false, outdated: false });
+    const document = summaryDocuments.get(uid);
+    return { ...document, source_revision: source, outdated: document.source_revision !== source || summaryOutdated };
+  };
+  const saveSummaryDocument = async (id, args, markdown, reviewed = false, restoredSource) => {
+    if (options.summary_save_error) throw Error(options.summary_save_error);
+    const before = await summaryDocument(id);
+    if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision) throw Error("The summary or its sources changed. Reload before saving.");
+    const history = summaryHistories.get(before.meeting_uid) || [];
+    if (before.markdown && before.markdown !== markdown) history.unshift({ revision: before.revision, markdown: before.markdown,
+      source_revision: before.source_revision, created_at: new ActualDate(now).toISOString() });
+    summaryHistories.set(before.meeting_uid, history);
+    const boundSource = restoredSource || (reviewed ? before.source_revision : summaryDocuments.get(before.meeting_uid).source_revision);
+    const saved = { ...before, markdown, revision: await fingerprint(markdown), source_revision: boundSource, edited: true, outdated: false };
+    summaryDocuments.set(before.meeting_uid, saved);
+    if (reviewed) summaryOutdated = false;
+    return clone(await summaryDocument(id));
   };
   let conversationFixture, conversationFixtureLoading, conversationStorageFailure = Boolean(options.conversation_storage_error);
   const conversationCommands = { conversation_snapshot: "snapshot", update_conversation: "update", begin_conversation_question: "begin", cancel_conversation_question: "cancel", conversation_source: "source" };
@@ -827,7 +869,13 @@
           const timer = setTimeout(finish, noteSaveDelay); pendingNoteSaves.add(finish);
         });
         if (saveFailure) throw new Error("Synthetic notes storage unavailable.");
-        if (args.id && args.id !== activeMeetingId && retainedMeetings.has(args.id)) { retainedMeetings.get(args.id).notes = String(args.text ?? ""); return null; }
+        if (args.id && args.id !== activeMeetingId && uidFor(args.id)) {
+          if (!retainedMeetings.has(args.id)) {
+            const saved = recordForId(args.id);
+            retainedMeetings.set(args.id, { info: clone(saved.info), meeting_uid: saved.uid, session_id: null, notes: saved.notes, transcript: clone(saved.transcript) });
+          }
+          retainedMeetings.get(args.id).notes = String(args.text ?? ""); return null;
+        }
         if (args.insightReceipt) {
           const store = insightStore(args.id || activeMeetingId), receipt = store.insertion_receipts.find(receipt => receipt.attempt_id === args.insightReceipt);
           if (!receipt || await fingerprint(String(args.text ?? "")) !== receipt.intended_notes_hash
@@ -890,7 +938,7 @@
       case "meetings": return options.empty ? [] : clone(library);
       case "meeting_detail": {
         if (deletedMeetingUids.has(uidFor(args.id))) throw Error("This meeting is no longer available.");
-        return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? (args.id === activeMeetingId ? notes : recordForId(args.id).notes), summary, transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", source_id: "microphone", available: !!options.saved_audio }, { speaker: "others", source_id: "system", available: !!options.saved_audio }],
+        return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? (args.id === activeMeetingId ? notes : recordForId(args.id).notes), summary: summaryDocuments.get(uidFor(args.id))?.markdown ?? (options.summary_empty ? "" : summary), transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", source_id: "microphone", available: !!options.saved_audio }, { speaker: "others", source_id: "system", available: !!options.saved_audio }],
         ...(options.rich_utterances ? { meeting_uid: uidFor(args.id), metadata_status: metadataStatus, revision: transcriptRevision } : {}),
         summary_outdated: summaryOutdated, retranscription_status: clone(retranscriptionStatus),
         retranscription_plan: { recognition: frozenMeetingRecognition(), available: !!options.saved_audio && !retranscriptionStatus?.running && frozenMeetingRecognition().provider_kind === "local", reason: options.saved_audio ? null : "Er is geen bewaarde audio om opnieuw te transcriberen." } };
@@ -931,6 +979,43 @@
         conversationFixture?.deleteMeeting(uid); emit("library-changed", null); return null;
       }
       case "summarize_meeting": return summary;
+      case "meeting_summary": return clone(await summaryDocument(args.id));
+      case "save_meeting_summary": return saveSummaryDocument(args.id, args, String(args.markdown ?? ""));
+      case "accept_meeting_summary": return saveSummaryDocument(args.id, args, String(args.markdown ?? ""), true);
+      case "meeting_summary_history": return clone(summaryHistories.get(uidFor(args.id)) || []);
+      case "restore_meeting_summary": {
+        const revision = (summaryHistories.get(uidFor(args.id)) || []).find(item => item.revision === args.revision);
+        if (!revision) throw Error("The requested summary revision is unavailable.");
+        return saveSummaryDocument(args.id, args, revision.markdown, false, revision.source_revision);
+      }
+      case "generate_meeting_summary": {
+        const before = await summaryDocument(args.id), record = recordForId(args.id);
+        if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
+        if (options.summary_generation_error) throw Error(options.summary_generation_error);
+        return { meeting_uid: before.meeting_uid, markdown: `${summary}\n\n${record.notes}`, revision: before.revision, source_revision: before.source_revision };
+      }
+      case "generate_shareable_meeting_summary": {
+        const record = recordForId(args.id);
+        if (!record?.transcript.length || options.shareable_missing_transcript) throw Error("A finalized transcript is required for a shareable summary.");
+        const source = await summarySourceRevision(args.id);
+        const prepared = { meeting_uid: record.uid, markdown: record.transcript.map(segment => `- ${segment.text}`).join("\n"), source_revision: source,
+          generated_at: new ActualDate(now).toISOString(), provider_id: settings.llm.provider_id, model: settings.llm.model, provenance: "transcript_only_v1", outdated: false };
+        shareableSummaries.set(record.uid, prepared);
+        return clone(prepared);
+      }
+      case "shareable_meeting_summary": {
+        const prepared = shareableSummaries.get(uidFor(args.id));
+        return prepared ? { ...clone(prepared), outdated: prepared.source_revision !== await summarySourceRevision(args.id) } : null;
+      }
+      case "preview_meeting_export": {
+        const record = recordForId(args.id);
+        const personal = args.scope === "personal";
+        const prepared = shareableSummaries.get(record?.uid);
+        if (!personal && (!prepared || prepared.source_revision !== await summarySourceRevision(args.id))) throw Error("Prepare a current shareable summary before exporting.");
+        const body = personal ? (await summaryDocument(args.id)).markdown || record.notes : prepared.markdown;
+        const content = args.includeTranscript ? `${body}\n\n## Transcript\n${record.transcript.map(segment => segment.text).join("\n")}` : body;
+        return { title: record.info.title, markdown: content, html: `<pre>${content.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>` };
+      }
       case "retranscribe_meeting": return 0;
       case "retranscribe_meeting_audio": {
         if (!options.saved_audio || retranscriptionStatus?.running || frozenMeetingRecognition().provider_kind !== "local") throw new Error("Er is geen bewaarde audio om opnieuw te transcriberen.");

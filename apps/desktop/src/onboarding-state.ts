@@ -1,11 +1,13 @@
 import { t } from "./i18n.ts";
 import type { LocalModel, OnboardingGoal, OnboardingProgress, OnboardingStep, PermissionInfo, Settings, SetupReadiness } from "./api";
+import { recommendedSpeechModel } from "./dictation-home-state.ts";
 
-export type Engine = "local" | "apple" | "custom";
+export type Engine = "local" | "apple" | "cloud" | "custom";
 
 /** The saved recognizer, else local; a processor too old for local models starts on a provider instead. */
 export function initialEngine(accountKind: string | undefined, localAvailable: boolean): Engine {
   if (accountKind === "apple_speech") return "apple";
+  if (accountKind === "pennel_cloud") return "cloud";
   if (accountKind === "local" || !accountKind) return localAvailable ? "local" : "custom";
   return "custom";
 }
@@ -78,7 +80,7 @@ export function manualPracticeAllowed(readiness: SetupReadiness | null, permissi
 
 export function defaultModelId(models: LocalModel[], current: string): string {
   if (models.some((model) => model.id === current)) return current;
-  return models.find((model) => model.recommended)?.id ?? models[0]?.id ?? current;
+  return recommendedSpeechModel(models)?.id ?? current;
 }
 
 export function modelOptionLabel(model: LocalModel, formatSize: (bytes: number) => string): string {

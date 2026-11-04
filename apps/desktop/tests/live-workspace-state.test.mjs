@@ -6,6 +6,10 @@ test("the deliberately selected pane survives wide and narrow transitions", () =
   const panes = new LivePaneState();
   assert.equal(panes.selected, "notes");
   assert.equal(panes.companion, "transcript");
+  assert.equal(panes.companionOpen, false);
+  panes.resize(1000);
+  assert.equal(panes.shown("notes"), true);
+  assert.equal(panes.shown("transcript"), false);
   panes.select("questions"); panes.resize(900);
   assert.equal(panes.selected, "questions");
   panes.select("notes"); panes.resize(799);
@@ -14,6 +18,33 @@ test("the deliberately selected pane survives wide and narrow transitions", () =
   panes.resize(800);
   assert.equal(panes.wide, true);
   assert.equal(panes.companion, "questions");
+  assert.equal(panes.companionOpen, true);
+});
+
+test("closing a companion survives resize without losing the selected writing surface", () => {
+  const panes = new LivePaneState();
+  panes.select("summary"); panes.select("questions"); panes.resize(1000);
+  assert.equal(panes.shown("summary"), true);
+  assert.equal(panes.shown("questions"), true);
+  panes.closeCompanion(); panes.resize(700); panes.resize(1000);
+  assert.equal(panes.primary, "summary");
+  assert.equal(panes.selected, "summary");
+  assert.equal(panes.companion, "questions");
+  assert.equal(panes.shown("questions"), false);
+  assert.equal(panes.shown("summary"), true);
+});
+
+test("a narrow companion is the same retained pane and returns to the selected notes or summary", () => {
+  const panes = new LivePaneState();
+  panes.select("summary"); panes.toggleCompanion("transcript"); panes.resize(700);
+  assert.equal(panes.shown("summary"), false);
+  assert.equal(panes.shown("transcript"), true);
+  panes.resize(1000);
+  assert.equal(panes.shown("summary"), true);
+  assert.equal(panes.shown("transcript"), true);
+  panes.resize(700); panes.toggleCompanion("transcript");
+  assert.equal(panes.selected, "summary");
+  assert.equal(panes.shown("summary"), true);
 });
 
 test("format helpers preserve source text and the selected content", () => {

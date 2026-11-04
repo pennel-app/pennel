@@ -1,4 +1,5 @@
 /** Run in an owned loopback fixture page; every recording, credential and note below is synthetic. */
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 function ownedFixture() {
   if (!/^(127\.0\.0\.1|localhost)$/.test(location.hostname) || !window.__PENNEL_FIXTURE__ || !window.__PENNEL_PLATFORM__) {
     throw new Error("Approachable UI checks require the owned synthetic fixture server.");
@@ -23,9 +24,15 @@ const visible = node => {
   return getComputedStyle(node).visibility !== "hidden";
 };
 const button = (scope, label) => [...scope.querySelectorAll("button")].find(node => node.textContent.trim() === label);
-const click = node => { assert(node && !node.disabled, "Required user action is missing or disabled."); node.focus(); node.click(); };
+const click = node => {
+  assert(node && !node.disabled, "Required user action is missing or disabled.");
+  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+    if (parent.matches("details:not([open])") && !parent.querySelector(":scope > summary")?.contains(node)) parent.querySelector(":scope > summary").click();
+  }
+  node.focus(); node.click();
+};
 const enter = (node, value) => { assert(node, "Required input is missing."); node.focus(); node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
-const selectedTab = () => document.querySelector('.detail-tabs [aria-selected="true"]')?.dataset.tab;
+const selectedTab = () => document.querySelector('.meeting-writing-tabs [aria-selected="true"]')?.dataset.liveTab;
 const dialog = () => document.querySelector("dialog.task-setup-dialog[open]");
 
 async function chooseSetupProvider(different = false, selector = "[data-setup-provider]") {
@@ -141,11 +148,11 @@ export async function checkSettingsFlow() {
   const fixture = ownedFixture();
   const { api } = await import("/src/api.ts");
   const { t } = await import("/src/i18n.ts");
-  await until(() => document.querySelectorAll(".settings-overview [data-setup-task]").length === 3, "Settings did not open to three task-readiness actions.");
+  await until(() => document.querySelectorAll(".settings-task-readiness [data-setup-task]").length === 2, "Settings did not open to Dictation task readiness.");
   const observed = observeCommands();
   try {
     const tasks = [...document.querySelectorAll(".settings-overview [data-setup-task]")].map(node => node.dataset.setupTask);
-    assert(["dictation_stt", "meeting_stt", "llm"].every(task => tasks.includes(task)), "A core setup task is not reachable from the overview.");
+    assert(["dictation_stt", "llm"].every(task => tasks.includes(task)), "Dictation is missing its speech or shared text setup.");
     const textAction = document.querySelector('.settings-overview [data-setup-task="llm"]');
     click(textAction);
     await until(() => dialog()?.dataset.setupTask === "llm" && dialog().querySelector('input[type="password"]'), "Task setup did not expose the selected service's missing key in place.");
@@ -174,19 +181,19 @@ export async function checkSettingsFlow() {
     const restored = await api.info();
     await api.saveSettings({ ...restored.settings, dictation_stt: speechBefore });
 
-    const account = button(document.querySelector(".settings-categories"), t("navigation.account"));
+    const account = button(document.querySelector(".settings-categories"), t("navigation.sync_account"));
     assert(account, "Account is missing from Settings navigation.");
     account.focus(); await settle();
     const bounds = account.getBoundingClientRect();
     assert(bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight, "Focused Account is clipped at the supported window size.");
     click(account);
-    await until(() => button(document.querySelector(".settings-categories"), t("navigation.account"))?.getAttribute("aria-current") === "page", "Account did not become the selected Settings category.");
+    await until(() => document.querySelector('[data-settings-category="account"][aria-current="page"]'), "Account did not become the selected Settings category.");
     fixture.emit("workspace-navigate", { section: "settings", tab: "models", meeting_id: null, jump_ms: null });
-    await until(() => document.querySelector(".models-settings button[data-setup-task]"), "The existing Models deep link no longer opens its task overview.");
+    await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]') && document.querySelector('[data-settings-detail="models"][open]'), "The existing Models deep link no longer opens Advanced Models.");
     fixture.emit("workspace-navigate", { section: "settings", tab: "providers", meeting_id: null, jump_ms: null });
-    await until(() => button(document.querySelector(".settings-categories"), t("navigation.providers"))?.getAttribute("aria-current") === "page", "The existing Providers deep link no longer selects its editor.");
-    click(button(document.querySelector(".settings-categories"), t("navigation.overview")));
-    await until(() => document.querySelector(".settings-overview"), "Advanced configuration has no path back to task readiness.");
+    await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]') && document.querySelector('[data-settings-detail="providers"][open]'), "The existing Providers deep link no longer selects its Advanced editor.");
+    click(document.querySelector('[data-settings-category="dictation"]'));
+    await until(() => document.querySelector(".dictation-task-settings .settings-task-readiness"), "Advanced configuration has no path back to task readiness.");
     assert(!observed.operations.some(operation => ["set_key", "test_provider_task", "test_provider_task_choice", "start_meeting", "toggle_dictation"].includes(operation.command)), "Browsing settings silently changed credentials, tested a provider or started capture.");
     assert(!fixture.unknown.length, "Settings used a non-fixture operation.");
     return { overview: true, taskLocalSetup: true, modalOptionsAccessible: true, settingsSaveRetried: true, focusRestored: true, accountReachable: true, legacyDeepLinks: true, externalServicesUsed: false, userDataUsed: false };
@@ -197,31 +204,31 @@ export async function checkMeetingFlow() {
   const fixture = ownedFixture();
   const { api } = await import("/src/api.ts");
   const { t } = await import("/src/i18n.ts");
-  await until(() => document.querySelector(".meeting-detail .meeting-summary-setup"), "Use a finished meeting with an existing summary and no configured text service.");
+  await until(() => document.querySelector(".live-workspace .meeting-summary-surface"), "Use a finished meeting with an existing summary and no configured text service.");
   const observed = observeCommands();
   try {
     const record = document.querySelector(".library-record");
     assert(visible(record) && record.dataset.phase === "new" && record.textContent.includes(t("meetings.new_recording")), "The populated library lost its New recording action.");
-    assert(visible(button(document.querySelector(".library-shortcuts"), t("meetings.open_dictation"))) && visible(button(document.querySelector(".library-shortcuts"), t("meetings.open_history"))), "Dictation or History is not visible from the library.");
-    const article = document.querySelector(".meeting-detail");
-    const panel = article.querySelector(".meeting-panel");
-    const ownNotes = article.querySelector(".own-notes");
-    ownNotes.open = true;
-    const notes = ownNotes.querySelector("textarea");
+    assert(visible(button(document.querySelector(".library-shortcuts"), t("meetings.open_dictation"))) && !visible(document.querySelector('.dictation-navigation [data-workspace-section="history"]')), "Dictation or its nested History has incorrect task scope.");
+    const article = document.querySelector(".live-workspace");
+    selectMeetingPane(article, "notes");
+    const notes = article.querySelector(".live-notes");
     const originalNotes = notes.value;
     const synthetic = "Synthetic draft for task-local setup.\nThis text belongs only to the owned QA fixture.";
     notes.value = synthetic; notes.dispatchEvent(new Event("input", { bubbles: true }));
     notes.focus(); notes.setSelectionRange(4, 17); await settle();
+    selectMeetingPane(article, "summary"); await settle();
+    const panel = article.querySelector('.live-summary-pane');
     panel.scrollTop = panel.scrollHeight;
     const position = panel.scrollTop;
-    const setup = article.querySelector(".meeting-summary-setup");
+    const setup = article.querySelector(".meeting-summary-surface");
     const opener = button(setup, t("meetings.set_up_summaries"));
-    assert(visible(setup) && setup.querySelector(".meeting-setup-reason")?.textContent.trim() && visible(opener), "An existing summary has no visible setup reason and recovery action.");
-    const regenerate = button(article, t("meetings.regenerate"));
+    assert(visible(setup) && setup.querySelector(".meeting-summary-destination")?.textContent.trim() && visible(opener), "An existing summary has no visible setup reason and recovery action.");
+    const regenerate = article.querySelector('.meeting-summary-generate');
     assert(regenerate?.disabled, "Regeneration is enabled without a usable text service.");
     click(opener);
     await until(() => dialog()?.dataset.setupTask === "llm" && dialog().querySelector('input[type="password"]'), "Summary setup did not open beside the meeting.");
-    assert(article.isConnected && document.querySelector(".meeting-detail") === article, "Setup replaced the originating meeting.");
+    assert(article.isConnected && document.querySelector(".live-workspace") === article, "Setup replaced the originating meeting.");
     let key = dialog().querySelector('input[type="password"]');
     enter(key, "fixture-only-discarded-key");
     await refreshWhileTyping(api, fixture, observed, key);
@@ -229,12 +236,12 @@ export async function checkMeetingFlow() {
     await until(() => !dialog(), "Escape/cancel did not return from task setup.");
     assert(!fixture.info().keys[fixture.info().settings.llm.provider_id], "Cancelling setup saved an unfinished service key.");
     assert(document.activeElement === opener && notes.isConnected && notes.value === synthetic && notes.selectionStart === 4 && notes.selectionEnd === 17, "Cancelling setup lost note content, caret or return focus.");
-    assert(panel.scrollTop === position && selectedTab() === "notes", "Cancelling setup lost the selected tab or reading position.");
+    assert(panel.scrollTop === position && selectedTab() === "summary", "Cancelling setup lost the selected Summary tab or reading position.");
 
-    click(article.querySelector('[data-tab="ask"]'));
+    selectMeetingPane(article, "questions");
     await until(() => article.querySelector(".chat-setup"), "Questions does not expose contextual setup.");
     assert(!visible(setup) && visible(article.querySelector(".chat-setup")), "Questions shows duplicate summary and question setup notices.");
-    click(article.querySelector('[data-tab="notes"]'));
+    selectMeetingPane(article, "summary");
     click(opener);
     await until(() => dialog()?.querySelector('input[type="password"]'), "Summary setup did not reveal the service key repair.");
     key = dialog().querySelector('input[type="password"]');
@@ -262,18 +269,19 @@ export async function checkMeetingFlow() {
     await until(() => fixture.info().keys[fixture.info().settings.llm.provider_id] && !dialog().querySelector("[data-setup-apply]").disabled, "Retry did not save the connection key and enable explicit application.");
     click(dialog().querySelector("[data-setup-apply]"));
     await until(() => !dialog() && !regenerate.disabled, "Use this setup did not return to the repaired meeting action.");
-    assert(document.querySelector(".meeting-detail") === article && notes.value === synthetic && selectedTab() === "notes", "Successful setup navigated away from the same meeting or lost its notes.");
-    assert(!visible(setup) && !regenerate.disabled, "The repaired meeting still presents a blocked summary action.");
+    assert(document.querySelector(".live-workspace") === article && notes.value === synthetic && selectedTab() === "summary", "Successful setup navigated away from the same meeting or lost its notes.");
+    assert(!visible(opener) && !regenerate.disabled, "The repaired meeting still presents a blocked summary action.");
     assert(!observed.operations.some(operation => ["summarize_meeting", "ask_meetings", "start_meeting", "test_provider_task", "test_provider_task_choice"].includes(operation.command)), "Setup processed meeting content or started a recording without a user action.");
+    selectMeetingPane(article, "notes");
     notes.value = originalNotes; notes.dispatchEvent(new Event("input", { bubbles: true }));
     notes.blur(); await settle();
-    const title = article.querySelector("h1").textContent;
+    const title = article.querySelector(".live-title").value;
     click(record);
     await until(() => document.querySelector(".recording-view") && button(document.querySelector(".recording-view"), t("common.start_recording")), "New recording did not open the next meeting's ready-to-record surface.");
     assert(!observed.operations.some(operation => operation.command === "start_meeting"), "Opening the next recording started capture without explicit confirmation.");
     const previousMeeting = document.querySelector(`.meeting-row[data-id="${CSS.escape(fixture.options.meeting_id)}"] .meeting-select`);
     click(previousMeeting);
-    await until(() => document.querySelector(".meeting-detail h1")?.textContent === title, "The previous meeting became unreachable after opening the next recording.");
+    await until(() => document.querySelector(".live-workspace .live-title")?.value === title, "The previous meeting became unreachable after opening the next recording.");
     assert(!fixture.unknown.length, "Meeting recovery used a non-fixture operation.");
     return { persistentRecording: true, secondMeetingEntry: true, taskEntries: true, visibleRecovery: true, cancelPreservesContext: true, unsavedKeyDiscarded: true, keyClickSurvivesRefresh: true, failedSaveRetained: true, retryUpdatesInPlace: true, externalServicesUsed: false, userDataUsed: false };
   } finally { observed.restore(); }

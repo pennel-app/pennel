@@ -1,0 +1,83 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { SummaryDraft } from "../src/meeting-summary-state.ts";
+
+const document = (markdown = "Saved summary", revision = "r1", source_revision = "s1") => ({ meeting_uid: "uid-one", markdown, revision, source_revision, edited: false, outdated: false });
+
+test("background summary completion cannot replace typed text or a focused clean editor", () => {
+  const draft = new SummaryDraft();
+  assert.equal(draft.receive(document()), true);
+  draft.edit("My current writing");
+  assert.equal(draft.receive(document("Generated remotely", "r2")), false);
+  assert.equal(draft.value, "My current writing");
+  assert.equal(draft.document.revision, "r1");
+  assert.equal(draft.remote.revision, "r2");
+  draft.useRemote();
+  assert.equal(draft.value, "Generated remotely");
+  assert.equal(draft.receive(document("Another generated summary", "r3"), true), false);
+  assert.equal(draft.value, "Generated remotely");
+});
+
+test("source changes never silently advance the expected revision of an active or dirty draft", () => {
+  for (const protectedInput of [true, false]) {
+    const draft = new SummaryDraft(); draft.receive(document());
+    if (!protectedInput) draft.edit("A summary based on the old transcript");
+    assert.equal(draft.receive({ ...document("Saved summary", "r1", "s2"), outdated: true }, protectedInput), false);
+    assert.equal(draft.document.source_revision, "s1");
+    assert.equal(draft.remote.source_revision, "s2");
+    assert.equal(draft.keepEditAgainstRemote(), true);
+    assert.equal(draft.document.source_revision, "s2");
+    assert.equal(draft.value, protectedInput ? "Saved summary" : "A summary based on the old transcript");
+  }
+});
+
+test("a generated replacement is reviewable and later typing or source changes invalidate acceptance", () => {
+  const draft = new SummaryDraft(); draft.receive(document());
+  draft.stage(document("New candidate"), draft.editRevision);
+  assert.equal(draft.value, "Saved summary");
+  assert.equal(draft.canAccept, true);
+  draft.edit("Keep this later typing");
+  assert.equal(draft.canAccept, false);
+  draft.stage(document("Newer candidate"), draft.editRevision);
+  assert.equal(draft.canAccept, true);
+  draft.receive(document("Saved summary", "r1", "s2"));
+  assert.equal(draft.canAccept, false);
+  assert.equal(draft.value, "Keep this later typing");
+});
+
+test("save acknowledgements advance durable revision while retaining typing done during the write", () => {
+  const draft = new SummaryDraft(); draft.receive(document());
+  draft.edit("First edit"); const target = draft.value;
+  draft.edit("Newer edit while saving");
+  draft.acknowledge(document(target, "r2"), target);
+  assert.equal(draft.document.revision, "r2");
+  assert.equal(draft.value, "Newer edit while saving");
+  assert.equal(draft.dirty, true);
+  draft.acknowledge(document(draft.value, "r3"), draft.value);
+  assert.equal(draft.dirty, false);
+});
+
+test("explicit conflict recovery keeps the edit and dismisses the obsolete candidate", () => {
+  const draft = new SummaryDraft(); draft.receive(document()); draft.edit("Unsent edit");
+  draft.stage(document("Candidate"), draft.editRevision);
+  draft.receive(document("Other window", "r2", "s2"));
+  assert.equal(draft.keepEditAgainstRemote(), true);
+  assert.equal(draft.document.revision, "r2");
+  assert.equal(draft.value, "Unsent edit");
+  assert.equal(draft.dirty, true);
+  assert.equal(draft.candidate, null);
+});
+
+test("manual review is available only for the exact clean saved outdated summary", () => {
+  const draft = new SummaryDraft(); draft.receive({ ...document(), outdated: true });
+  assert.equal(draft.canMarkReviewed, true);
+  draft.edit("Not yet saved"); assert.equal(draft.canMarkReviewed, false);
+  draft.edit("Saved summary"); assert.equal(draft.canMarkReviewed, true);
+  draft.pending = true; assert.equal(draft.canMarkReviewed, false); draft.pending = false;
+  draft.receive({ ...document("Saved summary", "r1", "changed-notes-or-transcript"), outdated: true }, true);
+  assert.equal(draft.document.source_revision, "s1");
+  assert.equal(draft.canMarkReviewed, false);
+  draft.keepEditAgainstRemote(); assert.equal(draft.canMarkReviewed, true);
+  draft.acknowledge(document("Saved summary", "r1", "changed-notes-or-transcript"), "Saved summary");
+  assert.equal(draft.canMarkReviewed, false);
+});

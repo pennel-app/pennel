@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
@@ -21,7 +22,7 @@ function edit(input, text) {
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
 
-function select(root, pane) { root.querySelector(`[data-live-tab="${pane}"]`).click(); }
+function select(root, pane) { selectMeetingPane(root, pane); }
 function panel(root, pane) { return root.querySelector(`[data-live-pane="${pane}"]`); }
 function shown(node) { return !!node && !node.hidden && node.getClientRects().length > 0; }
 
@@ -180,10 +181,10 @@ export async function checkLiveQuestionSaveFailure() {
   select(root, "questions");
   const question = root.querySelector(".live-question-input");
   edit(question, "Do not send this question with incomplete note context");
-  const begins = fixture.calls.filter(command => command === "begin_live_question").length;
+  const begins = fixture.calls.filter(command => ["begin_live_question", "begin_conversation_question"].includes(command)).length;
   root.querySelector(".live-question-submit").click();
-  await until(() => root.querySelector(".live-answer .error"), "Failed note storage did not explain that the question was not sent.");
-  assert(fixture.workspace.requests().length === 0 && fixture.calls.filter(command => command === "begin_live_question").length === begins, "A failed note save still admitted a model request.");
+  await until(() => root.querySelector(".conversation-error:not([hidden])"), "Failed note storage did not explain that the question was not sent.");
+  assert(fixture.workspace.requests().length === 0 && fixture.calls.filter(command => ["begin_live_question", "begin_conversation_question"].includes(command)).length === begins, "A failed note save still admitted a model request.");
   assert(question.value === "Do not send this question with incomplete note context" && note.value === text, "Failed submission discarded question or note text.");
   assert(root.querySelector(".live-save-status").dataset.saveState === "unsaved", "The failed note write was displayed as saved.");
   fixture.workspace.failSaves(false);
@@ -205,7 +206,7 @@ export async function checkLiveMissingTextSetup() {
   edit(note, text);
   note.setSelectionRange(4, 18, "backward");
   select(root, "questions");
-  assert(root.querySelector(".live-question-input").disabled && root.querySelector(".live-question-submit").disabled, "Questions did not explain the missing text configuration.");
+  assert(root.querySelector(".live-question-submit").disabled && !root.querySelector(".chat-setup").hidden, "Questions did not explain the missing text configuration or block model submission.");
   assert(!note.disabled && !root.querySelector(".live-stop").disabled, "Missing text configuration blocked notes or capture control.");
   const setup = root.querySelector(".chat-setup button");
   setup.click();
@@ -220,14 +221,93 @@ export async function checkLiveMissingTextSetup() {
   await until(() => document.querySelector('dialog[open][data-setup-task="llm"]'), "Question setup did not reopen.");
   dialog = document.querySelector('dialog[open][data-setup-task="llm"]');
   await until(() => shown(dialog.querySelector("[data-capture-stop]")), "The reopened setup lost Stop.");
+  const detachedApply = dialog.querySelector("[data-setup-apply]");
+  const appliedBeforeStop = fixture.calls.filter(command => command === "apply_task_model_choice").length;
   dialog.querySelector("[data-capture-stop]").click();
   await until(() => !fixture.workspace.recording(), "Stop in setup waited on the failed note write.");
-  dialog.querySelector("[data-setup-cancel]").click();
   await until(() => !document.querySelector("dialog[open]"), "Setup remained open after capture stopped.");
   assert(document.querySelector(".live-workspace") === root && note.value === text, "Stop in setup discarded the retained draft.");
+  detachedApply.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await pause(100);
+  assert(fixture.calls.filter(command => command === "apply_task_model_choice").length === appliedBeforeStop,
+    "A detached Apply action changed the setup after its originating capture stopped.");
   fixture.workspace.failSaves(false);
   await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
-  return record("missing_text_setup", { questionsOnlyBlocked: true, sameMeetingOnReturn: true, stopReachableInSetup: true, stopDoesNotWaitForSave: true, syntheticOnly: true });
+  assert(fixture.workspace.notes() === text, "The old capture draft did not recover after setup closed.");
+  const next = fixture.workspace.restart();
+  fixture.emit("workspace-navigate", { section: "recording", tab: null, meeting_id: next.id, jump_ms: null });
+  await until(() => document.querySelector(".live-workspace")?.dataset.sessionId === next.session_id, "The next recording could not open after capture-local setup ended.");
+  await checkCaptureSetupApplyRace();
+  const settingsCapture = fixture.workspace.restart({ id: "qa-settings-setup-meeting", uid: "qa-settings-setup-uid", session: "qa-settings-setup-session",
+    title: "Settings-owned setup capture", notes: "Settings-owned capture notes", transcript: [] });
+  fixture.emit("workspace-navigate", { section: "recording", tab: null, meeting_id: settingsCapture.id, jump_ms: null });
+  await until(() => document.querySelector(".live-workspace")?.dataset.sessionId === settingsCapture.session_id, "The Settings-origin check could not open its capture.");
+  await checkSettingsSetupSurvivesCaptureStop();
+  return record("missing_text_setup", { questionsOnlyBlocked: true, sameMeetingOnReturn: true, stopReachableInSetup: true, stopDoesNotWaitForSave: true,
+    endedCaptureDismissesOwnChooser: true, noDetachedApply: true, settingsOriginUnaffected: true, syntheticOnly: true });
+}
+
+async function checkCaptureSetupApplyRace() {
+  const { fixture, root } = await owned();
+  select(root, "questions"); root.querySelector(".chat-setup button").click();
+  await until(() => document.querySelector('dialog[open][data-setup-task="llm"] input[type="password"]'), "Capture-local setup has no explicit key prerequisite.");
+  const dialog = document.querySelector('dialog[open][data-setup-task="llm"]');
+  const choices = () => JSON.stringify(Object.fromEntries(["dictation_stt", "meeting_stt", "llm"].map(task => [task, fixture.info().settings[task]])));
+  const before = choices(), providerId = fixture.info().settings.llm.provider_id;
+  edit(dialog.querySelector('input[type="password"]'), "synthetic-capture-prerequisite-only");
+  dialog.querySelector('[data-setup-save="key"]').click();
+  await until(() => fixture.info().keys[providerId] && !dialog.querySelector("[data-setup-apply]").disabled, "The explicitly saved prerequisite did not enable Apply.");
+  await until(() => shown(dialog.querySelector("[data-capture-stop]")) && !dialog.querySelector("[data-capture-stop]").disabled,
+    "The next capture's setup did not expose its available Stop before Apply.");
+  const client = window.__PENNEL_PLATFORM__, original = client.invoke.bind(client);
+  let held = false, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const applies = fixture.calls.filter(command => command === "apply_task_model_choice").length;
+  client.invoke = async (command, args) => {
+    const value = await original(command, args);
+    if (command === "app_info" && !held && dialog.querySelector(".task-setup-body").inert && dialog.querySelector("[data-setup-cancel]").disabled) {
+      held = true; await gate;
+    }
+    return value;
+  };
+  try {
+    dialog.querySelector("[data-setup-apply]").click();
+    await until(() => held, "The in-flight Apply did not reach its held configuration read.");
+    const stop = dialog.querySelector("[data-capture-stop]");
+    assert(shown(stop) && !stop.disabled, "In-flight Apply hid or blocked capture Stop."); stop.click();
+    await until(() => !fixture.workspace.recording() && !document.querySelector("dialog[open]"), "Stopping the origin capture did not invalidate its in-flight Apply.");
+    release(); await pause(200);
+    assert(fixture.calls.filter(command => command === "apply_task_model_choice").length === applies && choices() === before,
+      "An in-flight Apply committed after its origin capture ended.");
+    assert(fixture.info().keys[providerId], "Ending capture removed the explicitly saved key prerequisite.");
+    assert(!JSON.stringify(fixture.setupTrace).includes("synthetic-capture-prerequisite-only"), "The setup trace retained synthetic credential text.");
+  } finally { release(); client.invoke = original; }
+}
+
+export async function checkSettingsSetupSurvivesCaptureStop() {
+  const { fixture, root } = await owned();
+  const note = root.querySelector(".live-notes"), text = "Synthetic notes retained through Settings-owned setup and Stop.";
+  edit(note, text); note.setSelectionRange(4, 16, "backward");
+  document.querySelector(".library-settings").click();
+  await until(() => document.querySelector(".settings-workspace button[data-setup-task=\"llm\"]"), "Settings task setup did not become available.");
+  const setup = document.querySelector(".settings-workspace button[data-setup-task=\"llm\"]");
+  setup.scrollIntoView({ block: "nearest" }); setup.click();
+  await until(() => document.querySelector('dialog[open][data-setup-task="llm"]'), "Settings-owned text setup did not open.");
+  const dialog = document.querySelector('dialog[open][data-setup-task="llm"]');
+  await until(() => shown(dialog.querySelector("[data-capture-stop]")), "Settings-owned setup lost capture Stop.");
+  dialog.querySelector("[data-capture-stop]").click();
+  await until(() => !fixture.workspace.recording(), "Settings-owned setup blocked capture Stop.");
+  await pause(500);
+  assert(dialog.isConnected && dialog.open, "Stopping an unrelated capture dismissed the Settings-owned setup draft.");
+  dialog.querySelector("[data-setup-cancel]").click();
+  await until(() => !document.querySelector("dialog[open]") && document.querySelector(".settings-back"), "Explicit setup cancellation did not return to Settings.");
+  document.querySelector(".settings-back").click();
+  await until(() => document.querySelector(".live-workspace") === root, "Settings did not return to the same stopped meeting.");
+  assert(root.querySelector(".live-notes") === note && note.value === text && note.selectionStart === 4 && note.selectionEnd === 16,
+    "Settings-owned setup or Stop discarded the retained notes or selection.");
+  assert(!fixture.calls.some(command => ["apply_task_model_choice", "test_provider_task", "generate_meeting_summary"].includes(command)), "Stopping or cancelling setup applied a stale draft or started processing.");
+  return record("settings_setup_capture_stop", { settingsChooserRetained: true, explicitCancelReturns: true, sameStoppedMeeting: true,
+    notesAndSelectionRetained: true, noStaleApply: true, syntheticOnly: true });
 }
 
 function distribution(values) {

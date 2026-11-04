@@ -27,7 +27,7 @@
   "common.open_history": "Open geschiedenis",
   "common.search": "Zoeken",
   "chrome.toolbar": "Werkbalk",
-  "chrome.search_unavailable": "Zoeken is beschikbaar in de meetingbibliotheek.",
+  "chrome.search_unavailable": "Zoeken is beschikbaar bij Dicteren en Vergaderingen.",
   "chrome.hide_sidebar": "Verberg zijbalk",
   "chrome.show_sidebar": "Toon zijbalk",
   "chrome.resize_sidebar": "Breedte zijbalk aanpassen",
@@ -78,5 +78,6 @@
   "navigation.your_work": "Je werk",
   "navigation.app": "Pennel",
   "navigation.advanced": "Geavanceerd",
-  "appearance.zoom_help": "Tekstgrootte: {modifier} + = om te vergroten, {modifier} + - om te verkleinen en {modifier} + 0 om terug te zetten."
+  "appearance.zoom_help": "Tekstgrootte: {modifier} + = om te vergroten, {modifier} + - om te verkleinen en {modifier} + 0 om terug te zetten.",
+  "navigation.sync_account": "Sync en account"
 }

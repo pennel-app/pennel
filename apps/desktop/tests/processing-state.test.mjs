@@ -13,8 +13,8 @@ const settings = { providers, dictation_stt: { provider_id: "speech", model: "wh
 
 test("processing explains local recognition and remote text processing separately", () => {
   assert.deepEqual(processingSummary(settings, "dictation"), [
-    { label: "Audio", destination: "Op deze computer" },
-    { label: "Tekst", destination: "Mijn server (example.com)" },
+    { label: "Spraakherkenning", destination: "Op deze computer" },
+    { label: "Tekst opschonen", destination: "Mijn server (example.com)" },
   ]);
   assert.equal(processingSummary({ ...settings, mode: "fast" }, "dictation")[1].destination, "Geen opkuisbeurt (Snel)");
   assert.match(processingSummary({ ...settings, mode: "fast" }, "meeting")[1].destination, /Mijn server/);

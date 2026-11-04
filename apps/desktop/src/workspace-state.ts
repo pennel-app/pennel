@@ -1,6 +1,27 @@
 import { t } from "./i18n.ts";
 
 export type WorkspaceSection = "dictation" | "meetings" | "history" | "settings" | "recording";
+export type WorkspaceTask = "dictation" | "meetings";
+export type SettingsCategory = "dictation" | "meeting-settings" | "appearance" | "account" | "advanced";
+
+/** History and active capture belong to their task even when reached by a legacy link. */
+export function workspaceTask(route: WorkspaceRoute): WorkspaceTask {
+  return route.section === "meetings" || route.section === "recording" ? "meetings" : "dictation";
+}
+
+/** An actual new capture stays reachable while the previous workspace retains failed drafts. */
+export function resumesOtherCapture(route: WorkspaceRoute, currentSession: string | null | undefined,
+  runtime: { recording: boolean; id: string | null; session_id: string | null }): boolean {
+  return route.section === "recording" && !!currentSession && runtime.recording && !!runtime.id && !!runtime.session_id
+    && runtime.session_id !== currentSession && (!route.meeting_id || route.meeting_id === runtime.id);
+}
+
+export function settingsCategory(tab: string | null): SettingsCategory {
+  if (["meeting-settings", "meetings", "recording"].includes(tab ?? "")) return "meeting-settings";
+  if (tab === "appearance" || tab === "account") return tab;
+  if (["advanced", "providers", "local", "models"].includes(tab ?? "")) return "advanced";
+  return "dictation";
+}
 export interface MeetingSourceTarget {
   kind: "notes" | "summary" | "transcript";
   start_ms: number | null;
@@ -34,7 +55,7 @@ export function windowMode(_value: string | null): WindowMode {
   return "workspace";
 }
 
-export const settingTabs = ["overview", "providers", "models", "dictation", "meeting-settings", "recording", "dictionary", "styles", "appearance", "account"] as const;
+export const settingTabs = ["dictation", "meeting-settings", "appearance", "account", "advanced", "overview", "providers", "models", "recording", "dictionary", "styles"] as const;
 const settings = new Set<string>([...settingTabs, "local"]);
 const reserved = new Set<string>([...settings, "workspace", "settings", "history", "meeting", "live", "onboarding", "prompt", "record-prompt", "pill", "library", "meetings", "chat"]);
 
@@ -94,7 +115,7 @@ export function parseWorkspaceRoute(value: unknown): WorkspaceRoute | null {
 }
 
 export function legacyWorkspaceRoute(kind: string, route?: string | null): WorkspaceRoute | null {
-  if (kind === "settings") return workspaceRoute("settings", route === "meetings" ? "meeting-settings" : settings.has(route ?? "") ? route! : "overview");
+  if (kind === "settings") return workspaceRoute("settings", route === "meetings" ? "meeting-settings" : settings.has(route ?? "") ? route! : "dictation");
   if (kind === "history") return historyRoute(historyEntryId(route));
   if (kind === "dictation") return workspaceRoute("dictation", route === "pad" || route === "home" ? route : null);
   if (kind === "live" || kind === "meeting") return workspaceRoute("recording", null, validMeetingId(route) ? route : null);
@@ -126,30 +147,62 @@ export function samePadRoute(current: WorkspaceRoute, next: WorkspaceRoute): boo
 
 export class WorkspaceNavigation {
   current: WorkspaceRoute;
-  constructor(initial: WorkspaceRoute = workspaceRoute("meetings")) { this.current = { ...initial }; this.recordingWasCurrent = initial.section === "recording"; }
+  constructor(initial: WorkspaceRoute = workspaceRoute("dictation", "home")) {
+    this.current = { ...initial };
+    this.set(initial);
+  }
   private readonly remembered = new Map<WorkspaceSection, WorkspaceRoute>();
   private settingsOrigin: WorkspaceRoute | null = null;
   private recordingWasCurrent = false;
+  private lastTask: WorkspaceTask = "dictation";
+  private dictationContext: WorkspaceRoute = workspaceRoute("dictation", "home");
 
   set(route: WorkspaceRoute): void {
     if (route.section === "recording") this.recordingWasCurrent = true;
     else if (route.section === "meetings") this.recordingWasCurrent = false;
     if (route.section === "settings" && this.current.section !== "settings") this.settingsOrigin = { ...this.current };
     this.current = { ...route };
+    if (route.section !== "settings") this.lastTask = workspaceTask(route);
     if (route.section !== "recording") {
       const remembered = { ...route, jump_ms: null };
       delete remembered.source_target;
       this.remembered.set(route.section, remembered);
+      if (route.section === "dictation" || route.section === "history") this.dictationContext = workspaceRoute(route.section, route.section === "history" ? null : route.tab);
     }
   }
 
   select(section: WorkspaceSection): WorkspaceRoute {
     if (section === "history") return historyRoute();
-    return this.remembered.get(section) ?? (this.current.section === section ? { ...this.current } : workspaceRoute(section, section === "settings" ? "overview" : null));
+    if (section === "dictation") return this.current.section === "dictation" || this.current.section === "history" ? workspaceRoute("dictation", "home") : { ...this.dictationContext };
+    return this.remembered.get(section) ?? (this.current.section === section ? { ...this.current } : workspaceRoute(section, section === "settings" ? "dictation" : null));
   }
 
   settingsBack(): WorkspaceRoute {
-    return this.settingsOrigin ? { ...this.settingsOrigin } : this.select("meetings");
+    return this.settingsOrigin ? { ...this.settingsOrigin } : this.select(this.lastTask);
+  }
+
+  /** Persist navigation only. Source text, one-shot recovery targets and timestamp jumps stay transient. */
+  snapshot(): unknown {
+    const durable = (route: WorkspaceRoute): WorkspaceRoute => workspaceRoute(route.section, route.section === "history" ? null : route.tab, route.meeting_id);
+    return { version: 1, current: durable(this.current), remembered: [...this.remembered.values()].map(durable),
+      settings_origin: this.settingsOrigin ? durable(this.settingsOrigin) : null, last_task: this.lastTask, dictation_context: durable(this.dictationContext) };
+  }
+
+  static restore(value: unknown): WorkspaceNavigation | null {
+    if (!value || typeof value !== "object") return null;
+    const saved = value as Record<string, unknown>;
+    const current = parseWorkspaceRoute(saved.current);
+    if (saved.version !== 1 || !current) return null;
+    const nav = new WorkspaceNavigation();
+    if (Array.isArray(saved.remembered)) for (const value of saved.remembered) {
+      const route = parseWorkspaceRoute(value); if (route) nav.set(route);
+    }
+    nav.set(current);
+    nav.settingsOrigin = parseWorkspaceRoute(saved.settings_origin);
+    nav.lastTask = saved.last_task === "meetings" ? "meetings" : "dictation";
+    const context = parseWorkspaceRoute(saved.dictation_context);
+    if (context?.section === "dictation" || context?.section === "history") nav.dictationContext = context;
+    return nav;
   }
 
   recordingFinished(id: string): void {

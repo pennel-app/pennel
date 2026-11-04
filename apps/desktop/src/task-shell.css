@@ -1,0 +1,47 @@
+/* Task navigation reuses the approved desktop surfaces and control geometry. */
+.dictation-navigation { display: flex; flex-shrink: 0; flex-direction: column; gap: 2px; margin: 2px 0 var(--space-2); padding-left: var(--space-5); }
+.dictation-navigation > button { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--desktop-sidebar-row-height); padding: var(--space-1) var(--space-3); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--foreground); text-align: left; font: 400 var(--font-body)/1.4 var(--chrome-ui); }
+.dictation-navigation > button:hover:not(:disabled) { background: var(--hover); text-decoration: none; }
+.dictation-navigation > button[aria-current="page"] { background: var(--selection); font-weight: 500; }
+.dictation-navigation .ui-icon { width: 16px; height: 16px; color: var(--muted); }
+.library-sidebar[data-workspace-task="dictation"] .library-settings { margin-top: auto; }
+.dictation-search-results { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-2) var(--space-3); }
+.dictation-search-result { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-control); background: transparent; color: var(--foreground); text-align: left; font: inherit; }
+.dictation-search-result:hover { background: var(--hover); }
+.dictation-search-result > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.dictation-search-result > small { font-size: var(--font-caption); font-variant-numeric: tabular-nums; }
+.dictation-home { gap: 0; }
+.dictation-home > * { max-width: 72ch; }
+.dictation-home .dictation-home-shortcut { align-self: flex-start; margin-bottom: var(--space-4); }
+.compact-processing { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: var(--space-3) 0 0; }
+.compact-processing > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 100%; }
+.compact-processing dt { color: var(--muted); font-size: var(--font-caption); }
+.compact-processing dd { margin: 0; color: var(--foreground); font-size: var(--font-label); overflow-wrap: anywhere; }
+.dictation-recent { width: 100%; margin-top: var(--space-6); }
+.dictation-recent > .row { gap: var(--space-3); margin-bottom: var(--space-1); }
+.dictation-recent h2 { margin: 0; font: 500 var(--font-body)/1.4 var(--ui); }
+.recent-dictation { display: flex; align-items: baseline; gap: var(--space-4); width: 100%; min-height: var(--desktop-sidebar-row-height); padding: var(--space-3) 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--foreground); text-align: left; font: 400 var(--font-body)/1.5 var(--ui); }
+.recent-dictation:hover { background: var(--hover); }
+.recent-dictation > span { display: -webkit-box; flex: 1; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-width: 0; overflow: hidden; overflow-wrap: anywhere; }
+.recent-dictation > small { flex-shrink: 0; max-width: 22ch; font-size: var(--font-caption); font-variant-numeric: tabular-nums; }
+.dictation-home .dictation-pad-option { margin-top: var(--space-5); }
+.task-settings-detail { margin: var(--space-5) 0; }
+.task-settings-detail > summary, .task-setup-other-options > summary { min-height: var(--desktop-sidebar-row-height); padding: var(--space-2) 0; color: var(--foreground); font-size: var(--font-body); cursor: pointer; }
+.task-settings-detail > summary:focus-visible, .task-setup-other-options > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-control); }
+.task-settings-detail[open] > summary { margin-bottom: var(--space-3); }
+.settings-task-readiness { margin-bottom: var(--space-6); }
+.settings-task-readiness .settings-task-row { padding: var(--space-3) 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; }
+.settings-task-readiness .settings-task-copy > h3 { font-size: var(--font-body); }
+.settings-task-readiness .settings-task-row:not([data-task-row="llm"]) .settings-task-copy > .help:first-of-type { display: none; }
+.settings-task-readiness .settings-task-selection { margin-top: var(--space-1); font-weight: 400; }
+.settings-task-readiness .settings-task-status { margin-top: 2px; }
+.recommended-speech-setup { margin-bottom: var(--space-4); }
+.recommended-speech-setup > h3 { margin: 0 0 var(--space-3); font-size: var(--font-body); font-weight: 500; }
+.recommended-speech-setup > .help { margin: var(--space-2) 0; }
+.recommended-speech-setup > .btn { margin-top: var(--space-2); }
+.task-setup-other-options { margin: var(--space-4) 0; }
+.task-setup-other-options[open] > .guided-setup { padding-top: var(--space-3); }
+.setup-current-choice { overflow-wrap: anywhere; }
+@media (max-width: 850px) {
+  .recent-dictation { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
+}

@@ -1,13 +1,26 @@
-export type LivePane = "notes" | "transcript" | "questions" | "suggestions";
+export type WritingPane = "notes" | "summary";
+export type CompanionPane = "transcript" | "questions" | "suggestions" | "tools";
+export type LivePane = WritingPane | CompanionPane;
 
 export class LivePaneState {
   selected: LivePane = "notes";
-  companion: Exclude<LivePane, "notes"> = "transcript";
+  primary: WritingPane = "notes";
+  companion: CompanionPane = "transcript";
+  companionOpen = false;
   wide = false;
   ratio = 60;
-  select(pane: LivePane) { this.selected = pane; if (pane !== "notes") this.companion = pane; }
+  select(pane: LivePane) {
+    this.selected = pane;
+    if (pane === "notes" || pane === "summary") this.primary = pane;
+    else { this.companion = pane; this.companionOpen = true; }
+  }
+  closeCompanion() { this.companionOpen = false; this.selected = this.primary; }
+  toggleCompanion(pane: CompanionPane) {
+    if (this.companionOpen && this.companion === pane && (this.wide || this.selected === pane)) this.closeCompanion();
+    else this.select(pane);
+  }
   resize(width: number) { this.wide = width >= 800; }
-  shown(pane: LivePane) { return this.wide ? pane === "notes" || pane === this.companion : pane === this.selected; }
+  shown(pane: LivePane) { return this.wide ? pane === this.primary || this.companionOpen && pane === this.companion : pane === this.selected; }
 }
 
 export function formatSelection(value: string, start: number, end: number, format: "heading" | "bold" | "list" | "task") {

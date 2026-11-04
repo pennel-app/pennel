@@ -756,7 +756,7 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 .workspace-body:has(.settings-workspace) { overflow: visible; border: 0; border-radius: 0; background: transparent; }
 .workspace-body:has(.settings-workspace) > #content { overflow: visible; }
 
-.live-workspace { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 0; min-width: 0; padding: 20px 22px 16px; overflow: hidden; }
+.live-workspace { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 0; min-width: 0; padding: 20px 22px 16px 28px; overflow: hidden; }
 .live-recording-band { flex-shrink: 0; min-width: 0; }
 .live-recording-band .live-title { min-width: 0; width: 100%; font-size: var(--font-display-title); }
 .live-recording-band .recording-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
@@ -844,7 +844,7 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 .live-wide .live-pane-separator { grid-column: 2; grid-row: 1; }
 .live-wide .live-transcript-pane, .live-wide .live-questions-pane, .live-wide .live-suggestions-pane { grid-column: 3; grid-row: 1; }
 .live-wide .live-tabs { align-self: flex-end; width: calc((100% - 28px) * (1 - var(--live-notes-ratio, .6))); min-width: 240px; }
-@media (max-width: 800px) { .live-workspace { padding: 16px; gap: 8px; } }
+@media (max-width: 800px) { .live-workspace { padding: 16px 22px 16px 28px; gap: 8px; } }
 @media (prefers-reduced-motion: reduce) { .live-workspace *, .live-workspace *::before { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
 .settings-layout > .settings-pane { border: 1px solid var(--control-edge); border-radius: var(--radius-panel); }
 .settings-pane, .workspace-body:not(:has(.settings-workspace)) { background: var(--surface); }

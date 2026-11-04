@@ -1,3 +1,4 @@
+import { selectMeetingPane, openMeetingMore } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -10,7 +11,7 @@ export async function checkLiveSourceRaces() {
   const fixture = window.__PENNEL_FIXTURE__;
   await until(() => document.querySelector(".live-workspace"), "Workspace did not mount.");
   const root = document.querySelector(".live-workspace");
-  const select = pane => root.querySelector(`[data-live-tab="${pane}"]`).click();
+  const select = pane => selectMeetingPane(root, pane);
   select("questions");
   const input = root.querySelector(".live-question-input");
   input.value = "Synthetic question for asynchronous source navigation";
@@ -32,7 +33,7 @@ export async function checkLiveSourceRaces() {
     blockHash();
     citation.click();
     await until(() => hashing, "Source validation did not begin.");
-    select("suggestions");
+    await openMeetingMore(root, "meetings.workspace_suggestions");
     release();
     await pause(100);
     assert(!root.querySelector('[data-live-pane="suggestions"]').hidden, "An older source jump overrode the latest pane selection.");

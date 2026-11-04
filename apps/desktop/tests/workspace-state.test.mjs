@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { WorkspaceNavigation, historyEntryId, historyRoute, legacyWorkspaceRoute, parseWorkspaceRoute, routeKey, samePadRoute, windowForSection, windowMode, workspaceRoute } from "../src/workspace-state.ts";
+import { WorkspaceNavigation, historyEntryId, historyRoute, legacyWorkspaceRoute, parseWorkspaceRoute, resumesOtherCapture, routeKey, samePadRoute, settingsCategory, windowForSection, windowMode, workspaceRoute, workspaceTask } from "../src/workspace-state.ts";
 
 test("all product sections and legacy window aliases belong to the main workspace", () => {
   assert.equal(windowForSection("settings"), "workspace");
@@ -18,12 +18,12 @@ test("all product sections and legacy window aliases belong to the main workspac
   assert.deepEqual(new WorkspaceNavigation(workspaceRoute("history")).current, workspaceRoute("history"));
 });
 
-test("primary navigation remembers Pad while generic History never repeats an exact-target request", () => {
+test("primary navigation restores the task context while History never repeats an exact-target request", () => {
   const nav = new WorkspaceNavigation();
   nav.set(workspaceRoute("dictation", "pad"));
   nav.set(historyRoute("a-saved-result"));
   nav.set(workspaceRoute("meetings", null, "a-meeting"));
-  assert.deepEqual(nav.select("dictation"), workspaceRoute("dictation", "pad"));
+  assert.deepEqual(nav.select("dictation"), historyRoute());
   assert.deepEqual(nav.select("history"), workspaceRoute("history"));
   nav.set(workspaceRoute("dictation", "home"));
   nav.set(workspaceRoute("settings", "models"));
@@ -52,7 +52,7 @@ test("a recording finished during Settings updates the return destination withou
   const normal = new WorkspaceNavigation(workspaceRoute("meetings", null, "another-meeting"));
   normal.set(settings); normal.recordingFinished("saved-meeting");
   assert.equal(normal.settingsBack().meeting_id, "another-meeting");
-  assert.deepEqual(new WorkspaceNavigation(settings).settingsBack(), workspaceRoute("meetings"));
+  assert.deepEqual(new WorkspaceNavigation(settings).settingsBack(), workspaceRoute("dictation", "home"));
 });
 
 test("background meeting completion keeps History open and updates the remembered meeting", () => {
@@ -75,11 +75,62 @@ test("legacy windows and settings aliases now land in one workspace", () => {
 });
 
 test("new Settings opens at task readiness while old advanced links stay valid", () => {
-  assert.deepEqual(legacyWorkspaceRoute("settings"), workspaceRoute("settings", "overview"));
+  assert.deepEqual(legacyWorkspaceRoute("settings"), workspaceRoute("settings", "dictation"));
   assert.deepEqual(legacyWorkspaceRoute("settings", "models"), workspaceRoute("settings", "models"));
   assert.deepEqual(parseWorkspaceRoute({ section: "settings", tab: "overview" }), workspaceRoute("settings", "overview"));
-  assert.deepEqual(new WorkspaceNavigation().select("settings"), workspaceRoute("settings", "overview"));
+  assert.deepEqual(new WorkspaceNavigation().select("settings"), workspaceRoute("settings", "dictation"));
   assert.equal(parseWorkspaceRoute({ section: "meetings", meeting_id: "overview" }), null);
+});
+
+test("History belongs to Dictation and recording belongs to Meetings", () => {
+  assert.equal(workspaceTask(historyRoute("legacy-recovery")), "dictation");
+  assert.equal(workspaceTask(workspaceRoute("dictation", "pad")), "dictation");
+  assert.equal(workspaceTask(workspaceRoute("recording")), "meetings");
+});
+
+test("only a verified different active capture may bypass old retained draft persistence", () => {
+  const active = { recording: true, id: "new-meeting", session_id: "new-session" };
+  const route = workspaceRoute("recording", null, active.id);
+  assert.equal(resumesOtherCapture(route, "old-session", active), true);
+  assert.equal(resumesOtherCapture(workspaceRoute("recording"), "old-session", active), true);
+  for (const destination of [workspaceRoute("settings"), workspaceRoute("meetings", null, active.id), workspaceRoute("dictation"), workspaceRoute("recording", null, "other-meeting")]) {
+    assert.equal(resumesOtherCapture(destination, "old-session", active), false);
+  }
+  assert.equal(resumesOtherCapture(route, active.session_id, active), false);
+  assert.equal(resumesOtherCapture(route, null, active), false);
+  assert.equal(resumesOtherCapture(route, "old-session", { ...active, recording: false }), false);
+  assert.equal(resumesOtherCapture(route, "old-session", { ...active, session_id: null }), false);
+  assert.equal(resumesOtherCapture(route, "old-session", { ...active, id: null }), false);
+});
+
+test("five settings categories retain every old setup destination", () => {
+  for (const tab of ["dictation", "dictionary", "styles", "overview", null]) assert.equal(settingsCategory(tab), "dictation");
+  for (const tab of ["meeting-settings", "recording", "meetings"]) assert.equal(settingsCategory(tab), "meeting-settings");
+  for (const tab of ["models", "providers", "local", "advanced"]) assert.equal(settingsCategory(tab), "advanced");
+  assert.equal(settingsCategory("appearance"), "appearance"); assert.equal(settingsCategory("account"), "account");
+});
+
+test("remembered workspace survives a launch with its Settings return and task contexts", () => {
+  const nav = new WorkspaceNavigation(workspaceRoute("dictation", "pad"));
+  nav.set(workspaceRoute("meetings", null, "Chosen meeting", 1234));
+  nav.set(workspaceRoute("dictation", "pad"));
+  nav.set(workspaceRoute("settings", "appearance"));
+  const restored = WorkspaceNavigation.restore(JSON.parse(JSON.stringify(nav.snapshot())));
+  assert.deepEqual(restored.current, workspaceRoute("settings", "appearance"));
+  assert.deepEqual(restored.settingsBack(), workspaceRoute("dictation", "pad"));
+  assert.deepEqual(restored.select("meetings"), workspaceRoute("meetings", null, "Chosen meeting"));
+  assert.deepEqual(restored.select("dictation"), workspaceRoute("dictation", "pad"));
+});
+
+test("persisted navigation excludes source content and one-shot History recovery requests", () => {
+  const nav = new WorkspaceNavigation(workspaceRoute("meetings", null, "Owned meeting", 1234, { kind: "notes", start_ms: null, text: "Private source text" }));
+  nav.set(historyRoute("one-shot-recovery"));
+  const saved = JSON.stringify(nav.snapshot());
+  assert(!saved.includes("Private source text")); assert(!saved.includes("one-shot-recovery"));
+  const restored = WorkspaceNavigation.restore(JSON.parse(saved));
+  assert.deepEqual(restored.current, historyRoute());
+  assert.deepEqual(restored.select("meetings"), workspaceRoute("meetings", null, "Owned meeting"));
+  assert.equal(WorkspaceNavigation.restore({ version: 1, current: { section: "invalid" } }), null);
 });
 
 test("recovery opens a specific History result without putting its id in a meeting path", () => {
@@ -134,8 +185,12 @@ test("the optional Pad has its own route and is remembered across workspace navi
   const pad = workspaceRoute("dictation", "pad");
   assert.equal(samePadRoute(nav.current, pad), false);
   nav.set(pad);
-  nav.set(workspaceRoute("history"));
+  nav.set(workspaceRoute("meetings"));
   assert.deepEqual(nav.select("dictation"), pad);
+  nav.set(pad);
+  assert.deepEqual(nav.select("dictation"), workspaceRoute("dictation", "home"));
+  nav.set(historyRoute("exact-result"));
+  assert.deepEqual(nav.select("dictation"), workspaceRoute("dictation", "home"));
   assert.equal(samePadRoute(pad, workspaceRoute("dictation")), false);
 });
 

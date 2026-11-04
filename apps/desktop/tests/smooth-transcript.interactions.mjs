@@ -7,46 +7,29 @@ async function until(check, message) {
   }
   throw new Error(message);
 }
+function selectPane(name) { const tab = document.querySelector(`[data-live-tab="${name}"]`); if (tab?.getAttribute("aria-selected") !== "true") tab?.click(); }
 function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__ && window.__PENNEL_PLATFORM__, "Transcript checks require the owned synthetic fixture server.");
   return window.__PENNEL_FIXTURE__;
 }
 
 export async function checkTranscriptTabStability() {
-  const fixture = owned();
-  await until(() => document.querySelector('.meeting-detail [data-tab="transcript"]'), "A saved meeting must be open.");
-  const client = window.__PENNEL_PLATFORM__;
-  const original = client.invoke.bind(client);
-  client.invoke = async (command, args) => {
-    const value = await original(command, args);
-    if (command !== "meeting_detail") return value;
-    return { ...value, transcript: Array.from({ length: 50 }, (_, index) => value.transcript.map(segment => ({
-      ...segment, start_ms: segment.start_ms + index * 30_000, end_ms: segment.end_ms + index * 30_000,
-    }))).flat() };
-  };
-  try {
-    const oldArticle = document.querySelector(".meeting-detail");
-    fixture.emit("workspace-navigate", { section: "meetings", tab: null, meeting_id: fixture.options.meeting_id, jump_ms: null });
-    await until(() => document.querySelector(".meeting-detail") !== oldArticle, "The long owned transcript did not mount.");
-    document.querySelector('.meeting-detail [data-tab="transcript"]').click();
-    await until(() => document.querySelectorAll(".meeting-panel .transcript-line").length > 100, "The long transcript did not render.");
-    await settle();
-    const panel = document.querySelector(".meeting-panel");
-    const content = panel.querySelector(".transcript");
-    const rows = [...content.children];
-    panel.scrollTop = Math.min(600, panel.scrollHeight - panel.clientHeight);
-    await settle();
-    const position = panel.scrollTop;
-    assert(position > 0, "The fixture needs a scrollable transcript.");
-    document.querySelector('.meeting-detail [data-tab="notes"]').click();
-    await settle();
-    document.querySelector('.meeting-detail [data-tab="transcript"]').click();
-    await settle();
-    assert(panel.querySelector(".transcript") === content, "Returning to Transcript rebuilt its content root.");
-    assert(rows.every((row, index) => content.children[index] === row), "Returning to Transcript rebuilt rows.");
-    assert(Math.abs(panel.scrollTop - position) <= 1, "Returning to Transcript lost the reading position.");
-    return { rowsRetained: rows.length, readingPositionPreserved: true };
-  } finally { client.invoke = original; }
+  owned();
+  await until(() => document.querySelector('.live-workspace [data-live-tab="transcript"]'), "A saved meeting must be open.");
+  selectPane("transcript");
+  await until(() => document.querySelectorAll(".live-transcript .transcript-line").length > 100, "The long owned transcript did not render.");
+  await settle();
+  const content = document.querySelector(".live-transcript"), rows = [...content.children];
+  content.scrollTop = Math.min(600, content.scrollHeight - content.clientHeight);
+  await settle();
+  const position = content.scrollTop;
+  assert(position > 0, "The fixture needs a scrollable transcript.");
+  selectPane("notes"); await settle();
+  selectPane("transcript"); await settle();
+  assert(document.querySelector(".live-transcript") === content, "Returning to Transcript rebuilt its content root.");
+  assert(rows.every((row, index) => content.children[index] === row), "Returning to Transcript rebuilt rows.");
+  assert(Math.abs(content.scrollTop - position) <= 1, "Returning to Transcript lost the reading position.");
+  return { rowsRetained: rows.length, readingPositionPreserved: true };
 }
 
 export async function checkLiveTranscriptStability() {
@@ -72,7 +55,7 @@ export async function checkLiveTranscriptStability() {
     return snapshot;
   };
   try {
-    document.querySelector('[data-live-tab="transcript"]').click();
+    selectPane("transcript");
     await settle();
     const output = document.querySelector(".live-transcript");
     const content = output;

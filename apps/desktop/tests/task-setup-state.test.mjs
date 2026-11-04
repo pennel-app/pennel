@@ -138,3 +138,18 @@ test("a flushed settings retry clears only its own failure, never a failed crede
   await scope.track(Promise.resolve(), "mutation");
   assert.equal(scope.failure, null);
 });
+
+test("disposing capture-local setup invalidates its view while explicit prerequisite saves still settle", async () => {
+  const scope = new TaskSetupScope();
+  const view = scope.next();
+  let finish;
+  const saved = scope.track(new Promise(resolve => { finish = resolve; }));
+  scope.dispose();
+  assert.equal(scope.current(view), false);
+  assert.equal(scope.busy, true);
+  finish("explicit connection saved");
+  assert.equal(await saved, "explicit connection saved");
+  await scope.settle();
+  assert.equal(scope.busy, false);
+  assert.equal(scope.current(view), false);
+});

@@ -85,6 +85,7 @@ class OnboardingWizard {
   private interfacePicker: ChoiceElement<"system" | "en" | "nl"> | null = null;
   private refreshPracticePresentation: (() => void) | null = null;
   private voiceModels: SpeakerModels | null = null;
+  private speechChoiceSignature: string;
 
   constructor(private readonly ctx: Context) {
     const settings = ctx.info.settings;
@@ -94,6 +95,7 @@ class OnboardingWizard {
     this.preserveProgress = intent.preserveProgress;
     this.permissionRepair = intent.preserveProgress && intent.step === "permissions";
     const choice = this.goal === "meeting" ? settings.meeting_stt : settings.dictation_stt;
+    this.speechChoiceSignature = JSON.stringify(choice);
     const account = settings.providers.find((provider) => provider.id === choice.provider_id);
     this.engine = initialEngine(account?.kind, ctx.info.kinds.find((kind) => kind.kind === "local")?.availability.status !== "unsupported");
     this.language = settings.language ?? "";
@@ -116,7 +118,13 @@ class OnboardingWizard {
     this.progress.append(...onboardingSteps.map(() => h("span")));
     this.root.append(this.progress,
       this.body, this.message, h("footer", { class: "onboarding-footer" }, h("div", { class: "onboarding-footer-left" }, this.theme, this.back, this.skip, this.count), this.next));
-    ctx.onInfoChange(() => { this.updateCommon(); if (this.step === "permissions") void this.refreshPermissions().catch(this.fail); });
+    ctx.onInfoChange(() => {
+      const choice = this.goal === "meeting" ? ctx.info.settings.meeting_stt : ctx.info.settings.dictation_stt;
+      const signature = JSON.stringify(choice);
+      if (this.step === "engine" && signature !== this.speechChoiceSignature) { this.configureGoal(this.goal); this.renderEngineDetail(); }
+      this.speechChoiceSignature = signature;
+      this.updateCommon(); if (this.step === "permissions") void this.refreshPermissions().catch(this.fail);
+    });
     ctx.onFocusChange((focused) => {
       if (this.step === "permissions" && focused) void this.refreshPermissions().catch(this.fail);
       if (this.step === "practice") {
@@ -394,15 +402,15 @@ class OnboardingWizard {
     bindLocalization(language, () => language.setAttribute("aria-label", t("onboarding.language")));
     const choices = h("div", { class: "engine-choices", role: "group", "aria-label": l("onboarding.speech_recognition") });
     this.localButtons.clear();
-    for (const [value, label] of [["local", l("onboarding.local")], ["apple", l("onboarding.apple_dictation")], ["custom", l("onboarding.own_provider")]] as [Engine, string | LocalizedText][]) {
+    for (const [value, label] of [["local", l("onboarding.local")], ["apple", l("onboarding.apple_dictation")], ["cloud", l("settings.setup.source.cloud")], ["custom", l("onboarding.own_provider")]] as [Engine, string | LocalizedText][]) {
       const button = h("button", { class: "engine-choice", "aria-controls": "onboarding-engine-detail", onclick: () => { void this.chooseEngine(value).catch(this.fail); } }, label);
       button.addEventListener("keydown", (event) => {
-        const order: Engine[] = ["local", "apple", "custom"];
+        const order: Engine[] = ["local", "apple", "cloud", "custom"];
         const index = order.indexOf(value);
-        const next = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
+        const next = event.key === "ArrowRight" ? (index + 1) % order.length : event.key === "ArrowLeft" ? (index + order.length - 1) % order.length : event.key === "Home" ? 0 : event.key === "End" ? order.length - 1 : -1;
         if (next >= 0) { event.preventDefault(); const target = order[next]; if (!this.localButtons.get(target)?.disabled) void this.chooseEngine(target).then(() => this.localButtons.get(target)?.focus()).catch(this.fail); }
       });
-      if (value !== "custom") bindLocalization(button, () => { button.title = this.ctx.info.kinds.find((kind) => kind.kind === (value === "local" ? "local" : "apple_speech"))?.availability.reason ?? ""; });
+      if (value !== "custom") bindLocalization(button, () => { button.title = this.ctx.info.kinds.find((kind) => kind.kind === (value === "local" ? "local" : value === "cloud" ? "pennel_cloud" : "apple_speech"))?.availability.reason ?? ""; });
       this.localButtons.set(value, button); choices.append(button);
     }
     const alternatives = h("details", { class: "onboarding-other-options", open: this.showOptions }, h("summary", {}, l("onboarding.other_options")),
@@ -436,14 +444,16 @@ class OnboardingWizard {
       bindLocalization(picker, () => picker.setAttribute("aria-label", t("onboarding.speech_model")));
       picker.disabled = this.models.length === 0;
       this.advancedModel.replaceChildren(h("label", { class: "preference-row" }, l("onboarding.speech_model"), picker));
-      const name = h("div", {}, h("strong", {}, l("onboarding.recommended_setup")),
+      const name = h("div", {}, h("strong", {}, model?.name ?? l("onboarding.recommended_setup")),
         h("small", {}, model ? (downloaded ? liveText(() => formatBytes(model.size_bytes)) : l("onboarding.model_download_size", () => ({ size: formatBytes(model.size_bytes) }))) : l("onboarding.no_local_model")));
       const status = h("span", { class: "engine-model-status", "data-download-state": true });
       const track = h("progress", { class: "engine-download-progress", "aria-label": l("onboarding.download_model"), hidden: !this.downloading });
       const caption = h("div", { class: "engine-download-caption", hidden: !this.downloading }, h("span", { "data-download-caption": true }), h("button", { class: "text-button", onclick: () => {
         void api.cancelDownload(this.localModelId).then(() => { this.downloading = false; this.updateDownload(); this.updateCommon(); }).catch(this.fail);
       } }, l("onboarding.cancel_download")));
-      this.engineDetail.replaceChildren(h("h2", {}, l("onboarding.local_audio_title")), h("p", { class: "engine-description" }, l("onboarding.local_audio_intro")),
+      this.engineDetail.replaceChildren(h("h2", {}, l(model?.recommended ? "settings.setup.recommended_speech" : "settings.setup.source.device")), h("p", { class: "engine-description" }, l("onboarding.local_audio_intro")),
+        ...(model ? [h("p", { class: "help" }, localizeBackendText(model.description))] : []),
+        ...(local?.availability.reason ? [h("p", { class: "help" }, localizeBackendText(local.availability.reason))] : []),
         h("p", { class: "help" }, l(this.goal === "meeting" ? "onboarding.meeting_speech_only" : "onboarding.practice_speech_only")),
         h("div", { class: "engine-model" }, icon("download"), name, status), track, caption,
         ...(this.downloadError ? [h("div", { class: "engine-error", role: "alert" }, h("p", {}, this.ownedStatus(() => this.downloadError ?? "")),
@@ -455,6 +465,10 @@ class OnboardingWizard {
         h("p", { class: "help" }, l(this.goal === "meeting" ? "onboarding.meeting_speech_only" : "onboarding.practice_speech_only")),
         h("div", { class: "engine-model" }, icon("audioLines"), h("div", {}, h("strong", {}, l("onboarding.apple_dictation")), h("small", {}, l("onboarding.apple_available")))),
         ...(apple?.availability.reason ? [h("p", { class: "help" }, this.ownedStatus(() => this.ctx.info.kinds.find((kind) => kind.kind === "apple_speech")?.availability.reason ?? ""))] : []));
+    } else if (this.engine === "cloud") {
+      this.engineDetail.replaceChildren(h("h2", {}, l("settings.setup.source.cloud")), h("p", { class: "engine-description" }, l("settings.setup.source.cloud_help")),
+        h("p", { class: "help" }, l("onboarding.cloud_setup_help")),
+        controlButton({ class: "btn", "data-onboarding-cloud-setup": true, onclick: () => this.ctx.openSetup(this.goal === "meeting" ? "meeting_stt" : "dictation_stt") }, l("onboarding.cloud_setup")));
     } else this.renderProvider();
   }
 
@@ -649,8 +663,14 @@ class OnboardingWizard {
       if ((await api.modelState(model)).kind !== "downloaded") { await this.loadModels(); this.renderEngineDetail(); throw validationError("onboarding.model_download_required"); }
     }
     else if (this.engine === "apple") { account = this.ctx.info.settings.providers.find((item) => item.kind === "apple_speech"); model = this.ctx.info.kinds.find((item) => item.kind === "apple_speech")?.default_stt_model ?? "dictation"; }
+    else if (this.engine === "cloud") {
+      await api.cloudAccount();
+      account = this.ctx.info.settings.providers.find((item) => item.kind === "pennel_cloud");
+      const current = this.goal === "meeting" ? this.ctx.info.settings.meeting_stt : this.ctx.info.settings.dictation_stt;
+      model = current.provider_id === account?.id ? current.model : this.ctx.info.kinds.find((item) => item.kind === "pennel_cloud")?.default_stt_model ?? "auto";
+    }
     else { account = this.customAccount(); model = this.providerModel.trim(); }
-    const kind: ProviderKind = this.engine === "local" ? "local" : this.engine === "apple" ? "apple_speech" : this.customKind()?.kind ?? "open_ai";
+    const kind: ProviderKind = this.engine === "local" ? "local" : this.engine === "apple" ? "apple_speech" : this.engine === "cloud" ? "pennel_cloud" : this.customKind()?.kind ?? "open_ai";
     if (!model) throw validationError("onboarding.model_required");
     const infoKind = this.ctx.info.kinds.find((item) => item.kind === kind);
     if (this.engine === "custom" && ["custom", "ollama", "lm_studio"].includes(kind)) {
@@ -742,6 +762,11 @@ class OnboardingWizard {
       if (model?.state.kind !== "downloaded") label = this.downloading ? t("onboarding.downloading") : this.downloadError ? t("onboarding.retry") : model?.state.kind === "partial" ? t("onboarding.resume_download") : t("onboarding.download_action");
     }
     if (this.step === "engine" && this.engine === "custom") { label = t("onboarding.use_provider"); disabled ||= !this.customKind(); }
+    if (this.step === "engine" && this.engine === "cloud") {
+      const choice = this.goal === "meeting" ? this.ctx.info.settings.meeting_stt : this.ctx.info.settings.dictation_stt;
+      const configured = this.ctx.info.settings.providers.some((item) => item.kind === "pennel_cloud" && item.id === choice.provider_id);
+      disabled ||= !configured;
+    }
     if (this.step === "engine" && this.engine === "apple") {
       const availability = this.ctx.info.kinds.find((kind) => kind.kind === "apple_speech")?.availability;
       disabled ||= !availability || ["unsupported", "unavailable"].includes(availability.status);

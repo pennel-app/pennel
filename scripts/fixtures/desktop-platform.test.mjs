@@ -10,6 +10,45 @@ import { createConversationFixture } from "./meeting-conversations.mjs";
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
 
+test("summary fixtures require current revisions and preserve an edited version for recovery", async () => {
+  const api = fixture("meeting-notes").__PENNEL_PLATFORM__, id = "2026-10-24 0900 Projectoverleg";
+  const before = await api.invoke("meeting_summary", { id });
+  const edited = "## Exact edit\n\nThe owner's **Markdown**.\n";
+  const saved = await api.invoke("save_meeting_summary", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision, markdown: edited });
+  assert.equal(saved.markdown, edited);
+  await assert.rejects(api.invoke("save_meeting_summary", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision, markdown: "stale" }));
+  const history = await api.invoke("meeting_summary_history", { id });
+  assert.equal(history[0].markdown, before.markdown);
+  await api.invoke("set_meeting_notes", { text: "Changed source notes" });
+  await assert.rejects(api.invoke("save_meeting_summary", { id, expectedRevision: saved.revision, expectedSourceRevision: saved.source_revision, markdown: "stale source" }));
+  assert.equal((await api.invoke("meeting_summary", { id })).markdown, edited);
+});
+
+test("shareable preview never falls back to private notes or legacy owner output", async () => {
+  const privateFact = "PRIVATE_NOTE_SENTINEL_7a21";
+  const api = fixture("meeting-notes", { private_notes: privateFact, summary_empty: true }).__PENNEL_PLATFORM__;
+  const id = "2026-10-24 0900 Projectoverleg";
+  assert.equal((await api.invoke("preview_meeting_export", { id, scope: "personal", includeTranscript: false })).markdown, privateFact);
+  await assert.rejects(api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: false }));
+  const owner = await api.invoke("generate_meeting_summary", { id });
+  assert.ok(owner.markdown.includes(privateFact));
+  const safe = await api.invoke("generate_shareable_meeting_summary", { id });
+  assert.equal(safe.markdown.includes(privateFact), false);
+  const preview = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true });
+  assert.equal(preview.markdown.includes(privateFact), false);
+  await api.invoke("set_meeting_notes", { text: "Changed sources" });
+  assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, true);
+  await assert.rejects(api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: false }));
+});
+
+test("new and upgraded synthetic profiles leave automatic summaries unanswered", async () => {
+  const api = fixture("meeting-notes", { configured_text_provider: true }).__PENNEL_PLATFORM__;
+  const info = await api.invoke("app_info");
+  assert.equal(info.settings.summary_automation, "unanswered");
+  await api.invoke("save_settings", { settings: { ...info.settings, summary_automation: "manual" } });
+  assert.equal((await api.invoke("app_info")).settings.summary_automation, "manual");
+});
+
 test("accepted review export retains provenance while note staging keeps the exact edit", async () => {
   const context = fixture("insights-review-flow");
   const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
@@ -873,4 +912,15 @@ test("an explicitly named synthetic fixture profile retains language after reope
   assert.equal(after.system_interface_language, "nl");
   assert.equal(after.settings.ui_language, "en");
   assert.equal(after.settings.language, "nl");
+});
+
+test("saved library note writes persist by meeting without replacing active recording notes", async () => {
+  const api = fixture("native-navigation-interaction").__PENNEL_PLATFORM__;
+  const activeId = "2026-10-24 0900 Projectoverleg";
+  const savedId = "2026-10-14 1400 Klantgesprek Studio Noord";
+  const activeBefore = await api.invoke("meeting_detail", {id: activeId});
+  const written = "Owned saved-meeting Markdown.\nIt must survive reading the document again.";
+  await api.invoke("save_meeting_notes", {id: savedId, text: written});
+  assert.equal((await api.invoke("meeting_detail", {id: savedId})).notes, written);
+  assert.equal((await api.invoke("meeting_detail", {id: activeId})).notes, activeBefore.notes);
 });

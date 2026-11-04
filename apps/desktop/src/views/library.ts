@@ -1,4 +1,4 @@
-import { bindLocalization, getInterfaceLanguage, l, t, formatNumber } from "../i18n.ts";
+import { bindLocalization, getInterfaceLanguage, l, t, formatNumber, formatDateTime } from "../i18n.ts";
 import { api, type AppInfo, type MeetingInfo, type MeetingRuntimeStatus, type Passage } from "../api";
 import { LatestRequest, SerialQueue } from "../async";
 import { textField, askText, confirmDialog, h, showPopupMenu, snippet, type PopupMenuItem } from "../dom";
@@ -6,7 +6,9 @@ import { meetingDate, dayGroup } from "../meeting-labels.ts";
 export { meetingDate, dayGroup } from "../meeting-labels.ts";
 import { icon } from "../icons";
 import { badgeFor, resolveOpenMeeting, syncActive, type SyncItemState } from "../sync-badge";
-import { workspaceRoute, type WorkspaceRoute } from "../workspace-state";
+import { historyRoute, workspaceRoute, workspaceTask, type WorkspaceRoute, type WorkspaceTask } from "../workspace-state";
+import { TaskSearchQueries } from "../workspace-search-state";
+import { matchingDictations } from "../dictation-home-state";
 import { recordingEntry } from "../voice-flow-state";
 import { ListTypeahead, listKeyIndex, reconcileChildren } from "../library-list.ts";
 
@@ -44,6 +46,10 @@ export class LibrarySidebar {
   private readonly liveState: HTMLElement;
   private readonly liveSymbol: HTMLElement;
   private readonly list: HTMLElement;
+  private readonly dictationNavigation: HTMLElement;
+  private readonly dictationResults: HTMLElement;
+  private task: WorkspaceTask;
+  private readonly queries: TaskSearchQueries;
   private readonly requests = new LatestRequest();
   private readonly syncQueue = new SerialQueue();
   private readonly typeahead = new ListTypeahead();
@@ -69,10 +75,13 @@ export class LibrarySidebar {
   private unsubscribe: (() => void) | null = null;
 
   constructor(private readonly host: LibraryHost) {
+    this.task = workspaceTask(host.current());
+    this.queries = new TaskSearchQueries(this.task);
     const select = (section: WorkspaceRoute["section"]) => host.select ? host.select(section) : host.go(workspaceRoute(section));
     this.search = textField({ type: "search", placeholder: l("common.search"), "aria-label": l("meetings.search_label"), spellcheck: false });
     this.search.addEventListener("input", () => {
       this.query = this.search.value;
+      this.queries.set(this.query);
       window.clearTimeout(this.searchTimer);
       this.searchTimer = window.setTimeout(() => { void this.invalidate().catch(host.report); }, 180);
     });
@@ -84,15 +93,21 @@ export class LibrarySidebar {
     this.list = h("div", { class: "meeting-list", role: "list" });
     this.list.addEventListener("keydown", (event) => this.listKeydown(event));
     this.list.addEventListener("focusin", () => this.highlight());
+    this.dictationNavigation = h("nav", { class: "dictation-navigation", "aria-label": l("navigation.dictation") },
+      h("button", { class: "text-button", "data-workspace-section": "history", onclick: () => select("history") }, icon("history"), l("dictation.history.title")),
+      h("button", { class: "text-button", "data-dictation-section": "pad", onclick: () => host.go(workspaceRoute("dictation", "pad")) }, l("dictation.home.open_pad")));
+    this.dictationResults = h("div", { class: "dictation-search-results", role: "list", hidden: true });
     this.element = h("aside", { class: "library-sidebar", "aria-label": l("meetings.library_label") },
       h("div", { class: "library-actions" }, this.live),
       h("div", { class: "library-shortcuts" },
         h("button", { class: "text-button", "data-workspace-section": "dictation", onclick: () => select("dictation") }, icon("mic"), l("meetings.open_dictation")),
-        h("button", { class: "text-button", "data-workspace-section": "meetings", onclick: () => select("meetings") }, icon("notebook"), l("navigation.meetings")),
-        h("button", { class: "text-button", "data-workspace-section": "history", onclick: () => select("history") }, icon("history"), l("meetings.open_history"))),
-      h("div", { class: "library-search" }, h("div", { class: "library-search-control" }, icon("search"), this.search)), this.ask, this.list,
+        this.dictationNavigation,
+        h("button", { class: "text-button", "data-workspace-section": "meetings", onclick: () => select("meetings") }, icon("notebook"), l("navigation.meetings"))),
+      h("div", { class: "library-search" }, h("div", { class: "library-search-control" }, icon("search"), this.search)), this.ask, this.list, this.dictationResults,
       h("button", { class: "text-button library-settings", onclick: () => host.go(workspaceRoute("settings")) }, icon("settings"), l("common.settings")));
     bindLocalization(this.live, () => { if (this.status) this.showLive(this.status); });
+    bindLocalization(this.search, () => this.syncTask());
+    bindLocalization(this.dictationResults, () => { if (this.task === "dictation" && this.query.trim()) void this.invalidate().catch(this.host.report); });
     bindLocalization(this.list, () => { if (!this.disposed) this.draw(this.shown, this.passages, this.query.trim()); });
     void api.onSyncChanged((report) => {
       if (this.disposed) return;
@@ -104,6 +119,30 @@ export class LibrarySidebar {
         await this.invalidate();
       }).catch(this.host.report);
     }).then((unsubscribe) => { if (this.disposed) unsubscribe(); else this.unsubscribe = unsubscribe; }).catch(() => undefined);
+    this.syncTask();
+  }
+
+  focusSearch(): void { this.syncTask(); this.search.focus(); this.search.select(); }
+
+  private syncTask(): void {
+    const task = workspaceTask(this.host.current());
+    if (task !== this.task) {
+      this.task = task;
+      this.query = this.queries.select(task);
+      this.search.value = this.query;
+      this.requests.cancel(); this.closeMenu(); this.dirty = true;
+      window.clearTimeout(this.searchTimer);
+      if (this.started && this.visible) void this.refresh().catch(this.host.report);
+    }
+    this.element.dataset.workspaceTask = task;
+    this.dictationNavigation.hidden = task !== "dictation";
+    this.dictationResults.hidden = task !== "dictation" || !this.query.trim();
+    this.ask.hidden = task !== "meetings";
+    this.list.hidden = task !== "meetings";
+    const searchLabel = t(task === "dictation" ? "dictation.history.search" : "meetings.search_label");
+    this.search.placeholder = searchLabel;
+    this.search.setAttribute("aria-label", searchLabel);
+    if (this.status) this.showLive(this.status); else this.live.hidden = task !== "meetings";
   }
 
   async start() {
@@ -148,6 +187,21 @@ export class LibrarySidebar {
     while (this.dirty && this.visible && !this.disposed) {
       this.dirty = false;
       const query = this.query.trim();
+      const task = this.task;
+      if (task === "dictation") {
+        await this.requests.run(async () => ({ entries: query ? await api.history(200) : [], status: await api.meetingRuntimeStatus() }), ({ entries, status }) => {
+          if (task !== this.task || query !== this.query.trim()) { this.dirty = true; return; }
+          this.showLive(status);
+          const matches = matchingDictations(entries, query);
+          this.dictationResults.hidden = !query;
+          this.dictationResults.replaceChildren(...matches.map((entry) => h("div", { role: "listitem" },
+            h("button", { class: "dictation-search-result", "data-history-result": entry.id, onclick: () => this.host.go(historyRoute(entry.id)) },
+              h("span", {}, entry.text || entry.raw), h("small", { class: "help" }, formatDateTime(entry.created_at_ms, { dateStyle: "medium", timeStyle: "short" }))))),
+            ...(query && !matches.length ? [h("p", { class: "library-empty help", role: "status" }, l("dictation.history.none_found"))] : []));
+          this.highlight();
+        }, this.host.report);
+        continue;
+      }
       const route = this.host.current();
       const open = route.section === "meetings" ? route.meeting_id : null;
       const remembered = this.shown.find((meeting) => meeting.id === open) ?? null;
@@ -188,9 +242,14 @@ export class LibrarySidebar {
   }
 
   highlight() {
+    this.syncTask();
     const route = this.pendingRoute ?? this.host.current();
     for (const button of this.element.querySelectorAll<HTMLButtonElement>("[data-workspace-section]")) {
-      if (button.dataset.workspaceSection === route.section) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+      const current = button.dataset.workspaceSection === "dictation" ? workspaceTask(route) === "dictation" : button.dataset.workspaceSection === "meetings" ? workspaceTask(route) === "meetings" : button.dataset.workspaceSection === route.section;
+      if (current) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+    }
+    for (const button of this.dictationNavigation.querySelectorAll<HTMLButtonElement>("[data-dictation-section]")) {
+      if (route.section === "dictation" && button.dataset.dictationSection === (route.tab === "pad" ? "pad" : "home")) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     }
     const chat = route.section === "meetings" && route.tab === "chat";
     this.ask.toggleAttribute("aria-current", chat);
@@ -219,6 +278,7 @@ export class LibrarySidebar {
     if (this.liveTitle.textContent !== label) this.liveTitle.textContent = label;
     this.liveState.hidden = entry.kind !== "finishing";
     this.live.disabled = this.openingRecording;
+    this.live.hidden = entry.kind === "new" && this.task !== "meetings";
     this.live.title = entry.kind === "new" ? "" : status.title ?? "";
   }
 

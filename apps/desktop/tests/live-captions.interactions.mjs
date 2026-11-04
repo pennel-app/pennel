@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -12,7 +13,7 @@ function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic fixture.");
   return window.__PENNEL_FIXTURE__;
 }
-function tab(root, name) { root.querySelector(`[data-live-tab="${name}"]`).click(); }
+function tab(root, name) { selectMeetingPane(root, name); }
 
 export async function checkLiveCaptions() {
   const fixture = owned();
@@ -26,6 +27,7 @@ export async function checkLiveCaptions() {
   assert(microphone && system, "Both physical source caption lines must exist.");
   edit(note, "# Synthetic meeting notes\n\nA saved note for the question.\n".repeat(8));
   await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
+  tab(root, "transcript");
   fixture.workspace.preview("me", { text: "Provisional microphone sentinel", chunk_start_ms: 21000, start_ms: 21000, end_ms: 24000 });
   fixture.workspace.preview("others", { text: "Provisional system sentinel", chunk_start_ms: 21000, start_ms: 21000, end_ms: 24000 });
   await until(() => microphone.textContent.includes("microphone sentinel") && system.textContent.includes("system sentinel"), "Both live source previews did not render.");
@@ -90,6 +92,7 @@ export async function checkLiveCaptionStates() {
   const fixture = owned();
   await until(() => document.querySelector(".live-captions"), "The live captions did not mount.");
   const root = document.querySelector(".live-workspace");
+  tab(root, "transcript");
   for (const state of ["warming", "busy", "failed", "disabled", "unsupported"]) {
     fixture.workspace.preview("me", { state, mode: state === "unsupported" ? "after_recording" : "local", text: "" });
     await until(() => root.querySelector('[data-caption-source="me"]').dataset.previewState === state, `The ${state} caption status did not render.`);

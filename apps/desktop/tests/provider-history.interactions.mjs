@@ -25,6 +25,7 @@ export async function checkProviderHistoryUI() {
   };
   const { historyView } = await import("/src/views/history.ts");
   const { modelsView } = await import("/src/views/models.ts");
+  const { settingsTaskRows } = await import("/src/views/setup.ts");
   const { localView } = await import("/src/views/local.ts");
   const { onboardingView } = await import("/src/views/onboarding.ts");
   const { t } = await import("/src/i18n.ts");
@@ -86,12 +87,17 @@ export async function checkProviderHistoryUI() {
 
     info.keys.groq = true;
     const settingsBefore = JSON.stringify(info.settings);
-    await mount(modelsView); await settle();
-    assert(target.querySelectorAll('button[data-setup-task]').length === 3, "Models does not expose all three task-specific setup actions.");
+    await mount(context => settingsTaskRows(context, ["dictation_stt", "llm"])); await settle();
+    assert(target.querySelectorAll('button[data-setup-task]').length === 2 && target.querySelector('[data-setup-task="dictation_stt"]'), "Dictation settings must expose its speech recognition and shared text setup.");
     assert(textSection().textContent.includes(providerDestination(info.settings.providers.find(account => account.id === info.settings.llm.provider_id))), "The text processing summary omits its selected destination.");
+    await mount(context => settingsTaskRows(context, ["meeting_stt", "llm"])); await settle();
+    assert(target.querySelectorAll('button[data-setup-task]').length === 2 && target.querySelector('[data-setup-task="meeting_stt"]'), "Meetings settings must expose transcription and shared text setup.");
+    assert(textSection().textContent.includes(providerDestination(info.settings.providers.find(account => account.id === info.settings.llm.provider_id))), "Meeting text setup omits its selected destination.");
+    await mount(modelsView); await settle();
+    assert(target.querySelectorAll('button[data-setup-task]').length === 0, "Advanced Models duplicates the everyday task setup overview.");
     assert(!operations.some(operation => ["test_provider_task", "test_provider_task_choice"].includes(operation.command)), "Opening the model overview ran a sample automatically.");
     assert(JSON.stringify(info.settings) === settingsBefore, "Opening the model overview changed the saved settings.");
-    results.push("Models summarizes all three tasks and their destination without testing or changing settings.");
+    results.push("Each task exposes its speech and shared text destination without testing or changing settings; Advanced Models does not duplicate task setup.");
 
     const models = await original("local_models", {});
     const modelId = models[0].id;

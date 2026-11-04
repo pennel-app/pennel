@@ -1,3 +1,5 @@
+import { openMeetingTool } from "./meeting-test-controls.mjs";
+
 const assert = (value, message) => { if (!value) throw Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -22,11 +24,28 @@ async function owned() {
 }
 async function open(control = ".people-manage") {
   await until(() => document.querySelector(control), "Participant controls did not mount.");
+  if (document.querySelector(".live-workspace") && !document.querySelector(control).getClientRects().length) {
+    await openMeetingTool("meetings.workspace_people");
+  }
   const disclosure = document.querySelector(control).closest("details");
   if (disclosure && !disclosure.open) disclosure.querySelector("summary").click();
+  document.querySelector(control).scrollIntoView({ block: "nearest" });
+  assert(document.querySelector(control).getClientRects().length > 0, "Participant control is hidden from the user.");
+  document.querySelector(control).focus();
   document.querySelector(control).click();
   await until(() => document.querySelector(".people-picker .people-choice"), "Participant choices did not load.");
   return document.querySelector(".people-picker");
+}
+
+export async function prepareRememberVoiceDialog() {
+  const { fixture, t } = await owned();
+  await openMeetingTool("meetings.workspace_speaker_controls");
+  await until(() => [...document.querySelectorAll(".meeting-voice-row button")].some(button => button.textContent.trim() === t("people.remember") && !button.disabled), "The available remember-voice action did not load.");
+  const button = [...document.querySelectorAll(".meeting-voice-row button")].find(button => button.textContent.trim() === t("people.remember") && !button.disabled);
+  button.scrollIntoView({ block: "nearest" }); button.focus(); button.click();
+  await until(() => document.querySelector("dialog[open] form input"), "Remembering a voice did not ask for a reviewable name.");
+  assert(!fixture.calls.includes("remember_speaker"), "Opening the name dialog already changed a remembered voice.");
+  return accepted({ explicitRememberDialog: true, noSubmission: true, syntheticOnly: true });
 }
 async function noteEditor() {
   tab("notes");
@@ -306,7 +325,7 @@ export async function checkPeopleDelayedNavigation() {
   fixture.people.releaseInserts();
   await until(() => !dialog.isConnected, "An obsolete insertion dialog remained after acknowledging its owner.");
   fixture.emit("workspace-navigate", { section: "meetings", tab: null, meeting_id: id, jump_ms: null });
-  await until(() => document.querySelector(".meeting-detail"), "The original meeting did not reopen.");
+  await until(() => document.querySelector(".live-workspace")?.dataset.meetingId === id, "The original meeting did not reopen.");
   const editor = await noteEditor();
   assert(editor.value === expected, "Remounting the original editor lost its delayed durable mention.");
   const next = `${expected}\nAn edit after returning.`; editor.focus(); edit(editor, next);

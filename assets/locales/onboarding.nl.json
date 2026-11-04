@@ -17,7 +17,7 @@
   "onboarding.language_german": "Duits",
   "onboarding.language": "Spraaktaal",
   "onboarding.speech_recognition": "Spraakherkenning",
-  "onboarding.local": "Lokaal",
+  "onboarding.local": "Op deze computer",
   "onboarding.apple_dictation": "Apple-dicteren",
   "onboarding.own_provider": "Eigen provider",
   "onboarding.engine_title": "Begin met je stem.",
@@ -128,5 +128,7 @@
   "onboarding.meeting_ready_help": "Je transcript en notities blijven bij dezelfde meeting. Samenvattingen kun je achteraf instellen.",
   "onboarding.check_setup": "Controleer instellingen",
   "onboarding.open_recording": "Verder naar opnemen",
-  "onboarding.open_dictation": "Open dicteren"
+  "onboarding.open_dictation": "Open dicteren",
+  "onboarding.cloud_setup": "Pennel Cloud instellen",
+  "onboarding.cloud_setup_help": "Kies Pennel Cloud onder Andere opties in de spraakinstellingen, meld je aan en gebruik die instelling. Je huidige taak verandert pas wanneer je de keuze toepast."
 }

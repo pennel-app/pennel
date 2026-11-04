@@ -1,4 +1,5 @@
 /** Run only in the owned loopback fixture server; no native windows or user data are used. */
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 function ownedFixture() {
   if (!/^(127\.0\.0\.1|localhost)$/.test(location.hostname) || !window.__PENNEL_FIXTURE__ || !window.__PENNEL_PLATFORM__) {
     throw new Error("Unified workspace checks require the owned synthetic fixture server.");
@@ -45,7 +46,7 @@ function observeCommands() {
   return { operations, restore: () => { client.invoke = original; } };
 }
 function section(name) {
-  return document.querySelector(`.library-shortcuts [data-workspace-section="${name}"]`);
+  return document.querySelector(`.library-sidebar [data-workspace-section="${name}"]`);
 }
 function assertMain(owner, operations) {
   assert(document === owner && document.body.dataset.window === "workspace", "A product section changed its owning window.");
@@ -62,19 +63,19 @@ async function showPad() {
 export async function checkUnifiedWorkspaceFlow() {
   const fixture = ownedFixture();
   const { api } = await import("/src/api.ts");
-  await until(() => document.querySelector(".meeting-detail"), "Use the saved meeting-notes fixture.");
+  await until(() => document.querySelector(".live-workspace"), "Use the saved meeting-notes fixture.");
   const owner = document;
   const id = fixture.options.meeting_id;
   const beforeMeeting = await api.meetingDetail(id);
   const beforePad = await api.padText();
-  const originalTitle = document.querySelector(".meeting-detail h1").textContent;
+  const originalTitle = document.querySelector(".live-workspace .live-title").value;
   const observed = observeCommands();
   try {
-    for (const name of ["dictation", "meetings", "history"]) assert(visible(section(name)), `The ${name} section is not discoverable.`);
-    const own = document.querySelector(".own-notes");
-    own.open = true; await settle();
+    for (const name of ["dictation", "meetings"]) assert(visible(section(name)), `The ${name} section is not discoverable.`);
+    assert(!visible(section("history")), "History must stay nested under Dictation.");
+    selectMeetingPane(document.querySelector(".live-workspace"), "notes"); await settle();
     const meetingNote = "Owned meeting draft during unified navigation. This is synthetic text.";
-    edit(own.querySelector("textarea"), meetingNote);
+    edit(document.querySelector(".live-notes"), meetingNote);
 
     const pad = await showPad();
     const padText = "Owned draft in the unified Pennel pad.\nThis text must survive section switches.";
@@ -91,7 +92,7 @@ export async function checkUnifiedWorkspaceFlow() {
     await until(() => document.querySelector(".history-target")?.contains(document.activeElement), "Exact History recovery did not reveal the retained result.");
     const copied = document.querySelector('.history-target [data-history-action="copy"]');
     assert(copied, "The retained result has no copy action."); copied.focus(); await settle();
-    click(section("dictation"));
+    click(document.querySelector('[data-dictation-section="pad"]'));
     await until(() => document.querySelector("textarea.dictation-pad"), "History could not return to the saved pad.");
     click(section("history"));
     await until(() => document.querySelector('.history-selected[aria-current="true"]')?.dataset.historyId === target.id, "Returning to History lost the selected result.");
@@ -103,10 +104,12 @@ export async function checkUnifiedWorkspaceFlow() {
     await until(() => document.querySelector(".history-target")?.dataset.historyId === other.id, "A fresh recovery target did not override remembered History selection.");
 
     click(section("meetings"));
-    await until(() => document.querySelector(".meeting-detail h1")?.textContent === originalTitle, "Meetings did not restore the previous meeting.");
-    assert(document.querySelector(".own-notes textarea").value === meetingNote, "Returning to Meetings lost the personal note.");
+    await until(() => document.querySelector(".live-workspace .live-title")?.value === originalTitle, "Meetings did not restore the previous meeting.");
+    assert(document.querySelector(".live-notes").value === meetingNote, "Returning to Meetings lost the personal note.");
     click(section("dictation"));
-    await until(() => document.querySelector("textarea.dictation-pad"), "Returning to Dictation forgot the pad surface.");
+    await until(() => document.querySelector(".history-view"), "Returning to Dictation forgot its last History surface.");
+    click(document.querySelector('[data-dictation-section="pad"]'));
+    await until(() => document.querySelector("textarea.dictation-pad"), "Write in Pennel did not restore the existing pad.");
     assert(document.querySelector("textarea.dictation-pad").value === padText, "Returning to Dictation lost its draft.");
     assert(section("dictation").getAttribute("aria-current") === "page", "The active Dictation section has no navigation state.");
 
@@ -194,7 +197,7 @@ export async function checkUnifiedPadNavigationGuard() {
     await until(async () => (await api.getDictationSession(sessionId)).phase === "idle", "Explicit cancellation did not finish the owned session.");
     click(section("history"));
     await until(() => document.querySelector(".history-view"), "The pad stayed trapped after explicit cancellation.");
-    click(section("dictation"));
+    click(document.querySelector('[data-dictation-section="pad"]'));
     await until(() => document.querySelector("textarea.dictation-pad:not(:disabled)"), "The saved pad did not reopen after cancellation.");
     assert(document.querySelector("textarea.dictation-pad").value === text, "Guarded navigation lost the previously typed draft.");
     assertMain(owner, observed.operations);

@@ -30,8 +30,8 @@ export async function checkEnglishTemplateDefaults() {
     return command === "meeting_templates" ? [...result, { id: "qa-custom", name: customName, builtin: false, customized: false }] : result;
   };
   try {
-    document.querySelector('[data-settings-category="overview"]').click();
-    await until(() => document.querySelector('[data-settings-category="overview"][aria-current="page"]') && !document.querySelector('#content').inert && !document.querySelector('.template-row, .model-card'), "Overview did not open.");
+    document.querySelector('[data-settings-category="dictation"]').click();
+    await until(() => document.querySelector('[data-settings-category="dictation"][aria-current="page"]') && !document.querySelector('#content').inert && !document.querySelector('.template-row, .model-card'), "Dictation settings did not open.");
     document.querySelector('[data-settings-category="meeting-settings"]').click();
     await until(() => [...document.querySelectorAll(".template-row")].some(row => row.textContent.includes(customName)), "Templates did not finish mounting.");
     assert([...document.querySelectorAll(".template-row")].some(row => row.querySelector(".grow")?.textContent === t("settings.template.general")), "The built-in template did not use the interface language.");
@@ -73,9 +73,10 @@ export async function checkEnglishModelMetadata() {
     makeModel("qa-vendor", vendorName, "Vendor description"),
   ] : original(command, args);
   try {
-    document.querySelector('[data-settings-category="overview"]').click();
-    await until(() => document.querySelector('[data-settings-category="overview"][aria-current="page"]') && !document.querySelector('#content').inert && !document.querySelector('.template-row, .model-card'), "Overview did not open.");
-    document.querySelector('[data-settings-category="providers"]').click();
+    document.querySelector('[data-settings-category="dictation"]').click();
+    await until(() => document.querySelector('[data-settings-category="dictation"][aria-current="page"]') && !document.querySelector('#content').inert && !document.querySelector('.template-row, .model-card'), "Dictation settings did not open.");
+    fixture.emit("workspace-navigate", { section: "settings", tab: "local", meeting_id: null, jump_ms: null });
+    await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]') && document.querySelector('[data-settings-detail="providers"][open]'), "Advanced local connections did not open.");
     await until(() => [...document.querySelectorAll(".model-card strong")].some(label => label.textContent.includes("Sortformer")), "Model cards did not finish mounting.");
     const label = [...document.querySelectorAll(".model-card strong")].find(label => label.textContent.includes("Sortformer"));
     const expected = language => language === "nl" ? "Sortformer (sprekers)" : "Sortformer (speakers)";

@@ -14,7 +14,10 @@ async function choose(root, key) {
   [...document.querySelectorAll('[role="option"]')].find(option => option.textContent === t(key)).click();
   await pause(50);
 }
-function tab(name) { document.querySelector(`.detail-tabs [data-tab="${name}"]`)?.click(); }
+function tab(name) {
+  const button = document.querySelector(`[data-live-tab="${name === "ask" ? "questions" : name === "insights" ? "suggestions" : name}"]`) || document.querySelector(`.detail-tabs [data-tab="${name}"]`);
+  if (button?.getAttribute("aria-selected") !== "true") button?.click();
+}
 
 export async function checkInsightReview() {
   const { fixture, root, api } = await owned();
@@ -40,9 +43,9 @@ export async function checkInsightReview() {
   root.querySelector(".insight-dismissed-toggle").click();
   await until(() => root.querySelector(`[data-insight-id="${initial.items[1].id}"]`), "Dismissed proposals could not be reviewed again.");
   first.querySelector(".insight-source-open").click();
-  await until(() => document.querySelector(".meeting-detail .source-highlight"), "The exact transcript source was not revealed.");
+  await until(() => document.querySelector(".live-workspace .live-source-highlight, .meeting-detail .source-highlight"), "The exact transcript source was not revealed.");
   assert(getSelection().toString() === initial.items[0].sources[0].quote, "Source selection did not use the exact quote bytes.");
-  document.querySelector(".insight-source-back").click();
+  document.querySelector(".live-source-back:not([hidden]), .insight-source-back").click();
   await until(() => root.isConnected, "Source return lost the review workspace.");
   first.querySelector(".insight-add-notes").click();
   await until(() => fixture.workspace.notes().includes(revised), "The explicit accepted item did not enter ordinary notes saving.");
@@ -83,11 +86,11 @@ export async function checkInsightNoteFailure() {
   first.querySelector(".insight-accept").click(); await until(async () => (await store(api)).items[0].review_state === "accepted", "Acceptance failed.");
   fixture.workspace.failSaves(true); const previous = fixture.workspace.notes();
   first.querySelector(".insight-add-notes").click();
-  await until(() => document.querySelector(".own-notes textarea")?.value.includes(initial.items[0].text), "A failed note write did not retain the inserted draft.");
+  await until(() => document.querySelector(".live-notes")?.value.includes(initial.items[0].text), "A failed note write did not retain the inserted draft.");
   await until(() => !root.querySelector(".insight-error").hidden, "A failed insertion save had no explanation.");
-  assert(!document.querySelector(".own-notes .insight-note-save-error").hidden, "The current notes pane hid its failed-save recovery.");
+  assert(!document.querySelector(".live-save-error").hidden, "The current notes pane hid its failed-save recovery.");
   assert(fixture.workspace.notes() === previous, "A failed save was reported as durable.");
-  const note = document.querySelector(".own-notes textarea"), retained = note.value;
+  const note = document.querySelector(".live-notes"), retained = note.value;
   fixture.workspace.failSaves(false); note.focus(); note.dispatchEvent(new FocusEvent("blur", { bubbles: false }));
   await until(() => fixture.workspace.notes() === retained, "The ordinary notes writer could not acknowledge the retained insertion.");
   tab("insights"); await until(async () => (await store(api)).insertion_receipts[0]?.state === "acknowledged", "The original insertion receipt was not acknowledged.");
@@ -101,8 +104,8 @@ export async function checkInsightInsertionRace() {
   first.querySelector(".insight-accept").click(); await until(async () => (await store(api)).items[0].review_state === "accepted", "Acceptance failed.");
   first.querySelector(".insight-add-notes").click();
   await until(() => fixture.calls.includes("prepare_insight_insertion"), "The insertion was not prepared.");
-  tab("notes"); const disclosure = document.querySelector(".own-notes"); disclosure.open = true;
-  const note = disclosure.querySelector("textarea"), userText = "Private notes typed while insertion was preparing.";
+  tab("notes");
+  const note = document.querySelector(".live-notes"), userText = "Private notes typed while insertion was preparing.";
   note.focus(); edit(note, userText); note.setSelectionRange(3, 12, "backward");
   await until(() => !root.querySelector(".insight-error").hidden, "Concurrent typing did not stop stale insertion.");
   assert(note.value === userText && note.selectionStart === 3 && note.selectionEnd === 12, "Insertion overwrote current text or selection.");
