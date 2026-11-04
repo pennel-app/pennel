@@ -1,0 +1,1 @@
+Synthetic documentation qualification input. No runtime behavior or dependency change.
