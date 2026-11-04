@@ -1,0 +1,1 @@
+Synthetic desktop qualification input. No runtime behavior or dependency change.
