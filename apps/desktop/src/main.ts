@@ -972,3 +972,5 @@ void boot().catch((error: unknown) => {
     h("p", { class: "help" }, errorText(error)),
     controlButton({ onclick: () => location.reload() }, l("common.retry"))));
 });
+
+// CI qualification: synthetic source edit; no runtime behavior change.
