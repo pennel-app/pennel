@@ -16,6 +16,8 @@ Each launch and scenario has its own synthetic profile, including app presentati
 
 Reset retains one content-free generation marker so older tabs cannot recreate cleared work. Reload an older tab before using it again. Unsaved History recovery remains process-local, matching the product; completed saved results survive a synthetic profile reload.
 
+The primary Try it here action opens a local owned practice window, as the desktop app does. Practice completes only into that window's editable field and preserves the parent's pad. The launcher also prints a standalone practice starting state. Permission repair uses the corresponding local onboarding window; Settings and exact History returns stay inside the main workspace.
+
 ## One decision per session
 
 Present one task goal at a time, without naming the route or control that solves it. Ask what the owner expects when an observed hesitation needs explanation. Record assistance explicitly. Owner familiarity is not evidence about first-time nontechnical users.

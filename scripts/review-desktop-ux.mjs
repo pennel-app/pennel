@@ -16,6 +16,7 @@ export const reviewFlows = {
       scenario("owner-review-navigation", "Everyday work", "dictation"),
       scenario("owner-review-recording", "An active meeting", "recording"),
       scenario("owner-review-history-recovery", "A retained dictation", "history", { window: "history" }),
+      { name: "owner-review-practice", label: "Owned voice practice", route: { window: "onboarding", tab: "practice" } },
     ],
     tasks: [
       { en: "Prepare an editable voice-written draft, find an earlier result, then continue your draft.", nl: "Maak een bewerkbaar concept met je stem, zoek een eerder resultaat en ga daarna verder met je concept." },

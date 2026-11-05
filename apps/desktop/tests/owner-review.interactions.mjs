@@ -98,9 +98,10 @@ export async function showShareableTranscriptForCapture() {
 export async function checkOwnerReviewReloadAndReset() {
   await owned();
   const frames = [], profile = `${new URL(location.href).searchParams.get("profile")}-target`;
-  const open = async () => {
+  const open = async (onboarding = false) => {
     const url = new URL(location.href);
-    url.searchParams.set("qa", "owner-review-setup-new"); url.searchParams.set("window", "onboarding"); url.searchParams.set("profile", profile);
+    url.searchParams.set("qa", onboarding ? "owner-review-setup-new" : "owner-review-navigation");
+    url.searchParams.set("window", onboarding ? "onboarding" : "workspace"); url.searchParams.set("profile", profile);
     const frame = document.createElement("iframe"); frame.hidden = true; frame.src = url.href;
     frames.push(frame); document.body.append(frame);
     await until(() => frame.contentWindow?.__PENNEL_FIXTURE__?.review && frame.contentDocument?.querySelector("#app")?.textContent.trim(), "A separate review context did not load.");
@@ -108,6 +109,7 @@ export async function checkOwnerReviewReloadAndReset() {
   };
   try {
     const a = await open(), id = a.fixture.options.meeting_id, model = "whisper-large-v3-turbo";
+    await a.client.invoke("delete_model", { id: model });
     await a.client.invoke("download_model", { id: model });
     await until(async () => (await a.client.invoke("model_state", { id: model })).kind === "downloaded", "The controlled model download did not complete.");
     const before = await a.client.invoke("meeting_summary", { id });
@@ -123,10 +125,46 @@ export async function checkOwnerReviewReloadAndReset() {
     let rejected = false;
     try { await a.client.invoke("save_pad_text", { text: "An obsolete late write." }); } catch { rejected = true; }
     assert(rejected, "An older review context could write after reset.");
-    const fresh = await open();
+    const fresh = await open(true);
     assert((await fresh.client.invoke("model_state", { id: model })).kind === "not_downloaded", "Reset retained completed synthetic model state.");
     assert(!(await fresh.client.invoke("pad_text")).includes("old review context"), "Late work recreated the cleared review profile.");
     assert((await fresh.client.invoke("meeting_summary_history", { id })).length === 0, "Reset retained synthetic summary history.");
     return { syntheticOnly: true, downloadSurvivesReload: true, summaryHistorySurvivesReload: true, crossContextResetFenced: true };
   } finally { frames.forEach(frame => frame.remove()); }
+}
+
+export async function checkOwnerReviewPractice() {
+  const { api } = await owned(), { t } = await import("/src/i18n.ts");
+  await until(() => document.querySelector(".dictation-home-practice:not(:disabled)"), "The primary practice action is not ready.");
+  const pad = await api.padText(), originalOpen = window.open;
+  let opened, frame, reloaded;
+  window.open = (url, name) => { opened = { url, name }; return { focus() {} }; };
+  try {
+    click(document.querySelector(".dictation-home-practice"));
+    await until(() => opened, "Try it here did not open an owned practice route.");
+    const target = new URL(opened.url);
+    assert(target.origin === location.origin && target.searchParams.get("qa") === "owner-review-practice"
+      && target.searchParams.get("profile") === new URL(location.href).searchParams.get("profile"), "Practice left the local review or lost its shared profile.");
+    frame = document.createElement("iframe"); frame.src = target.href;
+    frame.style.cssText = "position:fixed;left:-10000px;top:0;width:980px;height:640px;border:0";
+    document.body.append(frame);
+    const doc = () => frame.contentDocument;
+    try { await until(() => doc()?.querySelector("textarea.practice-text"), "The requested practice window did not render."); }
+    catch (error) { throw Error(`${error.message} Child heading: ${doc()?.querySelector("h1")?.textContent ?? "not mounted"}`); }
+    const newerPad = `${pad}\nParent edit made after opening practice.`;
+    await api.savePadText(newerPad);
+    const button = () => [...doc().querySelectorAll("button")].find(node => node.textContent === t("onboarding.start_dictation"));
+    await until(() => button(), "The local practice window has no start action.");
+    const action = button(); click(action);
+    await until(() => action.textContent === t("onboarding.stop_dictation"), "Practice did not begin synthetic listening.");
+    click(action);
+    await until(() => doc().querySelector("textarea.practice-text")?.value.trim() && !doc().querySelector("textarea.practice-text").disabled, "Practice did not complete into its own editable field.");
+    assert(await api.padText() === newerPad, "Owned practice overwrote the parent's saved pad.");
+    assert(!frame.contentWindow.__PENNEL_FIXTURE__.calls.includes("copy_text"), "Practice fell back to the clipboard.");
+    const reopen = new URL(location.href); reopen.searchParams.set("qa", "owner-review-navigation");
+    reloaded = document.createElement("iframe"); reloaded.src = reopen.href; reloaded.style.cssText = frame.style.cssText; document.body.append(reloaded);
+    await until(() => reloaded.contentWindow?.__PENNEL_PLATFORM__, "The parent profile could not reopen.");
+    assert(await reloaded.contentWindow.__PENNEL_PLATFORM__.invoke("pad_text") === newerPad, "A practice checkpoint replaced newer parent work on reload.");
+    return { syntheticOnly: true, primaryActionWorks: true, localOwnedWindow: true, editableResult: true, parentDraftPreserved: true };
+  } finally { window.open = originalOpen; frame?.remove(); reloaded?.remove(); }
 }

@@ -145,12 +145,12 @@
   if (options.shortcut_denied) {
     permissions = permissions.map(permission => permission.kind === "accessibility" ? { ...permission, status: "denied" } : permission);
   }
-  if (permissions.find(permission => permission.kind === "accessibility")?.status !== "granted") {
-    const reason = "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken.";
-    capabilities.global_hotkey = { status: "permission_required", reason };
-    capabilities.selection = { status: "permission_required", reason };
-    capabilities.pad_external_paste = { status: "permission_required", reason };
-  }
+  const updateShortcutCapabilities = () => {
+    const granted = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
+    const status = granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
+    for (const name of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[name] = clone(status);
+  };
+  updateShortcutCapabilities();
   const keys = { groq: Boolean(options.configured_text_provider), openai: false };
   const providerRevisions = Object.fromEntries(providers.map(provider => [provider.id, 0]));
   const models = (options.local_models || [{
@@ -178,6 +178,7 @@
   const calls = [];
   const frontendFlushes = [];
   const copiedTexts = [];
+  const openedWindows = [];
   const unknown = [];
   const setupTrace = { samples: [], savedChoices: [], appliedTasks: [], catalogRequests: [] };
   const catalogAttempts = new Map();
@@ -203,7 +204,7 @@
     }
     const waiting = downloadWaiters.get(id) || [];
     downloadWaiters.delete(id);
-    if (reviewIsCurrent()) persistOwnerReview();
+    if (reviewIsCurrent()) persistOwnerReview(!error && model ? { modelStates: [[id, { kind: "downloaded" }]] } : {});
     emit("download-done", { id, error });
     for (const waiter of waiting) error ? waiter.reject(new Error(error)) : waiter.resolve(true);
     return true;
@@ -350,13 +351,34 @@
     return fingerprint(JSON.stringify({ ...(transcriptOnly ? {} : { notes: record.notes }), transcript: record.transcript, metadata_status: metadataStatus }));
   };
   const ownerStateKey = options.owner_review && profileKey ? `${profileKey}:owner-review:v1` : null;
-  const persistOwnerReview = () => {
+  const readReviewState = () => {
+    try { return ownerStateKey ? JSON.parse(globalThis.localStorage.getItem(ownerStateKey) || "null") : null; } catch { return null; }
+  };
+  const persistOwnerReview = (serviceUpdates = {}) => {
     if (!ownerStateKey || reviewReset) return;
     requireCurrentReview();
-    globalThis.localStorage.setItem(ownerStateKey, JSON.stringify({ version: 1, history: history.filter(entry => entry.status !== "unsaved"), library, pad, notes, transcript, sessionCounter,
+    const latest = readReviewState();
+    const modelStates = new Map(latest?.modelStates || [...models, ...speakerModels, diarizer].map(model => [model.id, model.state.kind === "downloaded" ? { kind: "downloaded" } : { kind: "not_downloaded" }]));
+    for (const [id, state] of serviceUpdates.modelStates || []) modelStates.set(id, clone(state));
+    const services = { modelStates: [...modelStates],
+      permissions: [...new Map([...(latest?.permissions || permissions), ...(serviceUpdates.permissions || [])].map(permission => [permission.kind, permission])).values()],
+      keys: { ...keys, ...latest?.keys, ...serviceUpdates.keys }, providerRevisions: { ...providerRevisions, ...latest?.providerRevisions, ...serviceUpdates.providerRevisions } };
+    // Onboarding owns service setup; its copied workspace can be older than the still-open main window.
+    const workspace = options.window === "onboarding" && latest?.version === 1 ? latest : { version: 1,
+      history: history.filter(entry => entry.status !== "unsaved"), library, pad, notes, transcript, sessionCounter,
       activeMeetingId, meetingUid, liveSession, meeting: clone(meeting), meetingSequence, ownerRecording, recordingStopped,
-      modelStates: [...models, ...speakerModels, diarizer].map(model => [model.id, model.state.kind === "downloaded" ? { kind: "downloaded" } : { kind: "not_downloaded" }]),
-      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries] }));
+      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries] };
+    globalThis.localStorage.setItem(ownerStateKey, JSON.stringify({ ...workspace, ...services }));
+    restoreReviewServices(services);
+  };
+  const restoreReviewServices = saved => {
+    if (Array.isArray(saved.permissions)) { permissions = clone(saved.permissions); updateShortcutCapabilities(); }
+    for (const [id, present] of Object.entries(saved.keys || {})) keys[id] = present === true;
+    Object.assign(providerRevisions, saved.providerRevisions || {});
+    for (const [id, state] of saved.modelStates || []) {
+      const model = modelFor(id); if (model) model.state = clone(state);
+      if (state.kind === "downloaded") activeDownloads.delete(id);
+    }
   };
   if (ownerStateKey) {
     let saved;
@@ -366,10 +388,7 @@
       transcript.splice(0, transcript.length, ...saved.transcript); pad = saved.pad; notes = saved.notes; sessionCounter = saved.sessionCounter || 0;
       activeMeetingId = saved.activeMeetingId; meetingUid = saved.meetingUid; liveSession = saved.liveSession;
       Object.assign(meeting, saved.meeting); meetingSequence = saved.meetingSequence; ownerRecording = saved.ownerRecording; recordingStopped = saved.recordingStopped;
-      for (const [id, state] of saved.modelStates || []) {
-        const model = modelFor(id); if (model) model.state = clone(state);
-        if (state.kind === "downloaded") activeDownloads.delete(id);
-      }
+      restoreReviewServices(saved);
       for (const [target, entries] of [[retainedMeetings, saved.retainedMeetings], [libraryUids, saved.libraryUids], [summaryDocuments, saved.summaryDocuments], [summaryHistories, saved.summaryHistories], [shareableSummaries, saved.shareableSummaries]])
         for (const [key, value] of entries || []) target.set(key, value);
     }
@@ -418,6 +437,48 @@
     cancelPendingDictation(id);
     const pending = { timer: null }; pendingDictations.set(id, pending);
     if (!options.dictation_manual) pending.timer = setTimeout(() => completeDictation(id), Math.max(0, dictationDelay));
+  };
+  const persistReviewSettings = () => {
+    if (!ownerStateKey) return;
+    requireCurrentReview();
+    globalThis.localStorage.setItem(profileKey, JSON.stringify(settings));
+    persistOwnerReview();
+  };
+  const openReviewWindow = (caseName, window, extra = {}) => {
+    if (!profileKey || !globalThis.open) throw Error("Open this flow with the owner-review launcher to use its isolated local window.");
+    const url = new URL("/index.html", location.href);
+    for (const [key, value] of Object.entries({ qa: caseName, window, profile: options.profile,
+      locale: options.locale || interfaceLanguage(), theme: options.appearance, ...extra })) if (value != null) url.searchParams.set(key, String(value));
+    persistOwnerReview();
+    const popup = globalThis.open(url.href, `pennel-owner-review-${options.profile}-${window}`, "popup,width=760,height=660");
+    if (!popup) throw Error("Allow pop-ups for this local owner review, then try the action again.");
+    openedWindows.push(url.href); popup.focus?.();
+  };
+  const reviewWorkspaceRoute = input => {
+    const route = { section: input?.section, tab: input?.tab ?? null, meeting_id: input?.meeting_id ?? null, jump_ms: input?.jump_ms ?? null };
+    if (!["dictation", "meetings", "history", "settings", "recording"].includes(route.section)
+      || route.tab !== null && typeof route.tab !== "string"
+      || route.meeting_id !== null && (typeof route.meeting_id !== "string" || !route.meeting_id.trim() || /[\u0000-\u001f\u007f-\u009f/\\:]/.test(route.meeting_id))
+      || route.jump_ms !== null && (!Number.isFinite(route.jump_ms) || route.jump_ms < 0)
+      || route.section === "history" && route.tab !== null && !/^entry:[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(route.tab)
+      || route.section === "dictation" && route.tab !== null && !["home", "pad"].includes(route.tab)
+      || route.section === "settings" && route.tab !== null && !["dictation", "meeting-settings", "meetings", "appearance", "account", "advanced", "overview", "providers", "models", "recording", "dictionary", "styles", "local"].includes(route.tab))
+      throw Error("This workspace destination is not supported by the local owner review.");
+    if (input.source_target != null) route.source_target = clone(input.source_target);
+    return route;
+  };
+  const showReviewWorkspace = async input => {
+    const route = reviewWorkspaceRoute(input);
+    if (options.window !== "onboarding") { emit("workspace-navigate", route); return; }
+    let opener;
+    try {
+      if (globalThis.opener?.location.origin === location.origin
+        && globalThis.opener.__PENNEL_FIXTURE__?.options.profile === options.profile
+        && globalThis.opener.__PENNEL_FIXTURE__?.options.window !== "onboarding") opener = globalThis.opener;
+    } catch {}
+    if (opener) { await opener.__PENNEL_PLATFORM__.invoke("show_workspace", { route }); opener.focus?.(); return; }
+    if (route.source_target) throw Error("Return to the main review window to inspect this source.");
+    openReviewWindow("owner-review-navigation", "workspace", route);
   };
   const summaryDocument = async id => {
     const uid = uidFor(id), source = await summarySourceRevision(id);
@@ -791,6 +852,7 @@
         setupTrace.savedChoices.push(Object.fromEntries(["dictation_stt", "meeting_stt", "llm"].map(slot => [slot, clone(settings[slot])])));
         settings.ui_language = ["en", "nl", "system"].includes(settings.ui_language) ? settings.ui_language : "system";
         if (profileKey) { try { globalThis.localStorage?.setItem(profileKey, JSON.stringify(settings)); } catch {} }
+        persistOwnerReview();
         emit("settings-changed", null);
         return info();
       }
@@ -810,6 +872,7 @@
         setupTrace.appliedTasks.push({ slot: args.slot, choice: clone(candidate) });
         setupTrace.savedChoices.push(Object.fromEntries(["dictation_stt", "meeting_stt", "llm"].map(slot => [slot, clone(settings[slot])])));
         if (profileKey) { try { globalThis.localStorage?.setItem(profileKey, JSON.stringify(settings)); } catch {} }
+        persistOwnerReview();
         emit("settings-changed", null);
         return info();
       }
@@ -817,17 +880,18 @@
       case "request_permission": {
         if (["windows", "linux"].includes(options.platform) && args.kind === "microphone" && permissions.find(permission => permission.kind === args.kind)?.status === "unknown") return clone(permissions);
         permissions = permissions.map(permission => permission.kind === args.kind ? { ...permission, status: "granted" } : permission);
-        if (args.kind === "accessibility") for (const capability of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[capability] = available();
+        updateShortcutCapabilities(); persistOwnerReview({ permissions: permissions.filter(permission => permission.kind === args.kind) });
         return clone(permissions);
       }
       case "onboarding_readiness": {
         const slot = args.target === "meeting" ? settings.meeting_stt : settings.dictation_stt;
         const account = settings.providers.find(account => account.id === slot.provider_id);
         const definition = kinds.find(kind => kind.kind === account?.kind);
-        const denied = permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
-        const configured = Boolean(account && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
+        const denied = options.owner_review ? permissions.some(permission => (permission.kind === "microphone" || account?.kind === "apple_speech" && permission.kind === "speech") && !["granted", "not_required"].includes(permission.status))
+          : permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
+        const configured = Boolean(account && (!options.owner_review || definition?.availability.status === "available") && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
         const accessibility = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility, can_paste_externally: accessibility, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? "permissions" : "engine" };
+        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility, can_paste_externally: accessibility, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
       }
       case "pad_text": return pad;
       case "save_pad_text": {
@@ -929,7 +993,7 @@
       }
       case "delete_model": {
         if (activeDownloads.has(args.id)) throw new Error("Dit model wordt nog gedownload.");
-        const model = modelFor(args.id); if (model) model.state = { kind: "not_downloaded" }; persistOwnerReview(); return info();
+        const model = modelFor(args.id); if (model) model.state = { kind: "not_downloaded" }; persistOwnerReview({ modelStates: [[args.id, { kind: "not_downloaded" }]] }); return info();
       }
       case "add_provider": {
         const definition = kinds.find(kind => kind.kind === args.kind);
@@ -937,10 +1001,15 @@
         let id = prefix;
         for (let suffix = 2; settings.providers.some(provider => provider.id === id); suffix++) id = `${prefix}-${suffix}`;
         settings.providers.push({ id, kind: args.kind, name: definition?.label || args.kind, base_url: definition?.default_base_url || "" });
+        persistReviewSettings();
         return info();
       }
-      case "remove_provider": settings.providers = settings.providers.filter(provider => provider.id !== args.id); return info();
-      case "set_key": keys[args.account] = Boolean(args.key); providerRevisions[args.account] = (providerRevisions[args.account] || 0) + 1; return info();
+      case "remove_provider": settings.providers = settings.providers.filter(provider => provider.id !== args.id); persistReviewSettings(); return info();
+      case "set_key": {
+        if (ownerStateKey) restoreReviewServices(readReviewState() || {});
+        keys[args.account] = Boolean(args.key); providerRevisions[args.account] = (providerRevisions[args.account] || 0) + 1;
+        persistOwnerReview({ keys: { [args.account]: keys[args.account] }, providerRevisions: { [args.account]: providerRevisions[args.account] } }); return info();
+      }
       case "inference_protocols": return [
         ["open_router_decisions", "OpenRouter Decisions", "https://openrouter.ai/api/v1"],
         ["open_router_system_one", "OpenRouter System One", "https://openrouter.ai/api/v1"],
@@ -1277,7 +1346,22 @@
       case "cloud_sync_disable": settings.cloud_sync = false; syncSetupPhase = "paused"; emit("sync-changed", syncReport()); return null;
       case "cloud_rename_device": case "cloud_revoke_device": case "cloud_sync_confirm_deletes":
       case "delete_conflict_copy": case "open_url": case "copy_secret_text": return null;
-      case "show_window": case "show_workspace": case "play_meeting_audio": case "stop_audio":
+      case "show_window": {
+        if (!options.owner_review) return null;
+        if (args.kind === "onboarding") {
+          const tab = args.tab || "resume";
+          if (!["practice", "dictation-setup", "dictation-permissions", "resume", "language", "welcome", "engine", "permissions", "voice"].includes(tab)) throw Error("This onboarding destination is not supported by the local owner review.");
+          const caseName = tab === "practice" ? "owner-review-practice" : ["permissions", "dictation-permissions"].includes(tab) ? "owner-review-permissions" : "owner-review-setup-new";
+          openReviewWindow(caseName, "onboarding", { tab }); return null;
+        }
+        const section = { workspace: "dictation", dictation: "dictation", history: "history", settings: "settings", library: "meetings", meetings: "meetings", live: "recording", recording: "recording" }[args.kind];
+        if (!section) throw Error("This window is not supported by the local owner review.");
+        return showReviewWorkspace({ section, tab: section === "settings" && args.tab === "meetings" ? "meeting-settings"
+          : ["meetings", "recording"].includes(section) ? args.tab === "chat" ? "chat" : null : args.tab || null,
+          meeting_id: section === "meetings" && args.tab && args.tab !== "chat" ? args.tab : null });
+      }
+      case "show_workspace": return options.owner_review ? showReviewWorkspace(args.route) : null;
+      case "play_meeting_audio": case "stop_audio":
       case "answer_record_prompt": case "install_update": case "share_meeting": case "open_log": case "open_path":
       case "set_meeting_attendees": case "rename_speaker":
       case "delete_template": case "test_apple_intelligence": return null;
@@ -1294,11 +1378,16 @@
     },
   };
   if (profileKey && globalThis.addEventListener) globalThis.addEventListener("storage", event => {
+    if (ownerStateKey && event.key === ownerStateKey && event.newValue && reviewIsCurrent()) {
+      try { restoreReviewServices(JSON.parse(event.newValue)); emit("settings-changed", null); } catch {}
+      return;
+    }
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
   globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
     ...(options.owner_review ? { review: { resetProfile,
+      openedWindows: () => clone(openedWindows),
       failDownloads: message => { downloadFailure = message || null; }, failSaves: value => { saveFailure = Boolean(value); },
       dictationDelay: milliseconds => { dictationDelay = Math.min(60_000, Math.max(0, Number(milliseconds) || 0)); },
       completeDictation: () => [...pendingDictations.keys()].filter(id => completeDictation(id)).length,
