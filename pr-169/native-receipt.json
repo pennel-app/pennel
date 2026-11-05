@@ -1,0 +1,207 @@
+{
+  "source_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+  "source_clean_at_start": true,
+  "started_at": "2026-11-05T20:05:45.874339+00:00",
+  "os_version": "27.0.1",
+  "architecture": "arm64",
+  "personal_team": "B538Q2K76C",
+  "personal_signing_sha1": "0D135E8CC8A6B99C288F287A1DAC399A02D2D53E",
+  "preview_build_complete": true,
+  "capture_build_complete": true,
+  "native_synthetic_checks_complete": true,
+  "actual_hardware_capture": false,
+  "actual_clipboard_insertion": false,
+  "voiceover_acceptance": false,
+  "human_owner_review": false,
+  "native_zoom_gap": "Current candidate has no custom window zoom handling; webview zoom hotkeys disabled. Browser enlarged-text layout checks are separate evidence.",
+  "commands": [
+    "/Users/landerparren/.local/bin/worktree-storage run -- env APPLE_SIGNING_IDENTITY=0D135E8CC8A6B99C288F287A1DAC399A02D2D53E APPLE_TEAM_ID=B538Q2K76C make desktop-preview",
+    "python3 scripts/verify-desktop-bundle.py \"apps/desktop/src-tauri/target/release/bundle/macos/Pennel Preview.app\" --identifier dev.pennel.Pennel.preview --require-developer-id --output build/desktop-ux-review/native/preview-bundle.json",
+    "hdiutil verify \"build/Pennel Preview.dmg\"",
+    "From apps/desktop: /Users/landerparren/.local/bin/worktree-storage run -- env APPLE_SIGNING_IDENTITY=0D135E8CC8A6B99C288F287A1DAC399A02D2D53E APPLE_TEAM_ID=B538Q2K76C ../../scripts/with-toolchain.sh npx tauri build --bundles app --config src-tauri/tauri.capture.conf.json",
+    "/Users/landerparren/.local/bin/worktree-storage run -- env APPLE_SIGNING_IDENTITY=0D135E8CC8A6B99C288F287A1DAC399A02D2D53E APPLE_TEAM_ID=B538Q2K76C python3 -B scripts/capture-desktop-windows.py --case dictation --case dictation-pad --case history --case settings-overview --locale both --appearance both --size 760x520 --output build/desktop-ux-review/native/minimum"
+  ],
+  "capture_notes": "Supported safe cases: dictation, dictation-pad, history, settings-overview. Older meeting tab cases require notes-first selector updates and are excluded.",
+  "preview_compilation_complete": true,
+  "preview_signing_complete": true,
+  "signing_status": "Original Tauri timestamp failed by 206 seconds. Existing bundle helper re-signed the same personal certificate with --timestamp=none; strict signature/identifier/team/leaf-certificate verification and DMG verification passed.",
+  "preview_make_exit_code": 2,
+  "preview_bundle_assembled": true,
+  "preview_dmg_created": true,
+  "preview_repair_command": "/Users/landerparren/.local/bin/worktree-storage run -- env APPLE_SIGNING_IDENTITY=0D135E8CC8A6B99C288F287A1DAC399A02D2D53E APPLE_TEAM_ID=B538Q2K76C scripts/bundle-preview-image.sh",
+  "verified_personal_leaf_sha1": "0D135E8CC8A6B99C288F287A1DAC399A02D2D53E",
+  "preview_binary_sha256": "4ec1b67a5e5ecc675fdded03a334dd6912087199ff8ce940029cc68454ac1b14",
+  "preview_dmg_sha256": "aef49a3f54ad8b835c02bfff640aabba7ff7733fa8f4c8a0e0c33ca8f87bb4c2",
+  "preview_verified_at": "2026-11-05T20:15:56.939979+00:00",
+  "source_commit_at_preview_verification": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+  "tracked_source_dirty_at_preview_verification": false,
+  "capture_make_exit_code": 0,
+  "capture_verified_personal_leaf_sha1": "0D135E8CC8A6B99C288F287A1DAC399A02D2D53E",
+  "capture_binary_sha256": "515758fbcc6f50d57db1a8f1d69e98364f2a5c6fb8115071eb23753dc90e383a",
+  "native_capture_count": 16,
+  "native_viewport": [
+    760,
+    520
+  ],
+  "native_material": "liquid_glass",
+  "native_frontend_environment_match": true,
+  "native_horizontal_overflow_count": 0,
+  "native_capture_manifest": "minimum/manifest.json",
+  "native_capture_images": [
+    {
+      "file": "minimum/en/light/dictation.png",
+      "sha256": "343dc88ee27b7c3dddd024b3e170d1e232e00168a81fea6af1bd0218aefe0a91",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/en/light/dictation-pad.png",
+      "sha256": "4c0a6571dbdb0eac6ae938a3d8031ef746a9acab070f2dc3edfad95f33151d5e",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/en/light/history.png",
+      "sha256": "7c66a2a8cea558160b74164e9e03a111d6fb7b0e7449917b1f5a637a082c8ae9",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/en/light/settings-overview.png",
+      "sha256": "c6b7501c31f8c0409788de225db0f4c11a1e0254229310a908a72c92e8003260",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/en/dark/dictation.png",
+      "sha256": "b1eef2468f06e205ac7e742700733b1f0918f35ae931621944d2b2acf48df60c",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/en/dark/dictation-pad.png",
+      "sha256": "d9419f29f05401d4b0fc902e4a008af7e75b33494fe7383e77099fcd896ce851",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/en/dark/history.png",
+      "sha256": "afbd28f0c21636eeb621bad25884d9c910f7128d4f2ab5ad24a40ff7c5d46e09",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/en/dark/settings-overview.png",
+      "sha256": "cb78e9a085fa9f438d43724954920992b7f86fc7d17f4cc5b6c4916a984197f4",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/light/dictation.png",
+      "sha256": "15153fd046f54b82ff5104b4ce26735f98f258740c4958c096af08dd41e4ef52",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/light/dictation-pad.png",
+      "sha256": "73f0728b42851eafb6f1aa7b328ef49e2d2b4794b690b358a541ba706ccfaa24",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/light/history.png",
+      "sha256": "ce5be609a5910be248f32ff4b423b1f24ab6bd1e11fa16144720f720092a92de",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/light/settings-overview.png",
+      "sha256": "bd706b7433961377278e480adaea2ab740473941865cb650cf1b111673908efa",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/dark/dictation.png",
+      "sha256": "43dc72082f00bd8163aed3a61f60901eedd4d1768da85eff6848fafa6af24c76",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/dark/dictation-pad.png",
+      "sha256": "15064dee2050a66bbed26528691ae23ec96d47575fe77ec9cde7dbe59c13c26f",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/dark/history.png",
+      "sha256": "2161f754122ad4d93002f8a765eb33f2777a8ef4b04585d9e603b55fbb7deac7",
+      "pixels": [
+        1520,
+        1040
+      ]
+    },
+    {
+      "file": "minimum/nl/dark/settings-overview.png",
+      "sha256": "cf18d806d5015c4fb92ee65060b277734fd3e790a782f5da548c0a9c10550173",
+      "pixels": [
+        1520,
+        1040
+      ]
+    }
+  ],
+  "native_visual_inspection": [
+    "minimum/en/light/dictation.png",
+    "minimum/en/dark/history.png",
+    "minimum/nl/light/dictation-pad.png",
+    "minimum/nl/dark/settings-overview.png"
+  ],
+  "native_checks_completed_at": "2026-11-05T20:20:05.029583+00:00",
+  "source_commit_at_completion": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+  "tracked_source_dirty_at_completion": false,
+  "ordinary_preview_launched": false,
+  "capture_preview_launched": true,
+  "native_menu_interaction_acceptance": false,
+  "physical_keyboard_acceptance": false,
+  "actual_provider_generation": false,
+  "model_downloads_performed": false,
+  "hardware_model": "Mac16,8",
+  "cpu_model": "Apple M4 Pro",
+  "capture_profile_overrides": {
+    "history_retention_days": 0,
+    "auto_detect": false,
+    "record_shortcut_enabled": false,
+    "calendar_enabled": false,
+    "cloud_sync": false,
+    "claude_access": false,
+    "onboarding_status": "completed"
+  },
+  "capture_processing_configuration": "Default Preview task settings; missing local speech assets and provider credentials were left unchanged. No recognition, cleanup, summary or provider request performed."
+}

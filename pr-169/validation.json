@@ -1,0 +1,80 @@
+{
+  "head": "cab5f89c9179e4f45ca57bb23821bb95a163537f",
+  "product_build_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+  "product_source_unchanged_after_native_build": true,
+  "local_checks": {
+    "core_release_build": "passed",
+    "core_tests_passed": 1075,
+    "core_tests_existing_ignored": 7,
+    "typing_tests_passed": 17,
+    "frontend_build": "passed",
+    "frontend_and_fixture_tests_passed": 407,
+    "backend_tests_passed": 270,
+    "packaging_tests_passed": 61,
+    "core_fmt": "passed",
+    "core_strict_clippy": "passed",
+    "theme_check": "passed"
+  },
+  "browser": {
+    "full-matrix": {
+      "complete": true,
+      "captures": 1216,
+      "failures": 0
+    },
+    "complete-interactions": {
+      "complete": true,
+      "captures": 20,
+      "failures": 0
+    },
+    "complete-starting-states": {
+      "complete": true,
+      "captures": 48,
+      "failures": 0
+    },
+    "final-minimum-enlarged": {
+      "complete": true,
+      "captures": 20,
+      "failures": 0
+    },
+    "labels-before": {
+      "complete": true,
+      "captures": 4,
+      "failures": 0
+    },
+    "labels-after": {
+      "complete": true,
+      "captures": 4,
+      "failures": 0
+    }
+  },
+  "browser_scope_note": "The broad matrix was captured before final owner-profile/popup changes. Final affected interactions and starting states were rerun after those changes. Browser results are synthetic backend evidence, not native/device/human acceptance.",
+  "native": {
+    "source_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+    "os_version": "27.0.1",
+    "architecture": "arm64",
+    "personal_team": "B538Q2K76C",
+    "verified_personal_leaf_sha1": "0D135E8CC8A6B99C288F287A1DAC399A02D2D53E",
+    "preview_signing_complete": true,
+    "preview_dmg_created": true,
+    "preview_binary_sha256": "4ec1b67a5e5ecc675fdded03a334dd6912087199ff8ce940029cc68454ac1b14",
+    "preview_dmg_sha256": "aef49a3f54ad8b835c02bfff640aabba7ff7733fa8f4c8a0e0c33ca8f87bb4c2",
+    "capture_binary_sha256": "515758fbcc6f50d57db1a8f1d69e98364f2a5c6fb8115071eb23753dc90e383a",
+    "native_capture_count": 16,
+    "native_frontend_environment_match": true,
+    "native_horizontal_overflow_count": 0,
+    "ordinary_preview_launched": false,
+    "actual_hardware_capture": false,
+    "actual_clipboard_insertion": false,
+    "voiceover_acceptance": false,
+    "human_owner_review": false,
+    "native_zoom_gap": "Current candidate has no custom window zoom handling; webview zoom hotkeys disabled. Browser enlarged-text layout checks are separate evidence."
+  },
+  "human_review": "Owner has not tried the navigation task yet; no UX decision resolved.",
+  "open_gates": [
+    "owner navigation/meeting/setup decisions",
+    "real audio and receiving-app insertion",
+    "native menus, keyboard, VoiceOver and text zoom",
+    "installed-platform, release and participant acceptance",
+    "latest-head hosted checks (status recorded separately)"
+  ]
+}
