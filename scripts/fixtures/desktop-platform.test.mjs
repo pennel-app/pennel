@@ -37,6 +37,15 @@ test("shareable preview never falls back to private notes or legacy owner output
   const preview = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true });
   assert.equal(preview.markdown.includes(privateFact), false);
   await api.invoke("set_meeting_notes", { text: "Changed sources" });
+  assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, false);
+  await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: false });
+});
+
+test("shareable fixture freshness follows transcript attribution and source metadata", async () => {
+  const context = fixture("meeting-notes", { rich_utterances: true, configured_text_provider: true });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+  await api.invoke("generate_shareable_meeting_summary", { id });
+  control.workspace.attribution(0, { confirmed_speaker_name: "Canonical name" });
   assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, true);
   await assert.rejects(api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: false }));
 });
@@ -75,6 +84,225 @@ function fixture(name, overrides = {}, storage) {
   vm.runInContext(script, context);
   return context;
 }
+
+const reviewStorage = () => {
+  const values = new Map();
+  return { values, get length() { return values.size; }, key: index => [...values.keys()][index] ?? null,
+    getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+};
+
+test("owner review starts and stops distinct meetings and reopens saved work after reload", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-lifecycle", configured_text_provider: true, rich_utterances: true };
+  const first = fixture("simple-task-shell", options, storage), api = first.__PENNEL_PLATFORM__;
+  assert.equal((await api.invoke("meeting_status")).recording, false);
+  const firstId = await api.invoke("start_meeting", { title: "First review conversation" });
+  const status = await api.invoke("meeting_status");
+  assert.equal(status.recording, true);
+  assert.equal(status.id, firstId);
+  assert.equal(status.title, "First review conversation");
+  await api.invoke("set_meeting_notes", { text: "Keep this exact note.", sessionId: status.session_id });
+  await api.invoke("stop_meeting", { sessionId: status.session_id });
+  assert.equal((await api.invoke("meeting_status")).recording, false);
+  await api.invoke("save_meeting_notes", { id: firstId, text: "Continued after Stop." });
+  assert.equal((await api.invoke("meeting_detail", { id: firstId })).notes, "Continued after Stop.");
+  const secondId = await api.invoke("start_meeting", { title: "Second review conversation" });
+  assert.notEqual(firstId, secondId);
+  assert.notEqual((await api.invoke("meeting_status")).session_id, status.session_id);
+  const retained = await api.invoke("meeting_detail", { id: firstId });
+  assert.equal(retained.notes, "Continued after Stop.");
+  assert.equal(retained.info.title, "First review conversation");
+  await api.invoke("stop_meeting");
+  const reopened = fixture("simple-task-shell", options, storage).__PENNEL_PLATFORM__;
+  assert.equal((await reopened.invoke("meeting_detail", { id: firstId })).notes, "Continued after Stop.");
+  assert.ok((await reopened.invoke("meetings", { query: "" })).some(info => info.id === secondId));
+});
+
+test("owner review dictation completion retains one result and cancelled late work cannot return", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-dictation", dictation_manual: true };
+  const context = fixture("simple-task-shell", options, storage), api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  const before = (await api.invoke("history")).length, session = await api.invoke("open_dictation_session", { kind: "pad" });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  assert.equal((await api.invoke("get_dictation_session", { sessionId: session.session_id })).phase, "listening");
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  assert.equal((await api.invoke("get_dictation_session", { sessionId: session.session_id })).phase, "working");
+  assert.equal(control.review.completeDictation(), 1);
+  const done = await api.invoke("get_dictation_session", { sessionId: session.session_id });
+  assert.equal(done.phase, "done");
+  assert.equal((await api.invoke("history")).length, before + 1);
+  assert.equal(control.review.completeDictation(), 0);
+  const reopenedContext = fixture("simple-task-shell", options, storage), reopened = reopenedContext.__PENNEL_PLATFORM__;
+  assert.equal(await reopened.invoke("pad_text"), done.text);
+  assert.equal((await reopened.invoke("history")).length, before + 1);
+  const next = await reopened.invoke("open_dictation_session", { kind: "pad" });
+  await reopened.invoke("toggle_dictation_session", { sessionId: next.session_id });
+  await reopened.invoke("toggle_dictation_session", { sessionId: next.session_id });
+  reopenedContext.__PENNEL_FIXTURE__.review.completeDictation();
+  const reopenedHistory = await reopened.invoke("history");
+  assert.equal(new Set(reopenedHistory.map(entry => entry.id)).size, reopenedHistory.length);
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  await api.invoke("cancel_dictation_session", { sessionId: session.session_id });
+  assert.equal(control.review.completeDictation(), 0);
+  assert.equal((await api.invoke("history")).length, before + 1);
+});
+
+test("owner review prepared output keeps labels while late transcript changes reject stale generation", async () => {
+  const context = fixture("simple-task-shell", { owner_review: true, rich_utterances: true, configured_text_provider: true, summary_generation_delay_ms: 20 });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+  control.workspace.attribution(0, { confirmed_speaker_name: "Confirmed speaker" });
+  const pending = api.invoke("generate_shareable_meeting_summary", { id });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  control.workspace.attribution(0, { confirmed_speaker_name: "Changed speaker" });
+  await assert.rejects(pending, /transcript changed/);
+  assert.equal(await api.invoke("shareable_meeting_summary", { id }), null);
+  await api.invoke("generate_shareable_meeting_summary", { id });
+  const output = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true });
+  assert.match(output.markdown, /\[00:00\] Changed speaker \(System audio\): We ronden/);
+  assert.ok(output.html.includes("Changed speaker (System audio)"));
+  await api.invoke("set_meeting_notes", { text: "PRIVATE_CHANGED_NOTE" });
+  assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, false);
+  control.workspace.attribution(0, { source_id: "room_microphone" });
+  assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, true);
+});
+
+test("owner review ignores a delayed note save after the capture session changes", async () => {
+  const context = fixture("simple-task-shell", { owner_review: true, note_save_delay_ms: 60_000 });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  await api.invoke("start_meeting", { title: "First delayed session" });
+  const first = await api.invoke("meeting_status");
+  const pending = api.invoke("set_meeting_notes", { text: "Old session note", sessionId: first.session_id });
+  await api.invoke("stop_meeting");
+  await api.invoke("start_meeting", { title: "Current session" });
+  control.workspace.releaseNotes();
+  await assert.rejects(pending, /session changed/);
+  assert.equal((await api.invoke("meeting_status")).notes, "");
+});
+
+test("owner review search filters titles and returns matching source passages", async () => {
+  const api = fixture("simple-task-shell", { owner_review: true }).__PENNEL_PLATFORM__;
+  const title = await api.invoke("search_library", { query: "Studio Noord" });
+  assert.deepEqual(Array.from(title.meetings, info => info.title), ["Klantgesprek Studio Noord"]);
+  const passage = await api.invoke("search_library", { query: "planning maandag" });
+  assert.ok(passage.passages.length > 0);
+  assert.ok(passage.passages.every(row => row.kind === "transcript" && row.text.includes("planning") && row.meeting_id));
+  const missing = await api.invoke("search_library", { query: "no-such-review-term" });
+  assert.equal(missing.meetings.length, 0);
+  assert.equal(missing.passages.length, 0);
+});
+
+test("owner review reset and frontend state are confined to one synthetic profile", async () => {
+  const storage = reviewStorage();
+  storage.setItem("ordinary-app-setting", "preserve");
+  storage.setItem("pennel-synthetic-fixture:other-review", "preserve");
+  const context = fixture("simple-task-shell", { owner_review: true, profile: "review-one" }, storage);
+  context.localStorage.setItem("pennel.workspace.presentation.v1", JSON.stringify({ visible: false }));
+  assert.equal(JSON.parse(context.localStorage.getItem("pennel.workspace.presentation.v1")).visible, false);
+  const other = fixture("simple-task-shell", { owner_review: true, profile: "review-two" }, storage);
+  assert.equal(other.localStorage.getItem("pennel.workspace.presentation.v1"), null);
+  other.localStorage.setItem("pennel.workspace.presentation.v1", "other presentation");
+  storage.setItem("pennel-synthetic-fixture:review-one:conversations:v1", "scratch");
+  context.__PENNEL_FIXTURE__.review.resetProfile();
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-one:ui:pennel.workspace.presentation.v1"), null);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-one:conversations:v1"), null);
+  assert.equal(storage.getItem("ordinary-app-setting"), "preserve");
+  assert.equal(storage.getItem("pennel-synthetic-fixture:other-review"), "preserve");
+  assert.equal(other.localStorage.getItem("pennel.workspace.presentation.v1"), "other presentation");
+});
+
+test("owner review profile reset cancels its pending global dictation without recreating stored work", async () => {
+  const storage = reviewStorage(), context = fixture("simple-task-shell", { owner_review: true, profile: "review-reset-pending", dictation_manual: true }, storage);
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  await api.invoke("toggle_dictation");
+  assert.equal((await api.invoke("dictation_state")).state, "listening");
+  await api.invoke("toggle_dictation");
+  assert.equal((await api.invoke("dictation_state")).state, "working");
+  control.review.resetProfile();
+  assert.equal(control.review.completeDictation(), 0);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-reset-pending:owner-review:v1"), null);
+});
+
+test("owner review download and save failures can be repaired without replacing useful work", async () => {
+  const context = fixture("simple-task-shell", { owner_review: true, configured_text_provider: true }), api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  const id = await api.invoke("start_meeting", { title: "Recoverable review" });
+  await api.invoke("set_meeting_notes", { text: "Saved note" });
+  control.review.failSaves(true);
+  await assert.rejects(api.invoke("set_meeting_notes", { text: "Unsaved replacement" }));
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, "Saved note");
+  control.review.failSaves(false);
+  await api.invoke("set_meeting_notes", { text: "Recovered note" });
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, "Recovered note");
+  const model = (await api.invoke("local_models"))[0];
+  await api.invoke("delete_model", { id: model.id });
+  control.review.failDownloads("Synthetic download unavailable");
+  await api.invoke("download_model", { id: model.id });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.notEqual((await api.invoke("model_state", { id: model.id })).kind, "downloaded");
+  control.review.failDownloads(null);
+  await api.invoke("download_model", { id: model.id });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal((await api.invoke("model_state", { id: model.id })).kind, "downloaded");
+});
+
+test("owner review completed model downloads and explicit deletion survive profile reload", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-model-reload" };
+  const first = fixture("onboarding-welcome", options, storage), api = first.__PENNEL_PLATFORM__;
+  const id = (await api.invoke("local_models"))[0].id;
+  assert.equal((await api.invoke("model_state", { id })).kind, "not_downloaded");
+  await api.invoke("download_model", { id });
+  assert.equal((await api.invoke("model_state", { id })).kind, "downloaded");
+  const reopened = fixture("onboarding-welcome", options, storage).__PENNEL_PLATFORM__;
+  assert.equal((await reopened.invoke("model_state", { id })).kind, "downloaded");
+  await reopened.invoke("delete_model", { id });
+  assert.equal((await fixture("onboarding-welcome", options, storage).__PENNEL_PLATFORM__.invoke("model_state", { id })).kind, "not_downloaded");
+  const other = fixture("onboarding-welcome", { ...options, profile: "review-model-other" }, storage).__PENNEL_PLATFORM__;
+  assert.equal((await other.invoke("model_state", { id })).kind, "not_downloaded");
+});
+
+test("owner review summary history remains recoverable after profile reload", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-summary-reload", configured_text_provider: true };
+  const first = fixture("meeting-notes", options, storage), api = first.__PENNEL_PLATFORM__, id = first.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_summary", { id });
+  const edited = await api.invoke("save_meeting_summary", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision, markdown: "Exact recoverable edit." });
+  assert.equal((await api.invoke("meeting_summary_history", { id })).length, 1);
+  const reopened = fixture("meeting-notes", options, storage).__PENNEL_PLATFORM__;
+  const history = await reopened.invoke("meeting_summary_history", { id });
+  assert.equal(history.length, 1);
+  assert.equal(history[0].markdown, before.markdown);
+  const restored = await reopened.invoke("restore_meeting_summary", { id, expectedRevision: edited.revision,
+    expectedSourceRevision: edited.source_revision, revision: history[0].revision });
+  assert.equal(restored.markdown, before.markdown);
+  assert.equal((await reopened.invoke("meeting_summary_history", { id }))[0].markdown, "Exact recoverable edit.");
+});
+
+test("owner review reset in another tab fences pending dictation, notes, summaries and settings", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-cross-tab-reset", dictation_manual: true,
+    note_save_delay_ms: 200, summary_generation_delay_ms: 20, configured_text_provider: true };
+  storage.setItem("unrelated-user-setting", "preserve");
+  storage.setItem("pennel-synthetic-fixture:other-review:owner-review:v1", "preserve");
+  const tab = fixture("meeting-notes", options, storage), api = tab.__PENNEL_PLATFORM__, control = tab.__PENNEL_FIXTURE__;
+  await api.invoke("save_pad_text", { text: "Old synthetic draft" });
+  await api.invoke("toggle_dictation"); await api.invoke("toggle_dictation");
+  const notes = api.invoke("save_meeting_notes", { id: control.options.meeting_id, text: "Late old notes" });
+  const summary = api.invoke("generate_shareable_meeting_summary", { id: control.options.meeting_id });
+  const summaryOutcome = summary.then(() => null, error => error);
+  const info = await api.invoke("app_info");
+  const resetTab = fixture("meeting-notes", options, storage);
+  resetTab.__PENNEL_FIXTURE__.review.resetProfile();
+  assert.equal(control.review.completeDictation(), 0);
+  control.workspace.releaseNotes();
+  await assert.rejects(notes, /reset|Reload/i);
+  assert.match(String(await summaryOutcome), /reset|Reload/i);
+  await assert.rejects(api.invoke("save_settings", { settings: info.settings }), /reset|Reload/i);
+  assert.throws(() => tab.localStorage.setItem("pennel.workspace.presentation.v1", "old presentation"), /reset|Reload/i);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-cross-tab-reset:owner-review:v1"), null);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-cross-tab-reset:reset-generation"), "1");
+  assert.equal(storage.getItem("unrelated-user-setting"), "preserve");
+  assert.equal(storage.getItem("pennel-synthetic-fixture:other-review:owner-review:v1"), "preserve");
+  const fresh = fixture("meeting-notes", options, storage).__PENNEL_PLATFORM__;
+  await fresh.invoke("save_pad_text", { text: "Fresh synthetic draft" });
+  assert.equal(await fresh.invoke("pad_text"), "Fresh synthetic draft");
+  assert.ok(storage.getItem("pennel-synthetic-fixture:review-cross-tab-reset:owner-review:v1"));
+});
 
 test("conversation fixture preserves selected identities and per-conversation drafts through a full reopen", async () => {
   const values = new Map(), storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };

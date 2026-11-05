@@ -64,7 +64,10 @@ const server = await createServer({
         if (!item) return;
         const appearance = url.searchParams.get("theme") === "dark" ? "dark" : "light";
         const data = JSON.stringify({ ...item, appearance, locale: url.searchParams.get("locale") || "nl", ui_language: url.searchParams.get("ui_language") || undefined, profile: url.searchParams.get("profile") || undefined, conversation_fixture_url: `/@fs/${join(root, "scripts/fixtures/meeting-conversations.mjs").replaceAll("\\", "/")}`, model_state_delay_ms: Math.min(2000, Math.max(0, Number(url.searchParams.get("model_state_delay_ms")) || 0)), local_models: localModels, recording_app_ids: recordingAppIds }).replaceAll("<", "\\u003c");
-        return [{ tag: "script", attrs: { "data-pennel-fixture": item.name }, children: `globalThis.__PENNEL_FIXTURE_OPTIONS__=${data};\n${fixtureScript}`, injectTo: "head-prepend" }];
+        const reset = item.owner_review && url.searchParams.get("review_reset") === "1"
+          ? `\nif (globalThis.__PENNEL_FIXTURE__?.review) { globalThis.__PENNEL_FIXTURE__.review.resetProfile(); const clean = new URL(location.href); clean.searchParams.delete("review_reset"); location.replace(clean.href); }`
+          : "";
+        return [{ tag: "script", attrs: { "data-pennel-fixture": item.name }, children: `globalThis.__PENNEL_FIXTURE_OPTIONS__=${data};\n${fixtureScript}${reset}`, injectTo: "head-prepend" }];
       },
     },
   }],
