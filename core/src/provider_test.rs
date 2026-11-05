@@ -122,6 +122,9 @@ fn failure_message(error: &PennelError) -> &'static str {
         PennelError::Http { status: 402, .. } => {
             "The provider reports insufficient credit. Check your account."
         }
+        PennelError::Cloud { code, .. } if code == "upstream_payment_required" => {
+            "The provider reports insufficient credit. Check your account."
+        }
         PennelError::Http { status: 429, .. } => {
             "The provider has reached its usage limit. Try again later."
         }
@@ -517,6 +520,75 @@ mod tests {
         assert!(!result.message.contains(PRIVATE_DRAFT));
         response.assert();
         other.assert();
+    }
+
+    #[test]
+    fn cloud_speech_sample_reports_upstream_payment_without_echoing_response_details() {
+        use crate::cloud::account::Session;
+        use crate::cloud::tests::MemorySecrets;
+        use crate::cloud::{REFRESH_ACCOUNT, SecretStore};
+
+        let private = format!(
+            "{PRIVATE_TERM} {PRIVATE_DRAFT} Bearer synthetic-secret https://user:password@example.test/private"
+        );
+        for (task, index) in [
+            (ProviderTask::DictationStt, 0),
+            (ProviderTask::MeetingStt, 1),
+        ] {
+            let mut server = mockito::Server::new();
+            let (_dir, engine, keys) = configured(&server);
+            let secrets = Arc::new(MemorySecrets::default());
+            secrets.set(REFRESH_ACCOUNT.into(), Some("synthetic-refresh".into()));
+            engine.set_secret_store(secrets.clone()).unwrap();
+            engine.use_cloud_session(Session::new(server.url(), secrets));
+            let mut settings = engine.settings();
+            settings.providers[index].kind = ProviderKind::PennelCloud;
+            let choice = if task == ProviderTask::DictationStt {
+                &mut settings.dictation_stt
+            } else {
+                &mut settings.meeting_stt
+            };
+            choice.model = "pennel-auto".into();
+            engine.update_settings(settings).unwrap();
+            let before = engine.settings();
+            let refresh = server
+                .mock("POST", "/v1/auth/refresh")
+                .with_body(r#"{"access_token":"synthetic-access","refresh_token":"synthetic-rotated","expires_in":900}"#)
+                .expect(1)
+                .create();
+            let response = server
+                .mock("POST", "/v1/audio/transcriptions")
+                .match_header("authorization", "Bearer synthetic-access")
+                .with_status(402)
+                .with_body(
+                    serde_json::json!({"error":"upstream_payment_required","message": private})
+                        .to_string(),
+                )
+                .expect(1)
+                .create();
+
+            let result = test_provider_task(engine.clone(), task, keys).unwrap();
+
+            assert!(!result.verified);
+            assert_eq!(
+                result.message,
+                "The provider reports insufficient credit. Check your account."
+            );
+            for token in [
+                PRIVATE_TERM,
+                PRIVATE_DRAFT,
+                "synthetic-secret",
+                "password",
+                "example.test",
+            ] {
+                assert!(!result.message.contains(token));
+            }
+            assert_eq!(engine.settings(), before);
+            assert_eq!(engine.dictation_pad_text(), PRIVATE_DRAFT);
+            assert!(engine.history(10).unwrap().is_empty());
+            refresh.assert();
+            response.assert();
+        }
     }
 
     #[test]
