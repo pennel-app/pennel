@@ -5,6 +5,7 @@ import { languageModelConfigured } from "./presentation";
 import { VisibilityPoll } from "./window-lifecycle";
 import { liveQuestionMetadata } from "./live-question-scope";
 import { meetingDate } from "./meeting-labels";
+import { questionStarterIds, questionStarterText, type QuestionStarterId } from "./question-starters";
 import { ConversationController, type ConversationTransport } from "../../../assets/contracts/meeting-conversation-controller.ts";
 import { conversationScopeKey, type ConversationMessage, type ConversationResolvedSource, type ConversationScope } from "../../../assets/contracts/meeting-conversations.ts";
 import type { Context } from "./main";
@@ -112,7 +113,15 @@ export function conversationPanel(initialContext: Context, host: ConversationHos
   const cancel = controlButton({ class: `btn${host.live ? " live-question-cancel" : " conversation-cancel"}`, hidden: true, onclick: () => { void model.cancel(); } }, l("common.cancel"));
   const setup = h("div", { class: "meeting-setup chat-setup help", role: "status" }, h("span", {}, l("meetings.questions_setup_help")),
     h("button", { class: "text-button", onclick: () => ctx.openSetup("llm") }, l("meetings.set_up_questions")));
-  const composer = h("div", { class: host.live ? "live-question-composer" : "chat-composer conversation-composer" }, input, h("div", { class: "row" }, submit, cancel));
+  const scope = h("span", { id: `conversation-scope-${crypto.randomUUID()}`, class: "conversation-scope", "data-conversation-scope": host.scope.kind },
+    l(host.scope.kind === "library" ? "conversations.scope_library" : "conversations.scope_meeting"));
+  input.setAttribute("aria-describedby", scope.id);
+  const starters = h("div", { class: "conversation-starters", role: "group", "aria-label": l("conversations.suggestions"), hidden: true },
+    ...questionStarterIds.map(id => controlButton({ class: "text-button conversation-starter", "data-question-starter": id,
+      onclick: () => prepareStarter(id) }, l(`conversations.starter_${id}`))));
+  const composer = h("div", { class: `conversation-composer ${host.live ? "live-question-composer" : "chat-composer"}` },
+    h("div", { class: "conversation-question-context" }, scope, starters),
+    h("div", { class: "conversation-entry" }, input, h("div", { class: "row" }, submit, cancel)));
   const storage = h("div", { class: "conversation-storage row" }, storageText, retry, copy, copied);
   history.append(sourceNotice);
   root.append(toolbar, storage, error, older, history, setup, composer);
@@ -135,6 +144,21 @@ export function conversationPanel(initialContext: Context, host: ConversationHos
     submit.disabled = state.loading || !ready || state.busy || preparing || composing || host.canAsk?.() === false || !input.value.trim() || !state.conversationId;
     cancel.hidden = !state.busy;
     setup.hidden = ready;
+    starters.hidden = !canPrepareStarter();
+    for (const button of starters.querySelectorAll<HTMLButtonElement>("button")) button.disabled = starters.hidden;
+  }
+  function canPrepareStarter() {
+    const state = model.getSnapshot();
+    return !state.loading && !!state.snapshot && state.snapshot.conversation.id === state.conversationId
+      && !state.snapshot.messages.length && !state.busy && !preparing && !composing
+      && !state.draft.length && !input.value.length;
+  }
+  function prepareStarter(id: QuestionStarterId) {
+    if (!canPrepareStarter()) return;
+    model.editDraft(questionStarterText(id, ctx.info.settings.language));
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(input.value.length, input.value.length);
+    readiness();
   }
   async function ask() {
     const question = input.value.trim();

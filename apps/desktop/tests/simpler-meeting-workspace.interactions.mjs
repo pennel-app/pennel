@@ -111,7 +111,7 @@ export async function checkScopedCopyPreview() {
   await until(() => !preview.hidden && !preview.querySelector(".meeting-export-generate").disabled, "The default shareable preview did not open.");
   assert(preview.dataset.exportScope === "shareable" && !fixture.calls.includes("export_meeting"), "Copy defaulted to a legacy personal export.");
   preview.querySelector(".meeting-export-generate").click();
-  await until(() => !body.hidden && body.value.trim() && !preview.querySelector(".meeting-export-copy-markdown").disabled, "A verified shareable preview was not prepared.");
+  await until(() => !preview.querySelector(".meeting-export-rendered").hidden && body.value.trim() && !preview.querySelector(".meeting-export-copy-markdown").disabled, "A verified shareable preview was not prepared.");
   const exact = body.value;
   assert(!exact.includes(privateSummary) && !exact.includes("PRIVATE_SYNTHETIC_NOTE"), "Private summary or note facts entered the shareable preview.");
   const notes = root.querySelector(".live-notes"); edit(notes, notes.value + "\nPRIVATE_SYNTHETIC_NOTE_AFTER_PREVIEW");
@@ -119,7 +119,7 @@ export async function checkScopedCopyPreview() {
   await until(() => fixture.copiedTexts().length > 0, "The exact preview could not be copied.");
   assert(fixture.copiedTexts().at(-1) === exact && body.value === exact, "Copy silently regenerated the reviewed preview.");
   preview.querySelector('[data-export-scope="personal"]').click();
-  await until(() => preview.dataset.exportScope === "personal" && !body.hidden && body.value.includes(privateSummary), "Explicit Personal copy did not include the owner summary.");
+  await until(() => preview.dataset.exportScope === "personal" && !preview.querySelector(".meeting-export-rendered").hidden && body.value.includes(privateSummary), "Explicit Personal copy did not include the owner summary.");
   return record("scopedCopyPreview", { shareableDefault: true, privateFactsExcluded: true, exactPreparedCopy: true, personalExplicit: true, syntheticOnly: true });
 }
 

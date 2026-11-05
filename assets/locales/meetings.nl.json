@@ -506,5 +506,19 @@
   "meetings.summary_wait_save": "Rond het opslaan af voordat je een samenvatting maakt.",
   "meetings.summary_edit": "Samenvatting bewerken",
   "meetings.summary_done": "Gereed",
-  "meetings.summary_mark_reviewed": "Als gecontroleerd markeren"
+  "meetings.summary_mark_reviewed": "Als gecontroleerd markeren",
+  "meetings.export_view_formatted": "Opgemaakt",
+  "meetings.export_view_markdown": "Markdown",
+  "meetings.export_preview_format": "Voorbeeldweergave",
+  "conversations.scope_meeting": "Deze vergadering",
+  "conversations.scope_library": "Vergaderbibliotheek",
+  "conversations.suggestions": "Probeer een vraag",
+  "conversations.starter_decisions": "Besluiten",
+  "conversations.starter_actions": "Volgende stappen",
+  "conversations.starter_questions": "Open vragen",
+  "meetings.summary_details": "Verwerking en privacy",
+  "meetings.summary_setup_short": "Tekstverwerking moet nog worden ingesteld.",
+  "meetings.summary_automation_unanswered": "Automatische samenvattingen staan uit totdat je kiest.",
+  "meetings.summary_automation_choose": "Kiezen…",
+  "meetings.tools_return_document": "Terug naar document"
 }

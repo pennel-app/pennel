@@ -149,5 +149,8 @@
   "dictation.home.recent_empty": "Je dictaten verschijnen hier nadat je je sneltoets gebruikt of het in Pennel probeert.",
   "dictation.history.search": "Zoek in dictaatgeschiedenis",
   "dictation.history.none_found": "Geen dictaten gevonden voor je zoekopdracht.",
-  "dictation.processing.title": "Verwerking van dictaten"
+  "dictation.processing.title": "Verwerking van dictaten",
+  "dictation.home.ready_intro": "Klik in een tekstveld in een andere app en gebruik je sneltoets.",
+  "dictation.home.finish_setup": "Instellen afronden",
+  "dictation.home.processing_details": "Spraak- en tekstverwerking"
 }
