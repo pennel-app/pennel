@@ -37,6 +37,12 @@ Cold/toolchain-changing controls are separate and may regress by no more than
 the initial acceptance threshold. A timing miss never skips a check or shortens
 its timeout.
 
+The offline evaluation matrix pins its observed Python binary patch by OS:
+3.11.18 on Linux and 3.11.9 on Mac/Windows. A bare `3.11` selector resolved
+different Linux patches in the initial comparison. Stabilizing this input keeps
+every evaluation check intact; earlier captures remain recorded against their
+original frozen source, and a new core comparison uses the pinned source.
+
 ### Candidate and fallback
 
 The candidate runs two mobile jobs in separate hosted VMs. The original job
