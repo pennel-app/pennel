@@ -21,6 +21,10 @@ adds a scoped candidate while **ordinary PR, main and manual validation remain
 serial by default**. This is separate from the native compiler-cache experiment.
 No timing improvement or rollout is established by implementing the candidate.
 
+The [5 November qualification checkpoint](evidence/ci-qualification-73.md)
+retains every completed observation and its physical workflow attempts. The
+candidate remains unqualified and ordinary validation remains serial.
+
 | Affected PR category | Initial complete-cohort objective |
 | --- | ---: |
 | Documentation | 5 minutes |
@@ -111,6 +115,11 @@ Freeze the benchmark base, head and merge context. Reexecute every applicable
 workflow/job for each observation. Record workflow run IDs and attempts;
 carried-forward successful siblings or failed-only retries are not fresh full
 cohorts. A mobile-only dispatch cannot qualify complete-PR performance.
+
+Keep qualifying counts and medians within one frozen source identity. Five
+internally matched pairs from different base/head/merge identities cannot be
+pooled into a five-pair qualification. Preserve earlier source waves and report
+their results separately when a toolchain or fixture correction changes source.
 
 `scripts/ci-qualification.py capture` records an explicit PR/head, requested
 mode, dependency state, category, pair/cohort identity and whole-cohort request

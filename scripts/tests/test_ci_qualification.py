@@ -375,6 +375,62 @@ class QualificationTests(unittest.TestCase):
                 if cache == 'warm':
                     self.assertEqual(sum(o['target_miss'] for o in gate['observations']), 5)
 
+    def change_source(self, obs, index):
+        head, merge, base = (f'{index + offset:040x}' for offset in (1, 11, 21))
+        obs.update(head_sha=head, merge_sha=merge, base_sha=base)
+        for run in obs['runs']:
+            run['head_sha'] = head
+            run['artifacts']['ci-mode-2']['document'].update(head_sha=head, merge_sha=merge)
+        self.assertTrue(CI.validate_observation(obs)['valid'])
+
+    def test_five_individually_matched_sources_cannot_pool_into_one_frozen_gate(self):
+        values = []
+        for index in range(5):
+            for mode in ('serial', 'candidate'):
+                obs = observation('docs', mode, 'warm', str(index), seconds=100)
+                self.change_source(obs, index)
+                values.append(obs)
+        gate = CI.assess(values)['categories']['docs']['warm']
+        self.assertFalse(gate['qualified'])
+        self.assertEqual(gate['matched_pairs'], [])
+        self.assertIsNone(gate['control_median_seconds'])
+        self.assertIsNone(gate['candidate_median_seconds'])
+        self.assertIsNotNone(gate['source_ambiguity'])
+        self.assertEqual(len(gate['source_strata']), 5)
+        self.assertTrue(all(s['matched_pair_count'] == 1 for s in gate['source_strata']))
+        self.assertEqual(len(gate['observations']), 10)
+
+    def test_multiple_matched_sources_do_not_select_the_fastest_qualified_wave(self):
+        values = [observation('docs', mode, 'warm', str(index), seconds=100)
+                  for index in range(5) for mode in ('serial', 'candidate')]
+        for mode in ('serial', 'candidate'):
+            obs = observation('docs', mode, 'warm', 'other-wave', seconds=400)
+            self.change_source(obs, 99)
+            values.append(obs)
+        gate = CI.assess(values)['categories']['docs']['warm']
+        self.assertFalse(gate['qualified'])
+        self.assertEqual(gate['matched_pairs'], [])
+        self.assertIsNone(gate['candidate_median_seconds'])
+        self.assertEqual(sorted(s['matched_pair_count'] for s in gate['source_strata']), [1, 5])
+        self.assertEqual(sorted(s['candidate_median_seconds'] for s in gate['source_strata']), [100, 400])
+        self.assertEqual(sum(o['target_miss'] for o in gate['observations']), 2)
+
+    def test_extra_valid_cross_source_noncomparable_pair_does_not_become_a_blocker(self):
+        values = [observation('docs', mode, 'warm', str(index), seconds=100)
+                  for index in range(5) for mode in ('serial', 'candidate')]
+        values.append(observation('docs', 'serial', 'warm', 'noncomparable', seconds=100))
+        extra = observation('docs', 'candidate', 'warm', 'noncomparable', seconds=100)
+        self.change_source(extra, 99)
+        values.append(extra)
+        gate = CI.assess(values)['categories']['docs']['warm']
+        self.assertTrue(gate['qualified'])
+        self.assertEqual(len(gate['matched_pairs']), 5)
+        self.assertIsNone(gate['source_ambiguity'])
+        self.assertEqual(sorted(s['matched_pair_count'] for s in gate['source_strata']), [0, 5])
+        self.assertEqual(gate['rejected_pairs'], [{
+            'pair': 'noncomparable', 'reason': 'Source/image/toolchain/cache identities differ'}])
+        self.assertEqual(len(gate['observations']), 12)
+
     def test_capture_is_read_only_and_preserves_existing_observations(self):
         fixture = observation()
 

@@ -613,20 +613,30 @@ def assess(observations):
             result['valid'] = False
             result['errors'].append('Physical jobs reused across observations')
         seen.update(physical)
-        evaluated.append({'observation': observation, 'result': result})
+        source = {key: observation.get(key) if isinstance(observation.get(key), str) else None
+                  for key in ('repository', 'base_sha', 'head_sha', 'merge_sha')}
+        evaluated.append({'observation': observation, 'result': result,
+                          'source': source, 'source_key': canonical(source)})
     categories = {}
     for category in WORKFLOWS:
         gates = {}
         for cache_state in ('warm', 'cold'):
             relevant = [r for r in evaluated if r['observation'].get('category') == category
                         and r['observation'].get('cache_state') == cache_state]
+            sources = {}
+            for row in relevant:
+                stratum = sources.setdefault(row['source_key'], {
+                    'source_identity': row['source'], 'matched_pairs': [], 'observations': []})
+                stratum['observations'].append({'cohort': row['observation'].get('cohort'),
+                                                'mode': row['observation'].get('mode'),
+                                                'valid': row['result']['valid']})
             pairs = {}
             for row in relevant:
                 if not row['result']['valid']:
                     continue
                 observation = row['observation']
                 pairs.setdefault(observation.get('pair'), {}).setdefault(observation.get('mode'), []).append(row)
-            matched, rejected = [], []
+            rejected = []
             blocking_pairs = False
             for pair, modes in pairs.items():
                 if set(modes) != {'serial', 'candidate'} or any(len(v) != 1 for v in modes.values()):
@@ -637,8 +647,18 @@ def assess(observations):
                 if canonical(serial['result']['matching_identity']) != canonical(candidate['result']['matching_identity']):
                     rejected.append({'pair': pair, 'reason': 'Source/image/toolchain/cache identities differ'})
                     continue
-                matched.append({'pair': pair, 'serial_seconds': serial['result']['elapsed_seconds'],
-                                'candidate_seconds': candidate['result']['elapsed_seconds']})
+                sources[serial['source_key']]['matched_pairs'].append({
+                    'pair': pair, 'serial_seconds': serial['result']['elapsed_seconds'],
+                    'candidate_seconds': candidate['result']['elapsed_seconds']})
+            for stratum in sources.values():
+                controls = [p['serial_seconds'] for p in stratum['matched_pairs']]
+                candidates = [p['candidate_seconds'] for p in stratum['matched_pairs']]
+                stratum.update(matched_pair_count=len(controls),
+                               control_median_seconds=statistics.median(controls) if controls else None,
+                               candidate_median_seconds=statistics.median(candidates) if candidates else None)
+            comparable_sources = [s for s in sources.values() if s['matched_pairs']]
+            # Never choose a source by its observed timings or pool frozen waves.
+            matched = comparable_sources[0]['matched_pairs'] if len(comparable_sources) == 1 else []
             controls = [p['serial_seconds'] for p in matched]
             candidates = [p['candidate_seconds'] for p in matched]
             control_median = statistics.median(controls) if controls else None
@@ -648,6 +668,10 @@ def assess(observations):
             gates[cache_state] = {'qualified': len(matched) >= 5 and timing_pass
                                   and not blocking_pairs and all(r['result']['valid'] for r in relevant),
                                   'matched_pairs': matched, 'rejected_pairs': rejected,
+                                  'source_strata': [sources[key] for key in sorted(sources)],
+                                  'source_ambiguity': ('Matched pairs span multiple frozen sources; assess a '
+                                                       'prospectively selected single-source wave.'
+                                                       if len(comparable_sources) > 1 else None),
                                   'control_median_seconds': control_median,
                                   'candidate_median_seconds': candidate_median,
                                   'required_pairs': 5, 'target_seconds': TARGETS[category] if cache_state == 'warm' else None,
