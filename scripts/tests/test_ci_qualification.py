@@ -6,6 +6,7 @@ import itertools
 import json
 from pathlib import Path
 import stat
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -21,6 +22,7 @@ COUNTER = itertools.count(1000)
 START = datetime(2020, 1, 1, tzinfo=timezone.utc)
 HEAD, MERGE, BASE = 'a' * 40, 'b' * 40, 'c' * 40
 REPO = 'pennel-app/pennel'
+ROLLING_APPROVAL = 'https://github.com/pennel-app/pennel/issues/152#issuecomment-6664508244'
 
 
 def stamp(seconds=0):
@@ -473,6 +475,185 @@ class QualificationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 CI.capture(args, FakeGitHub())
             self.assertEqual((Path(directory) / 'observation.json').read_bytes(), saved)
+            with tempfile.TemporaryDirectory() as rolling_directory:
+                rolling_args = copy.copy(args)
+                rolling_args.output = rolling_directory
+                rolling_args.image_policy = 'rolling-build'
+                rolling_args.approval_reference = ROLLING_APPROVAL
+                rolling = CI.capture(rolling_args, FakeGitHub())
+                self.assertEqual(rolling['image_policy'], 'rolling-build')
+                self.assertEqual(rolling['approval_reference'], ROLLING_APPROVAL)
+                self.assertTrue(rolling['assessment']['valid'])
+                self.assertEqual(rolling['strict_assessment']['image_policy'], 'exact')
+            self.assertEqual((Path(directory) / 'observation.json').read_bytes(), saved)
+
+
+class RollingImagePolicyTests(unittest.TestCase):
+    def rolling(self, values):
+        return CI.assess(values, image_policy='rolling-build', approval_reference=ROLLING_APPROVAL)
+
+    def change_build_numbers(self, obs):
+        for run in obs['runs']:
+            for index, job in enumerate(run['jobs']):
+                job['identity']['image_version'] = f'20261101.360.{index}'
+            if run['workflow'] == 'mobile.yml':
+                for artifact in run['artifacts'].values():
+                    document = artifact['document']
+                    if document.get('schema') != 2:
+                        continue
+                    lane = document['validation']['lane']
+                    native = next(j for j in run['jobs'] if j['name'] == 'native ' + lane)
+                    document['provenance']['image_version'] = native['identity']['image_version']
+
+    def test_rolling_policy_ignores_only_build_numbers_at_all_matching_points(self):
+        values = []
+        for category in CI.WORKFLOWS:
+            for cache in ('warm', 'cold'):
+                for index in range(5):
+                    for mode in ('serial', 'candidate'):
+                        obs = observation(category, mode, cache, f'{category}-{cache}-{index}')
+                        if mode == 'candidate':
+                            self.change_build_numbers(obs)
+                        values.append(obs)
+        before = CI.canonical(values)
+        report = self.rolling(values)
+        self.assertTrue(report['rollout_qualified'])
+        self.assertFalse(report['strict_assessment']['rollout_qualified'])
+        self.assertEqual(report['image_policy'], 'rolling-build')
+        self.assertEqual(report['approval_reference'], ROLLING_APPROVAL)
+        self.assertEqual(report['strict_assessment']['image_policy'], 'exact')
+        self.assertEqual(CI.canonical(values), before)
+        for category, groups in report['categories'].items():
+            for cache, gate in groups.items():
+                self.assertEqual(len(gate['matched_pairs']), 5)
+                strict = report['strict_assessment']['categories'][category][cache]
+                self.assertEqual([o['elapsed_seconds'] for o in gate['observations']],
+                                 [o['elapsed_seconds'] for o in strict['observations']])
+        candidate = next(o for o in report['categories']['mobile']['warm']['observations']
+                         if o['mode'] == 'candidate')
+        versions = {i['lane']: i['image_version'] for i in candidate['observed_images']
+                    if i['kind'] == 'receipt'}
+        self.assertNotEqual(versions['release'], versions['runtime'])
+        self.assertTrue(all(versions.values()))
+
+    def test_default_exact_stays_strict_and_rolling_requires_an_explicit_reference(self):
+        serial = observation('mobile', 'serial')
+        candidate = observation('mobile', 'candidate')
+        self.change_build_numbers(candidate)
+        self.assertTrue(CI.validate_observation(candidate, image_policy='rolling-build')['valid'])
+        self.assertFalse(CI.validate_observation(candidate)['valid'])
+        strict = CI.assess([serial, candidate])
+        self.assertEqual(strict['image_policy'], 'exact')
+        self.assertNotIn('strict_assessment', strict)
+        iterator_report = self.rolling(iter([serial, candidate]))
+        self.assertEqual(iterator_report['observation_count'], 2)
+        self.assertEqual(iterator_report['strict_assessment']['observation_count'], 2)
+        for reference in (None, '', '  ', 'unsafe\nreference'):
+            with self.subTest(reference=reference), self.assertRaises(ValueError):
+                CI.assess([serial, candidate], image_policy='rolling-build', approval_reference=reference)
+        with self.assertRaises(ValueError):
+            CI.assess([], image_policy='unknown', approval_reference=ROLLING_APPROVAL)
+
+    def test_assess_cli_makes_policy_and_approval_explicit(self):
+        values = [observation('docs', mode, 'warm', str(index))
+                  for index in range(5) for mode in ('serial', 'candidate')]
+        for obs in values:
+            if obs['mode'] == 'candidate':
+                self.change_build_numbers(obs)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = []
+            for index, obs in enumerate(values):
+                path = root / f'observation-{index}.json'
+                path.write_text(json.dumps(obs))
+                inputs.append(str(path))
+            for policy in ('exact', 'rolling-build'):
+                output = root / f'{policy}.json'
+                arguments = [sys.executable, '-B', str(SCRIPT), 'assess', *inputs, '--output', str(output)]
+                if policy == 'rolling-build':
+                    arguments += ['--image-policy', policy, '--approval-reference', ROLLING_APPROVAL]
+                result = CI.subprocess.run(arguments, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                report = json.loads(output.read_text())
+                self.assertEqual(report['image_policy'], policy)
+                self.assertEqual(report['categories']['docs']['warm']['qualified'], policy == 'rolling-build')
+
+    def test_rolling_cli_without_reference_does_not_write_an_assessment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = root / 'observation.json', root / 'report.json'
+            source.write_text(json.dumps(observation()))
+            result = CI.subprocess.run([sys.executable, '-B', str(SCRIPT), 'assess', str(source),
+                                        '--output', str(output), '--image-policy', 'rolling-build'],
+                                       capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('explicit approval reference', result.stderr)
+            self.assertFalse(output.exists())
+
+    def test_rolling_does_not_normalize_family_architecture_toolchain_cache_or_missing_metadata(self):
+        cases = ('image-family', 'architecture', 'rust', 'node', 'npm', 'python', 'xcode',
+                 'sdk', 'variant', 'dependency', 'cache-key', 'cache-hit',
+                 'missing-job-version', 'missing-receipt-version')
+        for case in cases:
+            values = [observation('mobile', mode, 'warm', str(index))
+                      for index in range(5) for mode in ('serial', 'candidate')]
+            for obs in values:
+                if obs['mode'] == 'candidate':
+                    self.change_build_numbers(obs)
+            candidate = values[-1]
+            run = candidate['runs'][-1]
+            native = next(j for j in run['jobs'] if j['name'] == 'native release')
+            if case in ('image-family', 'rust', 'node', 'npm', 'python', 'cache-key', 'cache-hit', 'missing-job-version'):
+                key, value = {'image-family': ('image', 'macos-27-arm64'),
+                              'rust': ('rustc', 'rustc 1.100.0'), 'node': ('node', 'v24.0.0'),
+                              'npm': ('npm', '11.0.0'), 'python': ('python', 'CPython (3.11.18)'),
+                              'cache-key': ('rust_key', 'v0-rust-other-inputs'),
+                              'cache-hit': ('rust_exact', False),
+                              'missing-job-version': ('image_version', None)}[case]
+                native['identity'][key] = value
+            else:
+                for artifact in run['artifacts'].values():
+                    document = artifact['document']
+                    if document.get('schema') != 2:
+                        continue
+                    if case == 'missing-receipt-version':
+                        document['provenance']['image_version'] = None
+                    else:
+                        key, value = {'architecture': ('architecture', 'x86_64'),
+                                      'xcode': ('xcode', 'Xcode 27.0'), 'sdk': ('device_sdk', '27.0'),
+                                      'variant': ('variant', 'production'),
+                                      'dependency': ('dependency_sha256', 'e' * 64)}[case]
+                        document['metadata'][key] = value
+            gate = self.rolling(values)['categories']['mobile']['warm']
+            with self.subTest(case=case):
+                self.assertFalse(gate['qualified'])
+
+    def test_rolling_preserves_source_strata_and_all_comparable_timing_misses(self):
+        values = []
+        source_helper = QualificationTests()
+        for index in range(5):
+            for mode in ('serial', 'candidate'):
+                obs = observation('docs', mode, 'warm', str(index), seconds=100)
+                source_helper.change_source(obs, index)
+                if mode == 'candidate':
+                    self.change_build_numbers(obs)
+                values.append(obs)
+        gate = self.rolling(values)['categories']['docs']['warm']
+        self.assertFalse(gate['qualified'])
+        self.assertEqual(len(gate['source_strata']), 5)
+        self.assertEqual(gate['matched_pairs'], [])
+        self.assertIsNone(gate['candidate_median_seconds'])
+        values = []
+        for index in range(10):
+            serial = observation('docs', 'serial', 'warm', str(index), seconds=100)
+            candidate = observation('docs', 'candidate', 'warm', str(index), seconds=290 if index < 5 else 400)
+            self.change_build_numbers(candidate)
+            values.extend([serial, candidate])
+        gate = self.rolling(values)['categories']['docs']['warm']
+        self.assertFalse(gate['qualified'])
+        self.assertEqual(len(gate['matched_pairs']), 10)
+        self.assertEqual(gate['candidate_median_seconds'], 345)
+        self.assertEqual(sum(o['target_miss'] for o in gate['observations']), 5)
 
 
 class ReadRobustnessTests(unittest.TestCase):

@@ -21,9 +21,13 @@ adds a scoped candidate while **ordinary PR, main and manual validation remain
 serial by default**. This is separate from the native compiler-cache experiment.
 No timing improvement or rollout is established by implementing the candidate.
 
-The [5 November qualification checkpoint](evidence/ci-qualification-73.md)
-retains every completed observation and its physical workflow attempts. The
-candidate remains unqualified and ordinary validation remains serial.
+The [first 5 November qualification checkpoint](evidence/ci-qualification-73.md)
+retains the original exact-image assessment and every physical workflow attempt.
+Lander subsequently [approved rolling image build numbers](https://github.com/pennel-app/pennel/issues/152#issuecomment-6664508244)
+while retaining source, toolchain and cache matching. The
+[rolling-build qualification](evidence/ci-qualification-73-rolling.md) reports
+reassessment and the remaining prospective runs. Ordinary validation remains
+serial until that complete qualification passes.
 
 | Affected PR category | Initial complete-cohort objective |
 | --- | ---: |
@@ -100,8 +104,9 @@ branch-protection rule or authorizes publication.
 Controlled `cold` skips the workflow's configured Rust and npm dependency-cache
 restores/saves for that benchmark PR. It neither deletes working caches nor
 creates an alternate cache family. All installs, builds and tests still run.
-This does not describe an empty machine: preinstalled tools and hosted images
-must still match. Unobserved cache state must not be labelled controlled cold.
+This does not describe an empty machine: image family/architecture and observed
+toolchains must still match. Image build numbers may vary under the approved
+rolling-build policy. Unobserved cache state must not be labelled controlled cold.
 
 The reusable selection job records actual mode, dependency policy, PR/head/merge
 identity, workflow run/attempt and cohort in `build/ci-performance/mode.json`,
@@ -135,11 +140,20 @@ interval explicit. Report dependency/scheduling intervals separately from job
 execution; the exact ready-runner boundary may remain unknown. Do not sum
 overlapping job durations.
 
-Capture preserves curated API evidence and validation artifacts. Assessment
-requires matching source, image/toolchain, observed cache policy/state, actual
-mode and complete coverage before using a pair for qualification. Unknown or
-mismatched evidence remains unqualified and is retained alongside successful
-observations. Mobile ordinary lane artifacts have separate lane/mode/attempt
+Capture preserves curated API evidence and validation artifacts. Exact-image
+assessment remains the default. For the approved scheduling-design comparison,
+pass `--image-policy rolling-build --approval-reference
+https://github.com/pennel-app/pennel/issues/152#issuecomment-6664508244` to capture
+and assessment. This omits only observed `image_version` values from comparison;
+it still requires their presence and retains all raw versions and the separate
+exact-image result. Image family/architecture, source, observed toolchains,
+configuration, dependency/cache identities and state, actual mode and complete
+coverage must match. Unknown or mismatched evidence remains unqualified and is
+retained alongside successful observations. Rolling-fleet completion objectives
+do not establish a same-image causal speedup. This policy does not change the
+independent native-CAS gates below.
+
+Mobile ordinary lane artifacts have separate lane/mode/attempt
 names and a combined `mobile-validation-attempt-<attempt>` result; legacy manual
 artifacts retain the names documented below.
 

@@ -42,6 +42,28 @@ LOG_LIMIT = 262144
 ARCHIVE_LIMIT = 4 * 1024 * 1024
 READ_ATTEMPTS = 3
 READ_TIMEOUT = 25
+IMAGE_POLICIES = ('exact', 'rolling-build')
+
+
+def validate_image_policy(policy, approval_reference=None, require_approval=False):
+    if policy not in IMAGE_POLICIES:
+        raise ValueError('Unknown runner-image matching policy')
+    if policy == 'rolling-build' and require_approval and (
+            not isinstance(approval_reference, str) or not approval_reference.strip()
+            or len(approval_reference) > 1024 or any(ord(c) < 32 for c in approval_reference)):
+        raise ValueError('Rolling-build matching requires an explicit approval reference')
+
+
+def comparison_identity(value, policy):
+    validate_image_policy(policy)
+    if policy == 'exact':
+        return value
+    if isinstance(value, dict):
+        return {key: comparison_identity(item, policy) for key, item in value.items()
+                if key != 'image_version'}
+    if isinstance(value, list):
+        return [comparison_identity(item, policy) for item in value]
+    return value
 
 
 class ReadError(ValueError):
@@ -243,6 +265,9 @@ def run_spec(value):
 
 
 def capture(args, api=None):
+    policy = getattr(args, 'image_policy', 'exact')
+    approval = getattr(args, 'approval_reference', None)
+    validate_image_policy(policy, approval, require_approval=True)
     api = api or GitHub(args.repository)
     destination = Path(args.output)
     destination.mkdir(parents=True, exist_ok=True)
@@ -345,15 +370,21 @@ def capture(args, api=None):
             observation['capture_errors'].append(f'{workflow}: {error}')
     observation['captured_at'] = datetime.now(timezone.utc).isoformat()
     observation['api_read_trace'] = list(getattr(api, 'read_trace', []))
-    validated = validate_observation(observation)
+    validated = validate_observation(observation, image_policy=policy)
     observation['assessment'] = validated
+    observation['image_policy'] = policy
+    observation['approval_reference'] = approval if policy == 'rolling-build' else None
+    if policy == 'rolling-build':
+        observation['strict_assessment'] = validate_observation(observation)
     (destination / 'observation.json').write_text(json.dumps(observation, indent=2, sort_keys=True) + '\n')
     return observation
 
 
-def validate_observation(observation):
+def validate_observation(observation, image_policy='exact'):
+    validate_image_policy(image_policy)
     errors = list(observation.get('capture_errors', []))
     identity = {'jobs': {}, 'mobile': None}
+    observed_images = []
     last_completed = None
     physical = []
     intervals = []
@@ -432,6 +463,9 @@ def validate_observation(observation):
                         or not job.get('runner_name') or not job.get('steps')):
                     errors.append(workflow + ': selected job did not physically succeed: ' + str(job.get('name')))
                 meta = job.get('identity', {})
+                observed_images.append({'kind': 'job', 'workflow': workflow, 'job': job.get('name'),
+                                        'job_id': job.get('id'), 'image': meta.get('image'),
+                                        'image_version': meta.get('image_version')})
                 if not meta.get('image') or not meta.get('image_version'):
                     errors.append(workflow + ': missing observed runner image: ' + str(job.get('name')))
                 steps = job.get('steps') or []
@@ -456,7 +490,7 @@ def validate_observation(observation):
                 fingerprint = {k: meta.get(k) for k in ('image', 'image_version', 'rustc', 'node', 'npm', 'python', 'rust_key', 'node_cache_keys')}
                 key = workflow + ':' + role
                 previous = identity['jobs'].get(key)
-                if previous is not None and previous != fingerprint:
+                if previous is not None and comparison_identity(previous, image_policy) != comparison_identity(fingerprint, image_policy):
                     errors.append(workflow + ': isolated native lanes have differing identities')
                 identity['jobs'][key] = fingerprint
                 executed.append(job)
@@ -464,9 +498,17 @@ def validate_observation(observation):
                 errors.append(workflow + ': no physical jobs observed')
             errors.extend(coverage_errors(observation['category'], observation['mode'], workflow, run.get('jobs', [])))
             if workflow == 'mobile.yml':
-                native, mobile_errors = mobile_identity(observation, run)
+                native, mobile_errors = mobile_identity(observation, run, image_policy=image_policy)
                 errors.extend(mobile_errors)
                 identity['mobile'] = native
+                lanes = ('serial',) if observation['mode'] == 'serial' else ('release', 'runtime')
+                for lane in lanes:
+                    receipt = artifact_document(artifacts, f"mobile-ci-{lane}-{observation['mode']}-attempt-{attempt}")
+                    provenance = receipt.get('provenance', {})
+                    observed_images.append({'kind': 'receipt', 'workflow': workflow, 'lane': lane,
+                                            'image': provenance.get('image_os'),
+                                            'image_version': provenance.get('image_version'),
+                                            'architecture': receipt.get('metadata', {}).get('architecture')})
         if len(physical) != len(set(physical)):
             errors.append('Duplicate physical job evidence')
         elapsed = (last_completed - requested).total_seconds() if complete and last_completed else None
@@ -477,12 +519,14 @@ def validate_observation(observation):
                 'elapsed_lower_bound_seconds': lower_bound,
                 'target_miss': (elapsed > TARGETS[observation['category']]) if elapsed is not None else (
                     True if lower_bound is not None and lower_bound > TARGETS[observation['category']] else None),
-                'matching_identity': identity, 'physical_job_ids': physical, 'intervals': intervals}
+                'matching_identity': identity, 'physical_job_ids': physical, 'intervals': intervals,
+                'image_policy': image_policy, 'observed_images': observed_images}
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         return {'valid': False, 'errors': errors + ['Malformed observation: ' + str(error)],
                 'elapsed_seconds': None, 'elapsed_lower_bound_seconds': None,
                 'target_miss': None, 'matching_identity': None,
-                'physical_job_ids': physical, 'intervals': intervals}
+                'physical_job_ids': physical, 'intervals': intervals,
+                'image_policy': image_policy, 'observed_images': observed_images}
 
 
 def artifact_document(artifacts, name):
@@ -546,7 +590,8 @@ def coverage_errors(category, mode, workflow, jobs):
     return errors
 
 
-def mobile_identity(observation, run):
+def mobile_identity(observation, run, image_policy='exact'):
+    validate_image_policy(image_policy)
     errors = []
     attempt, run_id = integer(run['run_attempt']), integer(run['id'])
     lanes = ('serial',) if observation['mode'] == 'serial' else ('release', 'runtime')
@@ -586,7 +631,8 @@ def mobile_identity(observation, run):
             errors.append('Mobile: missing observed native input identity: ' + lane)
         identities.append({**{key: metadata.get(key) for key in fields},
                            'image_os': provenance.get('image_os'), 'image_version': provenance.get('image_version')})
-    if identities and any(i != identities[0] for i in identities[1:]):
+    if identities and any(comparison_identity(i, image_policy) != comparison_identity(identities[0], image_policy)
+                          for i in identities[1:]):
         errors.append('Mobile: native lane fingerprints differ')
     aggregate = artifact_document(run['artifacts'], f'mobile-validation-attempt-{attempt}')
     expected = {'schema': 1, 'status': 'success', 'ci_mode': observation['mode'],
@@ -603,11 +649,13 @@ def mobile_identity(observation, run):
     return identities[0] if identities else None, errors
 
 
-def assess(observations):
+def assess(observations, image_policy='exact', approval_reference=None):
+    validate_image_policy(image_policy, approval_reference, require_approval=True)
+    observations = list(observations)
     evaluated = []
     seen = set()
     for observation in observations:
-        result = validate_observation(observation)
+        result = validate_observation(observation, image_policy=image_policy)
         physical = tuple(sorted(result['physical_job_ids']))
         if physical and any(job in seen for job in physical):
             result['valid'] = False
@@ -644,7 +692,8 @@ def assess(observations):
                     blocking_pairs = True
                     continue
                 serial, candidate = modes['serial'][0], modes['candidate'][0]
-                if canonical(serial['result']['matching_identity']) != canonical(candidate['result']['matching_identity']):
+                if canonical(comparison_identity(serial['result']['matching_identity'], image_policy)) != canonical(
+                        comparison_identity(candidate['result']['matching_identity'], image_policy)):
                     rejected.append({'pair': pair, 'reason': 'Source/image/toolchain/cache identities differ'})
                     continue
                 sources[serial['source_key']]['matched_pairs'].append({
@@ -679,10 +728,15 @@ def assess(observations):
                                   'observations': [{'cohort': r['observation'].get('cohort'),
                                                     'mode': r['observation'].get('mode'), **r['result']} for r in relevant]}
         categories[category] = gates
-    return {'schema': 1, 'rollout_qualified': all(g['qualified'] for c in categories.values() for g in c.values()),
+    report = {'schema': 1, 'rollout_qualified': all(g['qualified'] for c in categories.values() for g in c.values()),
             'metric': 'replay-request-to-last-physical-job-complete', 'push_to_dispatch': 'unknown',
             'categories': categories, 'observation_count': len(evaluated),
+            'image_policy': image_policy,
+            'approval_reference': approval_reference if image_policy == 'rolling-build' else None,
             'limits': 'No p95, maximum, guaranteed dispatch deadline or native-CAS adoption is established.'}
+    if image_policy == 'rolling-build':
+        report['strict_assessment'] = assess(observations)
+    return report
 
 
 def main():
@@ -705,6 +759,9 @@ def main():
     report = commands.add_parser('assess')
     report.add_argument('observations', nargs='+')
     report.add_argument('--output', required=True)
+    for command in (collect, report):
+        command.add_argument('--image-policy', choices=IMAGE_POLICIES, default='exact')
+        command.add_argument('--approval-reference', help='Required citation for explicitly approved rolling-build matching')
     args = parser.parse_args()
     if args.command == 'capture':
         value = capture(args)
@@ -716,7 +773,7 @@ def main():
         if path.is_dir():
             path /= 'observation.json'
         observations.append(json.loads(path.read_text()))
-    value = assess(observations)
+    value = assess(observations, image_policy=args.image_policy, approval_reference=args.approval_reference)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
