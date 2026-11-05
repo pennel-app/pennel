@@ -1354,6 +1354,7 @@ impl PennelEngine {
         let mut rows = snapshot.utterances;
         let mut recovered = 0;
         let mut unverified = false;
+        let mut provider_error = None;
         for row in rows.iter_mut().filter(|row| row.segment.failed) {
             if row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
                 proof.disposition == crate::meeting_utterances::RecoveryAudioDisposition::Unverified
@@ -1380,57 +1381,71 @@ impl PennelEngine {
                     "The recovery audio changed before recognition.",
                 ));
             }
-            if let Ok(transcript) = self.stt_meeting(&settings, &wav, &keys) {
-                if !crate::meetings::recovery_provenance(&path, proof.disposition)
-                    .is_some_and(|actual| proof.same_audio(&actual))
-                {
-                    return Err(PennelError::storage(
-                        "The recovery audio changed during recognition.",
-                    ));
+            let transcript = match self.stt_meeting(&settings, &wav, &keys) {
+                Ok(transcript) => transcript,
+                Err(error) => {
+                    provider_error = Some(meeting_retry_error(error));
+                    break;
                 }
-                let segment = &mut row.segment;
-                if let Some((samples, rate)) = decode_wav(&wav) {
-                    segment.end_ms = segment
-                        .start_ms
-                        .saturating_add(samples.len() as u64 * 1_000 / u64::from(rate.max(1)));
-                }
-                let retained = !is_hallucination(&transcript.text);
-                segment.text = if !retained {
-                    String::new()
-                } else {
-                    transcript.text
-                };
-                segment.failed = false;
-                proof.disposition = crate::meeting_utterances::RecoveryAudioDisposition::Complete;
-                row.metadata.recovery_audio = Some(proof);
-                row.metadata.spans = if retained {
-                    transcript
-                        .spans
-                        .into_iter()
-                        .map(|span| {
-                            crate::TimedTextSpan(
-                                span.start_byte,
-                                span.end_byte,
-                                segment.start_ms.saturating_add(span.start_ms),
-                                segment.start_ms.saturating_add(span.end_ms),
-                            )
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                row.metadata.refresh_fingerprints(segment);
-                if let Some(manual) = row.metadata.manual.as_mut()
-                    && manual.source_fingerprint != row.metadata.source_fingerprint
-                {
-                    manual.review_required = true;
-                }
-                recovered += 1;
+            };
+            if !crate::meetings::recovery_provenance(&path, proof.disposition)
+                .is_some_and(|actual| proof.same_audio(&actual))
+            {
+                return Err(PennelError::storage(
+                    "The recovery audio changed during recognition.",
+                ));
             }
+            let segment = &mut row.segment;
+            if let Some((samples, rate)) = decode_wav(&wav) {
+                segment.end_ms = segment
+                    .start_ms
+                    .saturating_add(samples.len() as u64 * 1_000 / u64::from(rate.max(1)));
+            }
+            let retained = !is_hallucination(&transcript.text);
+            segment.text = if !retained {
+                String::new()
+            } else {
+                transcript.text
+            };
+            segment.failed = false;
+            proof.disposition = crate::meeting_utterances::RecoveryAudioDisposition::Complete;
+            row.metadata.recovery_audio = Some(proof);
+            row.metadata.spans = if retained {
+                transcript
+                    .spans
+                    .into_iter()
+                    .map(|span| {
+                        crate::TimedTextSpan(
+                            span.start_byte,
+                            span.end_byte,
+                            segment.start_ms.saturating_add(span.start_ms),
+                            segment.start_ms.saturating_add(span.end_ms),
+                        )
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            row.metadata.refresh_fingerprints(segment);
+            if let Some(manual) = row.metadata.manual.as_mut()
+                && manual.source_fingerprint != row.metadata.source_fingerprint
+            {
+                manual.review_required = true;
+            }
+            recovered += 1;
         }
+        if recovered == 0
+            && let Some(error) = provider_error
+        {
+            return Err(error);
+        }
+        // Keep recovered text durable before reporting a failed batch; later retries skip this prefix.
         store.write_transcript_snapshot(&id, Some(snapshot.revision), &rows)?;
         store.restore_recovery_duration(&id)?;
         let _ = store.cleanup_committed_audio(&id);
+        if let Some(error) = provider_error {
+            return Err(error);
+        }
         if recovered == 0 && unverified {
             return Err(PennelError::storage(
                 "Some recovery audio cannot be linked to its original transcript. Keep the files and review their sources before retrying recognition.",
@@ -3276,6 +3291,58 @@ impl PennelEngine {
     }
 }
 
+// Provider errors can include credentials or user content; keep only fixed diagnostic text and known codes.
+fn meeting_retry_error(error: PennelError) -> PennelError {
+    match error {
+        PennelError::Cloud { code, .. } => {
+            let (code, message) = match code.as_str() {
+                "unauthorized" | "session_revoked" | "not_signed_in" => {
+                    return PennelError::NotSignedIn;
+                }
+                "quota" => (
+                    "quota",
+                    "You have reached your Pennel Cloud limit for this month. You can choose your own provider in Providers.",
+                ),
+                "upstream_payment_required" => (
+                    "upstream_payment_required",
+                    "The provider reports insufficient credit. Check your account.",
+                ),
+                "overloaded" => (
+                    "overloaded",
+                    "Pennel Cloud is temporarily overloaded. Try again later.",
+                ),
+                "upstream_rejected" | "model" | "request" | "multipart" | "file" => (
+                    "invalid_request",
+                    "The model could not process this request.",
+                ),
+                "too_large" | "too_long" => ("too_large", "This request is too large."),
+                _ => (
+                    "upstream",
+                    "Pennel Cloud models are temporarily unavailable.",
+                ),
+            };
+            PennelError::Cloud {
+                code: code.into(),
+                message: message.into(),
+            }
+        }
+        PennelError::Http { status, .. } => crate::http::map_status(status, ""),
+        PennelError::Network { .. } => PennelError::Network {
+            message: "No connection".into(),
+        },
+        PennelError::InvalidResponse { .. } => PennelError::InvalidResponse {
+            message: "The model could not process this request.".into(),
+        },
+        PennelError::Storage { .. } => PennelError::Storage {
+            message: "The local model could not be read. Check the model and try again.".into(),
+        },
+        PennelError::MissingApiKey { .. } => PennelError::MissingApiKey {
+            task: "meeting_stt".into(),
+        },
+        other => other,
+    }
+}
+
 fn clean(
     engine: &PennelEngine,
     settings: &Settings,
@@ -4716,6 +4783,251 @@ mod tests {
         };
         store.write_transcript(&id, &[segment]).unwrap();
         id
+    }
+
+    fn meeting_with_recovery(engine: &PennelEngine, count: u64) -> (String, Vec<PathBuf>) {
+        let id = add_meeting(engine, "Retry recording", 9, "Original placeholder.");
+        let store = engine.meeting_store();
+        let mut rows = Vec::new();
+        let mut paths = Vec::new();
+        for number in 0..count {
+            let start_ms = number * 1_000;
+            let path = store
+                .write_recovery(
+                    &id,
+                    crate::meetings::Speaker::Others,
+                    start_ms,
+                    &encode_wav(&speech(), 16_000),
+                )
+                .unwrap();
+            let mut row = crate::MeetingUtterance::new(
+                crate::meetings::Segment {
+                    start_ms,
+                    end_ms: start_ms + 1_000,
+                    speaker: crate::meetings::Speaker::Others,
+                    text: String::new(),
+                    failed: true,
+                    voice: None,
+                },
+                Some("system_audio".into()),
+            );
+            row.metadata.recovery_audio = crate::meetings::recovery_provenance(
+                &path,
+                crate::meeting_utterances::RecoveryAudioDisposition::Pending,
+            );
+            rows.push(row);
+            paths.push(path);
+        }
+        store.write_transcript_snapshot(&id, None, &rows).unwrap();
+        (id, paths)
+    }
+
+    #[test]
+    fn meeting_retry_reports_provider_failure_without_sending_later_chunks() {
+        let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&dir, &server);
+        let (id, paths) = meeting_with_recovery(&engine, 3);
+        engine
+            .set_meeting_notes(id.clone(), "Owner notes stay unchanged.".into())
+            .unwrap();
+        let store = engine.meeting_store();
+        let before = store.read_committed_transcript_snapshot(&id).unwrap();
+        let transcript = std::fs::read(store.dir_of(&id).join("transcript.md")).unwrap();
+        let manifest = std::fs::read(store.dir_of(&id).join("transcript.meta.json")).unwrap();
+        let notes = std::fs::read(store.dir_of(&id).join("notes.md")).unwrap();
+        let request = server
+            .mock("POST", "/audio/transcriptions")
+            .with_status(503)
+            .with_body("Untrusted provider response.")
+            .expect(1)
+            .create();
+
+        let error = engine.retranscribe_failed(id.clone(), keys()).unwrap_err();
+
+        assert!(matches!(error, PennelError::Http { status: 503, .. }));
+        assert_eq!(
+            store.read_committed_transcript_snapshot(&id).unwrap(),
+            before
+        );
+        assert_eq!(
+            std::fs::read(store.dir_of(&id).join("transcript.md")).unwrap(),
+            transcript
+        );
+        assert_eq!(
+            std::fs::read(store.dir_of(&id).join("transcript.meta.json")).unwrap(),
+            manifest
+        );
+        assert_eq!(
+            std::fs::read(store.dir_of(&id).join("notes.md")).unwrap(),
+            notes
+        );
+        assert!(paths.iter().all(|path| path.exists()));
+        assert!(
+            engine
+                .meeting_transcript(id)
+                .iter()
+                .all(|segment| segment.failed)
+        );
+        request.assert();
+    }
+
+    #[test]
+    fn meeting_retry_keeps_successful_prefix_and_later_retries_only_remaining_chunks() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&dir, &server);
+        let (id, paths) = meeting_with_recovery(&engine, 3);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let status_calls = calls.clone();
+        let body_calls = calls.clone();
+        let request = server
+            .mock("POST", "/audio/transcriptions")
+            .with_status_code_from_request(move |_| {
+                if status_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    200
+                } else {
+                    503
+                }
+            })
+            .with_body_from_request(move |_| {
+                if body_calls.load(Ordering::SeqCst) == 1 {
+                    br#"{"text":"Recovered prefix."}"#.to_vec()
+                } else {
+                    b"Provider unavailable.".to_vec()
+                }
+            })
+            .expect(2)
+            .create();
+
+        let error = engine.retranscribe_failed(id.clone(), keys()).unwrap_err();
+
+        assert!(matches!(error, PennelError::Http { status: 503, .. }));
+        request.assert();
+        let saved = engine.meeting_transcript(id.clone());
+        assert_eq!(saved[0].text, "Recovered prefix.");
+        assert!(!saved[0].failed);
+        assert!(saved[1..].iter().all(|segment| segment.failed));
+        assert!(!paths[0].exists());
+        assert!(paths[1..].iter().all(|path| path.exists()));
+        request.remove();
+        let remaining = stt(&mut server, "Recovered remaining.").expect(2);
+
+        assert_eq!(engine.retranscribe_failed(id.clone(), keys()).unwrap(), 2);
+
+        remaining.assert();
+        let saved = engine.meeting_transcript(id);
+        assert_eq!(saved[0].text, "Recovered prefix.");
+        assert!(saved.iter().all(|segment| !segment.failed));
+        assert!(paths.iter().all(|path| !path.exists()));
+    }
+
+    #[test]
+    fn meeting_retry_sanitizes_cloud_provider_errors() {
+        let private =
+            "Bearer synthetic-secret https://user:password@example.test/private dictated words";
+        for (status, code, expected_code) in [
+            (429, "quota", "quota"),
+            (
+                402,
+                "upstream_payment_required",
+                "upstream_payment_required",
+            ),
+            (503, "upstream", "upstream"),
+            (503, private, "upstream"),
+        ] {
+            let (dir, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+            let engine = cloud_engine(&dir, &server, true, "");
+            let mut settings = engine.settings();
+            settings.meeting_stt = settings.dictation_stt.clone();
+            settings.meetings_dir = dir.path().join("meetings").to_string_lossy().into_owned();
+            engine.update_settings(settings).unwrap();
+            let (id, paths) = meeting_with_recovery(&engine, 2);
+            let refresh = refresh_mock(&mut server).expect(1);
+            let request = server
+                .mock("POST", "/v1/audio/transcriptions")
+                .with_status(status)
+                .with_body(serde_json::json!({"error": code, "message": private}).to_string())
+                .expect(1)
+                .create();
+
+            let error = engine.retranscribe_failed(id, keys()).unwrap_err();
+
+            assert!(matches!(&error, PennelError::Cloud { code, .. } if code == expected_code));
+            if expected_code == "upstream_payment_required" {
+                assert_eq!(
+                    error.to_string(),
+                    "The provider reports insufficient credit. Check your account."
+                );
+            }
+            for token in [
+                "synthetic-secret",
+                "password",
+                "example.test",
+                "dictated words",
+            ] {
+                assert!(!format!("{error:?}").contains(token));
+            }
+            assert!(paths.iter().all(|path| path.exists()));
+            refresh.assert();
+            request.assert();
+        }
+    }
+
+    #[test]
+    fn meeting_retry_sanitizes_native_provider_errors() {
+        struct FailingSpeech(PennelError);
+        impl SystemTranscriber for FailingSpeech {
+            fn transcribe(
+                &self,
+                _samples: Vec<f32>,
+                _sample_rate: u32,
+                _language: Option<String>,
+                _vocabulary: Vec<String>,
+            ) -> Result<String, PennelError> {
+                Err(self.0.clone())
+            }
+        }
+        let private =
+            "Bearer synthetic-secret https://user:password@example.test/private dictated words";
+        for failure in [
+            PennelError::Network {
+                message: private.into(),
+            },
+            PennelError::InvalidResponse {
+                message: private.into(),
+            },
+            PennelError::Storage {
+                message: private.into(),
+            },
+            PennelError::MissingApiKey {
+                task: private.into(),
+            },
+        ] {
+            let (dir, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+            let engine = meeting_engine(&dir, &server);
+            let mut settings = engine.settings();
+            let account = crate::provider::new_account(ProviderKind::AppleSpeech, vec![]);
+            settings.meeting_stt = ModelChoice {
+                provider_id: account.id.clone(),
+                model: "apple".into(),
+            };
+            settings.providers.push(account);
+            engine.update_settings(settings).unwrap();
+            engine.set_system_transcriber(Arc::new(FailingSpeech(failure)));
+            let (id, paths) = meeting_with_recovery(&engine, 1);
+
+            let error = engine.retranscribe_failed(id, keys()).unwrap_err();
+
+            for token in [
+                "synthetic-secret",
+                "password",
+                "example.test",
+                "dictated words",
+            ] {
+                assert!(!format!("{error:?}").contains(token));
+            }
+            assert!(paths.iter().all(|path| path.exists()));
+        }
     }
 
     #[test]

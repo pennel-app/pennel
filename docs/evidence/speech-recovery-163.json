@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "issue": 163,
+  "pull_request": 164,
+  "source_commit": "8b82d6d1b45973158eb6a0fdc12ba266681535b1",
+  "base_commit": "b4c52d7955311f149b068a14b1852fb351634d31",
+  "date": "2026-11-05",
+  "toolchain": {
+    "xcode": "27.0 (27A266a)",
+    "sdk": "iOS 27.0",
+    "rust": "1.99.1",
+    "node": "22.22.3"
+  },
+  "scope": "Truthful explicit meeting retry failures and owned speech-provider billing guidance; no new API, schema, provider route or automatic retry.",
+  "core_artifacts": {
+    "core_sha256": "8680be5a8482f3d9d4cf4a4bca7d5fd99f75ab90fc60e83b6ce5b7e9e2f021e7",
+    "bindings_sha256": "cf3f8fbc93ca8f637d061fca8cfe63c88944f9134866ff031df06ccd45acd056",
+    "manifest_recorded_revision": "b4c52d7955311f149b068a14b1852fb351634d31",
+    "source_digest_matches_verified_commit": true,
+    "note": "Generation ran before the source was committed; the content digest matches the committed source exactly."
+  },
+  "checks": [
+    {
+      "command": "make core",
+      "result": "passed"
+    },
+    {
+      "command": "make test",
+      "result": "passed",
+      "core_passed": 1071,
+      "core_ignored": 7,
+      "keyboard_passed": 17
+    },
+    {
+      "command": "cargo fmt --manifest-path core/Cargo.toml -- --check",
+      "result": "passed"
+    },
+    {
+      "command": "cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "npm ci && npm run build && npm test",
+      "cwd": "apps/desktop",
+      "result": "passed",
+      "tests_passed": 330
+    },
+    {
+      "command": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+      "result": "passed",
+      "tests_passed": 270
+    },
+    {
+      "command": "swift test --package-path apps/macos-platform",
+      "result": "passed",
+      "tests_passed": 146
+    },
+    {
+      "command": "make mobile-test",
+      "result": "passed",
+      "plugin_tests": 17,
+      "widget_tests": 7,
+      "ui_tests": 159,
+      "mobilekit_tests": 116
+    },
+    {
+      "command": "make mobile-prebuild",
+      "result": "passed",
+      "generation": "clean and repeated non-clean",
+      "actual_pod_source_checks": 6
+    },
+    {
+      "command": "npm --prefix apps/mobile run build:ios",
+      "result": "passed"
+    },
+    {
+      "command": "PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios",
+      "result": "passed"
+    },
+    {
+      "command": "make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=B15787A9-8BA7-489F-8BC7-DDCFEBA1F4FE'",
+      "result": "passed",
+      "runtime_service_tests": 144,
+      "keyboard_tests": 36,
+      "simulator": "iPhone 18 Pro / iOS 27.0"
+    }
+  ],
+  "large_build_wrapper": "/Users/landerparren/.local/bin/worktree-storage run --",
+  "portable_toolchain_prefix": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/scripts/with-toolchain.sh",
+  "products": {
+    "simulator": {
+      "bundle_identifier": "app.pennel.ios.preview",
+      "bytes": 78912754,
+      "files": 218,
+      "manifest_sha256": "def19cc03da3a38365cd4c2401b29e7877a9ff4465e1e223854c7f896b95f0d3",
+      "signing": "unsigned ARM64 Release"
+    },
+    "device": {
+      "bundle_identifier": "app.pennel.ios.preview",
+      "bytes": 78540469,
+      "files": 187,
+      "manifest_sha256": "fbc748278cb0032d14e9d983f6bbe477a2eb09083f8fbeb4ceace8f91fcea90e",
+      "signing": "unsigned ARM64 Release"
+    }
+  },
+  "physical_recovery": {
+    "installed_candidate": "Pennel Preview 0.1.0 build 8",
+    "device": "iPhone 16 Pro / iOS 27.0.1",
+    "chosen_provider": "Apple on-device speech",
+    "language": "nl",
+    "sample_test": "passed",
+    "chunks_processed": 49,
+    "chunks_without_recognized_text": 3,
+    "remaining_failed_chunks": 0,
+    "audio_notes_and_meeting_document_unchanged": true,
+    "other_settings_unchanged": true,
+    "patch_installed": false,
+    "accuracy_benchmarked": false
+  },
+  "visuals": {
+    "kind": "explicitly labeled headless mock renders",
+    "input": "synthetic upstream_payment_required",
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "languages": [
+      "en",
+      "nl"
+    ],
+    "branch_path": "pr-assets/pr-164/",
+    "native_acceptance": false
+  },
+  "remaining_gates": [
+    "Review and merge",
+    "Installed candidate acceptance for the patch",
+    "Cloud source deployment and provider billing restoration",
+    "Recognition word accuracy and separate speaker-service availability are not established"
+  ],
+  "hosted_ci": "Source CI is separate and was still running at the handoff; private Cloud server CI passed."
+}
