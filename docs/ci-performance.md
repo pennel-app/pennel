@@ -45,6 +45,10 @@ Cold/toolchain-changing controls are separate and may regress by no more than
 the initial acceptance threshold. A timing miss never skips a check or shortens
 its timeout.
 
+Cold observations have no adopted absolute completion ceiling. Their derived
+`target_miss` value is `null`/N/A; the relative median gate still applies. Warm
+misses and all original timing values remain reported unchanged.
+
 The offline evaluation matrix pins its observed Python binary patch by OS:
 3.11.18 on Linux and 3.11.9 on Mac/Windows. A bare `3.11` selector resolved
 different Linux patches in the initial comparison. Stabilizing this input keeps

@@ -61,10 +61,55 @@ Core slots are superseded, with preserved transition snapshots. The remaining
 
 ## Results and retained evidence
 
-Reassessment and remaining complete cohorts are being collected. The original
-Docs candidate miss of 818.699025 seconds remains in its five-observation warm
-population. Old read-error snapshots, physical run/attempt identities, raw image
-versions and artifact checksums remain retained under `build/ci-qualification/`.
+The first bounded resume completed both cohorts successfully: corrected Core
+serial control 01 took 2978.532322s; Mobile candidate 02 took 2533.910243s and
+matched its existing serial control's source, toolchain and cache identity.
+All selected jobs and required native phases passed without a workflow retry.
+There are now 35 retained outcomes, 32 in the active roster, and 48 remaining
+requests. The first-35 readback verified 204 unique physical jobs, 101 artifact
+ZIPs and 384 retained files; all 348 previously hashed cohort files are unchanged.
+
+| Category / cache | Matched pairs | Candidate matched median | Current result |
+| --- | ---: | ---: | --- |
+| Docs / warm | 5 | 24.617430s | passes 5-minute objective |
+| Docs / cold | 5 | 22.709833s | passes relative gate against 24.167925s control |
+| Desktop / warm | 3 | 947.120597s | fewer than five pairs |
+| Desktop / cold | 0 | N/A | pending |
+| Mobile / warm | 2 | 2464.2214485s | fewer than five pairs |
+| Mobile / cold | 0 | N/A | pending |
+| Core / warm | 0 | N/A | one control, no paired treatment yet |
+| Core / cold | 0 | N/A | pending |
+
+The original Docs candidate miss of 818.699025 seconds remains in its
+five-observation warm population. Cold has no adopted absolute ceiling, so
+derived cold `target_miss` labels are null/N/A. A reporting-only correction was
+made at the controlled stop: reassessment of all 35 raw captures preserved every
+gate, validity, count, median and clock, changing only ten cold labels. All 25
+warm labels, including the Docs miss, remain unchanged. The corrected collector
+passes 141 CI-helper tests; historical raw captures and assessments stay intact.
+
+Rust cache compatibility is independently substantiated by three distinct
+physical jobs (serial 126929415640, Release 126961003751, Debug 126961003664),
+each with an exact restore of
+`v0-rust-expo-mobile-lean-ios-generated-build-Darwin-arm64-fc985acc-9f6ae85c`.
+The relevant-key-only API snapshot returned one archive across all refs: main
+ID 9809973475, 564852135 bytes, version
+`0011543faff0431349ce5ac946a048c3d801fd47a480e65f7ce7947eba0973f3`.
+Both lanes have identical configured shared-key/workspace/default paths;
+Release saves only on successful main pushes and Debug is restore-only. The
+unique current archive association plus exact hits establishes lookup-version
+compatibility. Additional bounded prefix reads returned zero bytes on timeout;
+no job-resolved action SHA or runtime path printout was inferred. This cache
+proof is separate from performance qualification. All three new native receipts
+also confirm exact warm Rust hits, no bypass and the unchanged shared key.
+
+The implementation has separately integrated main `8ad573f` (desktop refinements,
+speech recovery and the exact Ubuntu-mirror fix), preserving its new checks and
+unrelated local configuration. Benchmark refs remain frozen; final hosted
+validation must cover the combined implementation source.
+
+Old read-error snapshots, physical run/attempt identities, raw image versions,
+cache audit and artifact checksums remain under `build/ci-qualification/`.
 
 The scoped qualification variable is leased only to an exact benchmark PR/head.
 Its original absent state will be restored after owned runs finish. No working

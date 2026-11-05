@@ -377,6 +377,36 @@ class QualificationTests(unittest.TestCase):
                 if cache == 'warm':
                     self.assertEqual(sum(o['target_miss'] for o in gate['observations']), 5)
 
+    def test_cold_has_only_its_relative_median_gate_and_no_absolute_miss_label(self):
+        for candidate_seconds, expected in ((2100, True), (2300, False)):
+            values = [observation('desktop', mode, 'cold', str(index),
+                                  seconds=2000 if mode == 'serial' else candidate_seconds)
+                      for index in range(5) for mode in ('serial', 'candidate')]
+            gate = CI.assess(values)['categories']['desktop']['cold']
+            with self.subTest(candidate_seconds=candidate_seconds):
+                self.assertEqual(gate['qualified'], expected)
+                self.assertEqual(len(gate['matched_pairs']), 5)
+                self.assertEqual(gate['control_median_seconds'], 2000)
+                self.assertEqual(gate['candidate_median_seconds'], candidate_seconds)
+                self.assertIsNone(gate['target_seconds'])
+                self.assertTrue(all(o['target_miss'] is None for o in gate['observations']))
+
+    def test_incomplete_cold_preserves_its_lower_bound_without_an_absolute_target(self):
+        obs = observation('desktop', cache='cold', seconds=2100)
+        obs['runs'][0]['status'] = 'in_progress'
+        result = CI.validate_observation(obs)
+        self.assertFalse(result['valid'])
+        self.assertIsNone(result['elapsed_seconds'])
+        self.assertEqual(result['elapsed_lower_bound_seconds'], 10000)
+        self.assertIsNone(result['target_miss'])
+
+    def test_warm_818_second_observation_remains_an_absolute_target_miss(self):
+        result = CI.validate_observation(observation('docs', 'candidate', seconds=818.699025))
+        self.assertTrue(result['valid'])
+        self.assertEqual(result['elapsed_seconds'], 818.699025)
+        self.assertEqual(result['elapsed_lower_bound_seconds'], 818.699025)
+        self.assertTrue(result['target_miss'])
+
     def change_source(self, obs, index):
         head, merge, base = (f'{index + offset:040x}' for offset in (1, 11, 21))
         obs.update(head_sha=head, merge_sha=merge, base_sha=base)

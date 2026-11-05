@@ -513,12 +513,15 @@ def validate_observation(observation, image_policy='exact'):
             errors.append('Duplicate physical job evidence')
         elapsed = (last_completed - requested).total_seconds() if complete and last_completed else None
         lower_bound = elapsed if complete else (captured - requested).total_seconds()
+        target_miss = None
+        if observation['cache_state'] == 'warm':
+            target_miss = (elapsed > TARGETS[observation['category']]) if elapsed is not None else (
+                True if lower_bound is not None and lower_bound > TARGETS[observation['category']] else None)
         identity.update(repository=observation['repository'], head_sha=observation['head_sha'],
                         merge_sha=observation['merge_sha'], base_sha=observation['base_sha'])
         return {'valid': not errors, 'errors': errors, 'elapsed_seconds': elapsed,
                 'elapsed_lower_bound_seconds': lower_bound,
-                'target_miss': (elapsed > TARGETS[observation['category']]) if elapsed is not None else (
-                    True if lower_bound is not None and lower_bound > TARGETS[observation['category']] else None),
+                'target_miss': target_miss,
                 'matching_identity': identity, 'physical_job_ids': physical, 'intervals': intervals,
                 'image_policy': image_policy, 'observed_images': observed_images}
     except (KeyError, TypeError, ValueError, AttributeError) as error:
