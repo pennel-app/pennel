@@ -198,3 +198,5 @@ pub use system_llm::{LanguageModelMessage, SystemLanguageModel};
 pub use system_stt::{SystemTranscriber, TimedSystemTranscriber};
 pub use templates::MeetingTemplate;
 pub use voices::{KnownVoice, VoiceProfile};
+
+// CI qualification: synthetic source edit; no runtime behavior change.
