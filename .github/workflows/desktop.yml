@@ -157,7 +157,7 @@ jobs:
         run: |
           # The hosted Azure HTTP mirror can stall after index fallback; retain signed Ubuntu sources over HTTPS.
           if [ "${{ runner.environment }}" = github-hosted ] && [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+            sudo sed -i -E 's#^http://azure\.archive\.ubuntu\.com/ubuntu([/[:space:]]|$)#https://archive.ubuntu.com/ubuntu\1#' /etc/apt/apt-mirrors.txt
           fi
           packages="libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
             libasound2-dev libx11-dev libxtst-dev libxi-dev libdbus-1-dev patchelf cmake file
