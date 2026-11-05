@@ -153,7 +153,12 @@ jobs:
           xcode-version: latest-stable
       - name: Linux packages
         if: runner.os == 'Linux'
+        timeout-minutes: 15
         run: |
+          # The hosted Azure HTTP mirror can stall after index fallback; retain signed Ubuntu sources over HTTPS.
+          if [ "${{ runner.environment }}" = github-hosted ] && [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          fi
           packages="libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
             libasound2-dev libx11-dev libxtst-dev libxi-dev libdbus-1-dev patchelf cmake file
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
@@ -163,8 +168,9 @@ jobs:
             dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed" || missing="$missing $p"
           done
           if [ -n "$missing" ]; then
-            sudo apt-get -o DPkg::Lock::Timeout=600 update
-            sudo apt-get -o DPkg::Lock::Timeout=600 install -y $missing
+            apt_options=(-o DPkg::Lock::Timeout=600 -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+            sudo apt-get "${apt_options[@]}" update
+            sudo apt-get "${apt_options[@]}" install -y $missing
           fi
       - name: Check Linux media and desktop integration prerequisites
         if: runner.os == 'Linux'
