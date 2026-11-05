@@ -41,6 +41,7 @@ const aliases: Record<string, string> = {
   stale_notes: 'stale_notes', notes_stale: 'stale_notes', quota: 'quota', quota_exceeded: 'quota', audio_quota: 'quota',
   auth: 'auth', unauthorized: 'auth', unauthenticated: 'auth', signed_out: 'auth', not_signed_in: 'auth', token_expired: 'auth', invalid_token: 'auth',
   provider_auth: 'provider_auth', http_401: 'provider_auth', http_403: 'provider_auth',
+  upstream_payment_required: 'provider_credit', http_402: 'provider_credit',
   forbidden: 'access', vault_locked: 'vault_locked', needs_recovery_code: 'vault_locked', vault_reset: 'vault_locked', storage: 'storage', storage_full: 'storage', speaker_storage: 'storage',
   network: 'network', offline: 'network', timeout: 'network', http_408: 'network', http_504: 'network', cancelled: 'cancelled', canceled: 'cancelled',
   interrupted: 'interrupted', recognition: 'recognition', consent_required: 'consent_required', microphone_denied: 'microphone_denied',
@@ -66,7 +67,11 @@ const aliases: Record<string, string> = {
 };
 
 export function localizedFailure(language: InterfaceLanguage, error: NativeFailure): string {
-  return translate(language, `mobile.errors.${aliases[error.code.toLowerCase()] ?? 'operation_failed'}`);
+  const selected = aliases[error.code.toLowerCase()] ?? 'operation_failed';
+  if (selected === 'provider_credit') {
+    return ownedMetadata(language, 'The provider reports insufficient credit. Check your account.', 'mobile.errors.operation_failed');
+  }
+  return translate(language, `mobile.errors.${selected}`);
 }
 
 const legacyOwnedCodes = new Map<string, string>([

@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { localizedFailure, nativeFailure, ownedFailureText } from '../../src/errors.ts';
+
+test('provider billing failures use owned credit guidance without exposing response details', () => {
+  for (const code of ['upstream_payment_required', 'http_402']) {
+    const message = 'Bearer synthetic-private-key https://private.example/billing?token=secret';
+    assert.equal(localizedFailure('en', { code, message }), 'The provider reports insufficient credit. Check your account.');
+    assert.equal(localizedFailure('nl', { code, message }), 'De provider meldt dat er onvoldoende tegoed is. Controleer je account.');
+    assert.equal(ownedFailureText('en', message, code), 'The provider reports insufficient credit. Check your account.');
+  }
+});
 import { recognitionActions } from '../../src/format.ts';
 
 test('native NSError envelopes retain diagnostic codes while English UI replaces Dutch backend literals', () => {
