@@ -1,0 +1,1 @@
+Test opnieuw transcriberen bij een fout, behoud van gedeeltelijk herstelde tekst en de melding bij onvoldoende providertegoed. Controleer dat bestaande audio en notities behouden blijven.
