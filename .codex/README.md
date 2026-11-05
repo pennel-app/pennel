@@ -35,3 +35,10 @@ environment, but a saved workspace choice, including None, can override it.
 Select `Pennel lightweight` in Codex when needed. Saving this file does not
 verify the selection of an existing chat. See the official
 [local environments documentation](https://learn.chatgpt.com/docs/environments/local-environment).
+
+## Hoppscotch development tools
+
+This checkout includes project-scoped Codex and Claude Code configuration for
+the official Hoppscotch MCP. Follow the [workspace maintenance guide](../docs/agents/hoppscotch.md)
+for sign-in, allowed metadata tools, secret handling and the CLI fallback.
+Restart the host to discover the server; no global registration is needed.
