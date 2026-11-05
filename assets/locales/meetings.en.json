@@ -506,5 +506,19 @@
   "meetings.summary_wait_save": "Finish saving before creating a summary.",
   "meetings.summary_edit": "Edit summary",
   "meetings.summary_done": "Done",
-  "meetings.summary_mark_reviewed": "Mark as reviewed"
+  "meetings.summary_mark_reviewed": "Mark as reviewed",
+  "meetings.export_view_formatted": "Formatted",
+  "meetings.export_view_markdown": "Markdown",
+  "meetings.export_preview_format": "Preview format",
+  "conversations.scope_meeting": "This meeting",
+  "conversations.scope_library": "Meeting library",
+  "conversations.suggestions": "Try a question",
+  "conversations.starter_decisions": "Decisions",
+  "conversations.starter_actions": "Next steps",
+  "conversations.starter_questions": "Open questions",
+  "meetings.summary_details": "Processing and privacy",
+  "meetings.summary_setup_short": "Text processing needs setup.",
+  "meetings.summary_automation_unanswered": "Automatic summaries are off until you choose.",
+  "meetings.summary_automation_choose": "Choose…",
+  "meetings.tools_return_document": "Back to document"
 }

@@ -31,6 +31,13 @@
 .meeting-summary-surface h3, .meeting-workspace-tools h3 { margin: 0 0 7px; font-size: var(--font-body); font-weight: 600; }
 .meeting-summary-surface p, .meeting-export-preview p, .meeting-workspace-tools p { margin: 0; overflow-wrap: anywhere; }
 .meeting-summary-explanation { max-width: 70ch; }
+.meeting-summary-context { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding-bottom: 4px; }
+.meeting-summary-details { flex: 1 1 190px; min-width: 0; font-size: var(--font-label); color: var(--muted); }
+.meeting-summary-details > summary { cursor: pointer; min-height: 28px; padding-block: 5px; }
+.meeting-summary-details[open] { flex-basis: 100%; }
+.meeting-summary-details > p { padding-block: 4px; }
+.meeting-summary-setup { flex-wrap: wrap; gap: 4px 8px; }
+.meeting-summary-setup:has(> button[hidden]) { display: none; }
 .meeting-summary-outdated { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .meeting-summary-outdated > p { flex: 1 1 260px; }
 .meeting-summary-destination { overflow-wrap: anywhere; }
@@ -51,11 +58,12 @@
 .meeting-summary-automation .help { margin: 0; max-width: 75ch; }
 .meeting-automation-nudge { flex-shrink: 0; }
 .meeting-automation-nudge:has(.meeting-summary-automation[hidden]) { display: none; }
-.meeting-automation-nudge .meeting-summary-automation { flex-direction: row; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding-block: 0 8px; border-bottom: 1px solid var(--border); }
-.meeting-automation-nudge .meeting-automation-explanation { flex: 1 1 300px; }
+.meeting-automation-nudge .meeting-summary-automation { flex-direction: row; align-items: center; gap: 4px 12px; flex-wrap: wrap; padding-block: 0; }
+.meeting-automation-nudge .meeting-automation-explanation { flex: 0 1 auto; }
 .meeting-automation-nudge .meeting-summary-automation .row { flex: 0 1 auto; }
-.meeting-workspace-tools > section { padding-top: 18px; }
-.meeting-workspace-tools > section + section { border-top: 1px solid var(--border); }
+.meeting-workspace-tools > section { padding-top: 6px; }
+.meeting-tool-back { align-self: flex-start; }
+.meeting-tool-heading { padding-top: 4px; }
 .meeting-workspace-tools .row, .meeting-export-preview .row { flex-wrap: wrap; }
 .meeting-workspace-tools .live-speaker-controls { margin-bottom: 8px; }
 .meeting-workspace-tools .meeting-voice-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }

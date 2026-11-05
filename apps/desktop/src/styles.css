@@ -503,9 +503,12 @@ mark { background: none; color: inherit; font-weight: 600; }
 .dictation-home > .help { margin: 0 0 12px; }
 .dictation-home-settings, .dictation-home-repair { align-self: flex-start; }
 .dictation-home-status { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); font-size: var(--font-body); }
-.dictation-home-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-2); }
+.dictation-home-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-block: var(--space-2) var(--space-3); }
 .dictation-home-actions > .btn.primary { min-height: var(--space-7); }
-.dictation-home-repair { margin-bottom: 12px; }
+.dictation-processing-details { width: 100%; }
+.dictation-processing-details > summary { width: fit-content; padding-block: var(--space-2); color: var(--muted); cursor: pointer; font-size: var(--font-label); }
+.dictation-processing-details > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-control); }
+.dictation-home .recent-copy-status { margin: var(--space-2) 0 0; }
 .dictation-pad-option { margin-top: 24px; }
 .dictation-pad-option .text-button { font-size: var(--font-body); }
 .dictation-pad-option .help { margin-top: 2px; }

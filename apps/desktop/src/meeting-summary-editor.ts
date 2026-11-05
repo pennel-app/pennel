@@ -31,6 +31,9 @@ export function meetingSummaryEditor(initial: Context, host: {
   const status = h("span", { class: "help meeting-summary-status", role: "status", "aria-live": "polite" });
   const explanation = h("p", { class: "help meeting-summary-explanation" }, l("meetings.summary_private_help"));
   const destination = h("p", { class: "help meeting-summary-destination" });
+  const details = h("details", { class: "meeting-summary-details" },
+    h("summary", {}, l("meetings.summary_details")), explanation, destination);
+  const setupReason = h("p", { class: "help meeting-summary-setup-reason" }, l("meetings.summary_setup_short"));
   const error = h("p", { class: "error meeting-summary-error", hidden: true, role: "status" });
   const outdated = h("p", { class: "help", hidden: true }, l("meetings.summary_outdated_editor"));
   const markReviewed = controlButton({ class: "btn compact meeting-summary-mark-reviewed", hidden: true, onclick: () => { void markAsReviewed().catch(report); } }, l("meetings.summary_mark_reviewed"));
@@ -56,9 +59,10 @@ export function meetingSummaryEditor(initial: Context, host: {
   const history = h("details", { class: "meeting-summary-history" }, h("summary", {}, l("meetings.summary_history")), historyList);
   history.addEventListener("toggle", () => { if (history.open) void loadHistory().catch(report); });
   const root = h("section", { class: "meeting-summary-surface" },
-    h("div", { class: "meeting-summary-heading" }, h("h2", {}, l("meetings.workspace_summary")), h("span", { class: "grow" }), status, editSummary), explanation, destination,
+    h("div", { class: "meeting-summary-heading" }, h("h2", {}, l("meetings.workspace_summary")), h("span", { class: "grow" }), status, editSummary),
+    h("div", { class: "meeting-summary-context" }, details, h("div", { class: "meeting-summary-setup row" }, setupReason, setup)),
     outdatedNotice, recovery, error, h("div", { class: "row meeting-summary-recovery-actions" }, retry, recover), editor, rendered,
-    h("div", { class: "row meeting-summary-actions" }, generate, setup), candidate, history);
+    h("div", { class: "row meeting-summary-actions" }, generate), candidate, history);
 
   function report(failure: unknown) { draft.error = errorText(failure); update(); }
   function update() {
@@ -80,6 +84,7 @@ export function meetingSummaryEditor(initial: Context, host: {
     generate.textContent = t(generating ? "meetings.summary_generating" : draft.document?.markdown ? "meetings.summary_generate_again" : "meetings.summary_generate");
     generate.title = !finished ? t("meetings.summary_finished_only") : host.processing?.() ? t("meetings.working") : !ready ? t("meetings.summary_setup_help") : "";
     setup.hidden = ready;
+    setupReason.hidden = ready;
     destination.textContent = !finished ? t("meetings.summary_finished_only") : !ready ? t("meetings.summary_setup_help") : summaryDestination(ctx);
     error.textContent = draft.error ?? ""; error.hidden = !draft.error;
     outdated.hidden = !draft.document?.outdated && !draft.remote?.outdated;
