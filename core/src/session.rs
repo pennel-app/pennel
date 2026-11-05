@@ -2263,6 +2263,17 @@ mod tests {
                 })
             }
         }
+        struct AcknowledgedObserver {
+            inner: SessionLiveObserver,
+            applied: mpsc::Sender<Speaker>,
+        }
+        impl crate::live_speakers::LiveSpeakerObserver for AcknowledgedObserver {
+            fn changed(&self, update: crate::live_speakers::LiveSpeakerUpdate) {
+                let source = update.source;
+                crate::live_speakers::LiveSpeakerObserver::changed(&self.inner, update);
+                self.applied.send(source).unwrap();
+            }
+        }
         let (_directory, engine) = preview_engine();
         let mut settings = engine.settings();
         settings.live_text_enabled = false;
@@ -2283,13 +2294,34 @@ mod tests {
                 },
             )
             .unwrap();
+        let (parked, worker_parked) = mpsc::channel();
+        let (run_worker, worker_release) = mpsc::channel();
+        let worker_release = Mutex::new(worker_release);
+        let (deferred, worker_deferred) = mpsc::channel();
+        let configuration_checks = std::sync::atomic::AtomicUsize::new(0);
+        let (applied, updates) = mpsc::channel();
         let worker = crate::live_speakers::LiveSpeakerWorker::start(
             session.live_id.clone(),
             0,
             "owned-chunk-boundary-inference".into(),
-            Arc::new(|| true),
+            Arc::new(move || {
+                // Launch checks configuration synchronously. Park the worker's first check before
+                // queue access: optional capture intentionally drops contended packets.
+                match configuration_checks.fetch_add(1, Ordering::SeqCst) {
+                    1 => {
+                        parked.send(()).unwrap();
+                        worker_release.lock().unwrap().recv().unwrap();
+                    }
+                    2 => deferred.send(()).unwrap(),
+                    _ => {}
+                }
+                true
+            }),
             Box::new(|| Ok(Box::new(SingleVoice { calls: 0 }))),
-            Arc::new(SessionLiveObserver(Arc::downgrade(&session))),
+            Arc::new(AcknowledgedObserver {
+                inner: SessionLiveObserver(Arc::downgrade(&session)),
+                applied,
+            }),
         );
         *session.live_worker.lock().unwrap() = Some((0, worker.clone()));
         session
@@ -2297,10 +2329,7 @@ mod tests {
             .lock()
             .unwrap()
             .replace_live_status(synthetic_live_status(true));
-        let admission_deadline = Instant::now() + Duration::from_secs(10);
-        while !worker.is_admitted() && Instant::now() < admission_deadline {
-            std::thread::sleep(Duration::from_millis(5));
-        }
+        worker_parked.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(worker.is_admitted());
         session.push_audio_at(Speaker::Me, 0, tone(30.0)).unwrap();
         assert_eq!(requests.recv_timeout(Duration::from_secs(5)).unwrap(), 0);
@@ -2313,24 +2342,42 @@ mod tests {
         session
             .push_audio_at(Speaker::Others, 30_000, tone(0.5))
             .unwrap();
+        assert_eq!(worker.metrics().pending_samples, 2 * 30 * SR);
+        assert_eq!(worker.metrics().dropped_packets, 0);
+        run_worker.send(()).unwrap();
+        // A complete worker loop while ASR is blocked must defer native inference.
+        worker_deferred
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
         assert_eq!(worker.metrics().native_calls, 0);
         release.send(()).unwrap();
         assert_eq!(requests.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
         assert_eq!(worker.metrics().native_calls, 0);
         release.send(()).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < deadline {
-            let rows = session.utterance_snapshot().1;
-            if rows.len() == 2 && rows.iter().all(|row| row.segment.voice.is_some()) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(5));
+        for source in [Speaker::Me, Speaker::Others] {
+            assert_eq!(
+                updates.recv_timeout(Duration::from_secs(5)),
+                Ok(source),
+                "owned fixture update: worker {:?}; metrics {:?}",
+                worker.status(),
+                worker.metrics()
+            );
         }
         let rows = session.utterance_snapshot().1;
         assert_eq!(rows.len(), 2);
         assert!(
             rows.iter()
-                .all(|row| row.segment.voice.is_some() && row.metadata.attribution.provisional)
+                .all(|row| row.segment.voice.is_some() && row.metadata.attribution.provisional),
+            "owned fixture attribution: {:?}; worker: {:?}; metrics: {:?}",
+            rows.iter()
+                .map(|row| (
+                    &row.metadata.source_id,
+                    row.segment.voice,
+                    row.metadata.attribution.provisional
+                ))
+                .collect::<Vec<_>>(),
+            worker.status(),
+            worker.metrics()
         );
         assert!(
             rows.iter()
