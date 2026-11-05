@@ -627,9 +627,11 @@ def assess(observations):
                 observation = row['observation']
                 pairs.setdefault(observation.get('pair'), {}).setdefault(observation.get('mode'), []).append(row)
             matched, rejected = [], []
+            blocking_pairs = False
             for pair, modes in pairs.items():
                 if set(modes) != {'serial', 'candidate'} or any(len(v) != 1 for v in modes.values()):
                     rejected.append({'pair': pair, 'reason': 'Missing or duplicate mode observations'})
+                    blocking_pairs = True
                     continue
                 serial, candidate = modes['serial'][0], modes['candidate'][0]
                 if canonical(serial['result']['matching_identity']) != canonical(candidate['result']['matching_identity']):
@@ -644,7 +646,7 @@ def assess(observations):
             timing_pass = (candidate_median is not None and candidate_median <= TARGETS[category]) if cache_state == 'warm' else (
                 control_median is not None and control_median > 0 and candidate_median <= control_median * 1.1)
             gates[cache_state] = {'qualified': len(matched) >= 5 and timing_pass
-                                  and not rejected and all(r['result']['valid'] for r in relevant),
+                                  and not blocking_pairs and all(r['result']['valid'] for r in relevant),
                                   'matched_pairs': matched, 'rejected_pairs': rejected,
                                   'control_median_seconds': control_median,
                                   'candidate_median_seconds': candidate_median,

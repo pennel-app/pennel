@@ -323,6 +323,58 @@ class QualificationTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.assertFalse(CI.assess(values)['categories']['docs']['cold']['qualified'])
 
+    def test_extra_valid_image_mismatch_does_not_block_five_comparable_pairs(self):
+        for cache in ('warm', 'cold'):
+            for matched_count in (4, 5):
+                values = [observation('docs', mode, cache, str(i), seconds=100)
+                          for i in range(matched_count) for mode in ('serial', 'candidate')]
+                extra = [observation('docs', mode, cache, 'different-image', seconds=100)
+                         for mode in ('serial', 'candidate')]
+                extra[1]['runs'][0]['jobs'][0]['identity']['image_version'] = '20261102.360.1'
+                self.assertTrue(all(CI.validate_observation(o)['valid'] for o in extra))
+                gate = CI.assess(values + extra)['categories']['docs'][cache]
+                with self.subTest(cache=cache, matched_count=matched_count):
+                    self.assertEqual(gate['qualified'], matched_count >= 5)
+                    self.assertEqual(len(gate['matched_pairs']), matched_count)
+                    self.assertEqual(gate['rejected_pairs'], [{
+                        'pair': 'different-image', 'reason': 'Source/image/toolchain/cache identities differ'}])
+                    self.assertEqual(len(gate['observations']), 2 * matched_count + 2)
+
+    def test_five_comparable_pairs_do_not_waive_duplicate_invalid_or_failed_evidence(self):
+        for kind in ('missing-mode', 'duplicate-mode', 'reused-jobs', 'missing-metadata', 'failed-check'):
+            values = [observation('docs', mode, 'warm', str(i), seconds=100)
+                      for i in range(5) for mode in ('serial', 'candidate')]
+            if kind == 'missing-mode':
+                values.append(observation('docs', 'serial', 'warm', 'missing'))
+            elif kind == 'duplicate-mode':
+                values.append(observation('docs', 'serial', 'warm', '0'))
+            elif kind == 'reused-jobs':
+                values.append(copy.deepcopy(values[0]))
+            else:
+                extra = [observation('docs', mode, 'warm', 'invalid') for mode in ('serial', 'candidate')]
+                if kind == 'missing-metadata':
+                    extra[1]['runs'][0]['jobs'][0]['identity']['image_version'] = None
+                else:
+                    extra[1]['runs'][0]['conclusion'] = 'failure'
+                values.extend(extra)
+            with self.subTest(kind=kind):
+                self.assertFalse(CI.assess(values)['categories']['docs']['warm']['qualified'])
+
+    def test_all_comparable_pairs_and_timing_misses_remain_in_medians(self):
+        for cache, fast, slow, expected_median in [('warm', 290, 400, 345), ('cold', 100, 130, 115)]:
+            values = []
+            for index in range(10):
+                values.extend([observation('docs', 'serial', cache, str(index), seconds=100),
+                               observation('docs', 'candidate', cache, str(index),
+                                           seconds=fast if index < 5 else slow)])
+            gate = CI.assess(values)['categories']['docs'][cache]
+            with self.subTest(cache=cache):
+                self.assertEqual(len(gate['matched_pairs']), 10)
+                self.assertEqual(gate['candidate_median_seconds'], expected_median)
+                self.assertFalse(gate['qualified'])
+                if cache == 'warm':
+                    self.assertEqual(sum(o['target_miss'] for o in gate['observations']), 5)
+
     def test_capture_is_read_only_and_preserves_existing_observations(self):
         fixture = observation()
 
