@@ -1,0 +1,8 @@
+{
+  "implementation_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+  "kind": "owned synthetic browser UI",
+  "before_backend_fixture_commit": "8ad573f055b388b64dbac3e7c7e7e4cf5874d887",
+  "frontend": "same current frontend for both; product layout/styles unchanged",
+  "input": "identical invented meeting, private-note sentinel, shareable scope, include transcript",
+  "notes": "Before/after compare baseline/current synthetic IPC output consistent with tested core renderer. No native, real-audio, participant, or owner acceptance is claimed."
+}
