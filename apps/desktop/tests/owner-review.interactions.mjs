@@ -75,7 +75,10 @@ export async function checkOwnerReviewMeeting() {
   await until(() => document.querySelector(".live-notes")?.value === note, "Reopening the first meeting lost the original note.");
   const prepared = await api.generateShareableMeetingSummary(first.id, "algemeen");
   const output = await api.previewMeetingExport(first.id, "shareable", true);
-  assert(output.markdown.includes("Speaker 1 (System audio)") && !output.markdown.includes(note), "Shareable output lost canonical labels or included the private note.");
+  const { t } = await import("/src/i18n.ts");
+  const appended = output.markdown.slice(prepared.markdown.length);
+  assert(appended.includes(`${t("meetings.speaker_number", { number: "1" })} (${t("meetings.attribution_source_system_audio")})`)
+    && !output.markdown.includes(note), "Shareable output lost localized canonical labels or included the private note.");
   assert(prepared.provenance === "transcript_only_v1" && !fixture.unknown.length, "The synthetic shared output lost its provenance or used an unknown command.");
   return { syntheticOnly: true, successiveMeetings: true, stoppedNotesRetained: true, reopenPreservesNotes: true, canonicalLabels: true, privateNotesExcluded: true };
 }

@@ -731,7 +731,7 @@ impl PennelEngine {
         .to_owned();
         let mut markdown = summary.markdown;
         if include_transcript {
-            let transcript = permitted_transcript(&store, &id)?;
+            let transcript = permitted_transcript_text(&store, &id, Some(language))?;
             if transcript.trim().is_empty() {
                 return Err(PennelError::NoSpeech);
             }
@@ -914,6 +914,14 @@ impl PennelEngine {
 }
 
 fn permitted_transcript(store: &MeetingStore, id: &str) -> Result<String, PennelError> {
+    permitted_transcript_text(store, id, None)
+}
+
+fn permitted_transcript_text(
+    store: &MeetingStore,
+    id: &str,
+    language: Option<InterfaceLanguage>,
+) -> Result<String, PennelError> {
     let snapshot = store.read_committed_transcript_snapshot(id)?;
     crate::meeting_utterances::assert_writable(&snapshot)?;
     if store.unparsed_transcript_lines(id) != 0 {
@@ -927,17 +935,37 @@ fn permitted_transcript(store: &MeetingStore, id: &str) -> Result<String, Pennel
         .iter()
         .filter(|row| !row.segment.failed && !row.segment.text.trim().is_empty())
         .map(|row| {
-            let speaker = if legacy {
-                crate::meetings::speaker_label(&row.segment, &[])
-            } else {
-                crate::meeting_evidence::utterance_speaker_label(row, &[])
+            let speaker = match language {
+                Some(language) if legacy => {
+                    crate::export::exported_speaker_label(&row.segment, &[], language)
+                }
+                Some(language) => {
+                    crate::meeting_evidence::localized_utterance_speaker_label(row, &[], language)
+                }
+                None if legacy => crate::meetings::speaker_label(&row.segment, &[]),
+                None => crate::meeting_evidence::utterance_speaker_label(row, &[]),
             };
             // Legacy capture inference depends on audio files outside the shareable source revision.
-            let source = match row.metadata.source_id.as_deref().filter(|_| !legacy) {
-                Some("microphone") => "Microphone",
-                Some("system" | "system_audio") => "System audio",
-                Some("room_microphone") => "Room microphone",
-                _ => "Unknown source",
+            let source_id = row.metadata.source_id.as_deref().filter(|_| !legacy);
+            let source = match language {
+                Some(language) => crate::ui_text(
+                    language,
+                    match source_id {
+                        Some("microphone") => "meetings.attribution_source_microphone",
+                        Some("system") => "meetings.attribution_source_system",
+                        Some("system_audio") => "meetings.attribution_source_system_audio",
+                        Some("room_microphone") => "meetings.attribution_source_room_microphone",
+                        _ => "meetings.attribution_source_unknown",
+                    },
+                    &[],
+                ),
+                None => match source_id {
+                    Some("microphone") => "Microphone",
+                    Some("system" | "system_audio") => "System audio",
+                    Some("room_microphone") => "Room microphone",
+                    _ => "Unknown source",
+                }
+                .into(),
             };
             format!(
                 "[{}] {speaker} ({source}): {}",
@@ -1619,8 +1647,12 @@ mod tests {
     }
 
     #[test]
-    fn permitted_transcript_keeps_canonical_attribution_and_capture_sources() {
-        let (_dir, store, id) = fixture();
+    fn shareable_exports_localize_labels_without_changing_canonical_provider_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let store = engine.meeting_store();
         let mut rows: Vec<_> = [
             ("system", "A numbered voice."),
             ("room_microphone", "A confirmed person."),
@@ -1699,12 +1731,127 @@ mod tests {
         ] {
             assert!(!rendered.contains(private));
         }
+        let original = fs::read(store.dir_of(&id).join("transcript.md")).unwrap();
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let provider = server
+            .mock("POST", "/chat/completions")
+            .with_body_from_request(move |request| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(request.body().unwrap()).unwrap();
+                captured.lock().unwrap().push(body["messages"].clone());
+                response("Unchanged generated words.")
+            })
+            .expect(2)
+            .create();
+        for ui_language in [
+            crate::InterfaceLanguagePreference::English,
+            crate::InterfaceLanguagePreference::Dutch,
+        ] {
+            let mut settings = engine.settings();
+            settings.ui_language = ui_language;
+            engine.update_settings(settings).unwrap();
+            engine
+                .generate_shareable_meeting_summary(id.clone(), "algemeen".into(), keys())
+                .unwrap();
+            for (language, expected) in [
+                (
+                    InterfaceLanguage::English,
+                    [
+                        "[00:00] Speaker 1 (Computer audio): A numbered voice.",
+                        "[00:01] Canonical Noor (Room microphone): A confirmed person.",
+                        "[00:02] Me (Computer audio): An explicitly identified self voice.",
+                        "[00:03] Unknown speaker (Microphone):   Exact\twords remain intact.  ",
+                        "[00:04] Mixed speakers (Room microphone): Mixed words.",
+                        "[00:05] Overlapping speakers (Computer audio): Overlapping words.",
+                        "[00:06] Speaker 3 (Provisional) (Computer audio): Provisional words.",
+                        "[00:07] Unknown speaker (Unknown source): An unfamiliar capture lane.",
+                        "[00:08] Unknown speaker (Speaker correction needs review) (Microphone): A retained correction needs review.",
+                    ],
+                ),
+                (
+                    InterfaceLanguage::Dutch,
+                    [
+                        "[00:00] Anderen 1 (Computeraudio): A numbered voice.",
+                        "[00:01] Canonical Noor (Ruimtemicrofoon): A confirmed person.",
+                        "[00:02] Ik (Computeraudio): An explicitly identified self voice.",
+                        "[00:03] Onbekende spreker (Microfoon):   Exact\twords remain intact.  ",
+                        "[00:04] Meerdere sprekers (Ruimtemicrofoon): Mixed words.",
+                        "[00:05] Overlappende sprekers (Computeraudio): Overlapping words.",
+                        "[00:06] Anderen 3 (Voorlopig) (Computeraudio): Provisional words.",
+                        "[00:07] Onbekende spreker (Onbekende bron): An unfamiliar capture lane.",
+                        "[00:08] Onbekende spreker (Controleer de sprekercorrectie) (Microfoon): A retained correction needs review.",
+                    ],
+                ),
+            ] {
+                let output = engine
+                    .preview_meeting_export(
+                        id.clone(),
+                        MeetingOutputScope::Shareable,
+                        true,
+                        language,
+                    )
+                    .unwrap();
+                assert!(
+                    output
+                        .markdown
+                        .starts_with("Unchanged generated words.\n\n")
+                );
+                for line in expected {
+                    assert!(
+                        output.markdown.contains(line),
+                        "Missing localized export line: {line}"
+                    );
+                    assert!(
+                        output.html.contains(line.trim()),
+                        "Missing localized HTML line: {line}"
+                    );
+                }
+                for private in [
+                    "PRIVATE_FRONTMATTER_ALIAS_8301",
+                    "PRIVATE_CAPTURE_ALIAS_7f9c",
+                    "STALE_CORRECTION_2b16",
+                    "FAILED_PRIVATE_WORDS_913d",
+                    "PRIVATE_NOTE_60a1",
+                ] {
+                    assert!(!output.markdown.contains(private));
+                    assert!(!output.html.contains(private));
+                }
+                let summary_only = engine
+                    .preview_meeting_export(
+                        id.clone(),
+                        MeetingOutputScope::Shareable,
+                        false,
+                        language,
+                    )
+                    .unwrap();
+                assert_eq!(summary_only.markdown, "Unchanged generated words.");
+            }
+        }
+        provider.assert();
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0], requests[1]);
+        let content = requests[0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|message| message["content"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(content.contains(&rendered));
+        assert_eq!(
+            fs::read(store.dir_of(&id).join("transcript.md")).unwrap(),
+            original
+        );
     }
 
     #[test]
     fn permitted_legacy_transcript_preserves_original_labels_without_inventing_a_source() {
         let dir = tempfile::tempdir().unwrap();
-        let store = MeetingStore::new(dir.path());
+        let mut server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let store = engine.meeting_store();
         let id = store.create("Legacy", chrono::Local::now()).unwrap();
         fs::write(
             store.dir_of(&id).join("transcript.md"),
@@ -1718,8 +1865,9 @@ mod tests {
                 .metadata_status,
             crate::TranscriptMetadataStatus::Absent
         );
+        let canonical = permitted_transcript(&store, &id).unwrap();
         assert_eq!(
-            permitted_transcript(&store, &id).unwrap(),
+            canonical,
             [
                 "[00:00] Ik (Unknown source): My original words.",
                 "[00:01] Anderen 2 (Unknown source): Numbered original words.",
@@ -1727,6 +1875,97 @@ mod tests {
             ]
             .join("\n")
         );
+        store
+            .set_speaker_names(
+                &id,
+                &[crate::SpeakerName {
+                    voice: 2,
+                    name: "PRIVATE_LEGACY_ALIAS".into(),
+                }],
+            )
+            .unwrap();
+        let before = fs::read(store.dir_of(&id).join("transcript.md")).unwrap();
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = requests.clone();
+        let provider = server
+            .mock("POST", "/chat/completions")
+            .with_body_from_request(move |request| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(request.body().unwrap()).unwrap();
+                captured.lock().unwrap().push(body["messages"].clone());
+                response("Unchanged legacy summary.")
+            })
+            .expect(2)
+            .create();
+        for ui_language in [
+            crate::InterfaceLanguagePreference::English,
+            crate::InterfaceLanguagePreference::Dutch,
+        ] {
+            let mut settings = engine.settings();
+            settings.ui_language = ui_language;
+            engine.update_settings(settings).unwrap();
+            engine
+                .generate_shareable_meeting_summary(id.clone(), "algemeen".into(), keys())
+                .unwrap();
+            for (language, lines) in [
+                (
+                    InterfaceLanguage::English,
+                    [
+                        "[00:00] Me (Unknown source): My original words.",
+                        "[00:01] Speaker 2 (Unknown source): Numbered original words.",
+                        "[00:02] Others (Unknown source): Unidentified original words.",
+                    ],
+                ),
+                (
+                    InterfaceLanguage::Dutch,
+                    [
+                        "[00:00] Ik (Onbekende bron): My original words.",
+                        "[00:01] Anderen 2 (Onbekende bron): Numbered original words.",
+                        "[00:02] Anderen (Onbekende bron): Unidentified original words.",
+                    ],
+                ),
+            ] {
+                let output = engine
+                    .preview_meeting_export(
+                        id.clone(),
+                        MeetingOutputScope::Shareable,
+                        true,
+                        language,
+                    )
+                    .unwrap();
+                for line in lines {
+                    assert!(
+                        output.markdown.contains(line),
+                        "Missing localized legacy label: {line}"
+                    );
+                    assert!(output.html.contains(line));
+                }
+                assert!(!output.markdown.contains("PRIVATE_LEGACY_ALIAS"));
+                assert!(!output.html.contains("PRIVATE_LEGACY_ALIAS"));
+            }
+        }
+        assert_eq!(
+            fs::read(store.dir_of(&id).join("transcript.md")).unwrap(),
+            before
+        );
+        assert!(
+            !store
+                .dir_of(&id)
+                .join(crate::meeting_utterances::MANIFEST)
+                .exists()
+        );
+        provider.assert();
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0], requests[1]);
+        let content = requests[0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|message| message["content"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(content.contains(&canonical));
     }
 
     #[test]

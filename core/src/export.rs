@@ -32,7 +32,7 @@ fn export_markdown(
     export_markdown_for_language(store, id, include_transcript, InterfaceLanguage::English)
 }
 
-fn exported_speaker_label(
+pub(crate) fn exported_speaker_label(
     segment: &Segment,
     names: &[SpeakerName],
     language: InterfaceLanguage,

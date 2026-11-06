@@ -393,15 +393,27 @@
         for (const [key, value] of entries || []) target.set(key, value);
     }
   }
-  const permittedTranscript = record => record.transcript.filter(segment => !segment.failed && segment.text.trim()).map(segment => {
-    const legacy = segment.speaker === "me" ? "Ik" : segment.voice == null ? "Anderen" : `Anderen ${segment.voice}`;
+  const permittedTranscript = (record, language = null) => record.transcript.filter(segment => !segment.failed && segment.text.trim()).map(segment => {
+    const localized = language !== null, dutch = language === "nl";
+    const number = voice => `${localized && dutch ? "Anderen" : "Speaker"} ${voice}`;
+    const me = localized && dutch ? "Ik" : "Me";
+    const unknown = localized && dutch ? "Onbekende spreker" : "Unknown speaker";
+    const legacy = segment.speaker === "me" ? localized ? me : "Ik" : segment.voice == null
+      ? localized && !dutch ? "Others" : "Anderen" : localized ? number(segment.voice) : `Anderen ${segment.voice}`;
     const attribution = segment.attribution;
-    let canonical = !segment.utterance_id ? legacy : segment.correction_needs_review ? "Unknown speaker (correction needs review)"
-      : segment.confirmed_speaker_name || (attribution?.kind === "overlap" ? "Overlapping speakers" : attribution?.kind === "mixed" ? "Mixed speakers"
-        : attribution?.kind === "single" && attribution.voices?.length === 1 ? `Speaker ${attribution.voices[0]}`
-          : attribution?.kind === "single" && attribution.self_voice ? "Me" : "Unknown speaker");
-    if (attribution?.provisional && !segment.confirmed_speaker_name && !segment.correction_needs_review) canonical += " (provisional)";
-    const source = segment.utterance_id ? ({ microphone: "Microphone", system: "System audio", system_audio: "System audio", room_microphone: "Room microphone" }[segment.source_id] || "Unknown source") : "Unknown source";
+    let canonical = !segment.utterance_id ? legacy : segment.correction_needs_review
+      ? `${unknown} (${localized ? dutch ? "Controleer de sprekercorrectie" : "Speaker correction needs review" : "correction needs review"})`
+      : segment.confirmed_speaker_name || (attribution?.kind === "overlap" ? localized && dutch ? "Overlappende sprekers" : "Overlapping speakers"
+        : attribution?.kind === "mixed" ? localized && dutch ? "Meerdere sprekers" : "Mixed speakers"
+          : attribution?.kind === "single" && attribution.voices?.length === 1 ? number(attribution.voices[0])
+            : attribution?.kind === "single" && attribution.self_voice ? me : unknown);
+    if (attribution?.provisional && !segment.confirmed_speaker_name && !segment.correction_needs_review) canonical += ` (${localized ? dutch ? "Voorlopig" : "Provisional" : "provisional"})`;
+    const unknownSource = localized && dutch ? "Onbekende bron" : "Unknown source";
+    const sourceLabels = localized ? dutch
+      ? { microphone: "Microfoon", system: "Computeraudio", system_audio: "Computeraudio", room_microphone: "Ruimtemicrofoon" }
+      : { microphone: "Microphone", system: "Computer audio", system_audio: "Computer audio", room_microphone: "Room microphone" }
+      : { microphone: "Microphone", system: "System audio", system_audio: "System audio", room_microphone: "Room microphone" };
+    const source = segment.utterance_id ? sourceLabels[segment.source_id] || unknownSource : unknownSource;
     const seconds = Math.floor(segment.start_ms / 1000), stamp = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     return `[${stamp}] ${canonical} (${source}): ${segment.text}`;
   }).join("\n");
@@ -1263,8 +1275,9 @@
         const prepared = shareableSummaries.get(record?.uid);
         if (!personal && (!prepared || prepared.source_revision !== await summarySourceRevision(args.id, true))) throw Error("Prepare a current shareable summary before exporting.");
         const body = personal ? (await summaryDocument(args.id)).markdown || record.notes : prepared.markdown;
-        const content = args.includeTranscript ? `${body}\n\n## Transcript\n${permittedTranscript(record)}` : body;
-        return { title: record.info.title, markdown: content, html: `<pre>${content.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>` };
+        const language = ["en", "nl"].includes(args.language) ? args.language : interfaceLanguage();
+        const content = args.includeTranscript ? `${body}\n\n## Transcript\n${permittedTranscript(record, language)}` : body;
+        return { title: personal ? record.info.title : language === "nl" ? "Samenvatting" : "Summary", markdown: content, html: `<pre>${content.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>` };
       }
       case "retranscribe_meeting": return 0;
       case "retranscribe_meeting_audio": {

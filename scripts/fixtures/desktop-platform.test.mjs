@@ -50,6 +50,39 @@ test("shareable fixture freshness follows transcript attribution and source meta
   await assert.rejects(api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: false }));
 });
 
+test("shareable export localizes only appended labels and preserves canonical generation", async () => {
+  const results = [];
+  for (const language of ["en", "nl"]) {
+    const context = fixture("meeting-transcript", { locale: language, ui_language: language, rich_utterances: true, configured_text_provider: true });
+    const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+    control.workspace.attribution(2, { confirmed_speaker_name: "System audio" });
+    const generated = await api.invoke("generate_shareable_meeting_summary", { id });
+    results.push(generated.markdown);
+    const preview = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true, language });
+    const appended = preview.markdown.slice(generated.markdown.length);
+    assert.equal(preview.markdown.slice(0, generated.markdown.length), generated.markdown);
+    assert.ok(appended.includes(language === "nl" ? "Anderen 1 (Computeraudio)" : "Speaker 1 (Computer audio)"));
+    assert.ok(appended.includes(language === "nl" ? "Onbekende spreker (Microfoon)" : "Unknown speaker (Microphone)"));
+    assert.ok(appended.includes(language === "nl" ? "System audio (Computeraudio)" : "System audio (Computer audio)"));
+    assert.ok(appended.includes("We ronden de planning maandag af."));
+    assert.ok(appended.includes("Ik bevestig de volgende afspraak."));
+  }
+  assert.equal(results[0], results[1], "Interface language changed canonical generation input.");
+});
+
+test("legacy export translates owned marker labels without translating source words", async () => {
+  const context = fixture("meeting-notes", { locale: "nl", configured_text_provider: true });
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const generated = await api.invoke("generate_shareable_meeting_summary", { id });
+  for (const language of ["en", "nl"]) {
+    const preview = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true, language });
+    const appended = preview.markdown.slice(generated.markdown.length);
+    assert.ok(appended.includes(language === "nl" ? "Anderen 1 (Onbekende bron)" : "Speaker 1 (Unknown source)"));
+    assert.ok(appended.includes(language === "nl" ? "Ik (Onbekende bron)" : "Me (Unknown source)"));
+    assert.ok(appended.includes("Ik bevestig de volgende afspraak."));
+  }
+});
+
 test("new and upgraded synthetic profiles leave automatic summaries unanswered", async () => {
   const api = fixture("meeting-notes", { configured_text_provider: true }).__PENNEL_PLATFORM__;
   const info = await api.invoke("app_info");

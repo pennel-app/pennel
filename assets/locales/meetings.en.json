@@ -211,6 +211,7 @@
   "meetings.attribution_source_system": "Computer audio",
   "meetings.attribution_source_room_microphone": "Room microphone",
   "meetings.attribution_source_system_audio": "Computer audio",
+  "meetings.attribution_source_unknown": "Unknown source",
   "meetings.attribution_correction_review": "Speaker correction needs review.",
   "meetings.passage_audio_unavailable": "The audio source for this passage is unavailable.",
   "meetings.live_speakers_title": "Live speaker attribution",

@@ -211,6 +211,7 @@
   "meetings.attribution_source_system": "Computeraudio",
   "meetings.attribution_source_room_microphone": "Ruimtemicrofoon",
   "meetings.attribution_source_system_audio": "Computeraudio",
+  "meetings.attribution_source_unknown": "Onbekende bron",
   "meetings.attribution_correction_review": "Controleer de sprekercorrectie.",
   "meetings.passage_audio_unavailable": "De audiobron voor deze passage is niet beschikbaar.",
   "meetings.live_speakers_title": "Live sprekertoewijzing",
