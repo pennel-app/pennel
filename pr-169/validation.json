@@ -1,19 +1,24 @@
 {
-  "head": "cab5f89c9179e4f45ca57bb23821bb95a163537f",
-  "product_build_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
-  "product_source_unchanged_after_native_build": true,
+  "head": "672533113f70cf21b7c9274a758d1a688f8b9cf8",
+  "product_build_commit": "87824e4f9575097e16d827b4312e7ff3706c6107",
   "local_checks": {
     "core_release_build": "passed",
     "core_tests_passed": 1075,
     "core_tests_existing_ignored": 7,
     "typing_tests_passed": 17,
     "frontend_build": "passed",
-    "frontend_and_fixture_tests_passed": 407,
+    "frontend_and_fixture_tests_passed": 409,
     "backend_tests_passed": 270,
     "packaging_tests_passed": 61,
     "core_fmt": "passed",
     "core_strict_clippy": "passed",
-    "theme_check": "passed"
+    "theme_check": "passed",
+    "mobile_ui_tests_passed": 159,
+    "mobile_typecheck": "passed",
+    "language_policy": "passed",
+    "lean_speaker_tests_passed": 33,
+    "deterministic_fixture_stress_passed": 20,
+    "lean_strict_clippy": "passed"
   },
   "browser": {
     "full-matrix": {
@@ -45,10 +50,30 @@
       "complete": true,
       "captures": 4,
       "failures": 0
+    },
+    "merge-export-captures": {
+      "complete": true,
+      "captures": 20,
+      "failures": 0
     }
   },
   "browser_scope_note": "The broad matrix was captured before final owner-profile/popup changes. Final affected interactions and starting states were rerun after those changes. Browser results are synthetic backend evidence, not native/device/human acceptance.",
-  "native": {
+  "human_review": "Owner has not tried the navigation task yet; no UX decision resolved.",
+  "open_gates": [
+    "owner navigation/meeting/setup decisions",
+    "real audio and receiving-app insertion",
+    "native menus, keyboard, VoiceOver and text zoom",
+    "installed-platform, release and participant acceptance",
+    "latest-head hosted checks (status recorded separately)"
+  ],
+  "review": {
+    "standards_initial_findings": 1,
+    "standards_resolution": "P2 export-label locale fixed; independent re-review clear",
+    "spec_findings": 0,
+    "current_merge_blockers": 0,
+    "ci_fixture_correction": "Independent standards/spec re-review clear; negative control proved a dropped packet, fix passes33 lean speaker tests and20 separate processes."
+  },
+  "historical_native": {
     "source_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
     "os_version": "27.0.1",
     "architecture": "arm64",
@@ -69,12 +94,82 @@
     "human_owner_review": false,
     "native_zoom_gap": "Current candidate has no custom window zoom handling; webview zoom hotkeys disabled. Browser enlarged-text layout checks are separate evidence."
   },
-  "human_review": "Owner has not tried the navigation task yet; no UX decision resolved.",
-  "open_gates": [
-    "owner navigation/meeting/setup decisions",
-    "real audio and receiving-app insertion",
-    "native menus, keyboard, VoiceOver and text zoom",
-    "installed-platform, release and participant acceptance",
-    "latest-head hosted checks (status recorded separately)"
-  ]
+  "native": {
+    "source_commit": "87824e4f9575097e16d827b4312e7ff3706c6107",
+    "source_clean_at_start": true,
+    "started_at": "2026-11-06T16:51:03.440069+00:00",
+    "os_version": "27.0.1",
+    "architecture": "arm64",
+    "personal_team": "B538Q2K76C",
+    "personal_signing_sha1": "0D135E8CC8A6B99C288F287A1DAC399A02D2D53E",
+    "personal_certificate_verified": true,
+    "previous_native_candidate": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+    "previous_native_archive": "build/desktop-ux-review/native-before-merge-fix",
+    "archive_manifest": "build/desktop-ux-review/native-before-merge-fix/archive-manifest.json",
+    "archive_files_hash_verified": 57,
+    "prior_receipt_sha256": "963e4470a5cf55949baebc44154b4d09c551a7b30f8e78c143fe924aebd90172",
+    "preview_build_complete": true,
+    "preview_signing_complete": true,
+    "preview_dmg_created": true,
+    "ordinary_preview_launched": false,
+    "native_layout_captures_repeated": false,
+    "prior_layout_capture_source_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+    "prior_layout_capture_count": 16,
+    "actual_hardware_capture": false,
+    "actual_provider_generation": false,
+    "actual_clipboard_insertion": false,
+    "native_menu_acceptance": false,
+    "voiceover_acceptance": false,
+    "human_owner_review": false,
+    "commands": [
+      "/Users/landerparren/.local/bin/worktree-storage run -- env APPLE_SIGNING_IDENTITY=0D135E8CC8A6B99C288F287A1DAC399A02D2D53E APPLE_TEAM_ID=B538Q2K76C make desktop-preview",
+      "/Users/landerparren/.local/bin/worktree-storage run -- env APPLE_SIGNING_IDENTITY=0D135E8CC8A6B99C288F287A1DAC399A02D2D53E APPLE_TEAM_ID=B538Q2K76C scripts/bundle-preview-image.sh",
+      "env APPLE_SIGNING_IDENTITY=0D135E8CC8A6B99C288F287A1DAC399A02D2D53E APPLE_TEAM_ID=B538Q2K76C python3 scripts/verify-desktop-bundle.py \"apps/desktop/src-tauri/target/release/bundle/macos/Pennel Preview.app\" --identifier dev.pennel.Pennel.preview --require-developer-id --output build/desktop-ux-review/merge-native/preview-bundle.json"
+    ],
+    "preview_compilation_complete": true,
+    "preview_bundle_assembled": true,
+    "expected_revision_embedded": true,
+    "signing_status": "The original pinned Tauri signer stalled after owner confirmation and was interrupted alone. Its invalid pennel.cstemp was retained outside the bundle. The existing helper re-signed the exact personal identity with --timestamp=none, passed deep/strict signature, identifier/team/leaf-certificate checks, created and verified the DMG. No clock/trust/ACL change or fallback identity.",
+    "signer_repair_action": "Terminated only the verified owned stalled codesign process after owner confirmation; SecurityAgent and unrelated jobs were untouched.",
+    "signer_repair_started_at": "2026-11-06T17:04:46.526465+00:00",
+    "preview_make_exit_code": 2,
+    "first_helper_repair_exit_code": 1,
+    "interrupted_signer_temporary_artifact": {
+      "original_path": "apps/desktop/src-tauri/target/release/bundle/macos/Pennel Preview.app/Contents/MacOS/pennel.cstemp",
+      "retained_path": "build/desktop-ux-review/merge-native/interrupted-signing/pennel.cstemp",
+      "sha256": "69af217b1be046cb60b97f31c227f13362544ee59bdb2126543c554604b0ff58",
+      "reason": "Original interrupted codesign left pennel.cstemp inside its owned app bundle; helper verification identified that subcomponent as invalid. Retained outside the bundle before retrying the same personal signature."
+    },
+    "signer_repair_status": "Completed: the same-identity timestamp-free helper passed strict signature and DMG verification.",
+    "preview_helper_repair_exit_code": 0,
+    "preview_bundle_identifier": "dev.pennel.Pennel.preview",
+    "verified_personal_leaf_sha1": "0D135E8CC8A6B99C288F287A1DAC399A02D2D53E",
+    "preview_binary_sha256": "81ffb6de66d471a177c88de81e7300bf2851da10cc6932351e2b39c4d7be2bce",
+    "preview_dmg_sha256": "401277a53704852b0c3ceeb440804811be634e82bdd63828d454d546c4a829a9",
+    "preview_dmg_hdiutil_verified": true,
+    "verified_at": "2026-11-06T17:07:50.125998+00:00",
+    "hardware_model": "Mac16,8",
+    "cpu_model": "Apple M4 Pro",
+    "repository_head_at_verification": "87824e4f9575097e16d827b4312e7ff3706c6107",
+    "tracked_repository_dirty_at_verification": false,
+    "old_receipt_unchanged": true
+  },
+  "shipping_source_equivalence": {
+    "build_commit": "87824e4f9575097e16d827b4312e7ff3706c6107",
+    "merge_review_head": "672533113f70cf21b7c9274a758d1a688f8b9cf8",
+    "changed_files_after_build": [
+      "core/src/live_speakers.rs"
+    ],
+    "changed_only_cfg_test_module": true,
+    "unchanged_production_prefix_bytes": 39352,
+    "production_prefix_sha256": "a3e850dbae3cb7fa1cbff9e26930c1e4c84b6b8f7339ac41ae6140aeb33c4917"
+  },
+  "ci_failure_preserved": {
+    "head": "87824e4f9575097e16d827b4312e7ff3706c6107",
+    "job_url": "https://github.com/pennel-app/pennel/actions/runs/42255582230/job/128021871490",
+    "first_failure": "changed_configuration_discards_native_result_and_does_not_retry",
+    "cause": "A fixture-only one-shot packet could be dropped before admission or on queue contention.",
+    "repair": "Admitted-worker checkpoint before queue lock; single feed, full packet acceptance assertions, all original assertions/deadlines preserved.",
+    "production_changed": false
+  }
 }

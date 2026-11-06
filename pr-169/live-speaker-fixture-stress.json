@@ -1,0 +1,100 @@
+{
+  "command": [
+    "scripts/with-toolchain.sh",
+    "cargo",
+    "test",
+    "--manifest-path",
+    "core/Cargo.toml",
+    "--lib",
+    "--no-default-features",
+    "live_speakers::tests::changed_configuration_discards_native_result_and_does_not_retry",
+    "--",
+    "--exact",
+    "--nocapture"
+  ],
+  "attempts": [
+    {
+      "attempt": 1,
+      "exit_code": 0
+    },
+    {
+      "attempt": 2,
+      "exit_code": 0
+    },
+    {
+      "attempt": 3,
+      "exit_code": 0
+    },
+    {
+      "attempt": 4,
+      "exit_code": 0
+    },
+    {
+      "attempt": 5,
+      "exit_code": 0
+    },
+    {
+      "attempt": 6,
+      "exit_code": 0
+    },
+    {
+      "attempt": 7,
+      "exit_code": 0
+    },
+    {
+      "attempt": 8,
+      "exit_code": 0
+    },
+    {
+      "attempt": 9,
+      "exit_code": 0
+    },
+    {
+      "attempt": 10,
+      "exit_code": 0
+    },
+    {
+      "attempt": 11,
+      "exit_code": 0
+    },
+    {
+      "attempt": 12,
+      "exit_code": 0
+    },
+    {
+      "attempt": 13,
+      "exit_code": 0
+    },
+    {
+      "attempt": 14,
+      "exit_code": 0
+    },
+    {
+      "attempt": 15,
+      "exit_code": 0
+    },
+    {
+      "attempt": 16,
+      "exit_code": 0
+    },
+    {
+      "attempt": 17,
+      "exit_code": 0
+    },
+    {
+      "attempt": 18,
+      "exit_code": 0
+    },
+    {
+      "attempt": 19,
+      "exit_code": 0
+    },
+    {
+      "attempt": 20,
+      "exit_code": 0
+    }
+  ],
+  "passed": 20,
+  "failed": 0,
+  "elapsed_seconds": 2.7921285839984193
+}

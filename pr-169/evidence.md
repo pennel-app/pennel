@@ -1,3 +1,39 @@
+# Final PR review evidence
+
+Merge review head: `672533113f70cf21b7c9274a758d1a688f8b9cf8`. Shipping-code Preview build: `87824e4f9575097e16d827b4312e7ff3706c6107`. The later change is confined to an existing `cfg(test)` fixture; the 39,352-byte production prefix is identical and all other files are unchanged. The machine-readable source comparison is retained beside this ledger.
+
+## Review and corrections
+
+Standards: one P2 localization issue fixed. App-owned appended export labels now follow caller EN/NL, while provider messages, source text, canonical names and generated summary bodies remain literal. Rich and legacy actual-request regressions cover both export locales under both saved UI languages. Independent standards and spec re-reviews found no remaining blockers.
+
+Fresh Windows CI passed its default suite, then exposed a pre-existing lean-test fixture race: the original one-shot packet could be dropped before physical admission or on queue contention. The first timeout poisoned the shared test lock, causing eight secondary failures. The failed job remains recorded at its original source/run. A deterministic negative control proved one dropped packet. The test-only correction parks the admitted worker before queue polling, feeds once and proves all samples were accepted, then executes every original configuration-change/no-retry assertion. It adds no packet retry, production change, raised inference deadline or poison recovery. All 33 lean speaker tests and 20 separate fail-fast exact-test processes passed; the full default suite again passed 1,075 tests. Both independent reviewers cleared the delta.
+
+## Current local verification
+
+Core Release build, 1,075 core tests (seven existing ignored), 17 typing tests, formatting and strict Clippy; desktop build and 409 frontend/fixture tests; 270 backend tests; mobile typecheck and 159 UI tests; language-policy/theme checks; 20 focused EN/NL light/dark export captures. All passed. Other earlier browser/native layout coverage below remains tied to its stated revisions.
+
+The refreshed Preview app and DMG passed exact personal certificate/team, identity, deep/strict signature and disk-image checks. Executable SHA256: `81ffb6de66d471a177c88de81e7300bf2851da10cc6932351e2b39c4d7be2bce`. DMG SHA256: `401277a53704852b0c3ceeb440804811be634e82bdd63828d454d546c4a829a9`. The stalled owned signer was interrupted; its temporary component was retained, and the existing same-identity timestamp-free helper completed verification. Earlier apps, final products and receipts were hash-preserved. Ordinary Preview was not launched; no new real-audio, device, menu, VoiceOver, zoom or owner acceptance is implied.
+
+Final-head hosted CI is the merge gate; its status snapshot is maintained separately. Owner UX decisions remain open.
+
+## Historical implementation evidence
+
+The following earlier evidence is retained verbatim at its original source revisions and is not an exact-head native test claim.
+
+# PR review and merge verification
+
+Review head: `87824e4f9575097e16d827b4312e7ff3706c6107`.
+
+## Independent review
+
+Standards found one P2: shareable export labels ignored the caller's interface language. The correction localizes only appended display labels using existing core/catalog helpers and an empty alias list. Canonical provider messages, exact source words, canonical manual names, saved transcript bytes and privacy/freshness checks remain unchanged. English and Dutch caller locales are tested under both saved UI languages. The independent standards and spec re-reviews found no remaining material blockers.
+
+The corrected head passes 1,075 core tests (seven existing ignored), 17 typing tests, core Release build/format/strict Clippy, 409 frontend/fixture tests and frontend build, 270 backend tests, mobile typecheck plus 159 mobile UI tests, language-policy checks and 20 focused EN/NL light/dark export captures. Fresh hosted checks and refreshed personal-team Preview verification are required before merge; their current snapshots/receipt are recorded separately.
+
+## Earlier implementation evidence
+
+The following implementation and capture history remains at its original source revisions. It must not be read as an exact-head native verification of the locale correction.
+
 # Desktop UX owner-review evidence
 
 Implementation head: `cab5f89c9179e4f45ca57bb23821bb95a163537f`. Product/native build: `2bf192afc661acfd63618c1487ae271ab1c514c8`; the final commit changes only review fixtures, their tests, the launcher and documentation. A source comparison confirms that core, desktop frontend/backend, dependencies, native services and assets are unchanged since that native build.

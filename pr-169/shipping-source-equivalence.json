@@ -1,0 +1,10 @@
+{
+  "build_commit": "87824e4f9575097e16d827b4312e7ff3706c6107",
+  "merge_review_head": "672533113f70cf21b7c9274a758d1a688f8b9cf8",
+  "changed_files_after_build": [
+    "core/src/live_speakers.rs"
+  ],
+  "changed_only_cfg_test_module": true,
+  "unchanged_production_prefix_bytes": 39352,
+  "production_prefix_sha256": "a3e850dbae3cb7fa1cbff9e26930c1e4c84b6b8f7339ac41ae6140aeb33c4917"
+}

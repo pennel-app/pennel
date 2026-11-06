@@ -1,8 +1,10 @@
 {
-  "implementation_commit": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+  "implementation_commit": "672533113f70cf21b7c9274a758d1a688f8b9cf8",
   "kind": "owned synthetic browser UI",
   "before_backend_fixture_commit": "8ad573f055b388b64dbac3e7c7e7e4cf5874d887",
   "frontend": "same current frontend for both; product layout/styles unchanged",
   "input": "identical invented meeting, private-note sentinel, shareable scope, include transcript",
-  "notes": "Before/after compare baseline/current synthetic IPC output consistent with tested core renderer. No native, real-audio, participant, or owner acceptance is claimed."
+  "notes": "Before/after compare the baseline synthetic IPC with the reviewed, locale-correct export renderer. Transcript words and canonical generated content remain literal. Browser evidence only.",
+  "rendered_source_commit": "87824e4f9575097e16d827b4312e7ff3706c6107",
+  "only_test_code_changed_after_render": true
 }
