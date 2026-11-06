@@ -2,6 +2,8 @@
 
 Status: protocol prepared; no participant sessions or adoption outcomes are recorded here. The targets below are initial product decisions, not industry benchmarks or evidence that Pennel has met them. Track implementation and review in [issue #32](https://github.com/pennel-app/pennel/issues/32).
 
+The separate [desktop owner-review kit](desktop-ux-owner-review.md) prepares the three current UX decisions with isolated browser scenarios and a later Pennel Preview pass. Owner feedback and synthetic task runs do not count as participant rounds or adoption evidence.
+
 ## Purpose and sequence
 
 Evaluate whether nontechnical professionals and small teams can use Pennel for writing and meetings without understanding models, providers or API keys. Observe task completion separately from visual appeal. English, Dutch and mixed Dutch–English work receive explicit coverage; interface language and speech language are separate variables.
