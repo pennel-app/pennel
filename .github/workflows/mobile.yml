@@ -134,6 +134,7 @@ jobs:
       - name: Generate and validate the preview workspace
         env:
           CI: "1"
+          CARGO_NET_RETRY: '6'
         run: python3 -B scripts/ci-xcode-cache.py time --phase native-preparation -- make mobile-prebuild
       - name: Fingerprint the native compiler-cache experiment
         id: compiler-cache
@@ -282,6 +283,7 @@ jobs:
       - name: Generate and validate the preview workspace
         env:
           CI: "1"
+          CARGO_NET_RETRY: '6'
         run: python3 -B scripts/ci-xcode-cache.py time --phase native-preparation -- make mobile-prebuild
       - name: Fingerprint the native compiler-cache experiment
         id: compiler-cache
