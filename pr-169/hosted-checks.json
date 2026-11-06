@@ -1,45 +1,46 @@
 {
-  "head": "cab5f89c9179e4f45ca57bb23821bb95a163537f",
-  "observed_at": "2026-11-05T20:39:09.579Z",
+  "head": "672533113f70cf21b7c9274a758d1a688f8b9cf8",
+  "merge_commit": "fb614b65e7019ef5d0dc063cf316550beb5b5eb9",
+  "observed_at": "2026-11-06T18:13:47.640Z",
   "workflow_runs": [
     {
-      "id": 42104948533,
-      "name": "decision evaluation",
-      "status": "in_progress",
-      "conclusion": null,
-      "run_number": 118,
-      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948533/jobs",
-      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948533/logs",
-      "workflow_id": 399530818
-    },
-    {
-      "id": 42104948681,
-      "name": "ci",
-      "status": "in_progress",
-      "conclusion": null,
-      "run_number": 255,
-      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948681/jobs",
-      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948681/logs",
-      "workflow_id": 395096827
-    },
-    {
-      "id": 42104948754,
+      "id": 42259742685,
       "name": "desktop",
-      "status": "in_progress",
-      "conclusion": null,
-      "run_number": 316,
-      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948754/jobs",
-      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948754/logs",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 321,
+      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259742685/jobs",
+      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259742685/logs",
       "workflow_id": 395131523
     },
     {
-      "id": 42104948513,
+      "id": 42259742740,
+      "name": "ci",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 260,
+      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259742740/jobs",
+      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259742740/logs",
+      "workflow_id": 395096827
+    },
+    {
+      "id": 42259742725,
+      "name": "decision evaluation",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 122,
+      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259742725/jobs",
+      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259742725/logs",
+      "workflow_id": 399530818
+    },
+    {
+      "id": 42259743107,
       "name": "mobile",
-      "status": "in_progress",
-      "conclusion": null,
-      "run_number": 175,
-      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948513/jobs",
-      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42104948513/logs",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 179,
+      "jobs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259743107/jobs",
+      "logs_url": "https://api.github.com/repos/pennel-app/pennel/actions/runs/42259743107/logs",
       "workflow_id": 399137795
     }
   ]

@@ -63,8 +63,7 @@
     "owner navigation/meeting/setup decisions",
     "real audio and receiving-app insertion",
     "native menus, keyboard, VoiceOver and text zoom",
-    "installed-platform, release and participant acceptance",
-    "latest-head hosted checks (status recorded separately)"
+    "installed-platform, release and participant acceptance"
   ],
   "review": {
     "standards_initial_findings": 1,
@@ -171,5 +170,11 @@
     "cause": "A fixture-only one-shot packet could be dropped before admission or on queue contention.",
     "repair": "Admitted-worker checkpoint before queue lock; single feed, full packet acceptance assertions, all original assertions/deadlines preserved.",
     "production_changed": false
+  },
+  "merge": {
+    "merged": true,
+    "merge_commit": "fb614b65e7019ef5d0dc063cf316550beb5b5eb9",
+    "reviewed_head": "672533113f70cf21b7c9274a758d1a688f8b9cf8",
+    "all_four_hosted_workflows_passed": true
   }
 }

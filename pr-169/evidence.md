@@ -1,3 +1,7 @@
+# Merged implementation
+
+PR169 merged to main as `fb614b65e7019ef5d0dc063cf316550beb5b5eb9` after all four final-head workflows passed. Reviewed head: `672533113f70cf21b7c9274a758d1a688f8b9cf8`. Code/preparation completion is separate from the still-open owner and device decisions.
+
 # Final PR review evidence
 
 Merge review head: `672533113f70cf21b7c9274a758d1a688f8b9cf8`. Shipping-code Preview build: `87824e4f9575097e16d827b4312e7ff3706c6107`. The later change is confined to an existing `cfg(test)` fixture; the 39,352-byte production prefix is identical and all other files are unchanged. The machine-readable source comparison is retained beside this ledger.
