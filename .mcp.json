@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "hoppscotch": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@hoppscotch/mcp-server@1.0.2"
+      ],
+      "env": {
+        "HOPPSCOTCH_TOOL_PROFILE": "core",
+        "HOPPSCOTCH_STRICT_ENV": "true",
+        "HOPPSCOTCH_ALLOW_PRIVATE_HOSTS": "false"
+      }
+    }
+  }
+}
