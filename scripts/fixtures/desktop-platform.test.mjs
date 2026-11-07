@@ -37,8 +37,50 @@ test("shareable preview never falls back to private notes or legacy owner output
   const preview = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true });
   assert.equal(preview.markdown.includes(privateFact), false);
   await api.invoke("set_meeting_notes", { text: "Changed sources" });
+  assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, false);
+  await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: false });
+});
+
+test("shareable fixture freshness follows transcript attribution and source metadata", async () => {
+  const context = fixture("meeting-notes", { rich_utterances: true, configured_text_provider: true });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+  await api.invoke("generate_shareable_meeting_summary", { id });
+  control.workspace.attribution(0, { confirmed_speaker_name: "Canonical name" });
   assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, true);
   await assert.rejects(api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: false }));
+});
+
+test("shareable export localizes only appended labels and preserves canonical generation", async () => {
+  const results = [];
+  for (const language of ["en", "nl"]) {
+    const context = fixture("meeting-transcript", { locale: language, ui_language: language, rich_utterances: true, configured_text_provider: true });
+    const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+    control.workspace.attribution(2, { confirmed_speaker_name: "System audio" });
+    const generated = await api.invoke("generate_shareable_meeting_summary", { id });
+    results.push(generated.markdown);
+    const preview = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true, language });
+    const appended = preview.markdown.slice(generated.markdown.length);
+    assert.equal(preview.markdown.slice(0, generated.markdown.length), generated.markdown);
+    assert.ok(appended.includes(language === "nl" ? "Anderen 1 (Computeraudio)" : "Speaker 1 (Computer audio)"));
+    assert.ok(appended.includes(language === "nl" ? "Onbekende spreker (Microfoon)" : "Unknown speaker (Microphone)"));
+    assert.ok(appended.includes(language === "nl" ? "System audio (Computeraudio)" : "System audio (Computer audio)"));
+    assert.ok(appended.includes("We ronden de planning maandag af."));
+    assert.ok(appended.includes("Ik bevestig de volgende afspraak."));
+  }
+  assert.equal(results[0], results[1], "Interface language changed canonical generation input.");
+});
+
+test("legacy export translates owned marker labels without translating source words", async () => {
+  const context = fixture("meeting-notes", { locale: "nl", configured_text_provider: true });
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const generated = await api.invoke("generate_shareable_meeting_summary", { id });
+  for (const language of ["en", "nl"]) {
+    const preview = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true, language });
+    const appended = preview.markdown.slice(generated.markdown.length);
+    assert.ok(appended.includes(language === "nl" ? "Anderen 1 (Onbekende bron)" : "Speaker 1 (Unknown source)"));
+    assert.ok(appended.includes(language === "nl" ? "Ik (Onbekende bron)" : "Me (Unknown source)"));
+    assert.ok(appended.includes("Ik bevestig de volgende afspraak."));
+  }
 });
 
 test("new and upgraded synthetic profiles leave automatic summaries unanswered", async () => {
@@ -66,15 +108,361 @@ test("accepted review export retains provenance while note staging keeps the exa
   assert.ok(exported.includes("decision.example.invalid"));
   assert.equal(await api.invoke("insight_markdown", { id, itemId: item.id, itemRevision: reviewed.items[0].revision }), edited);
 });
-function fixture(name, overrides = {}, storage) {
+function fixture(name, overrides = {}, storage, browser = {}) {
   const item = cases.find(item => item.name === name);
-  const context = vm.createContext({ location: { hostname: "127.0.0.1" }, structuredClone, queueMicrotask, setTimeout, clearTimeout, TextEncoder, TextDecoder, crypto: webcrypto, localStorage: storage,
+  const context = vm.createContext({ location: { hostname: "127.0.0.1", href: "http://127.0.0.1:4310/index.html", origin: "http://127.0.0.1:4310" }, URL, structuredClone, queueMicrotask, setTimeout, clearTimeout, TextEncoder, TextDecoder, crypto: webcrypto, localStorage: storage, ...browser,
     __PENNEL_CONVERSATION_CONTRACT__: conversationContract,
     __PENNEL_CREATE_CONVERSATION_FIXTURE__: createConversationFixture,
     __PENNEL_FIXTURE_OPTIONS__: { ...item, appearance: "dark", ...overrides } });
   vm.runInContext(script, context);
   return context;
 }
+
+const reviewStorage = () => {
+  const values = new Map();
+  return { values, get length() { return values.size; }, key: index => [...values.keys()][index] ?? null,
+    getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+};
+
+test("owner review starts and stops distinct meetings and reopens saved work after reload", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-lifecycle", configured_text_provider: true, rich_utterances: true };
+  const first = fixture("simple-task-shell", options, storage), api = first.__PENNEL_PLATFORM__;
+  assert.equal((await api.invoke("meeting_status")).recording, false);
+  const firstId = await api.invoke("start_meeting", { title: "First review conversation" });
+  const status = await api.invoke("meeting_status");
+  assert.equal(status.recording, true);
+  assert.equal(status.id, firstId);
+  assert.equal(status.title, "First review conversation");
+  await api.invoke("set_meeting_notes", { text: "Keep this exact note.", sessionId: status.session_id });
+  await api.invoke("stop_meeting", { sessionId: status.session_id });
+  assert.equal((await api.invoke("meeting_status")).recording, false);
+  await api.invoke("save_meeting_notes", { id: firstId, text: "Continued after Stop." });
+  assert.equal((await api.invoke("meeting_detail", { id: firstId })).notes, "Continued after Stop.");
+  const secondId = await api.invoke("start_meeting", { title: "Second review conversation" });
+  assert.notEqual(firstId, secondId);
+  assert.notEqual((await api.invoke("meeting_status")).session_id, status.session_id);
+  const retained = await api.invoke("meeting_detail", { id: firstId });
+  assert.equal(retained.notes, "Continued after Stop.");
+  assert.equal(retained.info.title, "First review conversation");
+  await api.invoke("stop_meeting");
+  const reopened = fixture("simple-task-shell", options, storage).__PENNEL_PLATFORM__;
+  assert.equal((await reopened.invoke("meeting_detail", { id: firstId })).notes, "Continued after Stop.");
+  assert.ok((await reopened.invoke("meetings", { query: "" })).some(info => info.id === secondId));
+});
+
+test("owner review dictation completion retains one result and cancelled late work cannot return", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-dictation", dictation_manual: true };
+  const context = fixture("simple-task-shell", options, storage), api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  const before = (await api.invoke("history")).length, session = await api.invoke("open_dictation_session", { kind: "pad" });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  assert.equal((await api.invoke("get_dictation_session", { sessionId: session.session_id })).phase, "listening");
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  assert.equal((await api.invoke("get_dictation_session", { sessionId: session.session_id })).phase, "working");
+  assert.equal(control.review.completeDictation(), 1);
+  const done = await api.invoke("get_dictation_session", { sessionId: session.session_id });
+  assert.equal(done.phase, "done");
+  assert.equal((await api.invoke("history")).length, before + 1);
+  assert.equal(control.review.completeDictation(), 0);
+  const reopenedContext = fixture("simple-task-shell", options, storage), reopened = reopenedContext.__PENNEL_PLATFORM__;
+  assert.equal(await reopened.invoke("pad_text"), done.text);
+  assert.equal((await reopened.invoke("history")).length, before + 1);
+  const next = await reopened.invoke("open_dictation_session", { kind: "pad" });
+  await reopened.invoke("toggle_dictation_session", { sessionId: next.session_id });
+  await reopened.invoke("toggle_dictation_session", { sessionId: next.session_id });
+  reopenedContext.__PENNEL_FIXTURE__.review.completeDictation();
+  const reopenedHistory = await reopened.invoke("history");
+  assert.equal(new Set(reopenedHistory.map(entry => entry.id)).size, reopenedHistory.length);
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  await api.invoke("cancel_dictation_session", { sessionId: session.session_id });
+  assert.equal(control.review.completeDictation(), 0);
+  assert.equal((await api.invoke("history")).length, before + 1);
+});
+
+test("owner review prepared output keeps labels while late transcript changes reject stale generation", async () => {
+  const context = fixture("simple-task-shell", { owner_review: true, rich_utterances: true, configured_text_provider: true, summary_generation_delay_ms: 20 });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+  control.workspace.attribution(0, { confirmed_speaker_name: "Confirmed speaker" });
+  const pending = api.invoke("generate_shareable_meeting_summary", { id });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  control.workspace.attribution(0, { confirmed_speaker_name: "Changed speaker" });
+  await assert.rejects(pending, /transcript changed/);
+  assert.equal(await api.invoke("shareable_meeting_summary", { id }), null);
+  await api.invoke("generate_shareable_meeting_summary", { id });
+  const output = await api.invoke("preview_meeting_export", { id, scope: "shareable", includeTranscript: true });
+  assert.match(output.markdown, /\[00:00\] Changed speaker \(System audio\): We ronden/);
+  assert.ok(output.html.includes("Changed speaker (System audio)"));
+  await api.invoke("set_meeting_notes", { text: "PRIVATE_CHANGED_NOTE" });
+  assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, false);
+  control.workspace.attribution(0, { source_id: "room_microphone" });
+  assert.equal((await api.invoke("shareable_meeting_summary", { id })).outdated, true);
+});
+
+test("owner review ignores a delayed note save after the capture session changes", async () => {
+  const context = fixture("simple-task-shell", { owner_review: true, note_save_delay_ms: 60_000 });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  await api.invoke("start_meeting", { title: "First delayed session" });
+  const first = await api.invoke("meeting_status");
+  const pending = api.invoke("set_meeting_notes", { text: "Old session note", sessionId: first.session_id });
+  await api.invoke("stop_meeting");
+  await api.invoke("start_meeting", { title: "Current session" });
+  control.workspace.releaseNotes();
+  await assert.rejects(pending, /session changed/);
+  assert.equal((await api.invoke("meeting_status")).notes, "");
+});
+
+test("owner review search filters titles and returns matching source passages", async () => {
+  const api = fixture("simple-task-shell", { owner_review: true }).__PENNEL_PLATFORM__;
+  const title = await api.invoke("search_library", { query: "Studio Noord" });
+  assert.deepEqual(Array.from(title.meetings, info => info.title), ["Klantgesprek Studio Noord"]);
+  const passage = await api.invoke("search_library", { query: "planning maandag" });
+  assert.ok(passage.passages.length > 0);
+  assert.ok(passage.passages.every(row => row.kind === "transcript" && row.text.includes("planning") && row.meeting_id));
+  const missing = await api.invoke("search_library", { query: "no-such-review-term" });
+  assert.equal(missing.meetings.length, 0);
+  assert.equal(missing.passages.length, 0);
+});
+
+test("owner review reset and frontend state are confined to one synthetic profile", async () => {
+  const storage = reviewStorage();
+  storage.setItem("ordinary-app-setting", "preserve");
+  storage.setItem("pennel-synthetic-fixture:other-review", "preserve");
+  const context = fixture("simple-task-shell", { owner_review: true, profile: "review-one" }, storage);
+  context.localStorage.setItem("pennel.workspace.presentation.v1", JSON.stringify({ visible: false }));
+  assert.equal(JSON.parse(context.localStorage.getItem("pennel.workspace.presentation.v1")).visible, false);
+  const other = fixture("simple-task-shell", { owner_review: true, profile: "review-two" }, storage);
+  assert.equal(other.localStorage.getItem("pennel.workspace.presentation.v1"), null);
+  other.localStorage.setItem("pennel.workspace.presentation.v1", "other presentation");
+  storage.setItem("pennel-synthetic-fixture:review-one:conversations:v1", "scratch");
+  context.__PENNEL_FIXTURE__.review.resetProfile();
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-one:ui:pennel.workspace.presentation.v1"), null);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-one:conversations:v1"), null);
+  assert.equal(storage.getItem("ordinary-app-setting"), "preserve");
+  assert.equal(storage.getItem("pennel-synthetic-fixture:other-review"), "preserve");
+  assert.equal(other.localStorage.getItem("pennel.workspace.presentation.v1"), "other presentation");
+});
+
+test("owner review profile reset cancels its pending global dictation without recreating stored work", async () => {
+  const storage = reviewStorage(), context = fixture("simple-task-shell", { owner_review: true, profile: "review-reset-pending", dictation_manual: true }, storage);
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  await api.invoke("toggle_dictation");
+  assert.equal((await api.invoke("dictation_state")).state, "listening");
+  await api.invoke("toggle_dictation");
+  assert.equal((await api.invoke("dictation_state")).state, "working");
+  control.review.resetProfile();
+  assert.equal(control.review.completeDictation(), 0);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-reset-pending:owner-review:v1"), null);
+});
+
+test("owner review download and save failures can be repaired without replacing useful work", async () => {
+  const context = fixture("simple-task-shell", { owner_review: true, configured_text_provider: true }), api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__;
+  const id = await api.invoke("start_meeting", { title: "Recoverable review" });
+  await api.invoke("set_meeting_notes", { text: "Saved note" });
+  control.review.failSaves(true);
+  await assert.rejects(api.invoke("set_meeting_notes", { text: "Unsaved replacement" }));
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, "Saved note");
+  control.review.failSaves(false);
+  await api.invoke("set_meeting_notes", { text: "Recovered note" });
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, "Recovered note");
+  const model = (await api.invoke("local_models"))[0];
+  await api.invoke("delete_model", { id: model.id });
+  control.review.failDownloads("Synthetic download unavailable");
+  await api.invoke("download_model", { id: model.id });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.notEqual((await api.invoke("model_state", { id: model.id })).kind, "downloaded");
+  control.review.failDownloads(null);
+  await api.invoke("download_model", { id: model.id });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal((await api.invoke("model_state", { id: model.id })).kind, "downloaded");
+});
+
+test("owner review completed model downloads and explicit deletion survive profile reload", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-model-reload" };
+  const first = fixture("onboarding-welcome", options, storage), api = first.__PENNEL_PLATFORM__;
+  const id = (await api.invoke("local_models"))[0].id;
+  assert.equal((await api.invoke("model_state", { id })).kind, "not_downloaded");
+  await api.invoke("download_model", { id });
+  assert.equal((await api.invoke("model_state", { id })).kind, "downloaded");
+  const reopened = fixture("onboarding-welcome", options, storage).__PENNEL_PLATFORM__;
+  assert.equal((await reopened.invoke("model_state", { id })).kind, "downloaded");
+  await reopened.invoke("delete_model", { id });
+  assert.equal((await fixture("onboarding-welcome", options, storage).__PENNEL_PLATFORM__.invoke("model_state", { id })).kind, "not_downloaded");
+  const other = fixture("onboarding-welcome", { ...options, profile: "review-model-other" }, storage).__PENNEL_PLATFORM__;
+  assert.equal((await other.invoke("model_state", { id })).kind, "not_downloaded");
+});
+
+test("owner review summary history remains recoverable after profile reload", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-summary-reload", configured_text_provider: true };
+  const first = fixture("meeting-notes", options, storage), api = first.__PENNEL_PLATFORM__, id = first.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_summary", { id });
+  const edited = await api.invoke("save_meeting_summary", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision, markdown: "Exact recoverable edit." });
+  assert.equal((await api.invoke("meeting_summary_history", { id })).length, 1);
+  const reopened = fixture("meeting-notes", options, storage).__PENNEL_PLATFORM__;
+  const history = await reopened.invoke("meeting_summary_history", { id });
+  assert.equal(history.length, 1);
+  assert.equal(history[0].markdown, before.markdown);
+  const restored = await reopened.invoke("restore_meeting_summary", { id, expectedRevision: edited.revision,
+    expectedSourceRevision: edited.source_revision, revision: history[0].revision });
+  assert.equal(restored.markdown, before.markdown);
+  assert.equal((await reopened.invoke("meeting_summary_history", { id }))[0].markdown, "Exact recoverable edit.");
+});
+
+test("owner review reset in another tab fences pending dictation, notes, summaries and settings", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-cross-tab-reset", dictation_manual: true,
+    note_save_delay_ms: 200, summary_generation_delay_ms: 20, configured_text_provider: true };
+  storage.setItem("unrelated-user-setting", "preserve");
+  storage.setItem("pennel-synthetic-fixture:other-review:owner-review:v1", "preserve");
+  const tab = fixture("meeting-notes", options, storage), api = tab.__PENNEL_PLATFORM__, control = tab.__PENNEL_FIXTURE__;
+  await api.invoke("save_pad_text", { text: "Old synthetic draft" });
+  await api.invoke("toggle_dictation"); await api.invoke("toggle_dictation");
+  const notes = api.invoke("save_meeting_notes", { id: control.options.meeting_id, text: "Late old notes" });
+  const summary = api.invoke("generate_shareable_meeting_summary", { id: control.options.meeting_id });
+  const summaryOutcome = summary.then(() => null, error => error);
+  const info = await api.invoke("app_info");
+  const resetTab = fixture("meeting-notes", options, storage);
+  resetTab.__PENNEL_FIXTURE__.review.resetProfile();
+  assert.equal(control.review.completeDictation(), 0);
+  control.workspace.releaseNotes();
+  await assert.rejects(notes, /reset|Reload/i);
+  assert.match(String(await summaryOutcome), /reset|Reload/i);
+  await assert.rejects(api.invoke("save_settings", { settings: info.settings }), /reset|Reload/i);
+  assert.throws(() => tab.localStorage.setItem("pennel.workspace.presentation.v1", "old presentation"), /reset|Reload/i);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-cross-tab-reset:owner-review:v1"), null);
+  assert.equal(storage.getItem("pennel-synthetic-fixture:review-cross-tab-reset:reset-generation"), "1");
+  assert.equal(storage.getItem("unrelated-user-setting"), "preserve");
+  assert.equal(storage.getItem("pennel-synthetic-fixture:other-review:owner-review:v1"), "preserve");
+  const fresh = fixture("meeting-notes", options, storage).__PENNEL_PLATFORM__;
+  await fresh.invoke("save_pad_text", { text: "Fresh synthetic draft" });
+  assert.equal(await fresh.invoke("pad_text"), "Fresh synthetic draft");
+  assert.ok(storage.getItem("pennel-synthetic-fixture:review-cross-tab-reset:owner-review:v1"));
+});
+
+test("owner review practice opens an isolated local window sharing only its review profile", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-practice-window", locale: "en", appearance: "light", dictation_manual: true };
+  const parent = fixture("simple-task-shell", options, storage), api = parent.__PENNEL_PLATFORM__, opened = [];
+  parent.open = (url, name) => { opened.push({ url, name }); return { focus() {} }; };
+  await api.invoke("save_pad_text", { text: "Keep the parent draft." });
+  await api.invoke("show_window", { kind: "onboarding", tab: "practice" });
+  assert.equal(opened.length, 1);
+  const url = new URL(opened[0].url);
+  assert.equal(url.origin, parent.location.origin);
+  assert.equal(url.searchParams.get("qa"), "owner-review-practice");
+  assert.equal(url.searchParams.get("window"), "onboarding");
+  assert.equal(url.searchParams.get("tab"), "practice");
+  assert.equal(url.searchParams.get("profile"), options.profile);
+  assert.equal(url.searchParams.get("locale"), "en");
+  assert.equal(url.searchParams.get("theme"), "light");
+  const practice = fixture("onboarding-practice", options, storage), practiceApi = practice.__PENNEL_PLATFORM__;
+  const session = await practiceApi.invoke("open_dictation_session", { kind: "practice" });
+  const historyBefore = (await api.invoke("history")).length;
+  await practiceApi.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  await practiceApi.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  practice.__PENNEL_FIXTURE__.review.completeDictation();
+  assert.equal((await practiceApi.invoke("get_dictation_session", { sessionId: session.session_id })).phase, "done");
+  assert.equal(await api.invoke("pad_text"), "Keep the parent draft.");
+  assert.equal((await api.invoke("history")).length, historyBefore);
+  await api.invoke("show_window", { kind: "onboarding", tab: "dictation-permissions" });
+  assert.equal(new URL(opened[1].url).searchParams.get("qa"), "owner-review-permissions");
+  assert.equal(new URL(opened[1].url).searchParams.get("tab"), "dictation-permissions");
+  parent.open = () => null;
+  await assert.rejects(api.invoke("show_window", { kind: "onboarding", tab: "practice" }), /pop.up/i);
+  await assert.rejects(api.invoke("show_window", { kind: "unknown-native-window" }), /review|supported/i);
+});
+
+test("owner review workspace bridges preserve exact History and settings destinations", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-route-window" };
+  const parent = fixture("simple-task-shell", options, storage), delivered = [], api = parent.__PENNEL_PLATFORM__;
+  await api.listen("workspace-navigate", event => delivered.push(event.payload));
+  await api.invoke("save_pad_text", { text: "Stable parent draft" });
+  await api.invoke("show_window", { kind: "history", tab: "entry:qa-dictation-1" });
+  assert.equal(delivered.at(-1).section, "history");
+  assert.equal(delivered.at(-1).tab, "entry:qa-dictation-1");
+  await api.invoke("show_window", { kind: "settings", tab: "appearance" });
+  assert.equal(delivered.at(-1).section, "settings");
+  assert.equal(delivered.at(-1).tab, "appearance");
+  const practice = fixture("onboarding-practice", options, storage);
+  practice.opener = parent;
+  await practice.__PENNEL_PLATFORM__.invoke("show_workspace", { route: { section: "history", tab: "entry:qa-dictation-2", meeting_id: null, jump_ms: null } });
+  assert.equal(delivered.at(-1).tab, "entry:qa-dictation-2");
+  assert.equal(await api.invoke("pad_text"), "Stable parent draft");
+  await assert.rejects(api.invoke("show_workspace", { route: { section: "history", tab: "entry:../not-a-result" } }), /route|history|destination/i);
+});
+
+test("owner review saved connections and credential presence survive reload without storing key text", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-connection-reload" };
+  const context = fixture("simple-task-shell", options, storage), api = context.__PENNEL_PLATFORM__;
+  const added = await api.invoke("add_provider", { kind: "custom" });
+  const provider = added.settings.providers.find(provider => provider.id.startsWith("qa-custom"));
+  const secret = "DO_NOT_PERSIST_SYNTHETIC_KEY_84f";
+  await api.invoke("set_key", { account: provider.id, key: secret });
+  const reopened = fixture("simple-task-shell", options, storage).__PENNEL_PLATFORM__, restored = await reopened.invoke("app_info");
+  assert.ok(restored.settings.providers.some(item => item.id === provider.id));
+  assert.equal(restored.keys[provider.id], true);
+  assert.equal([...storage.values.values()].some(value => value.includes(secret)), false);
+});
+
+test("owner review permission repair in a local window refreshes the parent without replacing its draft", async () => {
+  const storage = reviewStorage(), events = new Map(), options = { owner_review: true, profile: "review-permission-window", permission: "denied" };
+  const parent = fixture("simple-task-shell", options, storage, { addEventListener: (name, handler) => events.set(name, handler) });
+  const api = parent.__PENNEL_PLATFORM__;
+  await api.invoke("save_pad_text", { text: "Retain the parent draft." });
+  assert.equal((await api.invoke("app_info")).capabilities.global_hotkey.status, "permission_required");
+  const repair = fixture("onboarding-dictation-permissions", options, storage).__PENNEL_PLATFORM__;
+  await repair.invoke("request_permission", { kind: "accessibility" });
+  await repair.invoke("request_permission", { kind: "microphone" });
+  const key = "pennel-synthetic-fixture:review-permission-window:owner-review:v1";
+  events.get("storage")({ key, newValue: storage.getItem(key) });
+  assert.equal((await api.invoke("app_info")).capabilities.global_hotkey.status, "available");
+  assert.equal((await api.invoke("onboarding_readiness", { target: "dictation" })).can_record, true);
+  assert.equal(await api.invoke("pad_text"), "Retain the parent draft.");
+});
+
+test("owner review onboarding service writes preserve newer parent workspace and service changes", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "review-child-preserves-work", dictation_manual: true };
+  const parent = fixture("simple-task-shell", options, storage), api = parent.__PENNEL_PLATFORM__;
+  await api.invoke("save_pad_text", { text: "Original parent draft" });
+  await api.invoke("start_meeting", { title: "Original meeting" });
+  const child = fixture("onboarding-dictation-permissions", options, storage).__PENNEL_PLATFORM__;
+  await api.invoke("stop_meeting");
+  const newestId = await api.invoke("start_meeting", { title: "Latest parent meeting" });
+  await api.invoke("set_meeting_notes", { text: "Latest parent notes" });
+  await api.invoke("save_pad_text", { text: "Latest parent draft" });
+  await api.invoke("toggle_dictation"); await api.invoke("toggle_dictation"); parent.__PENNEL_FIXTURE__.review.completeDictation();
+  const latestHistory = await api.invoke("history");
+  await api.invoke("set_key", { account: "openai", key: "PARENT_KEY_MUST_STAY_PRIVATE" });
+  await child.invoke("request_permission", { kind: "microphone" });
+  const modelId = (await child.invoke("local_models"))[0].id;
+  await child.invoke("delete_model", { id: modelId }); await child.invoke("download_model", { id: modelId });
+  await child.invoke("set_key", { account: "groq", key: "CHILD_KEY_MUST_STAY_PRIVATE" });
+  const reopened = fixture("simple-task-shell", options, storage).__PENNEL_PLATFORM__;
+  assert.equal(await reopened.invoke("pad_text"), "Latest parent draft");
+  assert.equal((await reopened.invoke("meeting_status")).id, newestId);
+  assert.equal((await reopened.invoke("meeting_status")).recording, true);
+  assert.equal((await reopened.invoke("meeting_detail", { id: newestId })).notes, "Latest parent notes");
+  assert.equal((await reopened.invoke("history"))[0].id, latestHistory[0].id);
+  assert.equal((await reopened.invoke("model_state", { id: modelId })).kind, "downloaded");
+  const restored = await reopened.invoke("app_info");
+  assert.equal(restored.keys.openai, true);
+  assert.equal(restored.keys.groq, true);
+  assert.equal([...storage.values.values()].some(value => /PARENT_KEY_MUST_STAY_PRIVATE|CHILD_KEY_MUST_STAY_PRIVATE/.test(value)), false);
+});
+
+test("owner review practice readiness resumes to practice only with a usable engine and microphone", async () => {
+  const ready = fixture("simple-task-shell", { owner_review: true }).__PENNEL_PLATFORM__;
+  const allowed = await ready.invoke("onboarding_readiness", { target: "practice" });
+  assert.equal(allowed.configured, true);
+  assert.equal(allowed.can_record, true);
+  assert.equal(allowed.resume_step, "practice");
+  const denied = await fixture("simple-task-shell", { owner_review: true, permission: "denied" }).__PENNEL_PLATFORM__.invoke("onboarding_readiness", { target: "practice" });
+  assert.equal(denied.can_record, false);
+  assert.equal(denied.resume_step, "permissions");
+  const missing = await fixture("onboarding-welcome", { owner_review: true }).__PENNEL_PLATFORM__.invoke("onboarding_readiness", { target: "practice" });
+  assert.equal(missing.configured, false);
+  assert.equal(missing.resume_step, "engine");
+  const unsupported = await fixture("simple-task-shell", { owner_review: true, provider_availability: { local: { status: "unsupported", reason: "Unavailable synthetic engine" } } }).__PENNEL_PLATFORM__.invoke("onboarding_readiness", { target: "practice" });
+  assert.equal(unsupported.configured, false);
+  assert.equal(unsupported.resume_step, "engine");
+});
 
 test("conversation fixture preserves selected identities and per-conversation drafts through a full reopen", async () => {
   const values = new Map(), storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };

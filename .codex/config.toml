@@ -1,0 +1,26 @@
+# Development workspace metadata only; see docs/agents/hoppscotch.md.
+[mcp_servers.hoppscotch]
+command = "npx"
+args = ["-y", "@hoppscotch/mcp-server@1.0.2"]
+enabled = true
+startup_timeout_sec = 60
+tool_timeout_sec = 90
+enabled_tools = [
+  "reauth",
+  "list_user_collections",
+  "create_user_collection",
+  "update_user_collection",
+  "import_user_collection",
+  "export_user_collection",
+  "list_user_requests",
+  "create_user_request",
+  "update_user_request",
+  "list_user_environments",
+  "create_user_environment",
+  "update_user_environment",
+]
+
+[mcp_servers.hoppscotch.env]
+HOPPSCOTCH_TOOL_PROFILE = "core"
+HOPPSCOTCH_STRICT_ENV = "true"
+HOPPSCOTCH_ALLOW_PRIVATE_HOSTS = "false"

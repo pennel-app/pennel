@@ -1627,11 +1627,22 @@ mod tests {
         let configured = Arc::new(AtomicBool::new(true));
         let observer = Arc::new(Observer::default());
         let (e, r, c) = (entered.clone(), released.clone(), configured.clone());
+        let (parked, worker_parked) = mpsc::channel();
+        let (run_worker, worker_release) = mpsc::channel();
+        let worker_release = Mutex::new(worker_release);
+        let configuration_checks = AtomicUsize::new(0);
         let worker = LiveSpeakerWorker::start(
             "configuration".into(),
             1,
             "fixture".into(),
-            Arc::new(move || c.load(Ordering::SeqCst)),
+            Arc::new(move || {
+                // Park after admission, before queue polling can contend with the fixture's one feed.
+                if configuration_checks.fetch_add(1, Ordering::SeqCst) == 1 {
+                    parked.send(()).unwrap();
+                    worker_release.lock().unwrap().recv().unwrap();
+                }
+                c.load(Ordering::SeqCst)
+            }),
             Box::new(move || {
                 Ok(Box::new(Blocking {
                     entered: e,
@@ -1640,7 +1651,11 @@ mod tests {
             }),
             observer.clone(),
         );
+        worker_parked.recv_timeout(Duration::from_secs(10)).unwrap();
         worker.feed(Speaker::Me, 0, &vec![0.2; 10 * 16_000]);
+        assert_eq!(worker.metrics().pending_samples, 10 * 16_000);
+        assert_eq!(worker.metrics().dropped_packets, 0);
+        run_worker.send(()).unwrap();
         until(|| entered.load(Ordering::SeqCst) == 1);
         configured.store(false, Ordering::SeqCst);
         released.store(true, Ordering::SeqCst);

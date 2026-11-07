@@ -1,0 +1,47 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__hoppscotch__reauth",
+      "mcp__hoppscotch__list_user_collections",
+      "mcp__hoppscotch__create_user_collection",
+      "mcp__hoppscotch__update_user_collection",
+      "mcp__hoppscotch__import_user_collection",
+      "mcp__hoppscotch__export_user_collection",
+      "mcp__hoppscotch__list_user_requests",
+      "mcp__hoppscotch__create_user_request",
+      "mcp__hoppscotch__update_user_request",
+      "mcp__hoppscotch__list_user_environments",
+      "mcp__hoppscotch__create_user_environment",
+      "mcp__hoppscotch__update_user_environment"
+    ],
+    "deny": [
+      "mcp__hoppscotch__create_team_collection",
+      "mcp__hoppscotch__create_team_environment",
+      "mcp__hoppscotch__create_team_request",
+      "mcp__hoppscotch__delete_team_collection",
+      "mcp__hoppscotch__delete_team_environment",
+      "mcp__hoppscotch__delete_team_request",
+      "mcp__hoppscotch__delete_user_collection",
+      "mcp__hoppscotch__delete_user_environment",
+      "mcp__hoppscotch__delete_user_request",
+      "mcp__hoppscotch__execute_request",
+      "mcp__hoppscotch__export_team_collection",
+      "mcp__hoppscotch__generate_code",
+      "mcp__hoppscotch__generate_documentation",
+      "mcp__hoppscotch__get_team_collection",
+      "mcp__hoppscotch__get_team_info",
+      "mcp__hoppscotch__get_team_request",
+      "mcp__hoppscotch__get_user_collection",
+      "mcp__hoppscotch__list_team_collections",
+      "mcp__hoppscotch__list_team_environments",
+      "mcp__hoppscotch__list_team_requests",
+      "mcp__hoppscotch__list_teams",
+      "mcp__hoppscotch__move_team_request",
+      "mcp__hoppscotch__move_user_request",
+      "mcp__hoppscotch__update_team_collection",
+      "mcp__hoppscotch__update_team_environment",
+      "mcp__hoppscotch__update_team_request",
+      "mcp__hoppscotch__validate_response"
+    ]
+  }
+}

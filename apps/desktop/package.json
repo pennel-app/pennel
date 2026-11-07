@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs ../../scripts/fixtures/desktop-platform.test.mjs ../../scripts/fixtures/review-desktop-ux.test.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

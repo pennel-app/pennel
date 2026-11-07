@@ -6,6 +6,34 @@
   const systemLanguages = options.system_languages || [options.locale || "nl"];
   const systemInterfaceLanguage = systemLanguages.map(language => String(language).trim().split(/[-_.@]/)[0].toLowerCase()).find(language => language === "en" || language === "nl") || "en";
   const profileKey = options.profile ? `pennel-synthetic-fixture:${options.profile}` : null;
+  const rawStorage = globalThis.localStorage;
+  let reviewReset = false;
+  const reviewGenerationKey = options.owner_review && profileKey ? `${profileKey}:reset-generation` : null;
+  const reviewGeneration = reviewGenerationKey ? rawStorage?.getItem(reviewGenerationKey) || "0" : null;
+  if (reviewGenerationKey && rawStorage && rawStorage.getItem(reviewGenerationKey) === null) rawStorage.setItem(reviewGenerationKey, reviewGeneration);
+  const reviewIsCurrent = () => !reviewReset && (!reviewGenerationKey || !rawStorage || rawStorage.getItem(reviewGenerationKey) === reviewGeneration);
+  const requireCurrentReview = () => {
+    if (!reviewIsCurrent()) throw Error("This owner-review profile was reset. Reload before continuing.");
+  };
+  const profileKeys = () => Array.from({ length: rawStorage?.length || 0 }, (_, index) => rawStorage.key(index))
+    .filter(key => key === profileKey || key?.startsWith(`${profileKey}:`));
+  const resetProfile = () => {
+    if (!options.owner_review || !profileKey) throw Error("Reset requires an isolated owner-review profile.");
+    requireCurrentReview();
+    reviewReset = true;
+    for (const id of [...pendingDictations.keys()]) cancelPendingDictation(id);
+    for (const key of profileKeys()) rawStorage.removeItem(key);
+    // Keep a content-free fence so callbacks in another old tab cannot recreate erased work.
+    rawStorage?.setItem(reviewGenerationKey, String(Number(reviewGeneration) + 1));
+  };
+  if (options.owner_review && profileKey && rawStorage) {
+    const scopedKey = key => String(key) === profileKey || String(key).startsWith(`${profileKey}:`) ? String(key) : `${profileKey}:ui:${key}`;
+    const scopedStorage = { get length() { return profileKeys().length; },
+      key: index => { const key = profileKeys()[index]; return key?.startsWith(`${profileKey}:ui:`) ? key.slice(`${profileKey}:ui:`.length) : key ?? null; },
+      getItem: key => rawStorage.getItem(scopedKey(key)), setItem: (key, value) => { requireCurrentReview(); rawStorage.setItem(scopedKey(key), String(value)); },
+      removeItem: key => { requireCurrentReview(); rawStorage.removeItem(scopedKey(key)); }, clear: resetProfile };
+    Object.defineProperty(globalThis, "localStorage", { value: scopedStorage, configurable: true });
+  }
   let persistedSettings;
   if (profileKey) {
     try { persistedSettings = JSON.parse(globalThis.localStorage?.getItem(profileKey) || "null"); } catch {}
@@ -117,12 +145,12 @@
   if (options.shortcut_denied) {
     permissions = permissions.map(permission => permission.kind === "accessibility" ? { ...permission, status: "denied" } : permission);
   }
-  if (permissions.find(permission => permission.kind === "accessibility")?.status !== "granted") {
-    const reason = "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken.";
-    capabilities.global_hotkey = { status: "permission_required", reason };
-    capabilities.selection = { status: "permission_required", reason };
-    capabilities.pad_external_paste = { status: "permission_required", reason };
-  }
+  const updateShortcutCapabilities = () => {
+    const granted = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
+    const status = granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
+    for (const name of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[name] = clone(status);
+  };
+  updateShortcutCapabilities();
   const keys = { groq: Boolean(options.configured_text_provider), openai: false };
   const providerRevisions = Object.fromEntries(providers.map(provider => [provider.id, 0]));
   const models = (options.local_models || [{
@@ -140,6 +168,9 @@
   const modelFor = id => models.find(model => model.id === id) || speakerModels.find(model => model.id === id) || (id === diarizer.id ? diarizer : undefined);
   const activeDownloads = new Set(options.download_active ? ["whisper-large-v3-turbo"] : []);
   const downloadWaiters = new Map();
+  let downloadFailure = options.download_error || null;
+  let dictationDelay = options.dictation_delay_ms ?? 150;
+  const pendingDictations = new Map();
   let pad = sentence;
   let sessionCounter = 0;
   const sessions = new Map();
@@ -147,6 +178,7 @@
   const calls = [];
   const frontendFlushes = [];
   const copiedTexts = [];
+  const openedWindows = [];
   const unknown = [];
   const setupTrace = { samples: [], savedChoices: [], appliedTasks: [], catalogRequests: [] };
   const catalogAttempts = new Map();
@@ -164,6 +196,7 @@
   } : null;
   const completeDownload = (id, error = null) => {
     if (!activeDownloads.delete(id)) return false;
+    if (!reviewIsCurrent()) error = "This owner-review profile was reset. Reload before continuing.";
     const model = modelFor(id);
     if (!error && model) {
       model.state = { kind: "downloaded" };
@@ -171,6 +204,7 @@
     }
     const waiting = downloadWaiters.get(id) || [];
     downloadWaiters.delete(id);
+    if (reviewIsCurrent()) persistOwnerReview(!error && model ? { modelStates: [[id, { kind: "downloaded" }]] } : {});
     emit("download-done", { id, error });
     for (const waiter of waiting) error ? waiter.reject(new Error(error)) : waiter.resolve(true);
     return true;
@@ -230,8 +264,10 @@
   let recordingStorageError = Boolean(options.recording_storage_error);
   let recordingRecovered = false;
   let recordingStopped = false;
+  let ownerRecording = options.owner_review && options.section === "recording";
+  let meetingSequence = 0;
   let transcriptRevision = 1;
-  let saveFailure = Boolean(options.live_save_error);
+  let saveFailure = Boolean(options.live_save_error || options.owner_review && options.summary_save_error);
   let noteSaveDelay = options.note_save_delay_ms || 0;
   const pendingNoteSaves = new Set();
   const liveRequests = new Map();
@@ -271,7 +307,7 @@
     return true;
   };
   const meetingStatus = (includeContent = true) => {
-    const retained = options.section === "recording" && !recordingRecovered && !recordingStopped;
+    const retained = (options.owner_review ? ownerRecording : options.section === "recording") && !recordingRecovered && !recordingStopped;
     const storageError = retained && recordingStorageError;
     const paused = retained && Boolean(options.transcription_paused);
     const persistenceError = storageError ? "Je opname kon niet volledig worden bewaard. Probeer opnieuw te bewaren." : null;
@@ -309,22 +345,166 @@
   const summaryDocuments = new Map();
   const summaryHistories = new Map();
   const shareableSummaries = new Map();
-  const summarySourceRevision = async id => {
+  const summarySourceRevision = async (id, transcriptOnly = false) => {
     const record = recordForId(id);
     if (!record?.uid) throw Error("This meeting is no longer available.");
-    return fingerprint(JSON.stringify({ notes: record.notes, transcript: record.transcript }));
+    return fingerprint(JSON.stringify({ ...(transcriptOnly ? {} : { notes: record.notes }), transcript: record.transcript, metadata_status: metadataStatus }));
+  };
+  const ownerStateKey = options.owner_review && profileKey ? `${profileKey}:owner-review:v1` : null;
+  const readReviewState = () => {
+    try { return ownerStateKey ? JSON.parse(globalThis.localStorage.getItem(ownerStateKey) || "null") : null; } catch { return null; }
+  };
+  const persistOwnerReview = (serviceUpdates = {}) => {
+    if (!ownerStateKey || reviewReset) return;
+    requireCurrentReview();
+    const latest = readReviewState();
+    const modelStates = new Map(latest?.modelStates || [...models, ...speakerModels, diarizer].map(model => [model.id, model.state.kind === "downloaded" ? { kind: "downloaded" } : { kind: "not_downloaded" }]));
+    for (const [id, state] of serviceUpdates.modelStates || []) modelStates.set(id, clone(state));
+    const services = { modelStates: [...modelStates],
+      permissions: [...new Map([...(latest?.permissions || permissions), ...(serviceUpdates.permissions || [])].map(permission => [permission.kind, permission])).values()],
+      keys: { ...keys, ...latest?.keys, ...serviceUpdates.keys }, providerRevisions: { ...providerRevisions, ...latest?.providerRevisions, ...serviceUpdates.providerRevisions } };
+    // Onboarding owns service setup; its copied workspace can be older than the still-open main window.
+    const workspace = options.window === "onboarding" && latest?.version === 1 ? latest : { version: 1,
+      history: history.filter(entry => entry.status !== "unsaved"), library, pad, notes, transcript, sessionCounter,
+      activeMeetingId, meetingUid, liveSession, meeting: clone(meeting), meetingSequence, ownerRecording, recordingStopped,
+      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries] };
+    globalThis.localStorage.setItem(ownerStateKey, JSON.stringify({ ...workspace, ...services }));
+    restoreReviewServices(services);
+  };
+  const restoreReviewServices = saved => {
+    if (Array.isArray(saved.permissions)) { permissions = clone(saved.permissions); updateShortcutCapabilities(); }
+    for (const [id, present] of Object.entries(saved.keys || {})) keys[id] = present === true;
+    Object.assign(providerRevisions, saved.providerRevisions || {});
+    for (const [id, state] of saved.modelStates || []) {
+      const model = modelFor(id); if (model) model.state = clone(state);
+      if (state.kind === "downloaded") activeDownloads.delete(id);
+    }
+  };
+  if (ownerStateKey) {
+    let saved;
+    try { saved = JSON.parse(globalThis.localStorage.getItem(ownerStateKey) || "null"); } catch {}
+    if (saved?.version === 1 && Array.isArray(saved.history) && Array.isArray(saved.library) && Array.isArray(saved.transcript)) {
+      history.splice(0, history.length, ...saved.history); library.splice(0, library.length, ...saved.library);
+      transcript.splice(0, transcript.length, ...saved.transcript); pad = saved.pad; notes = saved.notes; sessionCounter = saved.sessionCounter || 0;
+      activeMeetingId = saved.activeMeetingId; meetingUid = saved.meetingUid; liveSession = saved.liveSession;
+      Object.assign(meeting, saved.meeting); meetingSequence = saved.meetingSequence; ownerRecording = saved.ownerRecording; recordingStopped = saved.recordingStopped;
+      restoreReviewServices(saved);
+      for (const [target, entries] of [[retainedMeetings, saved.retainedMeetings], [libraryUids, saved.libraryUids], [summaryDocuments, saved.summaryDocuments], [summaryHistories, saved.summaryHistories], [shareableSummaries, saved.shareableSummaries]])
+        for (const [key, value] of entries || []) target.set(key, value);
+    }
+  }
+  const permittedTranscript = (record, language = null) => record.transcript.filter(segment => !segment.failed && segment.text.trim()).map(segment => {
+    const localized = language !== null, dutch = language === "nl";
+    const number = voice => `${localized && dutch ? "Anderen" : "Speaker"} ${voice}`;
+    const me = localized && dutch ? "Ik" : "Me";
+    const unknown = localized && dutch ? "Onbekende spreker" : "Unknown speaker";
+    const legacy = segment.speaker === "me" ? localized ? me : "Ik" : segment.voice == null
+      ? localized && !dutch ? "Others" : "Anderen" : localized ? number(segment.voice) : `Anderen ${segment.voice}`;
+    const attribution = segment.attribution;
+    let canonical = !segment.utterance_id ? legacy : segment.correction_needs_review
+      ? `${unknown} (${localized ? dutch ? "Controleer de sprekercorrectie" : "Speaker correction needs review" : "correction needs review"})`
+      : segment.confirmed_speaker_name || (attribution?.kind === "overlap" ? localized && dutch ? "Overlappende sprekers" : "Overlapping speakers"
+        : attribution?.kind === "mixed" ? localized && dutch ? "Meerdere sprekers" : "Mixed speakers"
+          : attribution?.kind === "single" && attribution.voices?.length === 1 ? number(attribution.voices[0])
+            : attribution?.kind === "single" && attribution.self_voice ? me : unknown);
+    if (attribution?.provisional && !segment.confirmed_speaker_name && !segment.correction_needs_review) canonical += ` (${localized ? dutch ? "Voorlopig" : "Provisional" : "provisional"})`;
+    const unknownSource = localized && dutch ? "Onbekende bron" : "Unknown source";
+    const sourceLabels = localized ? dutch
+      ? { microphone: "Microfoon", system: "Computeraudio", system_audio: "Computeraudio", room_microphone: "Ruimtemicrofoon" }
+      : { microphone: "Microphone", system: "Computer audio", system_audio: "Computer audio", room_microphone: "Room microphone" }
+      : { microphone: "Microphone", system: "System audio", system_audio: "System audio", room_microphone: "Room microphone" };
+    const source = segment.utterance_id ? sourceLabels[segment.source_id] || unknownSource : unknownSource;
+    const seconds = Math.floor(segment.start_ms / 1000), stamp = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    return `[${stamp}] ${canonical} (${source}): ${segment.text}`;
+  }).join("\n");
+  const retainDictation = text => {
+    const entry = { id: `qa-review-dictation-${++sessionCounter}`, created_at_ms: now + sessionCounter, app_bundle_id: "dev.pennel.Pennel.preview",
+      raw: text, text, status: saveFailure ? "unsaved" : "done", error: saveFailure ? "Synthetic history storage unavailable." : null, has_audio: false };
+    history.unshift(entry); persistOwnerReview(); emit("history-changed", null); emit("settings-changed", null);
+  };
+  const retainActiveEdits = () => {
+    if (options.owner_review && retainedMeetings.has(activeMeetingId)) {
+      const retained = retainedMeetings.get(activeMeetingId);
+      retained.notes = notes; retained.transcript = recordingStopped ? storedTranscript(transcript) : clone(transcript);
+    }
+    persistOwnerReview();
+  };
+  const cancelPendingDictation = id => { const pending = pendingDictations.get(id); if (pending?.timer) clearTimeout(pending.timer); pendingDictations.delete(id); };
+  const completeDictation = id => {
+    const pending = pendingDictations.get(id);
+    if (!pending) return false;
+    cancelPendingDictation(id);
+    if (!reviewIsCurrent()) return false;
+    const session = sessions.get(id);
+    if (id !== "global" && (!session || session.phase !== "working")) return false;
+    if (session) {
+      session.text = session.kind === "pad" ? `${pad}${pad ? "\n\n" : ""}${sentence}` : sentence;
+      session.phase = "done"; session.error = null;
+      if (session.kind === "pad") { pad = session.text; retainDictation(sentence); }
+      emit("dictation-session", session);
+    } else { retainDictation(sentence); pillSnapshot.state = "hidden"; emit("dictation-state", pillSnapshot); }
+    persistOwnerReview(); return true;
+  };
+  const scheduleDictation = id => {
+    cancelPendingDictation(id);
+    const pending = { timer: null }; pendingDictations.set(id, pending);
+    if (!options.dictation_manual) pending.timer = setTimeout(() => completeDictation(id), Math.max(0, dictationDelay));
+  };
+  const persistReviewSettings = () => {
+    if (!ownerStateKey) return;
+    requireCurrentReview();
+    globalThis.localStorage.setItem(profileKey, JSON.stringify(settings));
+    persistOwnerReview();
+  };
+  const openReviewWindow = (caseName, window, extra = {}) => {
+    if (!profileKey || !globalThis.open) throw Error("Open this flow with the owner-review launcher to use its isolated local window.");
+    const url = new URL("/index.html", location.href);
+    for (const [key, value] of Object.entries({ qa: caseName, window, profile: options.profile,
+      locale: options.locale || interfaceLanguage(), theme: options.appearance, ...extra })) if (value != null) url.searchParams.set(key, String(value));
+    persistOwnerReview();
+    const popup = globalThis.open(url.href, `pennel-owner-review-${options.profile}-${window}`, "popup,width=760,height=660");
+    if (!popup) throw Error("Allow pop-ups for this local owner review, then try the action again.");
+    openedWindows.push(url.href); popup.focus?.();
+  };
+  const reviewWorkspaceRoute = input => {
+    const route = { section: input?.section, tab: input?.tab ?? null, meeting_id: input?.meeting_id ?? null, jump_ms: input?.jump_ms ?? null };
+    if (!["dictation", "meetings", "history", "settings", "recording"].includes(route.section)
+      || route.tab !== null && typeof route.tab !== "string"
+      || route.meeting_id !== null && (typeof route.meeting_id !== "string" || !route.meeting_id.trim() || /[\u0000-\u001f\u007f-\u009f/\\:]/.test(route.meeting_id))
+      || route.jump_ms !== null && (!Number.isFinite(route.jump_ms) || route.jump_ms < 0)
+      || route.section === "history" && route.tab !== null && !/^entry:[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(route.tab)
+      || route.section === "dictation" && route.tab !== null && !["home", "pad"].includes(route.tab)
+      || route.section === "settings" && route.tab !== null && !["dictation", "meeting-settings", "meetings", "appearance", "account", "advanced", "overview", "providers", "models", "recording", "dictionary", "styles", "local"].includes(route.tab))
+      throw Error("This workspace destination is not supported by the local owner review.");
+    if (input.source_target != null) route.source_target = clone(input.source_target);
+    return route;
+  };
+  const showReviewWorkspace = async input => {
+    const route = reviewWorkspaceRoute(input);
+    if (options.window !== "onboarding") { emit("workspace-navigate", route); return; }
+    let opener;
+    try {
+      if (globalThis.opener?.location.origin === location.origin
+        && globalThis.opener.__PENNEL_FIXTURE__?.options.profile === options.profile
+        && globalThis.opener.__PENNEL_FIXTURE__?.options.window !== "onboarding") opener = globalThis.opener;
+    } catch {}
+    if (opener) { await opener.__PENNEL_PLATFORM__.invoke("show_workspace", { route }); opener.focus?.(); return; }
+    if (route.source_target) throw Error("Return to the main review window to inspect this source.");
+    openReviewWindow("owner-review-navigation", "workspace", route);
   };
   const summaryDocument = async id => {
     const uid = uidFor(id), source = await summarySourceRevision(id);
+    const empty = options.summary_empty || options.owner_review && !recordForId(id).info.has_summary;
     if (!summaryDocuments.has(uid)) summaryDocuments.set(uid, { meeting_uid: uid,
-      markdown: options.summary_empty ? "" : summary, revision: await fingerprint(options.summary_empty ? "" : summary),
+      markdown: empty ? "" : summary, revision: await fingerprint(empty ? "" : summary),
       source_revision: source, edited: false, outdated: false });
     const document = summaryDocuments.get(uid);
     return { ...document, source_revision: source, outdated: document.source_revision !== source || summaryOutdated };
   };
   const saveSummaryDocument = async (id, args, markdown, reviewed = false, restoredSource) => {
-    if (options.summary_save_error) throw Error(options.summary_save_error);
+    if (options.owner_review ? saveFailure : options.summary_save_error) throw Error(options.summary_save_error || "Synthetic summary storage unavailable.");
     const before = await summaryDocument(id);
+    requireCurrentReview();
     if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision) throw Error("The summary or its sources changed. Reload before saving.");
     const history = summaryHistories.get(before.meeting_uid) || [];
     if (before.markdown && before.markdown !== markdown) history.unshift({ revision: before.revision, markdown: before.markdown,
@@ -332,7 +512,9 @@
     summaryHistories.set(before.meeting_uid, history);
     const boundSource = restoredSource || (reviewed ? before.source_revision : summaryDocuments.get(before.meeting_uid).source_revision);
     const saved = { ...before, markdown, revision: await fingerprint(markdown), source_revision: boundSource, edited: true, outdated: false };
+    requireCurrentReview();
     summaryDocuments.set(before.meeting_uid, saved);
+    persistOwnerReview();
     if (reviewed) summaryOutdated = false;
     return clone(await summaryDocument(id));
   };
@@ -643,12 +825,13 @@
   }
 
   async function invoke(command, args = {}) {
+    requireCurrentReview();
     calls.push(command);
     if (conversationCommands[command]) {
       if (!args.request || typeof args.request !== "object" || Array.isArray(args.request)) throw Error("The conversation request is invalid.");
       return (await conversations()).invoke(conversationCommands[command], args.request);
     }
-    if (options.rich_utterances && (["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings"].includes(command) || command.includes("insight") || command.includes("people"))) await refreshFingerprints();
+    if (options.rich_utterances && (["meeting_status", "meeting_detail", "begin_live_question", "ask_meetings", "search_library"].includes(command) || command.includes("insight") || command.includes("people"))) await refreshFingerprints();
     if (command === "meeting_people_snapshot") {
       const store = peopleStore(args.id);
       if (peoplePendingConfirmation.delete(store.meeting_uid)) store.recovery_status = "ready";
@@ -681,6 +864,7 @@
         setupTrace.savedChoices.push(Object.fromEntries(["dictation_stt", "meeting_stt", "llm"].map(slot => [slot, clone(settings[slot])])));
         settings.ui_language = ["en", "nl", "system"].includes(settings.ui_language) ? settings.ui_language : "system";
         if (profileKey) { try { globalThis.localStorage?.setItem(profileKey, JSON.stringify(settings)); } catch {} }
+        persistOwnerReview();
         emit("settings-changed", null);
         return info();
       }
@@ -700,6 +884,7 @@
         setupTrace.appliedTasks.push({ slot: args.slot, choice: clone(candidate) });
         setupTrace.savedChoices.push(Object.fromEntries(["dictation_stt", "meeting_stt", "llm"].map(slot => [slot, clone(settings[slot])])));
         if (profileKey) { try { globalThis.localStorage?.setItem(profileKey, JSON.stringify(settings)); } catch {} }
+        persistOwnerReview();
         emit("settings-changed", null);
         return info();
       }
@@ -707,45 +892,56 @@
       case "request_permission": {
         if (["windows", "linux"].includes(options.platform) && args.kind === "microphone" && permissions.find(permission => permission.kind === args.kind)?.status === "unknown") return clone(permissions);
         permissions = permissions.map(permission => permission.kind === args.kind ? { ...permission, status: "granted" } : permission);
-        if (args.kind === "accessibility") for (const capability of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[capability] = available();
+        updateShortcutCapabilities(); persistOwnerReview({ permissions: permissions.filter(permission => permission.kind === args.kind) });
         return clone(permissions);
       }
       case "onboarding_readiness": {
         const slot = args.target === "meeting" ? settings.meeting_stt : settings.dictation_stt;
         const account = settings.providers.find(account => account.id === slot.provider_id);
         const definition = kinds.find(kind => kind.kind === account?.kind);
-        const denied = permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
-        const configured = Boolean(account && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
+        const denied = options.owner_review ? permissions.some(permission => (permission.kind === "microphone" || account?.kind === "apple_speech" && permission.kind === "speech") && !["granted", "not_required"].includes(permission.status))
+          : permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
+        const configured = Boolean(account && (!options.owner_review || definition?.availability.status === "available") && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
         const accessibility = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility, can_paste_externally: accessibility, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? "permissions" : "engine" };
+        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility, can_paste_externally: accessibility, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
       }
       case "pad_text": return pad;
       case "save_pad_text": {
+        if (options.owner_review && saveFailure) throw Error("Synthetic pad storage unavailable.");
         pad = String(args.text || "");
         for (const session of sessions.values()) if (session.kind === "pad") {
           session.text = pad;
           if (session.phase === "error") { session.phase = "idle"; session.error = null; }
           emit("dictation-session", session);
         }
-        return null;
+        persistOwnerReview(); return null;
       }
       case "open_dictation_session": { const session = sessionSnapshot(args.kind); sessions.set(session.session_id, session); return clone(session); }
       case "get_dictation_session": return clone(sessions.get(args.sessionId || args.session_id));
       case "toggle_dictation_session": {
         const session = sessions.get(args.sessionId || args.session_id);
         if (!session) throw new Error("Onbekende QA-sessie");
+        if (options.owner_review && session.phase === "working") return null;
         if (session.phase === "listening") {
-          session.phase = "done"; session.text = session.kind === "pad" ? pad + "\n\n" + sentence : sentence;
-          if (session.kind === "pad") pad = session.text;
+          if (options.owner_review) { session.phase = "working"; scheduleDictation(session.session_id); }
+          else { session.phase = "done"; session.text = session.kind === "pad" ? pad + "\n\n" + sentence : sentence;
+            if (session.kind === "pad") pad = session.text; }
         } else session.phase = "listening";
         emit("dictation-session", session); return null;
       }
-      case "cancel_dictation_session": { const session = sessions.get(args.sessionId || args.session_id); if (session) { session.phase = "idle"; emit("dictation-session", session); } return null; }
+      case "cancel_dictation_session": { const id = args.sessionId || args.session_id; cancelPendingDictation(id); const session = sessions.get(id); if (session) { session.phase = "idle"; emit("dictation-session", session); } return null; }
       case "close_dictation_session": {
         const id = args.sessionId || args.session_id;
         const session = sessions.get(id);
         if ((args.onlyIfIdle || args.only_if_idle) && session && ["listening", "working"].includes(session.phase)) throw new Error("Finish or cancel dictation before leaving.");
-        sessions.delete(id); return null;
+        cancelPendingDictation(id); sessions.delete(id); return null;
+      }
+      case "toggle_dictation": {
+        if (!options.owner_review) return null;
+        if (pillSnapshot.state === "working") return null;
+        if (pillSnapshot.state === "listening") { pillSnapshot.state = "working"; scheduleDictation("global"); }
+        else pillSnapshot.state = "listening";
+        emit("dictation-state", pillSnapshot); return null;
       }
       case "dictation_state": return clone(pillSnapshot);
       case "frontend_ready": globalThis.__PENNEL_FIXTURE_READY__ = true; return null;
@@ -756,19 +952,31 @@
       case "delete_history": {
         const index = history.findIndex(entry => entry.id === args.id);
         if (index !== -1) history.splice(index, 1);
+        persistOwnerReview();
         emit("history-changed", null); emit("settings-changed", null); return null;
       }
       case "save_history": {
         const entry = history.find(entry => entry.id === args.id);
         if (!entry || entry.status === "failed") throw new Error("Onbekend tijdelijk QA-dictaat");
+        if (options.owner_review && saveFailure) throw Error("Synthetic history storage unavailable.");
         entry.status = "done"; entry.error = null;
+        persistOwnerReview();
         emit("history-changed", null); emit("settings-changed", null); return null;
       }
       case "copy_history": {
-        if (!history.some(entry => entry.id === args.id)) throw new Error("Onbekend QA-dictaat");
+        const entry = history.find(entry => entry.id === args.id);
+        if (!entry) throw new Error("Onbekend QA-dictaat");
+        if (options.owner_review) copiedTexts.push(entry.text);
         return null;
       }
-      case "retry_history": return sentence;
+      case "retry_history": {
+        if (!options.owner_review) return sentence;
+        const entry = history.find(entry => entry.id === args.id);
+        if (!entry) throw Error("Unknown synthetic dictation.");
+        entry.raw = sentence; entry.text = sentence; entry.status = saveFailure ? "unsaved" : "done";
+        entry.error = saveFailure ? "Synthetic history storage unavailable." : null;
+        persistOwnerReview(); emit("history-changed", null); return sentence;
+      }
       case "local_models": return clone(args.supportedOnly || args.supported_only ? models.filter(model => model.languages.some(language => language.split(/[-_]/)[0] === (args.language || "nl"))) : models);
       case "model_state":
         if (options.model_state_delay_ms) await new Promise(resolve => setTimeout(resolve, options.model_state_delay_ms));
@@ -777,7 +985,9 @@
         if (!modelFor(args.id)) throw new Error("Onbekend QA-model");
         if (activeDownloads.has(args.id)) return null;
         activeDownloads.add(args.id);
-        queueMicrotask(() => completeDownload(args.id, options.download_error || null));
+        const finish = () => completeDownload(args.id, downloadFailure);
+        if (options.owner_review && options.download_delay_ms) setTimeout(finish, options.download_delay_ms);
+        else queueMicrotask(finish);
         return null;
       }
       case "join_model_download": {
@@ -795,7 +1005,7 @@
       }
       case "delete_model": {
         if (activeDownloads.has(args.id)) throw new Error("Dit model wordt nog gedownload.");
-        const model = modelFor(args.id); if (model) model.state = { kind: "not_downloaded" }; return info();
+        const model = modelFor(args.id); if (model) model.state = { kind: "not_downloaded" }; persistOwnerReview({ modelStates: [[args.id, { kind: "not_downloaded" }]] }); return info();
       }
       case "add_provider": {
         const definition = kinds.find(kind => kind.kind === args.kind);
@@ -803,10 +1013,15 @@
         let id = prefix;
         for (let suffix = 2; settings.providers.some(provider => provider.id === id); suffix++) id = `${prefix}-${suffix}`;
         settings.providers.push({ id, kind: args.kind, name: definition?.label || args.kind, base_url: definition?.default_base_url || "" });
+        persistReviewSettings();
         return info();
       }
-      case "remove_provider": settings.providers = settings.providers.filter(provider => provider.id !== args.id); return info();
-      case "set_key": keys[args.account] = Boolean(args.key); providerRevisions[args.account] = (providerRevisions[args.account] || 0) + 1; return info();
+      case "remove_provider": settings.providers = settings.providers.filter(provider => provider.id !== args.id); persistReviewSettings(); return info();
+      case "set_key": {
+        if (ownerStateKey) restoreReviewServices(readReviewState() || {});
+        keys[args.account] = Boolean(args.key); providerRevisions[args.account] = (providerRevisions[args.account] || 0) + 1;
+        persistOwnerReview({ keys: { [args.account]: keys[args.account] }, providerRevisions: { [args.account]: providerRevisions[args.account] } }); return info();
+      }
       case "inference_protocols": return [
         ["open_router_decisions", "OpenRouter Decisions", "https://openrouter.ai/api/v1"],
         ["open_router_system_one", "OpenRouter System One", "https://openrouter.ai/api/v1"],
@@ -862,19 +1077,26 @@
         liveSpeakerStatus = { ...liveSpeakerStatus, enabled: Boolean(args.enabled), state: args.enabled ? "running" : "off", reason_code: null, revision: liveSpeakerStatus.revision + 1 };
         return clone(liveSpeakerStatus);
       }
-      case "set_meeting_title": meeting.title = String(args.title ?? ""); return null;
+      case "set_meeting_title": {
+        if (options.owner_review && args.sessionId && args.sessionId !== liveSession) throw Error("The recording session changed.");
+        meeting.title = String(args.title ?? "");
+        if (options.owner_review) { const info = library.find(info => info.id === activeMeetingId); if (info) info.title = meeting.title; persistOwnerReview(); }
+        return null;
+      }
       case "set_meeting_notes": case "save_meeting_notes": {
         if (noteSaveDelay) await new Promise(resolve => {
           const finish = () => { clearTimeout(timer); pendingNoteSaves.delete(finish); resolve(); };
           const timer = setTimeout(finish, noteSaveDelay); pendingNoteSaves.add(finish);
         });
+        requireCurrentReview();
         if (saveFailure) throw new Error("Synthetic notes storage unavailable.");
+        if (options.owner_review && args.sessionId && args.sessionId !== liveSession) throw Error("The recording session changed.");
         if (args.id && args.id !== activeMeetingId && uidFor(args.id)) {
           if (!retainedMeetings.has(args.id)) {
             const saved = recordForId(args.id);
             retainedMeetings.set(args.id, { info: clone(saved.info), meeting_uid: saved.uid, session_id: null, notes: saved.notes, transcript: clone(saved.transcript) });
           }
-          retainedMeetings.get(args.id).notes = String(args.text ?? ""); return null;
+          retainedMeetings.get(args.id).notes = String(args.text ?? ""); persistOwnerReview(); return null;
         }
         if (args.insightReceipt) {
           const store = insightStore(args.id || activeMeetingId), receipt = store.insertion_receipts.find(receipt => receipt.attempt_id === args.insightReceipt);
@@ -884,7 +1106,7 @@
           if (!options.insight_ack_fail) { receipt.state = "acknowledged"; insightSave(store); }
           return null;
         }
-        notes = String(args.text ?? ""); return null;
+        notes = String(args.text ?? ""); retainActiveEdits(); return null;
       }
       case "begin_live_question": {
         if (args.meetingUid !== meetingUid || args.sessionId !== liveSession || args.expectedNotesText !== notes) throw new Error("The saved notes or meeting session changed. Try the question again.");
@@ -923,7 +1145,13 @@
         return null;
       }
       case "stop_meeting": {
+        if (options.owner_review && args.sessionId && args.sessionId !== liveSession) throw Error("The recording session changed.");
         const status = meetingStatus(); recordingStopped = true;
+        if (options.owner_review) {
+          ownerRecording = false;
+          retainedMeetings.set(activeMeetingId, { info: clone(meetingInfo(activeMeetingId)), meeting_uid: meetingUid, session_id: liveSession, notes, transcript: storedTranscript(transcript) });
+          persistOwnerReview();
+        }
         const event = { id: activeMeetingId, meeting_uid: meetingUid, session_id: status.session_id || liveSession, error: null, flush_warning: saveFailure ? "Synthetic notes storage unavailable." : null };
         queueMicrotask(() => emit("meeting-finished", event));
         return null;
@@ -932,10 +1160,11 @@
         const status = meetingStatus();
         if (!status.can_retry_persistence || args.sessionId !== status.session_id) throw new Error("Deze QA-opnamesessie is niet meer actief.");
         recordingStorageError = false; recordingRecovered = true;
-        emit("meeting-finished", { id: meetingId, session_id: status.session_id, error: null, flush_warning: null });
+        if (options.owner_review) { ownerRecording = false; recordingStopped = true; retainActiveEdits(); }
+        emit("meeting-finished", { id: activeMeetingId, session_id: status.session_id, error: null, flush_warning: null });
         emit("meeting-updated", null); return null;
       }
-      case "meetings": return options.empty ? [] : clone(library);
+      case "meetings": return options.empty ? [] : clone(options.owner_review && args.query ? library.filter(info => info.title.toLocaleLowerCase().includes(String(args.query).trim().toLocaleLowerCase())) : library);
       case "meeting_detail": {
         if (deletedMeetingUids.has(uidFor(args.id))) throw Error("This meeting is no longer available.");
         return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? (args.id === activeMeetingId ? notes : recordForId(args.id).notes), summary: summaryDocuments.get(uidFor(args.id))?.markdown ?? (options.summary_empty ? "" : summary), transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", source_id: "microphone", available: !!options.saved_audio }, { speaker: "others", source_id: "system", available: !!options.saved_audio }],
@@ -943,7 +1172,19 @@
         summary_outdated: summaryOutdated, retranscription_status: clone(retranscriptionStatus),
         retranscription_plan: { recognition: frozenMeetingRecognition(), available: !!options.saved_audio && !retranscriptionStatus?.running && frozenMeetingRecognition().provider_kind === "local", reason: options.saved_audio ? null : "Er is geen bewaarde audio om opnieuw te transcriberen." } };
       }
-      case "search_library": return { meetings: options.empty ? [] : clone(library), passages: [] };
+      case "search_library": {
+        if (!options.owner_review) return { meetings: options.empty ? [] : clone(library), passages: [] };
+        const words = String(args.query || "").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+        const matches = text => words.every(word => text.toLocaleLowerCase().includes(word));
+        const available = options.empty ? [] : library.filter(info => !deletedMeetingUids.has(uidFor(info.id)));
+        const passages = words.length ? available.flatMap(info => {
+          const record = recordForId(info.id), passage = (kind, text, row) => ({ meeting_id: info.id, title: info.title, start_iso: info.start_iso,
+            kind, start_ms: row?.start_ms ?? null, text, snippet: text.slice(0, 180), ...(row?.utterance_id ? { meeting_uid: record.uid, utterance_ids: [row.utterance_id], utterance_fingerprints: [row.source_fingerprint || ""] } : {}) });
+          return [...record.transcript.filter(row => !row.failed && matches(row.text)).map(row => passage("transcript", row.text, row)),
+            ...(matches(record.notes) ? [passage("notes", record.notes)] : [])];
+        }) : [];
+        return { meetings: clone(available.filter(info => matches(info.title))), passages: clone(passages) };
+      }
       case "ask_meetings": return { text: "De planning wordt maandag afgerond. Jij bevestigt de volgende afspraak.", citations: [{ number: 1, passage: { meeting_id: meetingId, title: "Projectoverleg", start_iso: meeting.start_iso, kind: "transcript", start_ms: 0, text: transcript[0].text, snippet: transcript[0].text,
         ...(transcript[0].utterance_id ? { meeting_uid: meetingUid, utterance_ids: [transcript[0].utterance_id], utterance_fingerprints: [transcript[0].source_fingerprint] } : {}) } }] };
       case "play_meeting_utterance_audio": {
@@ -961,7 +1202,20 @@
       case "export_meeting": return { title: "Projectoverleg", markdown: summary, html: "<h2>Besluiten</h2><p>De planning wordt maandag afgerond.</p>" };
       case "choose_meetings_dir": return null;
       case "pick_style_application": return options.style_picker_cancelled ? null : { id: "com.apple.mail", name: "Mail" };
-      case "start_meeting": return meetingId;
+      case "start_meeting": {
+        if (!options.owner_review) return meetingId;
+        if (meetingStatus().recording) throw Error("Finish the current recording first.");
+        const seedIndex = library.indexOf(meeting); if (seedIndex !== -1) library[seedIndex] = clone(meeting);
+        retainedMeetings.set(activeMeetingId, { info: clone(meetingInfo(activeMeetingId)), meeting_uid: meetingUid, session_id: liveSession, notes, transcript: clone(transcript) });
+        const number = ++meetingSequence;
+        activeMeetingId = `qa-owner-review-meeting-${number}`; meetingUid = `qa-owner-review-uid-${number}`; liveSession = `qa-owner-review-session-${number}`;
+        Object.assign(meeting, { id: activeMeetingId, title: String(args.title || (interfaceLanguage() === "nl" ? "Nieuwe opname" : "New recording")),
+          start_iso: new ActualDate(now + number * 60_000).toISOString(), duration_min: 1, has_summary: false });
+        library.unshift(clone(meeting)); libraryUids.set(activeMeetingId, meetingUid);
+        notes = ""; recordingStopped = false; recordingRecovered = false; ownerRecording = true;
+        transcriptRevision = 1;
+        persistOwnerReview(); emit("meeting-updated", activeMeetingId); return activeMeetingId;
+      }
       case "save_template": return "qa-template";
       case "rename_meeting": {
         const uid = uidFor(args.id), renamed = `qa-renamed-${String(args.title || "Meeting").replace(/[^\p{L}\p{N} -]/gu, "").trim()}`;
@@ -991,30 +1245,39 @@
       case "generate_meeting_summary": {
         const before = await summaryDocument(args.id), record = recordForId(args.id);
         if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
+        requireCurrentReview();
         if (options.summary_generation_error) throw Error(options.summary_generation_error);
         return { meeting_uid: before.meeting_uid, markdown: `${summary}\n\n${record.notes}`, revision: before.revision, source_revision: before.source_revision };
       }
       case "generate_shareable_meeting_summary": {
         const record = recordForId(args.id);
         if (!record?.transcript.length || options.shareable_missing_transcript) throw Error("A finalized transcript is required for a shareable summary.");
-        const source = await summarySourceRevision(args.id);
-        const prepared = { meeting_uid: record.uid, markdown: record.transcript.map(segment => `- ${segment.text}`).join("\n"), source_revision: source,
+        if (options.rich_utterances && metadataStatus !== "valid" || options.owner_review && args.id === activeMeetingId && meetingStatus().recording) throw Error("A finalized, valid transcript is required for a shareable summary.");
+        const source = await summarySourceRevision(args.id, true), allowed = permittedTranscript(record);
+        if (!allowed) throw Error("A finalized transcript is required for a shareable summary.");
+        if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
+        if (options.summary_generation_error) throw Error(options.summary_generation_error);
+        if (source !== await summarySourceRevision(args.id, true)) throw Error("The transcript changed. Try preparing the shareable summary again.");
+        requireCurrentReview();
+        const prepared = { meeting_uid: record.uid, markdown: allowed, source_revision: source,
           generated_at: new ActualDate(now).toISOString(), provider_id: settings.llm.provider_id, model: settings.llm.model, provenance: "transcript_only_v1", outdated: false };
         shareableSummaries.set(record.uid, prepared);
+        persistOwnerReview();
         return clone(prepared);
       }
       case "shareable_meeting_summary": {
         const prepared = shareableSummaries.get(uidFor(args.id));
-        return prepared ? { ...clone(prepared), outdated: prepared.source_revision !== await summarySourceRevision(args.id) } : null;
+        return prepared ? { ...clone(prepared), outdated: prepared.source_revision !== await summarySourceRevision(args.id, true) } : null;
       }
       case "preview_meeting_export": {
         const record = recordForId(args.id);
         const personal = args.scope === "personal";
         const prepared = shareableSummaries.get(record?.uid);
-        if (!personal && (!prepared || prepared.source_revision !== await summarySourceRevision(args.id))) throw Error("Prepare a current shareable summary before exporting.");
+        if (!personal && (!prepared || prepared.source_revision !== await summarySourceRevision(args.id, true))) throw Error("Prepare a current shareable summary before exporting.");
         const body = personal ? (await summaryDocument(args.id)).markdown || record.notes : prepared.markdown;
-        const content = args.includeTranscript ? `${body}\n\n## Transcript\n${record.transcript.map(segment => segment.text).join("\n")}` : body;
-        return { title: record.info.title, markdown: content, html: `<pre>${content.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>` };
+        const language = ["en", "nl"].includes(args.language) ? args.language : interfaceLanguage();
+        const content = args.includeTranscript ? `${body}\n\n## Transcript\n${permittedTranscript(record, language)}` : body;
+        return { title: personal ? record.info.title : language === "nl" ? "Samenvatting" : "Summary", markdown: content, html: `<pre>${content.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>` };
       }
       case "retranscribe_meeting": return 0;
       case "retranscribe_meeting_audio": {
@@ -1096,8 +1359,23 @@
       case "cloud_sync_disable": settings.cloud_sync = false; syncSetupPhase = "paused"; emit("sync-changed", syncReport()); return null;
       case "cloud_rename_device": case "cloud_revoke_device": case "cloud_sync_confirm_deletes":
       case "delete_conflict_copy": case "open_url": case "copy_secret_text": return null;
-      case "show_window": case "show_workspace": case "play_meeting_audio": case "stop_audio":
-      case "answer_record_prompt": case "toggle_dictation": case "install_update": case "share_meeting": case "open_log": case "open_path":
+      case "show_window": {
+        if (!options.owner_review) return null;
+        if (args.kind === "onboarding") {
+          const tab = args.tab || "resume";
+          if (!["practice", "dictation-setup", "dictation-permissions", "resume", "language", "welcome", "engine", "permissions", "voice"].includes(tab)) throw Error("This onboarding destination is not supported by the local owner review.");
+          const caseName = tab === "practice" ? "owner-review-practice" : ["permissions", "dictation-permissions"].includes(tab) ? "owner-review-permissions" : "owner-review-setup-new";
+          openReviewWindow(caseName, "onboarding", { tab }); return null;
+        }
+        const section = { workspace: "dictation", dictation: "dictation", history: "history", settings: "settings", library: "meetings", meetings: "meetings", live: "recording", recording: "recording" }[args.kind];
+        if (!section) throw Error("This window is not supported by the local owner review.");
+        return showReviewWorkspace({ section, tab: section === "settings" && args.tab === "meetings" ? "meeting-settings"
+          : ["meetings", "recording"].includes(section) ? args.tab === "chat" ? "chat" : null : args.tab || null,
+          meeting_id: section === "meetings" && args.tab && args.tab !== "chat" ? args.tab : null });
+      }
+      case "show_workspace": return options.owner_review ? showReviewWorkspace(args.route) : null;
+      case "play_meeting_audio": case "stop_audio":
+      case "answer_record_prompt": case "install_update": case "share_meeting": case "open_log": case "open_path":
       case "set_meeting_attendees": case "rename_speaker":
       case "delete_template": case "test_apple_intelligence": return null;
       default: unknown.push(command); throw new Error(`Onbekend fixturecommando: ${command}`);
@@ -1113,10 +1391,20 @@
     },
   };
   if (profileKey && globalThis.addEventListener) globalThis.addEventListener("storage", event => {
+    if (ownerStateKey && event.key === ownerStateKey && event.newValue && reviewIsCurrent()) {
+      try { restoreReviewServices(JSON.parse(event.newValue)); emit("settings-changed", null); } catch {}
+      return;
+    }
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
   globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
+    ...(options.owner_review ? { review: { resetProfile,
+      openedWindows: () => clone(openedWindows),
+      failDownloads: message => { downloadFailure = message || null; }, failSaves: value => { saveFailure = Boolean(value); },
+      dictationDelay: milliseconds => { dictationDelay = Math.min(60_000, Math.max(0, Number(milliseconds) || 0)); },
+      completeDictation: () => [...pendingDictations.keys()].filter(id => completeDictation(id)).length,
+      pendingDictations: () => pendingDictations.size } } : {}),
     conversations: { complete: async (requestId, result) => (await conversations()).complete(requestId, result),
       requests: () => conversationFixture?.requests() || [], failStorage: value => { conversationStorageFailure = value; },
       beginDelay: value => { if (!conversationFixture) throw Error("Load the synthetic conversation before setting its response delay."); conversationFixture.beginDelay(value); },
@@ -1133,8 +1421,8 @@
       insertDelay: value => { peopleInsertDelay = value; }, pendingInsertResponses: () => pendingInsertResponses.size,
       releaseInserts: () => { for (const finish of [...pendingInsertResponses]) finish(); },
       contactDelay: value => { contactDelay = value; }, contactResult: value => { contactResult = clone(value); } },
-    workspace: { append: segment => { transcript.push(options.rich_utterances ? richUtterance(clone(segment), transcript.length) : clone(segment)); transcriptRevision++; },
-      attribution: (index, update) => { Object.assign(transcript[index], clone(update)); transcript[index].attribution_revision = (transcript[index].attribution_revision || 0) + 1; transcriptRevision++; },
+    workspace: { append: segment => { transcript.push(options.rich_utterances ? richUtterance(clone(segment), transcript.length) : clone(segment)); transcriptRevision++; retainActiveEdits(); },
+      attribution: (index, update) => { Object.assign(transcript[index], clone(update)); transcript[index].attribution_revision = (transcript[index].attribution_revision || 0) + 1; transcriptRevision++; retainActiveEdits(); },
       metadata: state => { metadataStatus = state; }, playback: () => clone(playbackRequest),
       liveSpeakers: update => { liveSpeakerStatus = { ...liveSpeakerStatus, ...clone(update), revision: update.revision ?? liveSpeakerStatus.revision + 1 }; },
       liveSpeakerDelay: delay => { liveSpeakerDelay = delay; },
@@ -1151,7 +1439,7 @@
       requests: () => [...liveRequests.values()].map(request => clone(request.snapshot)).concat(conversationFixture?.requests() || []),
       complete: requestId => liveRequests.has(requestId) ? completeLiveQuestion(requestId) : conversationFixture?.complete(requestId),
       forceComplete: requestId => liveRequests.has(requestId) ? completeLiveQuestion(requestId, true) : conversationFixture?.complete(requestId),
-      replaceTranscript: segments => { transcript.splice(0, transcript.length, ...clone(segments)); transcriptRevision++; },
+      replaceTranscript: segments => { transcript.splice(0, transcript.length, ...clone(segments)); transcriptRevision++; retainActiveEdits(); },
       restart: (next = { id: "qa-next-meeting", uid: "qa-next-uid", session: "qa-next-session", title: "Next synthetic meeting", notes: "New meeting notes", transcript: [] }) => {
         retainedMeetings.set(activeMeetingId, { info: { ...meeting, id: activeMeetingId }, meeting_uid: meetingUid, session_id: liveSession, notes, transcript: recordingStopped ? storedTranscript(transcript) : clone(transcript) });
         activeMeetingId = next.id; meetingUid = next.uid; liveSession = next.session; meeting.title = next.title;
