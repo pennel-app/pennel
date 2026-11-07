@@ -1539,22 +1539,47 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let observer = Arc::new(Observer::default());
         let counter = calls.clone();
+        let (parked, worker_parked) = mpsc::channel();
+        let (run_worker, worker_release) = mpsc::channel();
+        let worker_release = Mutex::new(worker_release);
+        let (checked, worker_checked) = mpsc::channel();
+        let configuration_checks = AtomicUsize::new(0);
         let worker = LiveSpeakerWorker::start(
             "deferred".into(),
             1,
             "fixture".into(),
-            Arc::new(|| true),
+            Arc::new(move || {
+                // Launch checks synchronously; park the worker before it can contend with feed.
+                match configuration_checks.fetch_add(1, Ordering::SeqCst) {
+                    1 => {
+                        parked.send(()).unwrap();
+                        worker_release.lock().unwrap().recv().unwrap();
+                    }
+                    2 => checked.send(()).unwrap(),
+                    _ => {}
+                }
+                true
+            }),
             Box::new(move || Ok(Box::new(Immediate(counter)))),
             observer.clone(),
         );
+        worker_parked.recv_timeout(Duration::from_secs(5)).unwrap();
         worker.set_deferred(true);
         worker.feed(Speaker::Me, 0, &vec![0.2; 10 * 16_000]);
-        until(|| worker.metrics().pending_samples == 10 * 16_000);
-        std::thread::sleep(Duration::from_millis(40));
+        assert_eq!(worker.metrics().pending_samples, 10 * 16_000);
+        assert_eq!(worker.metrics().dropped_packets, 0);
+        run_worker.send(()).unwrap();
+        worker_checked.recv_timeout(Duration::from_secs(5)).unwrap();
+        // A worker checkpoint must leave accepted PCM queued while foreground speech has priority.
+        let deferred = worker.metrics();
+        assert_eq!(deferred.pending_samples, 10 * 16_000);
+        assert_eq!(deferred.active_samples, 0);
+        assert_eq!(deferred.native_calls, 0);
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         worker.set_deferred(false);
         until(|| observer.0.lock().unwrap().len() == 1);
         assert_eq!(observer.0.lock().unwrap()[0].start_ms, 0);
+        assert_eq!(observer.0.lock().unwrap()[0].end_ms, 10_000);
         assert_eq!(worker.metrics().native_calls, 1);
         worker.stop();
     }

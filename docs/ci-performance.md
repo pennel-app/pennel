@@ -1,4 +1,4 @@
-# CI performance and compiler-cache pilot
+# CI performance, validation qualification and compiler-cache pilot
 
 ## Selected TestFlight archives
 
@@ -13,6 +13,186 @@ The CI acceleration work is tracked in [#73](https://github.com/pennel-app/penne
 Routine Rust dependency caches are saved by successful main pushes; pull requests restore available dependency caches. The desktop workflow's explicit manual `cache_probe` exception may save branch-scoped Linux caches to verify stable hosted cache keys before merge. A probe must show a subsequent exact cache hit before obsolete Linux entries are retired. Do not remove working main caches merely to create space for an experiment.
 
 Hosted Linux uses a stable Rust installation path. Self-hosted runner homes remain isolated. Compiler/environment fingerprints remain enabled; compiler upgrades or relevant configuration changes legitimately produce new keys.
+
+## Complete-PR validation qualification
+
+The [adopted design](https://github.com/pennel-app/pennel/issues/153#issuecomment-6642797787)
+has [passed all eight qualification gates](evidence/ci-qualification-73-rolling.md)
+under the approved rolling-build protocol: 80 active observations pass, while
+all 112 outcomes retain two historical failures. The implementation now selects
+candidate/warm for ordinary same-repository PRs and exact main pushes. Manual,
+privileged, foreign-head and other push contexts remain serial. The serial
+override and scoped serial controls remain available. This is separate from
+the native compiler-cache experiment and does not claim a code merge or release.
+
+The [first 5 November qualification checkpoint](evidence/ci-qualification-73.md)
+retains the original exact-image assessment and every physical workflow attempt.
+Lander subsequently [approved rolling image build numbers](https://github.com/pennel-app/pennel/issues/152#issuecomment-6664508244)
+while retaining source, toolchain and cache matching. The
+[rolling-build qualification](evidence/ci-qualification-73-rolling.md) reports
+the complete matched dataset, raw history, source strata and limitations.
+Core warm and cold use separately frozen sources; counts and medians never
+pool sources within a category/cache gate.
+
+| Affected PR category | Initial complete-cohort objective |
+| --- | ---: |
+| Documentation | 5 minutes |
+| Desktop/frontend | 20 minutes |
+| Mobile | 60 minutes |
+| Core/shared, including mobile | 60 minutes |
+
+The [accepted measurement policy](https://github.com/pennel-app/pennel/issues/152#issuecomment-6642448420)
+uses the median of at least five matched complete candidate/control PR
+observations per affected category. Waiting and orchestration count. Report every
+observation and miss; five samples establish neither a p95 nor a maximum.
+Cold/toolchain-changing controls are separate and may regress by no more than
+10% in matched median elapsed time. The mobile 35–40-minute stretch goal is not
+the initial acceptance threshold. A timing miss never skips a check or shortens
+its timeout.
+
+Cold observations have no adopted absolute completion ceiling. Their derived
+`target_miss` value is `null`/N/A; the relative median gate still applies. Warm
+misses and all original timing values remain reported unchanged.
+
+The offline evaluation matrix pins its observed Python binary patch by OS:
+3.11.18 on Linux and 3.11.9 on Mac/Windows. A bare `3.11` selector resolved
+different Linux patches in the initial comparison. Stabilizing this input keeps
+every evaluation check intact; earlier captures remain recorded against their
+original frozen source, and a new core comparison uses the pinned source.
+
+### Candidate and fallback
+
+The candidate runs two mobile jobs in separate hosted VMs. The original job
+retains full common checks, preparation, clean/repeated Prebuild, pod ownership,
+and sequential Release simulator/device builds. The other job independently
+prepares its complete workspace and runs Debug runtime/keyboard tests. Neither
+shares generated projects, Pods, mutable framework links, build directories or
+native products. A final Linux result checks the expected job and phase set and
+rejects missing, cancelled, failed or unexpectedly skipped selected work.
+
+Each desktop OS retains frontend tests, backend checks, installers and package
+inspection. In candidate mode Tauri's hook performs the single production
+frontend build; backend compilation checks follow packaging so frontend assets
+exist. Serial mode retains the original explicit frontend build and ordering.
+Uploads and release eligibility still require every check. Main release version
+planning/build/publication remains serialized.
+
+Both mobile jobs use the existing Rust cache family. The original job remains
+the only successful-main writer; the new Debug job restores only. Static key
+compatibility does not prove an exact physical restore: record cache version,
+paths, compiler/configuration identity and the observed hit in each lane.
+Routine native CAS remains off. Manual compiler-cache dispatches keep their
+original complete serial pipeline and receipt contract.
+
+### Scoped mode selection
+
+`scripts/ci-mode.py` selects the qualified candidate by default only after its
+same-repository PR or exact `push`/`refs/heads/main` guards pass. Ordinary receipts
+have an empty qualification ID. Context/error defaults stay serial; malformed
+evidence cannot promote a candidate. `PENNEL_CI_FORCE_SERIAL=true` overrides
+both eligible ordinary contexts with serial/warm.
+
+The optional non-secret repository variable `PENNEL_CI_QUALIFICATION_CONFIG`
+selects an exact-source benchmark control or treatment. It requires an exact
+same-repository PR number and immutable head match:
+
+```json
+{
+  "repository": "pennel-app/pennel",
+  "pr": 123,
+  "head_sha": "0000000000000000000000000000000000000000",
+  "mode": "candidate",
+  "cohort": "desktop-warm-candidate-1",
+  "dependency_cache": "warm"
+}
+```
+
+Replace the example PR/SHA with the frozen benchmark identities. The five
+identity/mode/cohort fields are required; `dependency_cache` is optional and
+defaults to `warm`. Valid modes are `serial` and `candidate`; valid dependency
+states are `warm` and `cold`. Another PR keeps its ordinary guarded default.
+A stale designated head, malformed active configuration or unknown mode fails
+safely. Manual dispatch, privileged events, foreign/deleted-head PRs and
+non-main or missing-ref pushes retain serial/warm behavior. Exact scoped serial
+controls override an ordinary candidate without disabling the fallback. No
+setting changes a branch-protection rule or authorizes publication.
+
+Controlled `cold` skips the workflow's configured Rust and npm dependency-cache
+restores/saves for that benchmark PR. It neither deletes working caches nor
+creates an alternate cache family. All installs, builds and tests still run.
+This does not describe an empty machine: image family/architecture and observed
+toolchains must still match. Image build numbers may vary under the approved
+rolling-build policy. Unobserved cache state must not be labelled controlled cold.
+
+Both native preparation RUN steps set `CARGO_NET_RETRY=6` only after Rust cache
+lookup. This uses Cargo's bounded dependency-transport attempts inside the same
+invocation; it does not rerun a build, test or workflow. Transfer/backoff time
+counts, exhaustion still fails, and actual observed transport warnings remain
+in evidence. The step-local setting does not change job/global environment,
+Cargo config, cache inputs, compiler flags or the existing family. The prior
+DNS-failed source stays failed in the retained history.
+
+The reusable selection job records actual mode, dependency policy, PR/head/merge
+identity, workflow run/attempt and cohort in `build/ci-performance/mode.json`,
+uploaded as `ci-mode-<attempt>`. Verify those receipts rather than assuming a
+rerun reread a mutable variable. Read back variable mutations, preserve any
+previous value, and restore only the configuration owned by the experiment.
+
+### Evidence collection
+
+Freeze the benchmark base, head and merge context. Reexecute every applicable
+workflow/job for each observation. Record workflow run IDs and attempts;
+carried-forward successful siblings or failed-only retries are not fresh full
+cohorts. A mobile-only dispatch cannot qualify complete-PR performance.
+
+Keep qualifying counts and medians within one frozen source identity. Five
+internally matched pairs from different base/head/merge identities cannot be
+pooled into a five-pair qualification. Preserve earlier source waves and report
+their results separately when a toolchain or fixture correction changes source.
+
+`scripts/ci-qualification.py capture` records an explicit PR/head, requested
+mode, dependency state, category, pair/cohort identity and whole-cohort request
+time. Pass explicit workflow run/attempt identities when replaying a cohort.
+The expected workflow sets are core CI and desktop for documentation/desktop,
+plus mobile for mobile changes, and plus decision evaluation for core/shared
+changes. Missing selected work is not success.
+
+Reruns retain their original workflow creation time. Use the newly recorded
+cohort request boundary and actual physical job completion times, labelled
+**replay-request-to-complete**; keep the unavailable original push-to-dispatch
+interval explicit. Report dependency/scheduling intervals separately from job
+execution; the exact ready-runner boundary may remain unknown. Do not sum
+overlapping job durations.
+
+Capture preserves curated API evidence and validation artifacts. Exact-image
+assessment remains the default. For the approved scheduling-design comparison,
+pass `--image-policy rolling-build --approval-reference
+https://github.com/pennel-app/pennel/issues/152#issuecomment-6664508244` to capture
+and assessment. This omits only observed `image_version` values from comparison;
+it still requires their presence and retains all raw versions and the separate
+exact-image result. Image family/architecture, source, observed toolchains,
+configuration, dependency/cache identities and state, actual mode and complete
+coverage must match. Unknown or mismatched evidence remains unqualified and is
+retained alongside successful observations. Rolling-fleet completion objectives
+do not establish a same-image causal speedup. This policy does not change the
+independent native-CAS gates below.
+
+Mobile ordinary lane artifacts have separate lane/mode/attempt
+names and a combined `mobile-validation-attempt-<attempt>` result; legacy manual
+artifacts retain the names documented below.
+
+Archive the complete attempt's metadata, observed log identities and timing ZIPs
+before rerunning its workflows. The hosted preflight's next rerun no longer
+listed the preceding attempt's artifact names. A newer receipt must never be
+substituted for the earlier physical observation. Observer read failures may be
+retried without rerunning successful jobs; preserve those read-error snapshots
+separately from the physical performance cohort.
+
+Only a passing complete-cohort assessment permits enabling the candidate for
+ordinary validation. Until then retain the serial default. If correctness,
+cache compatibility, cold behavior or schedule-inclusive targets fail, retain
+or restore serial and record the unmet criterion. Never replace whole-cohort
+acceptance with a faster individual lane or add paid capacity to make it pass.
 
 ## Mobile Xcode compilation-cache experiment
 

@@ -81,7 +81,7 @@ jobs:
       # Self-hosted runners skip it: their cache archive holds absolute paths of
       # another runner's directory, and each keeps a warm CARGO_HOME instead.
       - uses: Swatinem/rust-cache@v2
-        if: runner.environment == 'github-hosted'
+        if: runner.environment == 'github-hosted' && needs.changes.outputs.dependency_cache != 'cold'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.cache_probe && runner.os == 'Linux') }}
           workspaces: core
@@ -190,7 +190,7 @@ jobs:
           components: rustfmt, clippy
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-        if: runner.environment == 'github-hosted'
+        if: runner.environment == 'github-hosted' && needs.changes.outputs.dependency_cache != 'cold'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.cache_probe && runner.os == 'Linux') }}
           workspaces: apps/desktop/src-tauri
@@ -207,18 +207,22 @@ jobs:
         with:
           node-version: 22
           # The self-hosted boxes keep ~/.npm between jobs; the post-step cache save hung there.
-          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
+          cache: ${{ runner.environment == 'github-hosted' && needs.changes.outputs.dependency_cache != 'cold' && 'npm' || '' }}
+          package-manager-cache: ${{ needs.changes.outputs.dependency_cache != 'cold' }}
           cache-dependency-path: apps/desktop/package-lock.json
       - run: npm ci
       - name: Frontend
+        if: needs.changes.outputs.ci_mode != 'candidate'
         run: npm run build
       - name: Frontend tests
         run: npm test
       - name: Rust format
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - name: Rust lint
+        if: needs.changes.outputs.ci_mode != 'candidate'
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Rust tests
+        if: needs.changes.outputs.ci_mode != 'candidate'
         run: cargo test --manifest-path src-tauri/Cargo.toml
       # A stable certificate keeps the designated requirement, and with it the user's privacy
       # approvals, identical across releases. Forks and runs without the secret sign ad hoc.
@@ -269,6 +273,13 @@ jobs:
               config.write_text(json.dumps({"version": os.environ["PENNEL_RELEASE_VERSION"]}), encoding="utf-8")
           release.build_distributable(npx, os.environ["PENNEL_BUILD_TARGET"], os.environ["PENNEL_BUNDLE_FORMATS"], config, os.environ, sys.platform)
           PY
+      # Tauri's hook builds frontendDist before generate_context! in backend checks.
+      - name: Rust lint after packaging
+        if: needs.changes.outputs.ci_mode == 'candidate'
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Rust tests after packaging
+        if: needs.changes.outputs.ci_mode == 'candidate'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Inspect packaged Mac app without opening it
         if: runner.os == 'macOS'
         run: |
