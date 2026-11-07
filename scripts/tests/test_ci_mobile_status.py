@@ -66,6 +66,22 @@ class MobileStatusTests(unittest.TestCase):
                     needs[job]['result'] = result
                     self.assertTrue(self.check(needs, receipts))
 
+    def test_ordinary_candidate_without_qualification_id_still_requires_both_lanes(self):
+        for name in ('pull_request', 'push'):
+            with self.subTest(name=name):
+                needs = self.needs('candidate')
+                needs['changes']['outputs']['qualification_id'] = ''
+                receipts = [self.receipt('release', 'candidate'), self.receipt('runtime', 'candidate')]
+                head_sha = 'a' * 40 if name == 'push' else 'b' * 40
+                for receipt in receipts:
+                    receipt['validation'].update(event_name=name, qualification_id='', head_sha=head_sha)
+                self.assertEqual(self.check(needs, receipts, event_name=name, head_sha=head_sha), [])
+                self.assertTrue(self.check(needs, receipts[:1], event_name=name, head_sha=head_sha))
+                for job in ('ios-generated-build', 'ios-native-tests'):
+                    needs[job]['result'] = 'skipped'
+                    self.assertTrue(self.check(needs, receipts, event_name=name, head_sha=head_sha))
+                    needs[job]['result'] = 'success'
+
     def test_missing_invalid_or_failed_mode_selection_never_passes(self):
         for mode in ('', 'split', None):
             with self.subTest(mode=mode):

@@ -17,17 +17,22 @@ Hosted Linux uses a stable Rust installation path. Self-hosted runner homes rema
 ## Complete-PR validation qualification
 
 The [adopted design](https://github.com/pennel-app/pennel/issues/153#issuecomment-6642797787)
-adds a scoped candidate while **ordinary PR, main and manual validation remain
-serial by default**. This is separate from the native compiler-cache experiment.
-No timing improvement or rollout is established by implementing the candidate.
+has [passed all eight qualification gates](evidence/ci-qualification-73-rolling.md)
+under the approved rolling-build protocol: 80 active observations pass, while
+all 112 outcomes retain two historical failures. The implementation now selects
+candidate/warm for ordinary same-repository PRs and exact main pushes. Manual,
+privileged, foreign-head and other push contexts remain serial. The serial
+override and scoped serial controls remain available. This is separate from
+the native compiler-cache experiment and does not claim a code merge or release.
 
 The [first 5 November qualification checkpoint](evidence/ci-qualification-73.md)
 retains the original exact-image assessment and every physical workflow attempt.
 Lander subsequently [approved rolling image build numbers](https://github.com/pennel-app/pennel/issues/152#issuecomment-6664508244)
 while retaining source, toolchain and cache matching. The
 [rolling-build qualification](evidence/ci-qualification-73-rolling.md) reports
-reassessment and the remaining prospective runs. Ordinary validation remains
-serial until that complete qualification passes.
+the complete matched dataset, raw history, source strata and limitations.
+Core warm and cold use separately frozen sources; counts and medians never
+pool sources within a category/cache gate.
 
 | Affected PR category | Initial complete-cohort objective |
 | --- | ---: |
@@ -81,9 +86,15 @@ original complete serial pipeline and receipt contract.
 
 ### Scoped mode selection
 
-`scripts/ci-mode.py` reads the non-secret repository variable
-`PENNEL_CI_QUALIFICATION_CONFIG`. A candidate requires an exact same-repository
-PR number and immutable head match:
+`scripts/ci-mode.py` selects the qualified candidate by default only after its
+same-repository PR or exact `push`/`refs/heads/main` guards pass. Ordinary receipts
+have an empty qualification ID. Context/error defaults stay serial; malformed
+evidence cannot promote a candidate. `PENNEL_CI_FORCE_SERIAL=true` overrides
+both eligible ordinary contexts with serial/warm.
+
+The optional non-secret repository variable `PENNEL_CI_QUALIFICATION_CONFIG`
+selects an exact-source benchmark control or treatment. It requires an exact
+same-repository PR number and immutable head match:
 
 ```json
 {
@@ -99,11 +110,12 @@ PR number and immutable head match:
 Replace the example PR/SHA with the frozen benchmark identities. The five
 identity/mode/cohort fields are required; `dependency_cache` is optional and
 defaults to `warm`. Valid modes are `serial` and `candidate`; valid dependency
-states are `warm` and `cold`. Another PR is unaffected. A stale designated head,
-malformed active configuration or unknown mode fails safely. Manual dispatch,
-push, privileged events and foreign-head PRs retain serial/warm behavior.
-`PENNEL_CI_FORCE_SERIAL=true` is a serial/warm override. No setting changes a
-branch-protection rule or authorizes publication.
+states are `warm` and `cold`. Another PR keeps its ordinary guarded default.
+A stale designated head, malformed active configuration or unknown mode fails
+safely. Manual dispatch, privileged events, foreign/deleted-head PRs and
+non-main or missing-ref pushes retain serial/warm behavior. Exact scoped serial
+controls override an ordinary candidate without disabling the fallback. No
+setting changes a branch-protection rule or authorizes publication.
 
 Controlled `cold` skips the workflow's configured Rust and npm dependency-cache
 restores/saves for that benchmark PR. It neither deletes working caches nor
@@ -111,6 +123,14 @@ creates an alternate cache family. All installs, builds and tests still run.
 This does not describe an empty machine: image family/architecture and observed
 toolchains must still match. Image build numbers may vary under the approved
 rolling-build policy. Unobserved cache state must not be labelled controlled cold.
+
+Both native preparation RUN steps set `CARGO_NET_RETRY=6` only after Rust cache
+lookup. This uses Cargo's bounded dependency-transport attempts inside the same
+invocation; it does not rerun a build, test or workflow. Transfer/backoff time
+counts, exhaustion still fails, and actual observed transport warnings remain
+in evidence. The step-local setting does not change job/global environment,
+Cargo config, cache inputs, compiler flags or the existing family. The prior
+DNS-failed source stays failed in the retained history.
 
 The reusable selection job records actual mode, dependency policy, PR/head/merge
 identity, workflow run/attempt and cohort in `build/ci-performance/mode.json`,

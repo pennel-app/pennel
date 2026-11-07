@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select a benchmark-only CI treatment; ordinary validation stays serial."""
+"""Select qualified ordinary CI defaults while retaining scoped serial controls."""
 
 import argparse
 from datetime import datetime, timezone
@@ -85,13 +85,16 @@ def select_mode(environ, payload):
         raise ValueError('Invalid force-serial setting')
     if force == 'true':
         return {**result, 'reason': 'force-serial'}
+    if result['event'] == 'push' and environ.get('GITHUB_REF') == 'refs/heads/main':
+        return {**result, 'ci_mode': 'candidate', 'reason': 'qualified-default'}
     if result['event'] != 'pull_request':
         return {**result, 'reason': 'non-pr'}
     if result['head_repository'] != result['repository']:
         return {**result, 'reason': 'foreign-head'}
+    result['ci_mode'] = 'candidate'
     raw = environ.get('PENNEL_CI_QUALIFICATION_CONFIG', '')
     if not raw:
-        return {**result, 'reason': 'unconfigured'}
+        return {**result, 'reason': 'qualified-default'}
     if len(raw) > 4096:
         raise ValueError('Qualification configuration is too large')
     try:
@@ -107,7 +110,7 @@ def select_mode(environ, payload):
         raise ValueError('Invalid qualification scope')
     # A scoped experiment must not change or block unrelated PRs.
     if repository != result['repository'] or number != result['pr']:
-        return {**result, 'reason': 'outside-scope'}
+        return {**result, 'reason': 'qualified-default'}
     if (not CONFIG_FIELDS.issubset(config)
             or set(config) - CONFIG_FIELDS - OPTIONAL_CONFIG_FIELDS):
         raise ValueError('Missing or unknown qualification configuration fields')

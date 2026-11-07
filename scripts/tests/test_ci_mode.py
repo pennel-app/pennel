@@ -40,6 +40,7 @@ def event(**updates):
 def environment(**updates):
     value = {'GITHUB_EVENT_NAME': 'pull_request', 'GITHUB_REPOSITORY': REPOSITORY,
              'GITHUB_SHA': MERGE, 'GITHUB_RUN_ID': '100', 'GITHUB_RUN_ATTEMPT': '2',
+             'GITHUB_REF': 'refs/pull/155/merge',
              'PENNEL_CI_QUALIFICATION_CONFIG': '', 'PENNEL_CI_FORCE_SERIAL': ''}
     value.update(updates)
     return value
@@ -53,12 +54,36 @@ class ModeTests(unittest.TestCase):
     def select(self, env=None, payload=None):
         return self.module.select_mode(env or environment(), payload or event())
 
-    def test_default_is_serial_with_no_qualification_identity(self):
+    def test_same_repository_pr_uses_qualified_default_without_a_cohort(self):
         result = self.select()
-        self.assertEqual(result['ci_mode'], 'serial')
+        self.assertEqual(result['ci_mode'], 'candidate')
         self.assertEqual(result['qualification_id'], '')
         self.assertEqual(result['dependency_cache'], 'warm')
         self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['reason'], 'qualified-default')
+
+    def test_main_push_uses_qualified_default_and_ignores_pr_only_configuration(self):
+        for raw in ('', 'not-json', config(mode='serial', dependency_cache='cold')):
+            with self.subTest(raw=raw):
+                result = self.select(environment(GITHUB_EVENT_NAME='push',
+                                                GITHUB_REF='refs/heads/main',
+                                                PENNEL_CI_QUALIFICATION_CONFIG=raw))
+                self.assertEqual(result['ci_mode'], 'candidate')
+                self.assertEqual(result['dependency_cache'], 'warm')
+                self.assertEqual(result['qualification_id'], '')
+                self.assertEqual(result['reason'], 'qualified-default')
+
+    def test_other_push_refs_cannot_select_candidate(self):
+        for ref in (None, '', 'refs/heads/topic', 'refs/tags/main', 'refs/heads/main-extra'):
+            with self.subTest(ref=ref):
+                env = environment(GITHUB_EVENT_NAME='push', GITHUB_REF=ref,
+                                  PENNEL_CI_QUALIFICATION_CONFIG=config())
+                if ref is None:
+                    env.pop('GITHUB_REF')
+                result = self.select(env)
+                self.assertEqual(result['ci_mode'], 'serial')
+                self.assertEqual(result['dependency_cache'], 'warm')
+                self.assertEqual(result['qualification_id'], '')
 
     def test_exact_same_repository_pr_and_head_can_select_candidate(self):
         result = self.select(environment(PENNEL_CI_QUALIFICATION_CONFIG=config()))
@@ -108,10 +133,11 @@ class ModeTests(unittest.TestCase):
                 self.select(environment(PENNEL_CI_QUALIFICATION_CONFIG=config(
                     dependency_cache=value)))
 
-    def test_manual_dispatch_push_and_privileged_events_never_select_candidate(self):
-        for name in ('workflow_dispatch', 'push', 'pull_request_target', 'merge_group'):
+    def test_manual_dispatch_and_privileged_events_stay_serial_even_on_main_ref(self):
+        for name in ('workflow_dispatch', 'pull_request_target', 'merge_group', 'workflow_run'):
             with self.subTest(name=name):
                 result = self.select(environment(GITHUB_EVENT_NAME=name,
+                                                GITHUB_REF='refs/heads/main',
                                                 PENNEL_CI_QUALIFICATION_CONFIG=config()))
                 self.assertEqual(result['ci_mode'], 'serial')
                 self.assertEqual(result['qualification_id'], '')
@@ -122,13 +148,17 @@ class ModeTests(unittest.TestCase):
         self.assertEqual(result['ci_mode'], 'serial')
 
     def test_force_serial_overrides_candidate_and_invalid_config(self):
-        for raw in (config(), 'not-json'):
-            with self.subTest(raw=raw):
-                result = self.select(environment(PENNEL_CI_FORCE_SERIAL='true',
-                                                PENNEL_CI_QUALIFICATION_CONFIG=raw))
-                self.assertEqual(result['ci_mode'], 'serial')
-                self.assertEqual(result['qualification_id'], '')
-                self.assertEqual(result['reason'], 'force-serial')
+        for name in ('pull_request', 'push'):
+            for raw in ('', config(), 'not-json'):
+                with self.subTest(name=name, raw=raw):
+                    result = self.select(environment(GITHUB_EVENT_NAME=name,
+                                                    GITHUB_REF='refs/heads/main',
+                                                    PENNEL_CI_FORCE_SERIAL='true',
+                                                    PENNEL_CI_QUALIFICATION_CONFIG=raw))
+                    self.assertEqual(result['ci_mode'], 'serial')
+                    self.assertEqual(result['qualification_id'], '')
+                    self.assertEqual(result['dependency_cache'], 'warm')
+                    self.assertEqual(result['reason'], 'force-serial')
 
     def test_force_serial_rejects_ambiguous_values(self):
         for raw in ('yes', '1', 'TRUE', 'false\nci_mode=candidate'):
@@ -140,14 +170,21 @@ class ModeTests(unittest.TestCase):
                     json.dumps({'repository': REPOSITORY, 'pr': 156})):
             with self.subTest(raw=raw):
                 result = self.select(environment(PENNEL_CI_QUALIFICATION_CONFIG=raw))
-                self.assertEqual(result['ci_mode'], 'serial')
+                self.assertEqual(result['ci_mode'], 'candidate')
                 self.assertEqual(result['qualification_id'], '')
+                self.assertEqual(result['dependency_cache'], 'warm')
+                self.assertEqual(result['reason'], 'qualified-default')
 
     def test_fork_head_cannot_select_candidate(self):
-        payload = event()
-        payload['pull_request']['head']['repo']['full_name'] = 'someone/pennel'
-        result = self.select(environment(PENNEL_CI_QUALIFICATION_CONFIG=config()), payload)
-        self.assertEqual(result['ci_mode'], 'serial')
+        for head_repository in ({'full_name': 'someone/pennel'}, None):
+            for raw in ('', config()):
+                with self.subTest(head_repository=head_repository, raw=raw):
+                    payload = event()
+                    payload['pull_request']['head']['repo'] = head_repository
+                    result = self.select(environment(PENNEL_CI_QUALIFICATION_CONFIG=raw), payload)
+                    self.assertEqual(result['ci_mode'], 'serial')
+                    self.assertEqual(result['dependency_cache'], 'warm')
+                    self.assertEqual(result['qualification_id'], '')
 
     def test_wrong_base_repository_fails_closed(self):
         payload = event()
@@ -226,6 +263,19 @@ class ModeTests(unittest.TestCase):
             self.assertEqual(receipt['merge_sha'], MERGE)
             self.assertIn('candidate', summary.read_text())
             self.assertNotIn('PENNEL_CI_QUALIFICATION_CONFIG', receipt)
+
+    def test_cli_records_ordinary_qualified_default_without_benchmark_identity(self):
+        for name, ref in (('pull_request', 'refs/pull/155/merge'), ('push', 'refs/heads/main')):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                result, receipt, output, _ = self.run_cli(
+                    directory, '', GITHUB_EVENT_NAME=name, GITHUB_REF=ref)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(receipt['ci_mode'], 'candidate')
+                self.assertEqual(receipt['qualification_id'], '')
+                self.assertEqual(receipt['dependency_cache'], 'warm')
+                self.assertEqual(receipt['reason'], 'qualified-default')
+                self.assertEqual(output.read_text().splitlines(),
+                                 ['ci_mode=candidate', 'qualification_id=', 'dependency_cache=warm'])
 
     def test_cli_records_scoped_cold_setting(self):
         with tempfile.TemporaryDirectory() as directory:
