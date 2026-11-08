@@ -33,6 +33,8 @@ pub struct Shared {
     pub dictation_active: AtomicBool,
     pub dictation_jobs: AtomicUsize,
     pub paste_jobs: AtomicUsize,
+    pub writing_profile_sharing_epoch: Mutex<u64>,
+    pub writing_profile_source_gate: Mutex<()>,
 }
 
 impl Shared {
@@ -62,6 +64,8 @@ impl Shared {
             dictation_active: AtomicBool::new(false),
             dictation_jobs: AtomicUsize::new(0),
             paste_jobs: AtomicUsize::new(0),
+            writing_profile_sharing_epoch: Mutex::new(0),
+            writing_profile_source_gate: Mutex::new(()),
         })
     }
 

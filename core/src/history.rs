@@ -6,6 +6,23 @@ use crate::error::PennelError;
 
 const DAY_MS: i64 = 86_400_000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HistoryCaptureKind {
+    Legacy,
+    Dictation,
+    Command,
+}
+
+impl HistoryCaptureKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Dictation => "dictation",
+            Self::Command => "command",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HistoryStatus {
@@ -61,6 +78,12 @@ impl HistoryStore {
                 error TEXT,
                 has_audio INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS dictation_capture_provenance (
+                id TEXT PRIMARY KEY,
+                capture_kind TEXT NOT NULL,
+                profile_allowed INTEGER NOT NULL
+            );
+            DELETE FROM dictation_capture_provenance WHERE id NOT IN (SELECT id FROM dictations);
             PRAGMA user_version = 1;",
         )
         .map_err(PennelError::storage)?;
@@ -84,6 +107,7 @@ impl HistoryStore {
         Ok(id)
     }
 
+    #[cfg(test)]
     pub fn insert_done_with_id(
         &self,
         id: &str,
@@ -92,14 +116,47 @@ impl HistoryStore {
         text: &str,
         now_ms: i64,
     ) -> Result<(), PennelError> {
-        self.conn
+        self.insert_done_with_provenance(
+            id,
+            app,
+            raw,
+            text,
+            now_ms,
+            HistoryCaptureKind::Legacy,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn insert_done_with_provenance(
+        &self,
+        id: &str,
+        app: Option<&str>,
+        raw: &str,
+        text: &str,
+        now_ms: i64,
+        kind: HistoryCaptureKind,
+        profile_allowed: bool,
+    ) -> Result<(), PennelError> {
+        let transaction = self
+            .conn
+            .unchecked_transaction()
+            .map_err(PennelError::storage)?;
+        transaction
             .execute(
-                "INSERT INTO dictations VALUES (?1, ?2, ?3, ?4, ?5, 'done', NULL, 0)
+                "INSERT INTO dictations (id, created_at_ms, app_bundle_id, raw, text, status, error, has_audio)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'done', NULL, 0)
                  ON CONFLICT(id) DO UPDATE SET raw = excluded.raw, text = excluded.text,
                  status = 'done', error = NULL, has_audio = 0",
                 params![id, now_ms, app, raw, text],
             )
             .map_err(PennelError::storage)?;
+        transaction.execute(
+            "INSERT INTO dictation_capture_provenance (id,capture_kind,profile_allowed) VALUES (?1,?2,?3)
+             ON CONFLICT(id) DO UPDATE SET capture_kind=excluded.capture_kind,profile_allowed=excluded.profile_allowed",
+            params![id,kind.as_str(),profile_allowed],
+        ).map_err(PennelError::storage)?;
+        transaction.commit().map_err(PennelError::storage)?;
         // Persistence succeeded; a leftover WAV is housekeeping, not a lost transcript.
         let _ = remove_if_exists(&self.audio_path(id));
         Ok(())
@@ -115,6 +172,7 @@ impl HistoryStore {
             .map_err(PennelError::storage)
     }
 
+    #[cfg(test)]
     pub fn insert_failed(
         &self,
         app: Option<&str>,
@@ -122,15 +180,77 @@ impl HistoryStore {
         error: &str,
         now_ms: i64,
     ) -> Result<String, PennelError> {
+        self.insert_failed_with_provenance(app, wav, error, now_ms, false)
+    }
+
+    pub(crate) fn insert_failed_with_provenance(
+        &self,
+        app: Option<&str>,
+        wav: &[u8],
+        error: &str,
+        now_ms: i64,
+        profile_allowed: bool,
+    ) -> Result<String, PennelError> {
         let id = uuid::Uuid::now_v7().to_string();
         std::fs::write(self.audio_path(&id), wav).map_err(PennelError::storage)?;
-        self.conn
+        let transaction = self
+            .conn
+            .unchecked_transaction()
+            .map_err(PennelError::storage)?;
+        transaction
             .execute(
-                "INSERT INTO dictations VALUES (?1, ?2, ?3, '', '', 'failed', ?4, 1)",
+                "INSERT INTO dictations (id, created_at_ms, app_bundle_id, raw, text, status, error, has_audio)
+                 VALUES (?1, ?2, ?3, '', '', 'failed', ?4, 1)",
                 params![id, now_ms, app, error],
             )
             .map_err(PennelError::storage)?;
+        transaction.execute(
+            "INSERT INTO dictation_capture_provenance (id,capture_kind,profile_allowed) VALUES (?1,'dictation',?2)",
+            params![id,profile_allowed],
+        ).map_err(PennelError::storage)?;
+        transaction.commit().map_err(PennelError::storage)?;
         Ok(id)
+    }
+
+    pub(crate) fn capture_provenance(
+        &self,
+        id: &str,
+    ) -> Result<(HistoryCaptureKind, bool), PennelError> {
+        self.conn
+            .query_row(
+                "SELECT COALESCE(p.capture_kind,'legacy'), COALESCE(p.profile_allowed,0)
+                 FROM dictations d LEFT JOIN dictation_capture_provenance p ON d.id=p.id WHERE d.id = ?1",
+                [id],
+                |row| {
+                    let kind: String = row.get(0)?;
+                    Ok((
+                        match kind.as_str() {
+                            "dictation" => HistoryCaptureKind::Dictation,
+                            "command" => HistoryCaptureKind::Command,
+                            _ => HistoryCaptureKind::Legacy,
+                        },
+                        row.get(1)?,
+                    ))
+                },
+            )
+            .map_err(PennelError::storage)
+    }
+
+    pub(crate) fn writing_profile_entries(&self) -> Result<Vec<HistoryEntry>, PennelError> {
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT d.id, d.created_at_ms, d.app_bundle_id, d.raw, d.text, d.status, d.error, d.has_audio
+                 FROM dictations d JOIN dictation_capture_provenance p ON d.id=p.id
+                 WHERE d.status = 'done' AND p.capture_kind = 'dictation'
+                 AND p.profile_allowed = 1 ORDER BY d.created_at_ms, d.id",
+            )
+            .map_err(PennelError::storage)?;
+        statement
+            .query_map([], read_entry)
+            .map_err(PennelError::storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(PennelError::storage)
     }
 
     #[cfg(test)]
@@ -230,9 +350,20 @@ impl HistoryStore {
     }
 
     pub fn delete(&self, id: &str) -> Result<(), PennelError> {
-        self.conn
+        let transaction = self
+            .conn
+            .unchecked_transaction()
+            .map_err(PennelError::storage)?;
+        transaction
+            .execute(
+                "DELETE FROM dictation_capture_provenance WHERE id = ?1",
+                [id],
+            )
+            .map_err(PennelError::storage)?;
+        transaction
             .execute("DELETE FROM dictations WHERE id = ?1", [id])
             .map_err(PennelError::storage)?;
+        transaction.commit().map_err(PennelError::storage)?;
         remove_if_exists(&self.audio_path(id))
     }
 }
@@ -266,6 +397,97 @@ mod tests {
     use super::*;
 
     const DAY_MS: i64 = 86_400_000;
+
+    #[test]
+    fn profile_provenance_never_admits_legacy_commands_or_paused_captures() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(dir.path()).unwrap();
+        store
+            .insert_done(None, "old raw", "Old cleanup", 1)
+            .unwrap();
+        for (id, kind, allowed) in [
+            ("command", HistoryCaptureKind::Command, true),
+            ("paused", HistoryCaptureKind::Dictation, false),
+            ("eligible", HistoryCaptureKind::Dictation, true),
+        ] {
+            store
+                .insert_done_with_provenance(id, None, "spoken", "generated", 2, kind, allowed)
+                .unwrap();
+        }
+        let rows = store.writing_profile_entries().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "eligible");
+        assert_eq!(rows[0].raw, "spoken");
+        assert_eq!(
+            store.capture_provenance("eligible").unwrap(),
+            (HistoryCaptureKind::Dictation, true)
+        );
+        store.delete("eligible").unwrap();
+        assert!(store.writing_profile_entries().unwrap().is_empty());
+    }
+
+    #[test]
+    fn history_v1_migration_preserves_text_without_inventing_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join("history.sqlite")).unwrap();
+        conn.execute_batch("CREATE TABLE dictations (id TEXT PRIMARY KEY, created_at_ms INTEGER NOT NULL, app_bundle_id TEXT, raw TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, error TEXT, has_audio INTEGER NOT NULL); INSERT INTO dictations VALUES ('old', 1, NULL, 'original', 'processed', 'done', NULL, 0); PRAGMA user_version = 1;").unwrap();
+        drop(conn);
+        let store = HistoryStore::open(dir.path()).unwrap();
+        assert_eq!(store.entry("old").unwrap().raw, "original");
+        assert_eq!(
+            store.capture_provenance("old").unwrap(),
+            (HistoryCaptureKind::Legacy, false)
+        );
+        assert!(store.writing_profile_entries().unwrap().is_empty());
+        // A previous build still sees its original schema and can use its positional inserts.
+        store.conn.execute("INSERT INTO dictations VALUES ('legacy-build', 3, NULL, 'legacy raw', 'legacy text', 'done', NULL, 0)", []).unwrap();
+        assert_eq!(
+            store
+                .conn
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            store.capture_provenance("legacy-build").unwrap(),
+            (HistoryCaptureKind::Legacy, false)
+        );
+        drop(store);
+        assert!(HistoryStore::open(dir.path()).is_ok());
+    }
+
+    #[test]
+    fn legacy_deletion_cannot_leave_an_eligible_provenance_orphan() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = HistoryStore::open(directory.path()).unwrap();
+        store
+            .insert_done_with_provenance(
+                "current",
+                None,
+                "raw",
+                "text",
+                1,
+                HistoryCaptureKind::Dictation,
+                true,
+            )
+            .unwrap();
+        store
+            .conn
+            .execute("DELETE FROM dictations WHERE id='current'", [])
+            .unwrap();
+        assert!(store.writing_profile_entries().unwrap().is_empty());
+        drop(store);
+        let reopened = HistoryStore::open(directory.path()).unwrap();
+        let remaining: u32 = reopened
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM dictation_capture_provenance",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
 
     #[test]
     fn insert_and_list_newest_first() {

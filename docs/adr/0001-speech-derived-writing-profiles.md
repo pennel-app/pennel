@@ -1,0 +1,5 @@
+# Keep speech-derived writing profiles local and separately authorized
+
+Pennel learns a language-specific writing profile from the owner's original speech transcripts, using the text provider they chose. Evidence stays local and source-bound: deleting or changing a source removes its contribution. The exported guide is rendered from closed trait values, rather than model-written prose, so source quotations and meeting facts cannot become assistant context through this interface. Explicit trait overrides survive subsequent learning.
+
+Assistants retrieve guidance and compose their own drafts. The first preview uses the live desktop relay and one explicitly designated computer; it does not publish a hosted profile. Profile sharing has its own consent, audience and read permission. Existing meeting authorization never implicitly expands to profiles, and profile authorization never grants meeting reads. This adds setup and online-device requirements in exchange for a narrow sharing boundary and revocable local control.

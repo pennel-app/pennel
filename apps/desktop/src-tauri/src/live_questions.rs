@@ -51,6 +51,10 @@ pub struct LiveQuestions {
 }
 
 impl LiveQuestions {
+    pub(crate) fn is_active(&self) -> bool {
+        !self.requests.is_empty()
+    }
+
     fn reserve(&mut self, identity: QuestionIdentity) -> Result<Arc<InferenceCancellation>> {
         identity.validate()?;
         if self.used_ids.contains(&identity.request_id) {

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { visualModels, visualCallApps } from "./fixtures/model-catalog.mjs";
 
@@ -15,7 +16,7 @@ const localModels = visualModels(JSON.parse(await readFile(join(root, "core/src/
 const recordingAppIds = visualCallApps(await readFile(join(root, "core/src/rules.rs"), "utf8"));
 const pillMetrics = JSON.parse(await readFile(join(root, "assets/brand/tokens.json"), "utf8")).pill;
 const argumentsList = process.argv.slice(2);
-const options = { output: join(root, "build/visual-parity/desktop"), appearance: "both", locale: "both", cases: [], port: 0, serve: false, browser: process.env.PENNEL_CHROME };
+const options = { output: join(root, "build/visual-parity/desktop"), appearance: "both", locale: "both", cases: [], port: 0, serve: false, browser: process.env.PENNEL_CHROME, baselineRef: null };
 for (let index = 0; index < argumentsList.length; index++) {
   const name = argumentsList[index];
   if (name === "--serve") options.serve = true;
@@ -25,6 +26,7 @@ for (let index = 0; index < argumentsList.length; index++) {
   else if (name === "--locale") options.locale = argumentsList[++index];
   else if (name === "--port") options.port = Number(argumentsList[++index]);
   else if (name === "--browser") options.browser = argumentsList[++index];
+  else if (name === "--baseline-ref") options.baselineRef = argumentsList[++index];
   else if (name === "--list") { console.log(cases.map(item => item.name).join("\n")); process.exit(0); }
   else throw new Error(`Unknown option: ${name}`);
 }
@@ -34,6 +36,11 @@ const locales = options.locale === "both" ? ["en", "nl"] : [options.locale];
 const selected = options.cases.length ? cases.filter(item => options.cases.includes(item.name)) : cases;
 if (!selected.length || options.cases.some(name => !cases.some(item => item.name === name))) throw new Error("Unknown or empty visual case selection");
 const appearances = options.appearance === "both" ? ["light", "dark"] : [options.appearance];
+let baselineCommit = null;
+if (options.baselineRef !== null) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(options.baselineRef)) throw new Error("Invalid --baseline-ref");
+  baselineCommit = execFileSync("git", ["rev-parse", "--verify", `${options.baselineRef}^{commit}`], { cwd: root, encoding: "utf8" }).trim();
+}
 const meetingId = "2026-10-24 0900 Projectoverleg";
 // Default sizes of the shared app's windows (apps/desktop/src-tauri/src/workspace.rs).
 const windowSizes = { workspace: [980, 640], settings: [980, 640], history: [980, 640], dictation: [980, 640], onboarding: [640, 660] };
@@ -48,6 +55,16 @@ const server = await createServer({
   configFile: join(appRoot, "vite.config.ts"), root: appRoot, cacheDir: viteCache,
   server: { host: "127.0.0.1", port: options.port, strictPort: Boolean(options.port), hmr: false, fs: { allow: [root] } },
   plugins: [{
+    name: "pennel-owned-baseline-source",
+    enforce: "pre",
+    load(id) {
+      if (!baselineCommit || id.includes("?")) return;
+      const path = relative(root, id).replaceAll("\\", "/");
+      if (!/^(apps\/desktop\/src\/.*\.(ts|css)|assets\/locales\/.*\.json)$/.test(path)) return;
+      try { return execFileSync("git", ["show", `${baselineCommit}:${path}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); }
+      catch { return; } // Generated, ignored frontend assets retain their current canonical source.
+    },
+  }, {
     name: "pennel-owned-visual-fixtures",
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
@@ -103,7 +120,8 @@ if (options.serve) {
   let currentCase = "browser-start";
   try {
     await mkdir(options.output, { recursive: true });
-    captureManifest = { captured_at: new Date().toISOString(), complete: false, capture_method: "Owned Chromium headless page via CDP; no user screen/profile", fixture_clock: "2026-10-25T09:00:00Z", images: [] };
+    captureManifest = { captured_at: new Date().toISOString(), complete: false, capture_method: "Owned Chromium headless fixture render via CDP; no user screen/profile", baseline_commit: baselineCommit,
+      fixture_sha256: createHash("sha256").update(JSON.stringify({ cases, fixtureScript, localModels, recordingAppIds })).digest("hex"), fixture_clock: "2026-10-25T09:00:00Z", images: [] };
     await writeFile(join(options.output, "manifest.json"), JSON.stringify(captureManifest, null, 2) + "\n");
     const candidates = [options.browser, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium", "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"].filter(Boolean);
     let resolvedBrowser;
@@ -151,9 +169,9 @@ if (options.serve) {
         let rendered = false;
         for (let attempt = 0; attempt < 100; attempt++) {
           try {
-            const status = await send("Runtime.evaluate", { expression: item.window === "pill"
+            const status = await send("Runtime.evaluate", { expression: item.ready_when || (item.window === "pill"
               ? "Boolean(window.__PENNEL_FIXTURE__ && document.getElementById('pill') && !document.getElementById('pill').hidden && document.getElementById('label')?.textContent.trim())"
-              : "Boolean(window.__PENNEL_FIXTURE__ && document.getElementById('app')?.textContent.trim())", returnByValue: true });
+              : "Boolean(window.__PENNEL_FIXTURE__ && document.getElementById('app')?.textContent.trim())"), returnByValue: true });
             if (status.result.value) { rendered = true; break; }
           } catch (error) { if (!String(error).includes("context")) throw error; }
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -202,7 +220,7 @@ if (options.serve) {
         const image = await send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
         const file = `${locale}/${appearance}/${item.name}.png`;
         await writeFile(join(options.output, file), Buffer.from(image.data, "base64"));
-        manifest.images.push({ case: item.name, locale, appearance, file, ...metadata.result.value, runtime_errors: [...connection.events] });
+        manifest.images.push({ case: item.name, fixture_case_sha256: createHash("sha256").update(JSON.stringify(item)).digest("hex"), locale, appearance, file, ...metadata.result.value, runtime_errors: [...connection.events] });
         await writeFile(join(options.output, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
         if (metadata.result.value.unknown_commands.length) console.error(`${item.name}: unknown fixture commands ${metadata.result.value.unknown_commands.join(", ")}`);
         } finally {

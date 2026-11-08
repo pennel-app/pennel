@@ -338,6 +338,45 @@ impl PennelEngine {
     }
 }
 
+impl PennelEngine {
+    /// Desktop-only capability negotiation; the mobile relay contract stays unchanged.
+    pub fn cloud_relay_poll_with_capabilities(
+        &self,
+        client: &str,
+        capabilities: &[String],
+    ) -> Result<Vec<RelayRequest>, PennelError> {
+        if !self.cloud_signed_in() {
+            return Err(PennelError::NotSignedIn);
+        }
+        RelayClient::new(self.cloud_session()?).poll_with_capabilities(client, capabilities)
+    }
+
+    pub fn cloud_writing_style_source(&self, enabled: Option<bool>) -> Result<bool, PennelError> {
+        if !self.cloud_signed_in() {
+            return Err(PennelError::NotSignedIn);
+        }
+        RelayClient::new(self.cloud_session()?).writing_style_source(enabled)
+    }
+
+    pub fn cloud_writing_style_mcp_url(&self) -> String {
+        format!("{}/mcp/style", self.cloud_base_url())
+    }
+
+    /// Identity changes clear permission while holding this same gate. A late designation must
+    /// not restore the old account's permission just before the new credentials are installed.
+    pub fn enable_writing_profile_sharing_for_account(
+        &self,
+        expected_epoch: u64,
+    ) -> Result<(), PennelError> {
+        let _identity = crate::speaker_jobs::speaker_identity_guard();
+        if !self.cloud_signed_in() || self.cloud_account_epoch() != expected_epoch {
+            return Err(PennelError::Cancelled);
+        }
+        self.set_writing_profile_sharing(true)?;
+        Ok(())
+    }
+}
+
 #[uniffi::export]
 impl PennelEngine {
     /// Answers one relayed tool call from this device's meetings. Read-only.
@@ -414,6 +453,44 @@ mod tests {
         engine.update_settings(settings).unwrap();
         std::fs::create_dir_all(engine.settings().meetings_dir).unwrap();
         engine
+    }
+
+    #[test]
+    fn profile_designation_cannot_enable_permission_for_a_replaced_identity() {
+        use crate::cloud::tests::MemorySecrets;
+        use crate::cloud::{REFRESH_ACCOUNT, SecretStore};
+        let dir = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into()).unwrap();
+        let first = Arc::new(MemorySecrets::default());
+        first.set(
+            REFRESH_ACCOUNT.into(),
+            Some("synthetic-first-session".into()),
+        );
+        engine.set_secret_store(first).unwrap();
+        assert!(engine.cloud_signed_in());
+        let old = engine.cloud_account_epoch();
+        let second = Arc::new(MemorySecrets::default());
+        second.set(
+            REFRESH_ACCOUNT.into(),
+            Some("synthetic-second-session".into()),
+        );
+        engine.set_secret_store(second).unwrap();
+        assert!(engine.cloud_signed_in());
+        assert!(
+            engine
+                .enable_writing_profile_sharing_for_account(old)
+                .is_err()
+        );
+        assert!(!engine.writing_profile_sharing_enabled());
+        engine
+            .enable_writing_profile_sharing_for_account(engine.cloud_account_epoch())
+            .unwrap();
+        assert!(engine.writing_profile_sharing_enabled());
+        // Replacing credentials clears sharing without any network logout against a real host.
+        engine
+            .set_secret_store(Arc::new(MemorySecrets::default()))
+            .unwrap();
+        assert!(!engine.writing_profile_sharing_enabled());
     }
 
     fn add(engine: &PennelEngine, title: &str, hour: u32, said: &str) -> String {
