@@ -1,5 +1,9 @@
 {
   "backend.live_question_too_large": "Je vraag is te lang voor deze configuratie. Ze werd niet ingekort of verstuurd. Maak je vraag korter en probeer opnieuw.",
+  "backend.failed_recovery_audio_changed_before": "De herstelaudio is gewijzigd voordat de spraakherkenning begon.",
+  "backend.failed_recovery_audio_changed_during": "De herstelaudio is tijdens de spraakherkenning gewijzigd.",
+  "backend.failed_recovery_unverified_provenance": "Een deel van de herstelaudio kan niet aan het oorspronkelijke transcript worden gekoppeld. Bewaar de bestanden en controleer de bronnen voordat je de spraakherkenning opnieuw probeert.",
+  "backend.failed_recovery_restore_metadata": "Herstel de broninformatie van het transcript voordat je de spraakherkenning opnieuw probeert.",
   "backend.retranscription_unknown_tracks": "De oorspronkelijke opnamesporen konden niet worden vastgesteld. Voor oudere transcripties met sprekerlabels zijn beide sporen nodig.",
   "backend.retranscription_local_model_required": "Kies een lokaal spraakmodel voor het opnieuw transcriberen van een opname.",
   "backend.retranscription_download_model": "Download eerst het gekozen lokale spraakmodel.",

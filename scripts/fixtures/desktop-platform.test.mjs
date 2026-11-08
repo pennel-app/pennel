@@ -35,6 +35,20 @@ test("failed-only fixture preserves partial progress, zero results and notes on 
   assert.equal((await api.invoke("meeting_detail", { id })).notes, notes);
 });
 
+test("partially eligible failed-recovery fixture retries only retained passages", async () => {
+  const context = fixture("meeting-failed-recovery-partial-check");
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = (await api.invoke("meeting_detail", { id })).failed_recovery;
+  assert.equal(before.failed_count, 2);
+  assert.equal(before.retryable_count, 1);
+  assert.equal(before.reason_code, "no_retained_audio");
+  assert.equal(await api.invoke("retranscribe_meeting", { id }), 1);
+  const after = (await api.invoke("meeting_detail", { id })).failed_recovery;
+  assert.equal(after.failed_count, 1);
+  assert.equal(after.retryable_count, 0);
+  assert.equal(after.status, "unavailable");
+});
+
 test("summary fixtures require current revisions and preserve an edited version for recovery", async () => {
   const api = fixture("meeting-notes").__PENNEL_PLATFORM__, id = "2026-10-24 0900 Projectoverleg";
   const before = await api.invoke("meeting_summary", { id });

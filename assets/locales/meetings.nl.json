@@ -534,6 +534,7 @@
   "meetings.failed_recovery_audio_changed": "Sommige herstelaudio is gewijzigd. Bewaar de bestanden en controleer de opname voordat je opnieuw probeert.",
   "meetings.failed_recovery_unreadable": "Sommige herstelaudio kan niet worden gelezen. Bewaar de bestanden en controleer de opname.",
   "meetings.failed_recovery_no_audio": "Er is geen bijpassende herstelaudio meer. Kies Opname opnieuw transcriberen als de volledige opname beschikbaar is.",
+  "meetings.failed_recovery_some_no_audio": "Voor sommige delen is er geen bijpassende herstelaudio meer. Probeer de beschikbare delen opnieuw, of kies Opname opnieuw transcriberen als de volledige opname beschikbaar is.",
   "meetings.failed_recovery_unknown_help": "De herstelmogelijkheden konden niet worden gecontroleerd. Open de meeting opnieuw om dit nogmaals te controleren.",
   "meetings.failed_recovery_outcome_complete": "Er zijn geen mislukte delen meer.",
   "meetings.failed_recovery_outcome_partial": "Een deel van het transcript is hersteld. Controleer de resterende transcriptiestatus.",

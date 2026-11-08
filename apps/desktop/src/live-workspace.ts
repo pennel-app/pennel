@@ -500,10 +500,12 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     const count = control.failedCount;
     const counts = count === null || count === 0 ? "" : t("meetings.failed_recovery_count", { count });
     const available = control.retryableCount === null || count === null || count === 0 ? "" : t("meetings.failed_recovery_available", { retryable: control.retryableCount, count });
+    const partiallyAvailable = count !== null && control.retryableCount !== null && control.retryableCount > 0 && control.retryableCount < count;
     const reasons: Record<string, TranslationKey> = {
       metadata_unavailable: "meetings.failed_recovery_metadata", unverified_provenance: "meetings.failed_recovery_unverified",
       audio_changed: "meetings.failed_recovery_audio_changed", unreadable_audio: "meetings.failed_recovery_unreadable",
-      no_retained_audio: "meetings.failed_recovery_no_audio", status_unavailable: "meetings.failed_recovery_unknown_help",
+      no_retained_audio: partiallyAvailable ? "meetings.failed_recovery_some_no_audio" : "meetings.failed_recovery_no_audio",
+      status_unavailable: "meetings.failed_recovery_unknown_help",
     };
     const reason = control.reasonCode ? t(reasons[control.reasonCode] ?? "meetings.failed_recovery_unknown_help") : "";
     failedRecoveryDescription.textContent = [counts, available, reason].filter(Boolean).join(" ");

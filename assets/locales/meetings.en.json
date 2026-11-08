@@ -534,6 +534,7 @@
   "meetings.failed_recovery_audio_changed": "Some retained audio has changed. Keep the files and review the recording before retrying.",
   "meetings.failed_recovery_unreadable": "Some retained audio cannot be read. Keep the files and check the recording.",
   "meetings.failed_recovery_no_audio": "No matching retry audio remains. If a full recording is available, use Retranscribe recording.",
+  "meetings.failed_recovery_some_no_audio": "Some passages have no matching retry audio. Retry the available passages, or use Retranscribe recording if a full recording is available.",
   "meetings.failed_recovery_unknown_help": "Recovery availability could not be checked. Reopen the meeting to check again.",
   "meetings.failed_recovery_outcome_complete": "No failed passages remain.",
   "meetings.failed_recovery_outcome_partial": "Some passages were recovered. Review the remaining transcription status.",

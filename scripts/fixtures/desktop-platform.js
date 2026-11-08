@@ -283,6 +283,8 @@
   let activeMeetingId = meetingId;
   let metadataStatus = options.metadata_status || "valid";
   let failedRecoveryMode = options.failed_recovery_mode || "success";
+  let failedRecoveryError = options.failed_recovery_error || null;
+  let failedRecoveryRetryable = options.failed_recovery_retryable;
   let failedRecoveryDelay = 0;
   let failedRecoveryOverride;
   let failedRecoveryPending = 0;
@@ -353,7 +355,7 @@
     const failed = recordForId(id)?.transcript.filter(row => row.failed).length ?? 0;
     if (options.failed_recovery_state === "metadata_unavailable" || !["valid", "absent"].includes(metadataStatus)) return { failed_count: null, retryable_count: null, status: "unavailable", reason_code: "metadata_unavailable" };
     const reason = failed && (options.failed_recovery_state || (!options.failed_recovery ? "no_retained_audio" : null));
-    const retryable = failed && !reason ? failed : 0;
+    const retryable = reason ? Math.min(failed, Math.max(0, failedRecoveryRetryable ?? 0)) : failed;
     return { failed_count: failed, retryable_count: retryable, status: !failed ? "complete" : retryable ? "retryable" : "unavailable", reason_code: reason || null };
   };
   const summaryDocuments = new Map();
@@ -1299,10 +1301,12 @@
         failedRecoveryPending++;
         try {
           if (failedRecoveryDelay) await new Promise(resolve => setTimeout(resolve, failedRecoveryDelay));
+          if (failedRecoveryError) throw Error(failedRecoveryError);
           if (failedRecoveryMode === "zero") return 0;
           const record = recordForId(args.id), failed = record.transcript.filter(row => row.failed);
-          const selected = failedRecoveryMode === "partial_error" ? failed.slice(0, 1) : failed;
+          const selected = failed.slice(0, failedRecoveryMode === "partial_error" ? Math.min(1, plan.retryable_count) : plan.retryable_count);
           for (const row of selected) { row.failed = false; row.text = "Synthetic recovered passage."; }
+          if (failedRecoveryRetryable !== undefined) failedRecoveryRetryable = Math.max(0, failedRecoveryRetryable - selected.length);
           transcriptRevision++; retainActiveEdits();
           if (failedRecoveryMode === "partial_error") throw Error("Synthetic speech service unavailable after partial recovery.");
           return selected.length;
@@ -1428,7 +1432,8 @@
   });
   globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
     recovery: { mode: value => { if (!["success", "zero", "partial_error"].includes(value)) throw Error("Unknown recovery fixture mode"); failedRecoveryMode = value; },
-      plan: value => { failedRecoveryOverride = clone(value); }, delay: value => { failedRecoveryDelay = value; }, pending: () => failedRecoveryPending },
+      plan: value => { failedRecoveryOverride = clone(value); }, error: value => { failedRecoveryError = value; },
+      delay: value => { failedRecoveryDelay = value; }, pending: () => failedRecoveryPending },
     ...(options.owner_review ? { review: { resetProfile,
       openedWindows: () => clone(openedWindows),
       failDownloads: message => { downloadFailure = message || null; }, failSaves: value => { saveFailure = Boolean(value); },
