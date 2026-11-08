@@ -1,0 +1,153 @@
+{
+  "recorded_at": "2026-11-08T19:22:55.926135+00:00",
+  "evidence_class": "combined local tests, owned headless mock renders and offline replay",
+  "source_head": "ece104f8b7b8059aae5be58f16ff59987561b0a2",
+  "integrated_main": "a60ade30e2e5c837c9069b10385c9e22a2fa282d",
+  "rust_checks": {
+    "integrated-core-default.log": {
+      "passed": 1116,
+      "ignored": 7,
+      "sha256": "f26ccd963cd2cc47d348449f0b8fbe78ae330226be8e168ca31a9c3aca289b90"
+    },
+    "integrated-core-evaluation.log": {
+      "passed": 1117,
+      "ignored": 5,
+      "sha256": "f7054a17e8de9bb6009b13f5a9a80cd4e717fccc01a61554fff7072e36e5cddd"
+    },
+    "integrated-backend.log": {
+      "passed": 275,
+      "ignored": 0,
+      "sha256": "a8890642f06858f516a106b3aefd78f891a21e166f014da1402e64225180ce13"
+    }
+  },
+  "frontend": {
+    "passed": 429,
+    "typecheck_build": "passed",
+    "test_log_sha256": "9de5391cc3bab0f8fa8865481f3fb7f8ff93c223247554c6d0f708a300759e15",
+    "build_log_sha256": "1357b37d436a4e029c1b419fb1cdad92027ab4e59e83500065ec4dfaba7cb778"
+  },
+  "render_matrices": [
+    {
+      "matrix": "recovery",
+      "images": 40,
+      "failures": 0,
+      "manifest_sha256": "3af46e4cb88bb3018b5df14f9a6a603370076176603cab2ebbe96e5fdf71efa2"
+    },
+    {
+      "matrix": "settings",
+      "images": 16,
+      "failures": 0,
+      "manifest_sha256": "67e7d58117eaf148cf7a9ed95efa4e4acbea15d5f695d5ba9616a7f4dd9a09f6"
+    }
+  ],
+  "published_image_parity": [
+    {
+      "case": "meeting-failed-recovery",
+      "locale": "en",
+      "appearance": "light",
+      "identical": true,
+      "sha256": "19fc336e22136f972b10e96f32393d0bad3a9affacf79e001e35df142d79447f"
+    },
+    {
+      "case": "meeting-failed-recovery-partial-check",
+      "locale": "en",
+      "appearance": "light",
+      "identical": true,
+      "sha256": "f44feb40121b92a02886b1404d92ce48ca0290bd97fd8b7dcec5a1a97b36c9ac"
+    },
+    {
+      "case": "meeting-failed-recovery-integrity-error-check",
+      "locale": "en",
+      "appearance": "light",
+      "identical": true,
+      "sha256": "44f46a2afefea1eee2f43662dfae87c8472c2f506b8dd2608e6e4dcb84074a1e"
+    },
+    {
+      "case": "meeting-failed-recovery",
+      "locale": "en",
+      "appearance": "dark",
+      "identical": true,
+      "sha256": "7cfb241af5a1629a822bf3113956d7f6cdbf17c9b5c1ba0cff60785cc6d5b1bb"
+    },
+    {
+      "case": "meeting-failed-recovery-partial-check",
+      "locale": "en",
+      "appearance": "dark",
+      "identical": true,
+      "sha256": "13cc2f585af5d75772f298745c143e8b837c108a11df7ae9529bf7567f93dbe2"
+    },
+    {
+      "case": "meeting-failed-recovery-integrity-error-check",
+      "locale": "en",
+      "appearance": "dark",
+      "identical": true,
+      "sha256": "f71b71ad5ada0f41f23ea23b3c97d808c229fbbd73772147532da4efdeecabd4"
+    },
+    {
+      "case": "meeting-failed-recovery",
+      "locale": "nl",
+      "appearance": "light",
+      "identical": true,
+      "sha256": "159b6e0c46c31715c6d37be0f4e1b88a64b44b2dd3812aaa1b5e393efa87b3e1"
+    },
+    {
+      "case": "meeting-failed-recovery-partial-check",
+      "locale": "nl",
+      "appearance": "light",
+      "identical": true,
+      "sha256": "ad551b4c432edf7e61508137f1b066595ee8d11279f3dba86e7899f43e878c09"
+    },
+    {
+      "case": "meeting-failed-recovery-integrity-error-check",
+      "locale": "nl",
+      "appearance": "light",
+      "identical": true,
+      "sha256": "ec6df5c131256db7ddb4762efb9b8a9035f95518e492202e001cff43888548d1"
+    },
+    {
+      "case": "meeting-failed-recovery",
+      "locale": "nl",
+      "appearance": "dark",
+      "identical": true,
+      "sha256": "e995172e0a5ca5b6da2eb37afb2356473e277f639ca8b0048133c583cd4a4097"
+    },
+    {
+      "case": "meeting-failed-recovery-partial-check",
+      "locale": "nl",
+      "appearance": "dark",
+      "identical": true,
+      "sha256": "0996738379e3090c408cb3ba9baddbe07c6bc33a35b33486182d77d53a229e54"
+    },
+    {
+      "case": "meeting-failed-recovery-integrity-error-check",
+      "locale": "nl",
+      "appearance": "dark",
+      "identical": true,
+      "sha256": "e03bcc39d4959c38af88027b08067a58f60451b99877d1dad1828baef4cbcf58"
+    }
+  ],
+  "offline_replay": {
+    "source_head": "ece104f8b7b8059aae5be58f16ff59987561b0a2",
+    "main_base": "a60ade30e2e5c837c9069b10385c9e22a2fa282d",
+    "bridge_sha256": "630bcb95b4615610234915a32afd038f37011f2b3be712fae95d9137b134601c",
+    "original_bridge_sha256": "e8e2022ae3d11e65e26e27b83f2c4152964d2aa801a9214446326615780d334c",
+    "original_freeze_sha256": "8e416f286e1ada12002d6893d56f055c06f33849a039f7cef176a92bbf73511d",
+    "production_windows_wire_and_sources_identical": true,
+    "snapshot_digests_identical": true,
+    "changed_source_fingerprints": {
+      "meeting_utterances.rs": {
+        "before": "ddc03e525e097bcf8ccf91f42bfbcded00ff92276e22e1fd22a4741dcbd50819",
+        "after": "199b0a68203ac28758848bd70503104d8548521de39c4e51581ec94aecd93693"
+      }
+    },
+    "historical_export_rejected": "finished_export_changed",
+    "refrozen_offline_replay_status": "identity_unavailable",
+    "original_freeze_unchanged": true,
+    "model_inference": false,
+    "network_requests": 0,
+    "production_admission": false
+  },
+  "qualification": false,
+  "production_admission": false,
+  "qualification_adopted_records": 0
+}
