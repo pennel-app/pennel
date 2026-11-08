@@ -80,7 +80,6 @@ export function writingErrorText(code: string | null | undefined): string {
   if (!code) return "";
   if (code === "provider_unavailable" || code === "model_not_configured") return t("settings.writing.error.provider");
   if (code === "connection_unavailable" || code === "connection_failed") return t("settings.writing.sharing.connection_error");
-  if (code === "preview_only") return t("settings.writing.error.preview");
   if (code === "busy") return t("settings.writing.error.busy");
   if (code === "signed_out" || code === "unauthorized") return t("settings.writing.sharing.sign_in");
   return t("settings.writing.error.generic");

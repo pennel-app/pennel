@@ -289,6 +289,27 @@ fn dispatch(inner: &Arc<Inner>, relay: &Arc<dyn Relay>, request: RelayRequest, g
 
 struct EngineRelay(Arc<Shared>);
 
+impl EngineRelay {
+    fn capabilities(&self) -> Vec<String> {
+        let mut capabilities = Vec::new();
+        if self.0.settings().claude_access {
+            capabilities.extend(
+                [
+                    "search_meetings",
+                    "list_recent_meetings",
+                    "get_meeting",
+                    "ask_meetings",
+                ]
+                .map(str::to_owned),
+            );
+        }
+        if self.0.engine.writing_profile_sharing_enabled() {
+            capabilities.push("get_writing_profile".into());
+        }
+        capabilities
+    }
+}
+
 impl Relay for EngineRelay {
     fn active(&self) -> bool {
         should_run(
@@ -304,7 +325,7 @@ impl Relay for EngineRelay {
     fn permitted(&self, request: &RelayRequest) -> bool {
         self.0.engine.cloud_signed_in()
             && if request.tool == "get_writing_profile" {
-                self.0.preview && self.0.engine.writing_profile_sharing_enabled()
+                self.0.engine.writing_profile_sharing_enabled()
             } else {
                 self.0.settings().claude_access
             }
@@ -325,24 +346,9 @@ impl Relay for EngineRelay {
     }
 
     fn poll(&self) -> Result<Vec<RelayRequest>, PennelError> {
-        let mut capabilities = Vec::new();
-        if self.0.settings().claude_access {
-            capabilities.extend(
-                [
-                    "search_meetings",
-                    "list_recent_meetings",
-                    "get_meeting",
-                    "ask_meetings",
-                ]
-                .map(str::to_owned),
-            );
-        }
-        if self.0.preview && self.0.engine.writing_profile_sharing_enabled() {
-            capabilities.push("get_writing_profile".into());
-        }
         self.0.engine.cloud_relay_poll_with_capabilities(
             &format!("pennel-desktop/{}", self.0.version),
-            &capabilities,
+            &self.capabilities(),
         )
     }
 
@@ -520,6 +526,54 @@ mod tests {
         assert!(should_run(true, true));
         assert!(!should_run(true, false));
         assert!(!should_run(false, true));
+    }
+
+    #[test]
+    fn production_profile_relay_preserves_independent_meeting_permissions() {
+        let directory = tempfile::tempdir().unwrap();
+        let shared = Shared::testing_production(directory.path().to_path_buf());
+        shared
+            .secrets
+            .set("pennel-cloud-refresh", "synthetic-session")
+            .unwrap();
+        shared
+            .engine
+            .set_secret_store(shared.secrets.clone())
+            .unwrap();
+        let relay = EngineRelay(shared.clone());
+        let profile = RelayRequest {
+            tool: "get_writing_profile".into(),
+            arguments_json: r#"{"language":"en"}"#.into(),
+            ..request("profile")
+        };
+        assert!(!relay.active());
+        assert!(!relay.permitted(&profile));
+        assert!(relay.capabilities().is_empty());
+
+        shared.engine.set_writing_profile_sharing(true).unwrap();
+        assert!(relay.active());
+        assert!(relay.permitted(&profile));
+        assert!(!relay.permitted(&request("meetings")));
+        assert_eq!(relay.capabilities(), ["get_writing_profile"]);
+        assert!(
+            matches!(relay.answer(&profile), RelayAnswer::Text { text } if text.contains("insufficient_evidence"))
+        );
+
+        shared.engine.set_writing_profile_sharing(false).unwrap();
+        let mut settings = shared.settings();
+        settings.claude_access = true;
+        shared.engine.update_settings(settings).unwrap();
+        assert!(relay.active());
+        assert!(!relay.permitted(&profile));
+        assert!(relay.permitted(&request("meetings")));
+        assert_eq!(relay.capabilities().len(), 4);
+        assert!(
+            !relay
+                .capabilities()
+                .iter()
+                .any(|tool| tool == "get_writing_profile")
+        );
+        assert!(matches!(relay.answer(&profile), RelayAnswer::Failed { .. }));
     }
 
     #[test]

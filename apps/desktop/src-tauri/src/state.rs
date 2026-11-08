@@ -40,13 +40,34 @@ pub struct Shared {
 impl Shared {
     #[cfg(test)]
     pub(crate) fn testing(data_dir: PathBuf) -> Arc<Self> {
-        let engine = PennelEngine::new_preview(data_dir.to_string_lossy().into_owned()).unwrap();
+        Self::testing_variant(data_dir, true)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn testing_production(data_dir: PathBuf) -> Arc<Self> {
+        Self::testing_variant(data_dir, false)
+    }
+
+    #[cfg(test)]
+    fn testing_variant(data_dir: PathBuf, preview: bool) -> Arc<Self> {
+        let engine = if preview {
+            PennelEngine::new_preview(data_dir.to_string_lossy().into_owned()).unwrap()
+        } else {
+            std::fs::create_dir_all(&data_dir).unwrap();
+            Settings {
+                meetings_dir: data_dir.join("Meetings").to_string_lossy().into_owned(),
+                ..pennel_core::default_settings()
+            }
+            .save(&data_dir.join("settings.json"))
+            .unwrap();
+            PennelEngine::new(data_dir.to_string_lossy().into_owned()).unwrap()
+        };
         let (dictation, _) = std::sync::mpsc::channel();
         Arc::new(Self {
             system_interface_language: pennel_core::InterfaceLanguage::English,
             engine,
             version: "0.0.0-test".into(),
-            preview: true,
+            preview,
             migration_warning: None,
             data_dir,
             dictation,
