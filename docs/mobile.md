@@ -587,8 +587,10 @@ The four labeled light/dark notice comparisons on the PR use the same synthetic 
 
 ## Writing-profile shared-core compatibility — 8 November 2026
 
-[#184](https://github.com/pennel-app/pennel/issues/184) adds desktop-preview-only writing-profile APIs without changing UniFFI contracts or exposing mobile profile learning/sharing. Original dictation provenance remains outside the unchanged schema-v1 history row; attribution has an optional owner-profile fingerprint.
+[#184](https://github.com/pennel-app/pennel/issues/184) adds desktop writing-profile APIs without changing UniFFI contracts or exposing mobile profile learning/sharing. Original dictation provenance remains outside the unchanged schema-v1 history row; attribution has an optional owner-profile fingerprint.
 
 Verification used `make mobile-test`, `scripts/with-toolchain.sh bash scripts/build-mobile-core-ios.sh`, clean/repeated `npm run test:prebuild` in an isolated source copy, `cp apps/mobile/Podfile.lock apps/mobile/ios/Podfile.lock`, pinned `pod _1.16.2_ install --deployment` from `apps/mobile/ios`, and `npm run build:ios` from `apps/mobile`. Type/plugin/widget/UI checks and 116 MobileKit tests passed; device/simulator core preparation, clean/repeated generation and the unsigned Release simulator app build passed. An older generated Pods graph was refreshed from its existing canonical lock; no dependency versions changed.
 
-Existing Preview data, credentials and native build artifacts were preserved. No physical iPhone session was started. iPhone corpus contribution, signed-device/keyboard acceptance and real style quality remain outside this desktop preview; see [the receipt](evidence/writing-profile-184.md) and [profile acceptance](writing-profile.md).
+Existing Preview data, credentials and native build artifacts were preserved. No physical iPhone session was started. iPhone corpus contribution, signed-device/keyboard acceptance and real style quality remain outside this desktop feature; see [the receipt](evidence/writing-profile-184.md) and [profile acceptance](writing-profile.md).
+
+Production desktop availability follows in [PR #187](https://github.com/pennel-app/pennel/pull/187). The regular desktop and Preview keep separate data and accounts; mobile profile controls and corpus contribution remain outside this change. The follow-up rebuilt both iOS core targets and confirmed all generated FFI files unchanged.
