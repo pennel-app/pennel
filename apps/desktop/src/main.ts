@@ -64,7 +64,7 @@ interface Mounted {
 }
 
 const tabs: [string, TranslationKey, View][] = [
-  ["dictation", "navigation.dictation", dictationSettings], ["meeting-settings", "navigation.meetings", meetingTaskSettings],
+  ["dictation", "navigation.dictation", dictationSettings], ["dictionary", "navigation.dictionary", dictionaryView], ["meeting-settings", "navigation.meetings", meetingTaskSettings],
   ["appearance", "navigation.appearance", appearanceView], ["account", "navigation.sync_account", accountView],
   ["advanced", "navigation.advanced", advancedSettings],
 ];
@@ -650,7 +650,6 @@ function settingsDisclosure(title: TranslationKey, child: HTMLElement, id: strin
 function dictationSettings(ctx: Context): HTMLElement {
   const tab = navigation.current.tab;
   return h("div", { class: "task-settings dictation-task-settings" }, settingsTaskRows(ctx, ["dictation_stt", "llm"]), dictationView(ctx),
-    settingsDisclosure("navigation.dictionary", dictionaryView(ctx), "dictionary", tab === "dictionary"),
     settingsDisclosure("navigation.styles", stylesView(ctx), "styles", tab === "styles"));
 }
 

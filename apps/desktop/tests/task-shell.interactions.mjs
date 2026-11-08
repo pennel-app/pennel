@@ -59,7 +59,7 @@ export async function checkTaskShell() {
     const draft = "Owned dirty pad draft across task Settings.";
     edit(document.querySelector("textarea.dictation-pad"), draft);
     click(document.querySelector(".library-settings"));
-    await until(() => document.querySelectorAll("[data-settings-category]").length === 5, "Settings did not consolidate to five task categories.");
+    await until(() => document.querySelectorAll("[data-settings-category]").length === 6, "Settings did not consolidate to six task categories.");
     assert(await api.padText() === draft, "Opening Settings abandoned the dirty pad draft.");
     click(document.querySelector(".settings-back"));
     await until(() => document.querySelector("textarea.dictation-pad")?.value === draft, "Settings Back did not restore Write in Pennel and its draft.");
