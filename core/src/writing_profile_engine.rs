@@ -12,12 +12,6 @@ struct SpeechSample {
     text: String,
 }
 
-fn profile_error(code: &str) -> PennelError {
-    PennelError::InvalidResponse {
-        message: code.into(),
-    }
-}
-
 fn digest(bytes: &[u8]) -> String {
     crate::models::hex(&Sha256::digest(bytes))
 }
@@ -89,14 +83,6 @@ fn eligible_owner_turn(row: &crate::MeetingUtterance) -> bool {
 }
 
 impl PennelEngine {
-    fn ensure_writing_profile_preview(&self) -> Result<(), PennelError> {
-        if self.preview {
-            Ok(())
-        } else {
-            Err(profile_error("preview_only"))
-        }
-    }
-
     fn writing_profile_samples(&self) -> Result<Vec<SpeechSample>, PennelError> {
         let mut result = Vec::new();
         let Some(started_at) = self.writing_profile.lock().unwrap().started_at_ms() else {
@@ -217,25 +203,22 @@ impl PennelEngine {
     }
 
     pub fn writing_profile_learning_enabled(&self) -> bool {
-        self.preview && self.writing_profile.lock().unwrap().learning_enabled()
+        self.writing_profile.lock().unwrap().learning_enabled()
     }
 
     pub fn writing_profile_sharing_enabled(&self) -> bool {
-        self.preview && self.writing_profile.lock().unwrap().sharing_enabled()
+        self.writing_profile.lock().unwrap().sharing_enabled()
     }
 
     pub fn writing_profile_status(&self) -> Result<Value, PennelError> {
-        if self.preview {
-            self.reconcile_writing_profile()?;
-        }
+        self.reconcile_writing_profile()?;
         let mut status = serde_json::to_value(self.writing_profile.lock().unwrap().status())
             .map_err(PennelError::storage)?;
-        status["available"] = self.preview.into();
+        status["available"] = true.into();
         Ok(status)
     }
 
     pub fn set_writing_profile_learning(&self, enabled: bool) -> Result<Value, PennelError> {
-        self.ensure_writing_profile_preview()?;
         {
             let _capture = self.inference_capture_gate();
             self.writing_profile
@@ -248,7 +231,6 @@ impl PennelEngine {
     }
 
     pub fn set_writing_profile_sharing(&self, enabled: bool) -> Result<Value, PennelError> {
-        self.ensure_writing_profile_preview()?;
         self.writing_profile.lock().unwrap().set_sharing(enabled)?;
         self.writing_profile_status()
     }
@@ -258,7 +240,6 @@ impl PennelEngine {
         source_id: &str,
         excluded: bool,
     ) -> Result<Value, PennelError> {
-        self.ensure_writing_profile_preview()?;
         {
             let _capture = self.inference_capture_gate();
             self.reconcile_writing_profile()?;
@@ -277,7 +258,6 @@ impl PennelEngine {
         trait_key: &str,
         value: Option<&str>,
     ) -> Result<Value, PennelError> {
-        self.ensure_writing_profile_preview()?;
         {
             let _capture = self.inference_capture_gate();
             self.writing_profile
@@ -290,7 +270,6 @@ impl PennelEngine {
     }
 
     pub fn delete_writing_profile(&self) -> Result<Value, PennelError> {
-        self.ensure_writing_profile_preview()?;
         {
             let _capture = self.inference_capture_gate();
             self.writing_profile.lock().unwrap().reset()?;
@@ -300,7 +279,6 @@ impl PennelEngine {
     }
 
     pub fn writing_profile_shared(&self, language: &str) -> Result<Value, PennelError> {
-        self.ensure_writing_profile_preview()?;
         self.reconcile_writing_profile()?;
         serde_json::to_value(self.writing_profile.lock().unwrap().shared(language)?)
             .map_err(PennelError::storage)
@@ -308,7 +286,6 @@ impl PennelEngine {
 
     /// Processes a bounded batch. The desktop caller debounces wakes; the gate also covers manual refresh.
     pub fn refresh_writing_profile(self: &Arc<Self>) -> Result<Value, PennelError> {
-        self.ensure_writing_profile_preview()?;
         let Ok(_refresh) = self.writing_profile_refresh.try_lock() else {
             return self.writing_profile_status();
         };
@@ -481,10 +458,21 @@ impl PennelEngine {
 mod tests {
     use super::*;
 
+    fn production_engine(directory: &std::path::Path) -> Arc<PennelEngine> {
+        let settings_path = directory.join("settings.json");
+        if !settings_path.exists() {
+            // Opening production fixtures must never inspect the user's default meeting library.
+            let mut settings = crate::settings::default_settings();
+            settings.meetings_dir = directory.join("Meetings").to_string_lossy().into_owned();
+            settings.save(&settings_path).unwrap();
+        }
+        PennelEngine::new(directory.to_string_lossy().into_owned()).unwrap()
+    }
+
     fn configured_engine(url: &str) -> (tempfile::TempDir, Arc<PennelEngine>) {
         use crate::cloud::SecretStore;
         let directory = tempfile::tempdir().unwrap();
-        let engine = PennelEngine::new_preview(directory.path().to_string_lossy().into()).unwrap();
+        let engine = production_engine(directory.path());
         // Other parallel tests deliberately preempt the global pool; these tests own their pool.
         *engine.writing_profile_test_pool.lock().unwrap() = Some(Arc::new(
             crate::meeting_scheduler::PhysicalInferencePool::default(),
@@ -558,6 +546,21 @@ mod tests {
         assert_eq!(status["languages"][0]["status"], "ready");
         assert_eq!(status["languages"][0]["word_count"], 1080);
         engine.set_writing_profile_sharing(true).unwrap();
+        engine
+            .set_writing_profile_trait("en", "directness", Some("indirect"))
+            .unwrap();
+        let shared = engine.writing_profile_shared("en").unwrap();
+        let directness = shared["traits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["key"] == "directness")
+            .unwrap();
+        assert_eq!(directness["value"], "indirect");
+        assert_eq!(directness["overridden"], true);
+        engine
+            .set_writing_profile_trait("en", "directness", None)
+            .unwrap();
         engine.set_writing_profile_learning(false).unwrap();
         engine.delete_history("one".into()).unwrap();
         let shared = engine.writing_profile_shared("en").unwrap();
@@ -621,8 +624,7 @@ mod tests {
     #[test]
     fn legacy_owner_binding_is_not_reassigned_and_stamped_recognition_restores_eligibility() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().to_string_lossy().to_string();
-        let engine = PennelEngine::new_preview(path.clone()).unwrap();
+        let engine = production_engine(directory.path());
         let owner_a = vec![1.0, 0.0];
         let owner_b = vec![0.0, 1.0];
         engine
@@ -658,7 +660,7 @@ mod tests {
             1
         );
         drop(engine);
-        let engine = PennelEngine::new_preview(path).unwrap();
+        let engine = production_engine(directory.path());
         assert_eq!(
             engine.writing_profile_status().unwrap()["sources"]
                 .as_array()
@@ -694,7 +696,7 @@ mod tests {
     #[test]
     fn ordinary_capture_admission_survives_retry_without_admitting_legacy_history() {
         let dir = tempfile::tempdir().unwrap();
-        let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into()).unwrap();
+        let engine = production_engine(dir.path());
         engine.set_writing_profile_learning(true).unwrap();
         let history = engine.history.lock().unwrap();
         history
@@ -731,13 +733,148 @@ mod tests {
     }
 
     #[test]
-    fn profile_mutation_and_export_are_preview_only() {
+    fn production_dictation_records_learning_consent_at_capture() {
+        let mut server = mockito::Server::new();
+        let (_directory, engine) = configured_engine(&server.url());
+        let mut settings = engine.settings();
+        settings.dictation_stt = settings.llm.clone();
+        settings.mode = DictationMode::Fast;
+        engine.update_settings(settings).unwrap();
+        let recognition = server
+            .mock("POST", "/audio/transcriptions")
+            .with_body(r#"{"text":"Words spoken during an ordinary dictation."}"#)
+            .expect(2)
+            .create();
+        let request = || DictationRequest {
+            samples: (0..16000)
+                .map(|i| 0.2 * (i as f32 * 440.0 * std::f32::consts::TAU / 16000.0).sin())
+                .collect(),
+            sample_rate: 16000,
+            app_bundle_id: None,
+            keys: ApiKeys {
+                by_provider: HashMap::from([(
+                    "profile-provider".into(),
+                    "synthetic-profile-key".into(),
+                )]),
+            },
+        };
+        engine.set_writing_profile_learning(false).unwrap();
+        engine.dictate(request()).unwrap();
+        engine.set_writing_profile_learning(true).unwrap();
+        let captured = engine.dictate(request()).unwrap();
+        let samples = engine.writing_profile_samples().unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(
+            samples[0].source.id,
+            format!("dictation:{}:0", captured.history_id)
+        );
+        assert_eq!(
+            samples[0].text,
+            "Words spoken during an ordinary dictation."
+        );
+        recognition.assert();
+    }
+
+    #[test]
+    fn production_profile_is_off_by_default_and_controls_survive_reopening() {
         let dir = tempfile::tempdir().unwrap();
-        let engine = PennelEngine::new(dir.path().to_string_lossy().into()).unwrap();
+        let engine = production_engine(dir.path());
+        let status = engine.refresh_writing_profile().unwrap();
+        assert_eq!(status["available"], true);
+        assert_eq!(status["learning_enabled"], false);
+        assert_eq!(status["sharing_enabled"], false);
+        assert!(status["started_at_ms"].is_null());
+        assert!(status["sources"].as_array().unwrap().is_empty());
         assert!(!engine.writing_profile_learning_enabled());
-        assert!(engine.set_writing_profile_learning(true).is_err());
-        assert!(engine.set_writing_profile_sharing(true).is_err());
+        assert!(!engine.writing_profile_sharing_enabled());
         assert!(engine.writing_profile_shared("en").is_err());
+
+        engine.set_writing_profile_learning(true).unwrap();
+        add_dictation(&engine, "own", "Only my newly opted-in speech is eligible.");
+        let status = engine
+            .set_writing_profile_source_excluded("dictation:own:0", true)
+            .unwrap();
+        assert_eq!(status["sources"][0]["excluded"], true);
+        engine.set_writing_profile_sharing(true).unwrap();
+        assert!(engine.writing_profile_learning_enabled());
+        assert!(engine.writing_profile_sharing_enabled());
+        drop(engine);
+
+        let engine = production_engine(dir.path());
+        let status = engine.writing_profile_status().unwrap();
+        assert_eq!(status["learning_enabled"], true);
+        assert_eq!(status["sharing_enabled"], true);
+        assert_eq!(status["sources"][0]["excluded"], true);
+        assert_eq!(status["sources"][0]["id"], "dictation:own:0");
+        let shared = engine.writing_profile_shared("en").unwrap();
+        assert_eq!(shared["status"], "insufficient_evidence");
+        assert!(shared["guidance"].as_array().unwrap().is_empty());
+        let status = engine
+            .set_writing_profile_source_excluded("dictation:own:0", false)
+            .unwrap();
+        assert_eq!(status["sources"][0]["excluded"], false);
+        engine.set_writing_profile_learning(false).unwrap();
+        engine.set_writing_profile_sharing(false).unwrap();
+        assert!(!engine.writing_profile_learning_enabled());
+        assert!(!engine.writing_profile_sharing_enabled());
+        assert!(engine.writing_profile_shared("en").is_err());
+        let status = engine.delete_writing_profile().unwrap();
+        assert_eq!(status["learning_enabled"], false);
+        assert_eq!(status["sharing_enabled"], false);
+        assert!(status["started_at_ms"].is_null());
+        assert!(status["sources"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn production_and_preview_keep_independent_profile_consent_and_sources() {
+        let production_dir = tempfile::tempdir().unwrap();
+        let preview_dir = tempfile::tempdir().unwrap();
+        let production = production_engine(production_dir.path());
+        let preview_path = preview_dir.path().to_string_lossy().into_owned();
+        let preview = PennelEngine::new_preview(preview_path.clone()).unwrap();
+        production.set_writing_profile_learning(true).unwrap();
+        add_dictation(
+            &production,
+            "production",
+            "Speech from the production data folder.",
+        );
+        let status = preview.writing_profile_status().unwrap();
+        assert_eq!(status["learning_enabled"], false);
+        assert_eq!(status["sharing_enabled"], false);
+        assert!(status["sources"].as_array().unwrap().is_empty());
+
+        preview.set_writing_profile_learning(true).unwrap();
+        preview.set_writing_profile_sharing(true).unwrap();
+        add_dictation(
+            &preview,
+            "preview",
+            "Speech from the isolated Preview data folder.",
+        );
+        assert!(!production.writing_profile_sharing_enabled());
+        assert!(production.writing_profile_shared("en").is_err());
+        drop(production);
+        drop(preview);
+
+        let production = production_engine(production_dir.path());
+        let preview = PennelEngine::new_preview(preview_path).unwrap();
+        let production_status = production.writing_profile_status().unwrap();
+        let preview_status = preview.writing_profile_status().unwrap();
+        assert_eq!(production_status["learning_enabled"], true);
+        assert_eq!(production_status["sharing_enabled"], false);
+        assert_eq!(preview_status["learning_enabled"], true);
+        assert_eq!(preview_status["sharing_enabled"], true);
+        for (status, source_id) in [
+            (production_status, "dictation:production:0"),
+            (preview_status, "dictation:preview:0"),
+        ] {
+            assert_eq!(status["sources"].as_array().unwrap().len(), 1);
+            assert_eq!(status["sources"][0]["id"], source_id);
+        }
+        production.delete_writing_profile().unwrap();
+        let status = preview.writing_profile_status().unwrap();
+        assert_eq!(status["learning_enabled"], true);
+        assert_eq!(status["sharing_enabled"], true);
+        assert_eq!(status["sources"][0]["id"], "dictation:preview:0");
     }
 
     #[test]

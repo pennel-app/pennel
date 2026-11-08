@@ -1,4 +1,4 @@
-//! Preview-only profile controls and idle background analysis. Content never enters events or logs.
+//! Profile controls and idle background analysis. Content never enters events or logs.
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex};
@@ -43,10 +43,7 @@ impl ProfileRunner {
                 if retained.0.lock().unwrap().stop {
                     return;
                 }
-                if shared.preview
-                    && idle(&shared)
-                    && shared.engine.writing_profile_learning_enabled()
-                {
+                if idle(&shared) && shared.engine.writing_profile_learning_enabled() {
                     let _ = shared.engine.refresh_writing_profile();
                     let _ = app.emit(CHANGED, ());
                 }
@@ -214,9 +211,6 @@ fn change_sharing(
     enabled: bool,
     select_source: impl FnOnce(bool) -> Result<bool, PennelError>,
 ) -> Result<(), PennelError> {
-    if !shared.preview {
-        return Err(PennelError::Cancelled);
-    }
     let account = shared.engine.cloud_account_epoch();
     let operation = {
         let mut epoch = shared.writing_profile_sharing_epoch.lock().unwrap();
@@ -265,13 +259,13 @@ pub struct ProfileConnection {
 
 fn connection(shared: &Shared) -> ProfileConnection {
     let signed_in = shared.engine.cloud_signed_in();
-    let result = if shared.preview && signed_in {
+    let result = if signed_in {
         shared.engine.cloud_writing_style_source(None)
     } else {
         Ok(false)
     };
     ProfileConnection {
-        enabled: shared.preview && shared.engine.writing_profile_sharing_enabled(),
+        enabled: shared.engine.writing_profile_sharing_enabled(),
         signed_in,
         designated: result.as_ref().copied().unwrap_or(false),
         mcp_url: shared.engine.cloud_writing_style_mcp_url(),
@@ -339,7 +333,7 @@ mod tests {
     #[test]
     fn background_work_yields_to_dictation_recording_and_shutdown() {
         let directory = tempfile::tempdir().unwrap();
-        let shared = Shared::testing(directory.path().to_path_buf());
+        let shared = Shared::testing_production(directory.path().to_path_buf());
         assert!(idle(&shared));
         shared.dictation_active.store(true, Ordering::Release);
         assert!(!idle(&shared));
@@ -349,12 +343,40 @@ mod tests {
     }
 
     #[test]
+    fn production_connection_requires_separate_profile_consent() {
+        let directory = tempfile::tempdir().unwrap();
+        let shared = Shared::testing_production(directory.path().to_path_buf());
+        assert!(!shared.preview);
+        let initial = connection(&shared);
+        assert!(!initial.enabled);
+        assert!(!initial.signed_in);
+        assert_eq!(initial.mcp_url, "https://api.pennel.app/mcp/style");
+
+        shared
+            .secrets
+            .set("pennel-cloud-refresh", "synthetic-session")
+            .unwrap();
+        shared
+            .engine
+            .set_secret_store(shared.secrets.clone())
+            .unwrap();
+        assert!(shared.engine.cloud_signed_in());
+        assert!(!shared.settings().claude_access);
+        change_sharing(&shared, true, Ok).unwrap();
+        assert!(shared.engine.writing_profile_sharing_enabled());
+        assert!(!shared.engine.writing_profile_learning_enabled());
+        assert!(!shared.settings().claude_access);
+        change_sharing(&shared, false, |_| Ok(false)).unwrap();
+        assert!(!shared.engine.writing_profile_sharing_enabled());
+    }
+
+    #[test]
     fn delayed_enable_cannot_undo_a_later_disable_or_profile_deletion() {
         use std::sync::mpsc;
         use std::time::Instant;
         for delete in [false, true] {
             let directory = tempfile::tempdir().unwrap();
-            let shared = Shared::testing(directory.path().to_path_buf());
+            let shared = Shared::testing_production(directory.path().to_path_buf());
             shared.engine.set_writing_profile_learning(true).unwrap();
             let (started, wait_started) = mpsc::channel();
             let (release, wait_release) = mpsc::channel();

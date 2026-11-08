@@ -7,7 +7,6 @@ import { isWritingTraitKey, writingConnectionText, writingErrorText, writingLang
 const STATUS_INTERVAL_MS = 10_000;
 
 export function writingProfileSection(ctx: Context): HTMLElement | null {
-  if (!ctx.info.preview) return null;
   const root = h("div", { class: "writing-profile-settings" });
   let status: WritingProfileStatus | null = null;
   let connection: WritingProfileConnection | null = null;
@@ -159,14 +158,14 @@ export function writingProfileSection(ctx: Context): HTMLElement | null {
 
   function draw() {
     if (disposed) return;
-    const panel = section(l("settings.writing.title"), l("settings.writing.help"), h("span", { class: "badge" }, l("settings.writing.preview")));
+    const panel = section(l("settings.writing.title"), l("settings.writing.help"));
     if (!status) {
       panel.append(h("p", { class: failure ? "error" : "help", role: "status" }, failure ? liveText(() => writingErrorText(failure)) : l("common.loading")));
       root.replaceChildren(panel);
       return;
     }
     if (!status.available) {
-      panel.append(h("p", { class: "help" }, l("settings.writing.error.preview")));
+      panel.append(h("p", { class: "help" }, l("settings.writing.error.unavailable")));
       root.replaceChildren(panel);
       return;
     }
