@@ -11,6 +11,12 @@ on:
         value: ${{ jobs.changes.outputs.app }}
       packaging:
         value: ${{ jobs.changes.outputs.packaging }}
+      ci_mode:
+        value: ${{ jobs.changes.outputs.ci_mode }}
+      qualification_id:
+        value: ${{ jobs.changes.outputs.qualification_id }}
+      dependency_cache:
+        value: ${{ jobs.changes.outputs.dependency_cache }}
 
 jobs:
   changes:
@@ -21,11 +27,20 @@ jobs:
       platform: ${{ steps.filter.outputs.platform }}
       app: ${{ steps.filter.outputs.app }}
       packaging: ${{ steps.filter.outputs.packaging }}
+      ci_mode: ${{ steps.ci-mode.outputs.ci_mode }}
+      qualification_id: ${{ steps.ci-mode.outputs.qualification_id }}
+      dependency_cache: ${{ steps.ci-mode.outputs.dependency_cache }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
+      - name: Resolve CI qualification mode
+        id: ci-mode
+        env:
+          PENNEL_CI_QUALIFICATION_CONFIG: ${{ vars.PENNEL_CI_QUALIFICATION_CONFIG }}
+          PENNEL_CI_FORCE_SERIAL: ${{ vars.PENNEL_CI_FORCE_SERIAL }}
+        run: python3 -B scripts/ci-mode.py
       - name: Test change selection
         run: python3 -B -m unittest discover -s scripts/tests -p 'test_ci_*.py'
       - name: English diagnostic defaults
@@ -42,3 +57,11 @@ jobs:
           else
             python3 scripts/ci-changes.py >> "$GITHUB_OUTPUT"
           fi
+      - name: Upload actual CI mode receipt
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ci-mode-${{ github.run_attempt }}
+          path: build/ci-performance/mode.json
+          if-no-files-found: error
+          retention-days: 7
