@@ -448,7 +448,7 @@ The [implementation receipt](evidence/people-links-102.md) records checks and re
 
 [#113](https://github.com/pennel-app/pennel/issues/113) gives meeting and library-wide questions durable, local conversations through the shared Rust core. New, switch, rename and delete actions keep the selected conversation and composer draft through navigation, hide/reopen and restart. The same meeting UUID retains its history through Stop, finalization and automatic folder renaming. Each device keeps its own private `conversations.sqlite` outside meeting directories; meeting sync, exports, shared projections and MCP do not gain chat access.
 
-### Writing profile preview — 8 November 2026
+### Writing profiles — 8 November 2026
 
 [#184](https://github.com/pennel-app/pennel/issues/184) adds preview-only learning from original dictations and reliably attributed owner meeting speech. Settings → Meetings exposes language-specific evidence, editable traits, source exclusion and separate assistant-sharing controls. The style-only MCP connection uses one designated running desktop and independent authorization; existing meeting permissions remain separate. See [setup, boundaries and acceptance](writing-profile.md). Real ChatGPT/Claude retrieval and the owner's blind style evaluation remain acceptance gates.
 
