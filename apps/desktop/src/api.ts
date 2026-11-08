@@ -497,6 +497,14 @@ export interface MeetingDetail {
   summary_outdated: boolean;
   retranscription_plan: MeetingRetranscriptionPlan;
   retranscription_status: MeetingRetranscriptionStatus | null;
+  failed_recovery?: FailedTranscriptionRecoveryPlan;
+}
+
+export interface FailedTranscriptionRecoveryPlan {
+  failed_count: number | null;
+  retryable_count: number | null;
+  status: "complete" | "retryable" | "unavailable";
+  reason_code: string | null;
 }
 
 export interface MeetingRetranscriptionPlan {

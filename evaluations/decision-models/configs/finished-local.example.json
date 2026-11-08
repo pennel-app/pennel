@@ -1,0 +1,9 @@
+{
+  "protocol": "local_decider",
+  "endpoint": "http://127.0.0.1:8080/v1/decisions",
+  "model": "pplx-decider-flash-v1.2",
+  "expected_model": "pplx-decider-flash-v1.2",
+  "upstream": null,
+  "max_input_bytes": 16000,
+  "timeout_secs": 30
+}

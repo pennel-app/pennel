@@ -67,6 +67,26 @@ test("known app-owned errors relabel in both directions without translating arbi
   setInterfaceLanguage("en");
 });
 
+test("recovery diagnostics follow the interface language while provider responses stay literal", () => {
+  const diagnostics = [
+    ["The recovery audio changed before recognition.", "De herstelaudio is gewijzigd voordat de spraakherkenning begon."],
+    ["The recovery audio changed during recognition.", "De herstelaudio is tijdens de spraakherkenning gewijzigd."],
+    ["Some recovery audio cannot be linked to its original transcript. Keep the files and review their sources before retrying recognition.", "Een deel van de herstelaudio kan niet aan het oorspronkelijke transcript worden gekoppeld. Bewaar de bestanden en controleer de bronnen voordat je de spraakherkenning opnieuw probeert."],
+    ["Restore the transcript's source metadata before retrying recognition.", "Herstel de broninformatie van het transcript voordat je de spraakherkenning opnieuw probeert."],
+  ];
+  try {
+    for (const language of ["en", "nl"]) {
+      setInterfaceLanguage(language);
+      for (const [english, dutch] of diagnostics) {
+        assert.equal(localizeBackendText(english), language === "nl" ? dutch : english);
+        assert.equal(localizeBackendText(dutch), language === "nl" ? dutch : english);
+      }
+      const response = "Provider response: The recovery audio changed before recognition. {message} <audio>";
+      assert.equal(localizeBackendText(response), response);
+    }
+  } finally { setInterfaceLanguage("en"); }
+});
+
 
 test("a view that finishes mounting after a language change catches up without rebuilding", () => {
   setInterfaceLanguage("en");

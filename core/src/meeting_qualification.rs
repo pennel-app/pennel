@@ -156,7 +156,7 @@ fn text(value: &str, maximum: usize) -> bool {
 }
 
 impl MeetingQualificationRequest {
-    fn validate(&self) -> Result<(), MeetingQualificationError> {
+    pub(crate) fn validate(&self) -> Result<(), MeetingQualificationError> {
         if !matches!(self.language_policy.as_str(), "en" | "nl" | "mixed") {
             return Err(MeetingQualificationError::UnknownLanguage);
         }
@@ -373,19 +373,39 @@ impl QualifiedMeetingAnalysis {
         &self,
         identity: &InferenceIdentity,
     ) -> Result<(), MeetingQualificationError> {
-        let context = &self.record.context;
-        if identity.protocol != context.request.configured.protocol
-            || identity.endpoint != context.request.configured.endpoint
-            || identity.requested_model != context.request.configured.model
-            || identity.requested_upstream != context.request.configured.upstream
-            || identity.actual_model.as_deref() != Some(context.actual.model.as_str())
-            || identity.actual_revision.as_deref() != Some(context.actual.revision.as_str())
-            || identity.actual_provider.as_deref() != Some(context.actual.provider.as_str())
-        {
-            return Err(MeetingQualificationError::IdentityChanged);
-        }
-        Ok(())
+        compare_inference_identity(
+            &self.record.context.request.configured,
+            &self.record.context.actual,
+            identity,
+        )
     }
+}
+
+/// Identity comparison alone cannot construct a qualified admission handle.
+pub(crate) fn compare_inference_identity(
+    configured: &MeetingConfiguredInference,
+    actual: &MeetingActualInference,
+    identity: &InferenceIdentity,
+) -> Result<(), MeetingQualificationError> {
+    if identity.protocol != configured.protocol
+        || identity.endpoint != configured.endpoint
+        || identity.requested_model != configured.model
+        || identity.requested_upstream != configured.upstream
+        || identity.actual_model.as_deref() != Some(actual.model.as_str())
+        || identity.actual_revision.as_deref() != Some(actual.revision.as_str())
+        || identity.actual_provider.as_deref() != Some(actual.provider.as_str())
+    {
+        return Err(MeetingQualificationError::IdentityChanged);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "evaluation")]
+pub(crate) fn valid_evaluation_identity_pin(actual: &MeetingActualInference) -> bool {
+    text(&actual.model, 256)
+        && text(&actual.revision, 256)
+        && text(&actual.provider, 256)
+        && hash(&actual.artifact_sha256)
 }
 
 impl PennelEngine {

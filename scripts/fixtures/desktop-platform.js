@@ -69,6 +69,7 @@
     { start_ms: 8000, end_ms: 14000, speaker: "me", text: "Ik bevestig de volgende afspraak.", failed: false, voice: null },
     { start_ms: 14000, end_ms: 21000, speaker: "others", text: "Dan zet ik het voorstel nog vandaag in de map.", failed: false, voice: 2 },
   ];
+  if (options.failed_recovery) transcript.forEach((segment, index) => { if (index < 2) { segment.failed = true; segment.text = ""; } });
   if (options.insights_seeded) transcript.splice(0, transcript.length,
     { start_ms: 0, end_ms: 8000, speaker: "others", text: "Noor will send the draft on Friday.", failed: false, voice: 1 },
     { start_ms: 8000, end_ms: 16000, speaker: "me", text: "We might move the deadline, but no decision was made.", failed: false, voice: null },
@@ -281,6 +282,12 @@
     transcript_revision: transcriptRevision, tracks: clone(previewTracks) });
   let activeMeetingId = meetingId;
   let metadataStatus = options.metadata_status || "valid";
+  let failedRecoveryMode = options.failed_recovery_mode || "success";
+  let failedRecoveryError = options.failed_recovery_error || null;
+  let failedRecoveryRetryable = options.failed_recovery_retryable;
+  let failedRecoveryDelay = 0;
+  let failedRecoveryOverride;
+  let failedRecoveryPending = 0;
   let playbackRequest = null;
   const initialLiveSpeakers = () => ({ enabled: Boolean(options.live_speaker_enabled), available: !options.live_speaker_reason,
     state: options.live_speaker_reason ? "unavailable" : options.live_speaker_enabled ? "running" : "off",
@@ -341,6 +348,15 @@
     const retained = retainedMeetings.get(id), info = retained?.info || meetingInfo(id);
     return { id, uid: uidFor(id), info, notes: retained?.notes ?? (id === activeMeetingId ? notes : `Synthetic notes for ${info.title}.`),
       transcript: retained?.transcript || transcript, summary };
+  };
+  const failedRecoveryPlan = id => {
+    if (failedRecoveryOverride !== undefined) return clone(failedRecoveryOverride);
+    if (options.failed_recovery_state === "legacy") return undefined;
+    const failed = recordForId(id)?.transcript.filter(row => row.failed).length ?? 0;
+    if (options.failed_recovery_state === "metadata_unavailable" || !["valid", "absent"].includes(metadataStatus)) return { failed_count: null, retryable_count: null, status: "unavailable", reason_code: "metadata_unavailable" };
+    const reason = failed && (options.failed_recovery_state || (!options.failed_recovery ? "no_retained_audio" : null));
+    const retryable = reason ? Math.min(failed, Math.max(0, failedRecoveryRetryable ?? 0)) : failed;
+    return { failed_count: failed, retryable_count: retryable, status: !failed ? "complete" : retryable ? "retryable" : "unavailable", reason_code: reason || null };
   };
   const summaryDocuments = new Map();
   const summaryHistories = new Map();
@@ -1224,7 +1240,7 @@
         if (deletedMeetingUids.has(uidFor(args.id))) throw Error("This meeting is no longer available.");
         return { info: clone(retainedMeetings.get(args.id)?.info || meetingInfo(args.id)), notes: retainedMeetings.get(args.id)?.notes ?? (args.id === activeMeetingId ? notes : recordForId(args.id).notes), summary: summaryDocuments.get(uidFor(args.id))?.markdown ?? (options.summary_empty ? "" : summary), transcript: clone(retainedMeetings.get(args.id)?.transcript || (recordingStopped ? storedTranscript(transcript) : transcript)), speakers: [{ voice: 1, name: "Noor" }], dir: `/QA/Pennel Preview/Meetings/${args.id}`, attendees: ["Noor", "Sam"], audio_tracks: [{ speaker: "me", source_id: "microphone", available: !!options.saved_audio }, { speaker: "others", source_id: "system", available: !!options.saved_audio }],
         ...(options.rich_utterances ? { meeting_uid: uidFor(args.id), metadata_status: metadataStatus, revision: transcriptRevision } : {}),
-        summary_outdated: summaryOutdated, retranscription_status: clone(retranscriptionStatus),
+        summary_outdated: summaryOutdated, retranscription_status: clone(retranscriptionStatus), failed_recovery: failedRecoveryPlan(args.id),
         retranscription_plan: { recognition: frozenMeetingRecognition(), available: !!options.saved_audio && !retranscriptionStatus?.running && frozenMeetingRecognition().provider_kind === "local", reason: options.saved_audio ? null : "Er is geen bewaarde audio om opnieuw te transcriberen." } };
       }
       case "search_library": {
@@ -1334,7 +1350,23 @@
         const content = args.includeTranscript ? `${body}\n\n## Transcript\n${permittedTranscript(record, language)}` : body;
         return { title: personal ? record.info.title : language === "nl" ? "Samenvatting" : "Summary", markdown: content, html: `<pre>${content.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</pre>` };
       }
-      case "retranscribe_meeting": return 0;
+      case "retranscribe_meeting": {
+        const plan = failedRecoveryPlan(args.id);
+        if (plan?.status !== "retryable" || !plan.retryable_count) throw Error("Synthetic failed audio is unavailable.");
+        failedRecoveryPending++;
+        try {
+          if (failedRecoveryDelay) await new Promise(resolve => setTimeout(resolve, failedRecoveryDelay));
+          if (failedRecoveryError) throw Error(failedRecoveryError);
+          if (failedRecoveryMode === "zero") return 0;
+          const record = recordForId(args.id), failed = record.transcript.filter(row => row.failed);
+          const selected = failed.slice(0, failedRecoveryMode === "partial_error" ? Math.min(1, plan.retryable_count) : plan.retryable_count);
+          for (const row of selected) { row.failed = false; row.text = "Synthetic recovered passage."; }
+          if (failedRecoveryRetryable !== undefined) failedRecoveryRetryable = Math.max(0, failedRecoveryRetryable - selected.length);
+          transcriptRevision++; retainActiveEdits();
+          if (failedRecoveryMode === "partial_error") throw Error("Synthetic speech service unavailable after partial recovery.");
+          return selected.length;
+        } finally { failedRecoveryPending--; }
+      }
       case "retranscribe_meeting_audio": {
         if (!options.saved_audio || retranscriptionStatus?.running || frozenMeetingRecognition().provider_kind !== "local") throw new Error("Er is geen bewaarde audio om opnieuw te transcriberen.");
         retranscriptionStatus = { running: true, recognition: frozenMeetingRecognition(), progress: { phase: "transcribing", speaker: "others", completed: 15_000, total: 60_000 }, error: null, warning: null };
@@ -1454,6 +1486,9 @@
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
   globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
+    recovery: { mode: value => { if (!["success", "zero", "partial_error"].includes(value)) throw Error("Unknown recovery fixture mode"); failedRecoveryMode = value; },
+      plan: value => { failedRecoveryOverride = clone(value); }, error: value => { failedRecoveryError = value; },
+      delay: value => { failedRecoveryDelay = value; }, pending: () => failedRecoveryPending },
     ...(options.owner_review ? { review: { resetProfile,
       openedWindows: () => clone(openedWindows),
       failDownloads: message => { downloadFailure = message || null; }, failSaves: value => { saveFailure = Boolean(value); },

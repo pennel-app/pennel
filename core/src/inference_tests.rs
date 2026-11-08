@@ -1,6 +1,95 @@
 use super::*;
 use mockito::Matcher;
 
+fn transport_cancellation() -> Arc<InferenceCancellation> {
+    // Foreground setup keeps unrelated speech fixtures out of transport/manual-cancellation assertions.
+    InferenceCancellation::for_priority(crate::InferencePriority::ForegroundQuestion)
+}
+
+#[test]
+fn transport_fixture_is_not_preempted_by_unrelated_speech_demand() {
+    for (cancellation, preempted) in [
+        (InferenceCancellation::new(), true),
+        (transport_cancellation(), false),
+    ] {
+        let pool = Arc::new(crate::meeting_scheduler::PhysicalInferencePool::default());
+        let (entered, started) = std::sync::mpsc::channel();
+        let (release, resumed) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let worker_pool = pool.clone();
+            let worker_cancellation = cancellation.clone();
+            let worker = scope.spawn(move || {
+                run_cancelled_in_pool(
+                    &worker_pool,
+                    worker_cancellation,
+                    std::time::Instant::now() + std::time::Duration::from_secs(5),
+                    move |_| {
+                        entered.send(()).unwrap();
+                        resumed
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .unwrap();
+                        Ok(())
+                    },
+                )
+            });
+            started
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            pool.speech_started();
+            let cancelled = cancellation.is_cancelled();
+            // Release physical work before asserting so the negative control cannot leak a worker.
+            release.send(()).unwrap();
+            let result = worker.join().unwrap();
+            pool.speech_finished();
+            assert_eq!(cancelled, preempted);
+            if preempted {
+                assert_eq!(result, Err(PennelError::Cancelled));
+            } else {
+                assert_eq!(result, Ok(()));
+            }
+        });
+    }
+}
+
+#[test]
+fn foreground_transport_fixture_remains_manually_cancellable() {
+    let pool = Arc::new(crate::meeting_scheduler::PhysicalInferencePool::default());
+    let cancellation = transport_cancellation();
+    let (entered, started) = std::sync::mpsc::channel();
+    let (release, resumed) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let worker_pool = pool.clone();
+        let worker_cancellation = cancellation.clone();
+        let worker = scope.spawn(move || {
+            run_cancelled_in_pool(
+                &worker_pool,
+                worker_cancellation,
+                std::time::Instant::now() + std::time::Duration::from_secs(5),
+                move |_| {
+                    entered.send(()).unwrap();
+                    resumed
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                    Ok(())
+                },
+            )
+        });
+        started
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        pool.speech_started();
+        let survived_speech = !cancellation.is_cancelled();
+        cancellation.cancel();
+        let manually_cancelled = cancellation.is_cancelled();
+        release.send(()).unwrap();
+        let result = worker.join().unwrap();
+        pool.speech_finished();
+        assert!(survived_speech);
+        assert!(manually_cancelled);
+        assert_eq!(result, Err(PennelError::Cancelled));
+    });
+}
+
 fn config(protocol: InferenceProtocol) -> InferenceConfig {
     let mut config = new_inference_config("example".into(), protocol);
     config.model = "example-model".into();
@@ -252,7 +341,7 @@ fn all_decision_adapters_use_their_dedicated_path_and_keep_actual_metadata() {
             ),
             Some("synthetic-key"),
             request(),
-            InferenceCancellation::new(),
+            transport_cancellation(),
         )
         .unwrap();
         assert_eq!(
@@ -293,7 +382,7 @@ fn openrouter_requires_a_fixed_upstream_and_sends_no_fallback_or_data_collection
         &server.url(),
         Some("synthetic-key"),
         request(),
-        InferenceCancellation::new(),
+        transport_cancellation(),
     )
     .unwrap();
     mock.assert();
@@ -392,7 +481,7 @@ fn ordinal_adapters_reject_a_score_that_contradicts_its_distribution() {
             &format!("{}{base_path}", server.url()),
             Some("synthetic-key"),
             input,
-            InferenceCancellation::new(),
+            transport_cancellation(),
         )
         .unwrap_err();
         assert!(
@@ -498,7 +587,7 @@ fn invalid_or_oversized_input_is_never_sent_or_truncated() {
         "http://127.0.0.1:1/v1",
         None,
         request(),
-        InferenceCancellation::new(),
+        transport_cancellation(),
     );
     assert!(matches!(no_key, Err(PennelError::MissingApiKey { .. })));
 }
@@ -539,7 +628,7 @@ fn failed_http_requests_do_not_echo_content_or_follow_redirects() {
             &format!("{}/v1", server.url()),
             Some("synthetic-key"),
             request(),
-            InferenceCancellation::new(),
+            transport_cancellation(),
         )
         .unwrap_err();
         assert!(
@@ -572,7 +661,7 @@ fn malformed_unknown_and_oversized_response_bodies_are_rejected() {
                 &format!("{}/v1", server.url()),
                 Some("synthetic-key"),
                 request(),
-                InferenceCancellation::new()
+                transport_cancellation()
             )
             .is_err()
         );
@@ -611,7 +700,7 @@ fn cancellation_during_a_request_discards_late_results() {
             writer.write_all(body.as_bytes())
         })
         .create();
-    let cancel = InferenceCancellation::new();
+    let cancel = transport_cancellation();
     let trigger = cancel.clone();
     let (cancelled_tx, cancelled_rx) = std::sync::mpsc::sync_channel(1);
     let signal = std::thread::spawn(move || {
@@ -674,7 +763,7 @@ fn tei_preserves_relevance_logits_and_checks_its_served_model() {
         &server.url(),
         None,
         rank_request(),
-        InferenceCancellation::new(),
+        transport_cancellation(),
     )
     .unwrap();
     assert_eq!(result.scores[0].passage_id, "p2");
@@ -712,7 +801,7 @@ fn tei_rejects_unknown_duplicate_and_missing_passages() {
                 &server.url(),
                 None,
                 rank_request(),
-                InferenceCancellation::new()
+                transport_cancellation()
             )
             .is_err()
         );
@@ -773,13 +862,7 @@ fn managed_decisions_preserve_raw_results_and_bind_response_to_request() {
         })
         .create();
     let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
-    let result = decide_managed(
-        &configured,
-        managed,
-        request(),
-        InferenceCancellation::new(),
-    )
-    .unwrap();
+    let result = decide_managed(&configured, managed, request(), transport_cancellation()).unwrap();
     assert_eq!(result.answers[0].probabilities[0].probability, 0.3);
     assert_eq!(result.answers[0].probabilities[1].probability, 0.7);
     assert_eq!(result.identity.requested_model, "pennel-auto");
@@ -815,7 +898,7 @@ fn managed_reranking_preserves_logits_without_inventing_provider_or_usage() {
         &configured,
         managed,
         rank_request(),
-        InferenceCancellation::new(),
+        transport_cancellation(),
     )
     .unwrap();
     assert_eq!(
@@ -859,12 +942,7 @@ fn managed_envelopes_reject_missing_or_changed_identity_and_response_contract() 
             })
             .create();
         assert!(matches!(
-            decide_managed(
-                &configured,
-                managed,
-                request(),
-                InferenceCancellation::new()
-            ),
+            decide_managed(&configured, managed, request(), transport_cancellation()),
             Err(PennelError::InvalidResponse { .. })
         ));
         post.assert();
@@ -913,15 +991,7 @@ fn managed_auth_retries_once_and_preserves_the_request_identifier() {
         })
         .create();
     let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
-    assert!(
-        decide_managed(
-            &configured,
-            managed,
-            request(),
-            InferenceCancellation::new()
-        )
-        .is_ok()
-    );
+    assert!(decide_managed(&configured, managed, request(), transport_cancellation()).is_ok());
     denied.assert();
     refresh.assert();
     accepted.assert();
@@ -934,7 +1004,7 @@ fn cancellation_or_account_change_during_refresh_never_posts_content() {
         let mut server = mockito::Server::new();
         let (managed, secrets) = managed_fixture(&server);
         let session = managed.session.clone();
-        let cancellation = InferenceCancellation::new();
+        let cancellation = transport_cancellation();
         let change = cancellation.clone();
         let refresh = server.mock("POST", "/v1/auth/refresh").with_body_from_request(move |_| {
             if change_account { session.cancel_login(); } else { change.cancel(); }
@@ -976,13 +1046,8 @@ fn managed_auth_and_content_never_follow_redirects_or_echo_error_bodies() {
             .create();
         let target = server.mock("POST", "/must-not-run").expect(0).create();
         let configured = new_inference_config("cloud".into(), InferenceProtocol::PennelCloud);
-        let error = decide_managed(
-            &configured,
-            managed,
-            request(),
-            InferenceCancellation::new(),
-        )
-        .unwrap_err();
+        let error =
+            decide_managed(&configured, managed, request(), transport_cancellation()).unwrap_err();
         assert!(matches!(error, PennelError::Http { status: 307, .. }));
         assert!(!error.to_string().contains("private"));
         assert!(!error.to_string().contains("synthetic"));

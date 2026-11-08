@@ -10,6 +10,45 @@ import { createConversationFixture } from "./meeting-conversations.mjs";
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
 
+test("failed transcription fixture exposes retained-chunk eligibility separately from a full archive", async () => {
+  const context = fixture("meeting-notes", { failed_recovery: true, saved_audio: false });
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_detail", { id });
+  assert.equal(before.transcript.filter(row => row.failed).length, 2);
+  assert.equal(before.failed_recovery.retryable_count, 2);
+  assert.equal(before.audio_tracks.some(track => track.available), false);
+  assert.equal(await api.invoke("retranscribe_meeting", { id }), 2);
+  assert.equal((await api.invoke("meeting_detail", { id })).failed_recovery.failed_count, 0);
+});
+
+test("failed-only fixture preserves partial progress, zero results and notes on later retry", async () => {
+  const context = fixture("meeting-notes", { failed_recovery: true });
+  const api = context.__PENNEL_PLATFORM__, control = context.__PENNEL_FIXTURE__, id = control.options.meeting_id;
+  const notes = (await api.invoke("meeting_detail", { id })).notes;
+  control.recovery.mode("zero");
+  assert.equal(await api.invoke("retranscribe_meeting", { id }), 0);
+  control.recovery.mode("partial_error");
+  await assert.rejects(api.invoke("retranscribe_meeting", { id }), /Synthetic speech/);
+  assert.equal((await api.invoke("meeting_detail", { id })).failed_recovery.failed_count, 1);
+  control.recovery.mode("success");
+  assert.equal(await api.invoke("retranscribe_meeting", { id }), 1);
+  assert.equal((await api.invoke("meeting_detail", { id })).notes, notes);
+});
+
+test("partially eligible failed-recovery fixture retries only retained passages", async () => {
+  const context = fixture("meeting-failed-recovery-partial-check");
+  const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = (await api.invoke("meeting_detail", { id })).failed_recovery;
+  assert.equal(before.failed_count, 2);
+  assert.equal(before.retryable_count, 1);
+  assert.equal(before.reason_code, "no_retained_audio");
+  assert.equal(await api.invoke("retranscribe_meeting", { id }), 1);
+  const after = (await api.invoke("meeting_detail", { id })).failed_recovery;
+  assert.equal(after.failed_count, 1);
+  assert.equal(after.retryable_count, 0);
+  assert.equal(after.status, "unavailable");
+});
+
 test("summary fixtures require current revisions and preserve an edited version for recovery", async () => {
   const api = fixture("meeting-notes").__PENNEL_PLATFORM__, id = "2026-10-24 0900 Projectoverleg";
   const before = await api.invoke("meeting_summary", { id });

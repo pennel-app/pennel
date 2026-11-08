@@ -112,7 +112,7 @@ async function meetingDetail(ctx: Context, id: string): Promise<HTMLElement> {
       elapsed_secs: detail.info.duration_min * 60, can_retry_persistence: false, persistence_error: null, terminal_error: null,
       transcription_warning: null, audio_warning: null, preview: null, live_speaker_attribution: null },
   };
-  return withAnswerReturn(ctx, liveMeetingWorkspace(ctx, status, { initialSummary: !active && !!detail.summary?.trim() }), id);
+  return withAnswerReturn(ctx, liveMeetingWorkspace(ctx, status, { initialSummary: !active && !!detail.summary?.trim(), detail }), id);
 }
 
 function withAnswerReturn(ctx: Context, root: HTMLElement, id: string) {

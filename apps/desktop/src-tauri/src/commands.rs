@@ -1123,6 +1123,7 @@ pub struct MeetingDetail {
     attendees: Vec<String>,
     audio_tracks: Vec<AudioTrack>,
     summary_outdated: bool,
+    failed_recovery: pennel_core::FailedTranscriptionRecoveryPlan,
     retranscription_plan: pennel_core::MeetingRetranscriptionPlan,
     retranscription_status: Option<pennel_core::MeetingRetranscriptionStatus>,
     recording_metadata: Option<pennel_core::MeetingRecordingMetadata>,
@@ -1168,11 +1169,10 @@ pub async fn meeting_detail(id: String, shared: State<'_, Arc<Shared>>) -> Resul
     off_main("meeting_detail", move || {
         let engine = &shared.engine;
         let directory = checked_meeting_dir(engine, &id)?;
-        let snapshot = transcript_projection(
-            &engine
-                .meeting_transcript_snapshot_json(id.clone())
-                .map_err(err)?,
-        )?;
+        let (snapshot, failed_recovery) = engine
+            .meeting_transcript_snapshot_with_recovery_plan(&id)
+            .map_err(err)?;
+        let snapshot = transcript_projection(&snapshot)?;
         Ok(MeetingDetail {
             info: engine.meeting_info(id.clone()),
             notes: engine.meeting_notes(id.clone()),
@@ -1186,6 +1186,7 @@ pub async fn meeting_detail(id: String, shared: State<'_, Arc<Shared>>) -> Resul
             dir: directory.to_string_lossy().into_owned(),
             audio_tracks: audio_tracks(&directory),
             summary_outdated: engine.meeting_summary_outdated(&id),
+            failed_recovery,
             retranscription_plan: {
                 let mut plan = engine.meeting_retranscription_plan(&id);
                 plan.reason = plan.reason.map(localize_error_message);

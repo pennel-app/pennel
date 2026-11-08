@@ -21,6 +21,7 @@ import { meetingExportPreview } from "./meeting-export-preview";
 import { meetingWorkspaceTools } from "./meeting-workspace-tools";
 import { sourceRange, transcriptSourceBlocks } from "./source-navigation";
 import { icon } from "./icons";
+import { FailedRecoveryContextError, FailedTranscriptionRecovery } from "./failed-transcription-recovery";
 import "./meeting-workspace.css";
 
 interface LiveWorkspace {
@@ -51,11 +52,11 @@ export function finishLiveWorkspace(event: MeetingFinished) { workspaces.get(eve
 export function acknowledgeRetainedNotes(id: string, text: string) { [...workspaces.values()].find(owner => owner.id === id || owner.aliases.has(id))?.savedExternally(text); }
 export async function flushLiveWorkspaces() { await persistAll([...workspaces.values()].map(owner => () => owner.flush())); }
 
-export function liveMeetingWorkspace(ctx: Context, status: MeetingStatus, options: { initialSummary?: boolean } = {}): HTMLElement {
+export function liveMeetingWorkspace(ctx: Context, status: MeetingStatus, options: { initialSummary?: boolean; detail?: MeetingDetail } = {}): HTMLElement {
   const session = status.session_id ?? status.id!;
   let owner = workspaces.get(session);
   if (!owner) {
-    owner = createWorkspace(ctx, status, options.initialSummary);
+    owner = createWorkspace(ctx, status, options.initialSummary, options.detail);
     workspaces.set(session, owner);
   }
   return owner.bind(ctx);
@@ -67,13 +68,13 @@ async function fingerprint(segment: Segment): Promise<string> {
   return [...new Uint8Array(hash)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function createWorkspace(initialContext: Context, initial: MeetingStatus, initialSummary = false): LiveWorkspace {
+function createWorkspace(initialContext: Context, initial: MeetingStatus, initialSummary = false, initialDetail?: MeetingDetail): LiveWorkspace {
   let ctx = initialContext;
   const session = initial.session_id ?? initial.id!;
   const uid = initial.meeting_uid ?? initial.id!;
   let status = initial;
   let finalized = !initial.busy && initial.phase === "idle";
-  let reviewDetail: MeetingDetail | null = null;
+  let reviewDetail: MeetingDetail | null = initialDetail ?? null;
   let selectedTemplate = ctx.info.settings.default_template;
   let lastReviewRefresh = -Infinity;
   const readingPositions = new Map<HTMLElement, { top: number; left: number }>();
@@ -81,6 +82,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   let suspendedSelections: { input: HTMLTextAreaElement; start: number; end: number; direction: "forward" | "backward" | "none" }[] | null = null;
   let restoringReading = false;
   let binding = 0;
+  let recoveryBindingActive = false;
   let poll: VisibilityPoll | null = null;
   let composing = false;
   let notesTimer: number | undefined;
@@ -134,6 +136,23 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     h("div", { class: "row recording-controls" }, h("span", { class: "status-dot", "aria-hidden": "true" }), phase, clock, h("span", { class: "grow" }), stop, copyExport));
   const warning = h("p", { class: "live-warning help", role: "status", hidden: true });
   const recovery = h("div", { class: "live-recovery", hidden: true });
+  const failedRecoveryHeading = h("strong");
+  const failedRecoveryDescription = h("p", { class: "help" });
+  const failedRecoveryOutcome = h("p", { class: "help", role: "status", hidden: true });
+  const failedRecoveryError = h("p", { class: "error", role: "alert", hidden: true });
+  const failedRecoveryModel = new FailedTranscriptionRecovery<MeetingDetail>({
+    scope: () => recoveryBindingActive && root.isConnected && finalized ? `${uid}:${binding}` : null,
+    id: () => owner.id, meetingUid: uid,
+    blocked: () => !finalized || status.busy || !!reviewDetail?.retranscription_status?.running || composing,
+    flush, read: id => api.meetingDetail(id), retry: id => api.retranscribeMeeting(id),
+    accept: detail => { statusEpoch.invalidate(); applyReview(detail); void summary.refresh().catch(showSaveError); }, changed: renderFailedRecovery,
+  });
+  const failedRecoveryRetry = controlButton({ class: "btn compact", onclick: () => {
+    // Slower background reads must not restore the counts captured before an explicit retry.
+    statusEpoch.invalidate(); void failedRecoveryModel.retry();
+  } }, l("meetings.failed_recovery_retry"));
+  const failedRecoveryNotice = h("section", { class: "meeting-failed-recovery", hidden: true, "aria-label": l("meetings.failed_recovery_title") },
+    h("div", { class: "meeting-failed-recovery-copy" }, failedRecoveryHeading, failedRecoveryDescription, failedRecoveryOutcome, failedRecoveryError), failedRecoveryRetry);
   const sourceBack = h("button", { class: "text-button live-source-back", hidden: true, onclick: () => returnToAnswer() }, l("meetings.workspace_back_answer"));
   const sourceNotice = h("div", { class: "live-source-notice", hidden: true });
   const writingTabs = h("div", { class: "meeting-writing-tabs", role: "tablist", "aria-label": l("meetings.workspace_notes") });
@@ -266,7 +285,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   panels.get("tools")!.append(tools.root, exportPreview.root);
   const separator = h("div", { class: "live-pane-separator", role: "separator", tabindex: 0, "aria-orientation": "vertical", "aria-label": l("meetings.workspace_split"), "aria-valuemin": 35, "aria-valuemax": 75 });
   const content = h("div", { class: "live-workspace-panes" }, panels.get("notes")!, panels.get("summary")!, separator, panels.get("transcript")!, panels.get("questions")!, panels.get("suggestions")!, panels.get("tools")!);
-  root.append(band, warning, recovery, sourceBack, sourceNotice, tabList, automationNudge, content);
+  root.append(band, warning, recovery, failedRecoveryNotice, sourceBack, sourceNotice, tabList, automationNudge, content);
   let resizeFrame = 0;
   const resize = new ResizeObserver(entries => {
     const width = entries[0]?.contentRect.width ?? 0;
@@ -320,13 +339,14 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       ctx = next;
       displayedSession = session;
       const mine = ++binding;
+      recoveryBindingActive = true;
       statusEpoch.invalidate();
       ++sourceNavigation;
       poll?.dispose();
       poll = new VisibilityPoll(500, pollStatus, error => { warning.textContent = errorText(error); warning.hidden = false; });
       poll.setVisible(ctx.visible);
       next.onVisibilityChange(visible => { if (mine === binding) poll?.setVisible(visible); });
-      next.onDispose(() => { if (mine === binding) { suspendReading(); ++sourceNavigation; statusEpoch.invalidate(); poll?.dispose(); poll = null; } });
+      next.onDispose(() => { if (mine === binding) { recoveryBindingActive = false; suspendReading(); ++sourceNavigation; statusEpoch.invalidate(); poll?.dispose(); poll = null; } });
       next.onInfoChange(() => { if (mine === binding) updateReadiness(); });
       next.onFlush(flush);
       questions.bind(next);
@@ -469,6 +489,36 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   function updateReadiness() {
     questions.readiness();
     updateSaving();
+    renderFailedRecovery();
+  }
+  function renderFailedRecovery() {
+    const control = failedRecoveryModel.control;
+    failedRecoveryNotice.hidden = !finalized || !control.visible && !failedRecoveryModel.error && !failedRecoveryModel.outcome;
+    failedRecoveryNotice.setAttribute("aria-busy", String(failedRecoveryModel.busy));
+    failedRecoveryNotice.dataset.recoveryState = failedRecoveryModel.busy ? "working" : failedRecoveryModel.outcome ?? (control.canRetry ? "retryable" : "unavailable");
+    failedRecoveryHeading.textContent = t(control.incomplete ? "meetings.failed_recovery_title" : failedRecoveryModel.outcome === "complete" ? "meetings.failed_recovery_complete" : "meetings.failed_recovery_unknown");
+    const count = control.failedCount;
+    const counts = count === null || count === 0 ? "" : t("meetings.failed_recovery_count", { count });
+    const available = control.retryableCount === null || count === null || count === 0 ? "" : t("meetings.failed_recovery_available", { retryable: control.retryableCount, count });
+    const partiallyAvailable = count !== null && control.retryableCount !== null && control.retryableCount > 0 && control.retryableCount < count;
+    const reasons: Record<string, TranslationKey> = {
+      metadata_unavailable: "meetings.failed_recovery_metadata", unverified_provenance: "meetings.failed_recovery_unverified",
+      audio_changed: "meetings.failed_recovery_audio_changed", unreadable_audio: "meetings.failed_recovery_unreadable",
+      no_retained_audio: partiallyAvailable ? "meetings.failed_recovery_some_no_audio" : "meetings.failed_recovery_no_audio",
+      status_unavailable: "meetings.failed_recovery_unknown_help",
+    };
+    const reason = control.reasonCode ? t(reasons[control.reasonCode] ?? "meetings.failed_recovery_unknown_help") : "";
+    failedRecoveryDescription.textContent = [counts, available, reason].filter(Boolean).join(" ");
+    failedRecoveryDescription.hidden = !failedRecoveryDescription.textContent;
+    failedRecoveryRetry.disabled = !control.canRetry;
+    title.disabled = failedRecoveryModel.busy || !finalized && !["recording", "stopping"].includes(status.phase);
+    failedRecoveryRetry.hidden = !control.visible && !failedRecoveryModel.busy;
+    failedRecoveryRetry.textContent = t(failedRecoveryModel.busy ? "meetings.failed_recovery_working" : "meetings.failed_recovery_retry");
+    failedRecoveryOutcome.hidden = !failedRecoveryModel.outcome;
+    if (failedRecoveryModel.outcome) failedRecoveryOutcome.textContent = t(`meetings.failed_recovery_outcome_${failedRecoveryModel.outcome}`);
+    failedRecoveryError.hidden = !failedRecoveryModel.error;
+    if (failedRecoveryModel.error) failedRecoveryError.textContent = failedRecoveryModel.error instanceof FailedRecoveryContextError
+      ? t("meetings.failed_recovery_meeting_changed") : localizeBackendText(errorText(failedRecoveryModel.error));
   }
   function updateStatus(next: MeetingStatus) {
     status = next;
@@ -497,6 +547,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     if (!next.recording && next.phase !== "starting") liveSpeakers.stop();
     else liveSpeakers.observe(session, next.live_speaker_attribution);
     updateLiveSpeakers();
+    renderFailedRecovery();
     if (finalized && (!insights || insights.model.id !== owner.id)) {
       insights = reviewedInsights(ctx, insightHost()); panels.get("suggestions")!.replaceChildren(insights.root);
     }
@@ -740,6 +791,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     const id = owner.id;
     const detail = await api.meetingDetail(id);
     if (!statusEpoch.accepts(epoch) || owner.id !== id) return;
+    applyReview(detail);
+    await summary.refresh();
+  }
+  function applyReview(detail: MeetingDetail) {
     reviewDetail = detail;
     finalized = true;
     if (!composing && document.activeElement !== editor && !notes.dirty && notes.status !== "saving") {
@@ -749,8 +804,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       titleDraft.sync(session, detail.info?.title ?? status.title ?? ""); if (title.value !== titleDraft.value) title.value = titleDraft.value;
     }
     updateStatus({ ...status, id: owner.id, busy: false, recording: false, phase: "idle", pending: 0, notes: detail.notes, transcript: detail.transcript,
-      metadata_status: detail.metadata_status, title: detail.info?.title ?? status.title });
-    await summary.refresh();
+      metadata_status: detail.metadata_status, title: detail.info?.title ?? status.title, transcription_warning: null });
+    failedRecoveryModel.observe(detail);
   }
   async function stopCapture() {
     statusEpoch.invalidate();
@@ -866,6 +921,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     }
     if (source && !matched) { sourceNotice.replaceChildren(h("p", { class: "help" }, l("meetings.source_changed")), h("blockquote", {}, source.text)); sourceNotice.hidden = false; }
   }
+  if (initialDetail) failedRecoveryModel.observe(initialDetail);
   updateStatus(initial);
   updateSaving();
   updatePanes();

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "cedar_en",
+    "family_id": "cedar_planning",
+    "split": "development",
+    "language": "en",
+    "utterances": [
+      {"start_ms": 0, "end_ms": 3000, "speaker": "others", "text": "Noor will prepare the fictional Cedar demo. We decided to use the blue prototype."},
+      {"start_ms": 3000, "end_ms": 6000, "speaker": "me", "text": "Friday is only a proposal. We have not agreed a release date."},
+      {"start_ms": 6000, "end_ms": 9000, "speaker": "others", "text": "The earlier Friday proposal is withdrawn. Who will review the checklist?"}
+    ]
+  },
+  {
+    "id": "cedar_nl",
+    "family_id": "cedar_planning",
+    "split": "development",
+    "language": "nl",
+    "utterances": [
+      {"start_ms": 0, "end_ms": 3000, "speaker": "others", "text": "Noor bereidt de fictieve Cedar-demo voor. We kozen voor het blauwe prototype."},
+      {"start_ms": 3000, "end_ms": 6000, "speaker": "me", "text": "Vrijdag is alleen een voorstel. We hebben geen releasedatum afgesproken."},
+      {"start_ms": 6000, "end_ms": 9000, "speaker": "others", "text": "Het eerdere voorstel voor vrijdag vervalt. Wie kijkt de checklist na?"}
+    ]
+  },
+  {
+    "id": "cedar_mixed",
+    "family_id": "cedar_planning",
+    "split": "development",
+    "language": "mixed",
+    "utterances": [
+      {"start_ms": 0, "end_ms": 3000, "speaker": "others", "text": "Noor bereidt de fictieve Cedar-demo voor. We decided to use the blue prototype."},
+      {"start_ms": 3000, "end_ms": 6000, "speaker": "me", "text": "Friday is only a proposal. We hebben geen releasedatum afgesproken."},
+      {"start_ms": 6000, "end_ms": 9000, "speaker": "others", "text": "Het eerdere voorstel voor vrijdag vervalt. Who will review the checklist?"}
+    ]
+  }
+]

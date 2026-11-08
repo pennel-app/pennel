@@ -1254,13 +1254,7 @@ impl PennelEngine {
 
     pub fn meeting_transcript_snapshot_json(&self, id: String) -> Result<String, PennelError> {
         let snapshot = self.meeting_store().read_transcript_snapshot(&id)?;
-        serde_json::to_string(&serde_json::json!({
-            "meeting_uid": snapshot.meeting_uid,
-            "revision": snapshot.revision,
-            "metadata_status": snapshot.metadata_status,
-            "transcript": crate::transcript_projection::rows(&snapshot.utterances)?,
-        }))
-        .map_err(PennelError::storage)
+        meeting_transcript_projection_json(&snapshot)
     }
 
     pub fn meeting_utterance_audio_json(
@@ -1371,16 +1365,23 @@ impl PennelEngine {
         let mut rows = snapshot.utterances;
         let mut recovered = 0;
         let mut unverified = false;
-        let mut provider_error = None;
+        // Keep corrupt chunks for review without blocking independent retained audio.
+        let mut batch_error = None;
         for row in rows.iter_mut().filter(|row| row.segment.failed) {
-            if row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
-                proof.disposition == crate::meeting_utterances::RecoveryAudioDisposition::Unverified
-            }) {
-                unverified = true;
-                continue;
-            }
-            let Some(path) = store.recovery_audio_path(&id, row) else {
-                continue;
+            use crate::FailedTranscriptionRecoveryReason as Reason;
+            let path = match store.recovery_audio_candidate(&id, row) {
+                Ok(path) => path,
+                Err(Reason::UnverifiedProvenance | Reason::MetadataUnavailable) => {
+                    unverified = true;
+                    continue;
+                }
+                Err(Reason::NoRetainedAudio | Reason::UnreadableAudio) => continue,
+                Err(Reason::AudioChanged) => {
+                    batch_error = Some(PennelError::storage(
+                        "The recovery audio changed before recognition.",
+                    ));
+                    continue;
+                }
             };
             let mut proof = row
                 .metadata
@@ -1394,23 +1395,26 @@ impl PennelEngine {
             if proof.sha256.is_empty() {
                 proof.sha256 = actual_sha;
             } else if actual_sha != proof.sha256 {
-                return Err(PennelError::storage(
+                batch_error = Some(PennelError::storage(
                     "The recovery audio changed before recognition.",
                 ));
+                continue;
             }
             let transcript = match self.stt_meeting(&settings, &wav, &keys) {
                 Ok(transcript) => transcript,
                 Err(error) => {
-                    provider_error = Some(meeting_retry_error(error));
+                    // Stop service work and retain actionable provider/account guidance.
+                    batch_error = Some(meeting_retry_error(error));
                     break;
                 }
             };
             if !crate::meetings::recovery_provenance(&path, proof.disposition)
                 .is_some_and(|actual| proof.same_audio(&actual))
             {
-                return Err(PennelError::storage(
+                batch_error = Some(PennelError::storage(
                     "The recovery audio changed during recognition.",
                 ));
+                continue;
             }
             let segment = &mut row.segment;
             if let Some((samples, rate)) = decode_wav(&wav) {
@@ -1452,7 +1456,7 @@ impl PennelEngine {
             recovered += 1;
         }
         if recovered == 0
-            && let Some(error) = provider_error
+            && let Some(error) = batch_error
         {
             return Err(error);
         }
@@ -1460,7 +1464,7 @@ impl PennelEngine {
         store.write_transcript_snapshot(&id, Some(snapshot.revision), &rows)?;
         store.restore_recovery_duration(&id)?;
         let _ = store.cleanup_committed_audio(&id);
-        if let Some(error) = provider_error {
+        if let Some(error) = batch_error {
             return Err(error);
         }
         if recovered == 0 && unverified {
@@ -1765,7 +1769,30 @@ fn open_index(path: &std::path::Path) -> Option<MeetingIndex> {
     })
 }
 
+fn meeting_transcript_projection_json(
+    snapshot: &crate::MeetingTranscriptSnapshot,
+) -> Result<String, PennelError> {
+    serde_json::to_string(&serde_json::json!({
+        "meeting_uid": &snapshot.meeting_uid,
+        "revision": snapshot.revision,
+        "metadata_status": snapshot.metadata_status,
+        "transcript": crate::transcript_projection::rows(&snapshot.utterances)?,
+    }))
+    .map_err(PennelError::storage)
+}
+
 impl PennelEngine {
+    /// Rust-only detail projection and recovery eligibility from one authoritative snapshot.
+    pub fn meeting_transcript_snapshot_with_recovery_plan(
+        &self,
+        id: &str,
+    ) -> Result<(String, crate::FailedTranscriptionRecoveryPlan), PennelError> {
+        let store = self.meeting_store();
+        let snapshot = store.read_transcript_snapshot(id)?;
+        let plan = store.failed_recovery_plan(id, &snapshot);
+        Ok((meeting_transcript_projection_json(&snapshot)?, plan))
+    }
+
     pub fn apply_task_model_choice(
         &self,
         task: ProviderTask,
@@ -4866,6 +4893,180 @@ mod tests {
         }
         store.write_transcript_snapshot(&id, None, &rows).unwrap();
         (id, paths)
+    }
+
+    #[test]
+    fn failed_recovery_plan_projection_is_coherent_and_keeps_provenance_private() {
+        let (directory, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&directory, &server);
+        let (id, _) = meeting_with_recovery(&engine, 2);
+
+        let (json, plan) = engine
+            .meeting_transcript_snapshot_with_recovery_plan(&id)
+            .unwrap();
+
+        assert_eq!(plan.failed_count, Some(2));
+        assert_eq!(plan.retryable_count, Some(2));
+        assert_eq!(
+            plan.status,
+            crate::FailedTranscriptionRecoveryStatus::Retryable
+        );
+        assert_eq!(json, engine.meeting_transcript_snapshot_json(id).unwrap());
+        let projection: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(projection["transcript"].as_array().unwrap().len(), 2);
+        assert!(!json.contains("recovery_audio"));
+        assert!(!json.contains("file_name"));
+        assert!(!json.contains("sha256"));
+    }
+
+    #[test]
+    fn failed_recovery_plan_projection_keeps_corrupt_metadata_counts_unknown() {
+        let (directory, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&directory, &server);
+        let (id, _) = meeting_with_recovery(&engine, 1);
+        engine
+            .set_meeting_notes(id.clone(), "Private fixture note stays.".into())
+            .unwrap();
+        let root = engine.meeting_store().dir_of(&id);
+        std::fs::write(root.join("transcript.meta.json"), b"owned invalid metadata").unwrap();
+        let before = ["transcript.md", "transcript.meta.json", "notes.md"]
+            .map(|name| std::fs::read(root.join(name)).unwrap());
+        let recognition = stt(&mut server, "Must not be requested.").expect(0);
+
+        let (json, plan) = engine
+            .meeting_transcript_snapshot_with_recovery_plan(&id)
+            .unwrap();
+
+        assert_eq!(plan.failed_count, None);
+        assert_eq!(plan.retryable_count, None);
+        assert_eq!(
+            plan.status,
+            crate::FailedTranscriptionRecoveryStatus::Unavailable
+        );
+        assert_eq!(
+            plan.reason_code,
+            Some(crate::FailedTranscriptionRecoveryReason::MetadataUnavailable)
+        );
+        let projection: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(projection["metadata_status"], "corrupt");
+        assert_eq!(
+            ["transcript.md", "transcript.meta.json", "notes.md"]
+                .map(|name| std::fs::read(root.join(name)).unwrap()),
+            before
+        );
+        recognition.assert();
+    }
+
+    #[test]
+    fn meeting_retry_revalidates_pcm_after_the_header_only_plan_before_provider_calls() {
+        let (directory, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&directory, &server);
+        let (id, paths) = meeting_with_recovery(&engine, 1);
+        engine
+            .set_meeting_notes(id.clone(), "Private fixture note stays.".into())
+            .unwrap();
+        let store = engine.meeting_store();
+        let root = store.dir_of(&id);
+        let before = ["transcript.md", "transcript.meta.json", "notes.md"]
+            .map(|name| std::fs::read(root.join(name)).unwrap());
+        let (_, plan) = engine
+            .meeting_transcript_snapshot_with_recovery_plan(&id)
+            .unwrap();
+        assert_eq!(plan.retryable_count, Some(1));
+        let mut changed = std::fs::read(&paths[0]).unwrap();
+        changed[44] ^= 1;
+        std::fs::write(&paths[0], &changed).unwrap();
+        let (_, current) = engine
+            .meeting_transcript_snapshot_with_recovery_plan(&id)
+            .unwrap();
+        assert_eq!(current.retryable_count, Some(1));
+        let recognition = stt(&mut server, "Must not be requested.").expect(0);
+
+        let error = engine.retranscribe_failed(id, keys()).unwrap_err();
+
+        assert!(matches!(error, PennelError::Storage { .. }));
+        assert_eq!(
+            ["transcript.md", "transcript.meta.json", "notes.md"]
+                .map(|name| std::fs::read(root.join(name)).unwrap()),
+            before
+        );
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), changed);
+        recognition.assert();
+    }
+
+    #[test]
+    fn meeting_retry_preserves_corrupt_audio_and_recovers_later_healthy_chunks() {
+        let (directory, mut server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = meeting_engine(&directory, &server);
+        let (id, paths) = meeting_with_recovery(&engine, 2);
+        engine
+            .set_meeting_notes(id.clone(), "Private fixture note stays.".into())
+            .unwrap();
+        let store = engine.meeting_store();
+        let root = store.dir_of(&id);
+        let audio = root.join("audio");
+        std::fs::create_dir_all(&audio).unwrap();
+        let archive_paths = [audio.join("microphone.m4a"), audio.join("system.m4a")];
+        for path in &archive_paths {
+            std::fs::write(path, b"owned archive preservation fixture").unwrap();
+        }
+        let archives = archive_paths
+            .each_ref()
+            .map(|path| std::fs::read(path).unwrap());
+        let notes = std::fs::read(root.join("notes.md")).unwrap();
+        let healthy = std::fs::read(&paths[1]).unwrap();
+        let mut corrupt = std::fs::read(&paths[0]).unwrap();
+        corrupt[44] ^= 1;
+        std::fs::write(&paths[0], &corrupt).unwrap();
+        let expected = healthy.clone();
+        let forbidden = corrupt.clone();
+        let recognition = server
+            .mock("POST", "/audio/transcriptions")
+            .with_body_from_request(move |request| {
+                let body = request.body().unwrap();
+                assert!(body.windows(expected.len()).any(|part| part == expected));
+                assert!(body.windows(forbidden.len()).all(|part| part != forbidden));
+                br#"{"text":"Recovered healthy passage."}"#.to_vec()
+            })
+            .expect(1)
+            .create();
+
+        let error = engine.retranscribe_failed(id.clone(), keys()).unwrap_err();
+
+        assert!(matches!(error, PennelError::Storage { .. }));
+        let saved = store.read_committed_transcript_snapshot(&id).unwrap();
+        assert!(saved.utterances[0].segment.failed);
+        assert!(!saved.utterances[1].segment.failed);
+        assert_eq!(
+            saved.utterances[1].segment.text,
+            "Recovered healthy passage."
+        );
+        assert_eq!(std::fs::read(root.join("notes.md")).unwrap(), notes);
+        assert_eq!(
+            archive_paths
+                .each_ref()
+                .map(|path| std::fs::read(path).unwrap()),
+            archives
+        );
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), corrupt);
+        assert!(!paths[1].exists());
+        recognition.assert();
+        recognition.remove();
+
+        let no_repeat = stt(&mut server, "Must not be repeated.").expect(0);
+        let manifest = std::fs::read(root.join("transcript.meta.json")).unwrap();
+        assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
+        assert_eq!(
+            store.read_committed_transcript_snapshot(&id).unwrap(),
+            saved
+        );
+        assert_eq!(
+            std::fs::read(root.join("transcript.meta.json")).unwrap(),
+            manifest
+        );
+        assert_eq!(std::fs::read(root.join("notes.md")).unwrap(), notes);
+        assert_eq!(std::fs::read(&paths[0]).unwrap(), corrupt);
+        no_repeat.assert();
     }
 
     #[test]
