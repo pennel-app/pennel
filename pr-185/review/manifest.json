@@ -1,0 +1,154 @@
+{
+  "before_source": "c4a83a818e6827fdd4d30766010605216e716d8a",
+  "after_source": "4b2f567416237fe82e7a048551549bd6914d5f78",
+  "method": "Owned headless mock renders. Identical current fixture/action input and screenshot-only disabled non-mutating assertions in both snapshots; full after interaction assertions pass separately.",
+  "shared_inputs": {
+    "apps/desktop/tests/failed-recovery.interactions.mjs": "45b2f1b00f305f86f3f114f9d37cd4a1036bf651b1c2f5a7613c17d35909230b",
+    "apps/desktop/tests/i18n.test.mjs": "07b004b55a4a0df1dadea43a8a6720f86410f1a53376590cb6fc22bd0ed66e08",
+    "scripts/fixtures/desktop-platform.js": "6222a51b722a0af0b8f822fc5b7f8288688ac1fd7bc743864c9407a814887232",
+    "scripts/fixtures/desktop-platform.test.mjs": "9e71356f8708fa3790d1272b15cc0f0c6fd0bc49c152b5e194a401461064680f",
+    "scripts/fixtures/visual-cases.json": "94c6cc295e3651fc27f670c7878805448cde73697188a2f9b9b1065c97e8c6a1"
+  },
+  "pull_request": "https://github.com/pennel-app/pennel/pull/185",
+  "same_dimensions": {
+    "width": 980,
+    "height": 640
+  },
+  "independent_checked_after_matrix": {
+    "images": 24,
+    "languages": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "minimum_size": [
+      760,
+      520
+    ],
+    "failures": []
+  },
+  "primary_images": [
+    {
+      "locale": "en",
+      "appearance": "light",
+      "sha256": "19fc336e22136f972b10e96f32393d0bad3a9affacf79e001e35df142d79447f",
+      "matches_published_image": true
+    },
+    {
+      "locale": "en",
+      "appearance": "dark",
+      "sha256": "7cfb241af5a1629a822bf3113956d7f6cdbf17c9b5c1ba0cff60785cc6d5b1bb",
+      "matches_published_image": true
+    },
+    {
+      "locale": "nl",
+      "appearance": "light",
+      "sha256": "159b6e0c46c31715c6d37be0f4e1b88a64b44b2dd3812aaa1b5e393efa87b3e1",
+      "matches_published_image": true
+    },
+    {
+      "locale": "nl",
+      "appearance": "dark",
+      "sha256": "e995172e0a5ca5b6da2eb37afb2356473e277f639ca8b0048133c583cd4a4097",
+      "matches_published_image": true
+    }
+  ],
+  "files": [
+    {
+      "path": "pr-185/review/before-partial-en-light.png",
+      "bytes": 66161,
+      "sha256": "c4534fff249f2ed7445f038462dc99693567d07432ded5a433c1bce06555e25a"
+    },
+    {
+      "path": "pr-185/review/before-partial-en-dark.png",
+      "bytes": 66267,
+      "sha256": "970fc596448a91400f1d7c6c0e04fd0a445be54440a6fcad5c2709c1c961d94c"
+    },
+    {
+      "path": "pr-185/review/before-partial-nl-light.png",
+      "bytes": 68844,
+      "sha256": "15b40c17d156804dffa8eee860873836ade03ee6ebe46c376e480049a2d08c0e"
+    },
+    {
+      "path": "pr-185/review/before-partial-nl-dark.png",
+      "bytes": 68918,
+      "sha256": "32dcef0ee946e467519c2b9b5f3d4ed2d11cd8a017a43e75303fe1224a5d6434"
+    },
+    {
+      "path": "pr-185/review/before-integrity-en-light.png",
+      "bytes": 65062,
+      "sha256": "44f46a2afefea1eee2f43662dfae87c8472c2f506b8dd2608e6e4dcb84074a1e"
+    },
+    {
+      "path": "pr-185/review/before-integrity-en-dark.png",
+      "bytes": 65200,
+      "sha256": "f71b71ad5ada0f41f23ea23b3c97d808c229fbbd73772147532da4efdeecabd4"
+    },
+    {
+      "path": "pr-185/review/before-integrity-nl-light.png",
+      "bytes": 66769,
+      "sha256": "1d2493dadf0b22609c78ea7c3640afaa9c05100f7a4837c253aa17988b4a83ec"
+    },
+    {
+      "path": "pr-185/review/before-integrity-nl-dark.png",
+      "bytes": 67012,
+      "sha256": "7da7ee0d62ceb3cf699784ea1a12cadd5c9238780dd273484d52392e2f10c296"
+    },
+    {
+      "path": "pr-185/review/after-partial-en-light.png",
+      "bytes": 67871,
+      "sha256": "f44feb40121b92a02886b1404d92ce48ca0290bd97fd8b7dcec5a1a97b36c9ac"
+    },
+    {
+      "path": "pr-185/review/after-partial-en-dark.png",
+      "bytes": 67988,
+      "sha256": "13cc2f585af5d75772f298745c143e8b837c108a11df7ae9529bf7567f93dbe2"
+    },
+    {
+      "path": "pr-185/review/after-partial-nl-light.png",
+      "bytes": 72351,
+      "sha256": "ad551b4c432edf7e61508137f1b066595ee8d11279f3dba86e7899f43e878c09"
+    },
+    {
+      "path": "pr-185/review/after-partial-nl-dark.png",
+      "bytes": 72652,
+      "sha256": "0996738379e3090c408cb3ba9baddbe07c6bc33a35b33486182d77d53a229e54"
+    },
+    {
+      "path": "pr-185/review/after-integrity-en-light.png",
+      "bytes": 65062,
+      "sha256": "44f46a2afefea1eee2f43662dfae87c8472c2f506b8dd2608e6e4dcb84074a1e"
+    },
+    {
+      "path": "pr-185/review/after-integrity-en-dark.png",
+      "bytes": 65200,
+      "sha256": "f71b71ad5ada0f41f23ea23b3c97d808c229fbbd73772147532da4efdeecabd4"
+    },
+    {
+      "path": "pr-185/review/after-integrity-nl-light.png",
+      "bytes": 68795,
+      "sha256": "ec6df5c131256db7ddb4762efb9b8a9035f95518e492202e001cff43888548d1"
+    },
+    {
+      "path": "pr-185/review/after-integrity-nl-dark.png",
+      "bytes": 69297,
+      "sha256": "e03bcc39d4959c38af88027b08067a58f60451b99877d1dad1828baef4cbcf58"
+    }
+  ],
+  "offline_refactor_check": {
+    "source_commit": "4b2f567416237fe82e7a048551549bd6914d5f78",
+    "original_freeze_sha256": "8e416f286e1ada12002d6893d56f055c06f33849a039f7cef176a92bbf73511d",
+    "original_bridge_sha256": "e8e2022ae3d11e65e26e27b83f2c4152964d2aa801a9214446326615780d334c",
+    "fresh_bridge_sha256": "e8e2022ae3d11e65e26e27b83f2c4152964d2aa801a9214446326615780d334c",
+    "current_runner_sha256": "96b301b8c6ed9ddf33cd200865ec03c6f47ff8327fd04ae5ba2498f7847719d2",
+    "production_exports_identical": true,
+    "original_freeze_retained_unchanged": true,
+    "offline_replay_status": "identity_unavailable",
+    "network_requests": 0,
+    "model_inference": false,
+    "production_admission": false
+  }
+}
