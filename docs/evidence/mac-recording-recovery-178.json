@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-11-08T13:01:39.761580+00:00",
+  "task": {
+    "title": "Establish the Mac recording and recovery baseline",
+    "url": "https://github.com/pennel-app/pennel/issues/178"
+  },
+  "evidence_kind": "Real Mac capture, Tauri IPC, local storage and app relaunch; invented TTS source; synthetic loopback speech responses; agent UI observations",
+  "candidate": {
+    "source": "2bf192afc661acfd63618c1487ae271ab1c514c8",
+    "comparison_source": "a005b8e0d39161aea69d2a30b5638078eef2a46d",
+    "product_name": "Pennel Capture Preview",
+    "bundle_identifier": "dev.pennel.Pennel.capture.preview",
+    "binary_sha256": "515758fbcc6f50d57db1a8f1d69e98364f2a5c6fb8115071eb23753dc90e383a",
+    "signer": "Developer ID Application: Lander Parren",
+    "team": "B538Q2K76C",
+    "strict_deep_signature_verified": true,
+    "package_name": "Pennel-Capture-Preview-baseline-178.zip",
+    "package_size": 14702092,
+    "package_sha256": "c2b5edf1d34981c1d70bf24d8665f80f16cc40e8005ddb54211cd49cbd0087f8",
+    "app_tree_sha256": "8e57f0da86fa17294cb15f28152f6518b6d0e29644f7619ad065c5fdc4aa312b",
+    "file_count": 8,
+    "source_equivalence": {
+      "apps/desktop/src": "byte-identical tracked tree",
+      "apps/desktop/src-tauri": "byte-identical tracked tree",
+      "apps/macos-platform": "byte-identical tracked tree",
+      "core/src/session.rs": {
+        "production_prefix_sha256": "09ed0c99119383a62edb735594c34a8414fd4b8dd9bdc858e0c88178f5cb1548",
+        "production_prefix_bytes": 58761,
+        "delimiter": "#[cfg(test)] followed by mod tests",
+        "test_only_differences": true
+      },
+      "core/src/live_speakers.rs": {
+        "production_prefix_sha256": "a3e850dbae3cb7fa1cbff9e26930c1e4c84b6b8f7339ac41ae6140aeb33c4917",
+        "production_prefix_bytes": 39352,
+        "delimiter": "#[cfg(test)] followed by mod tests",
+        "test_only_differences": true
+      }
+    },
+    "full_app_export_equivalence": false,
+    "other_production_differences": "Shareable-export label localization only; no recording/recovery equivalence claim is made for export behavior."
+  },
+  "environment": {
+    "os": "macOS 27.0.1",
+    "os_build": "26A434",
+    "architecture": "arm64",
+    "hardware": "Mac16,8 / Apple M4 Pro",
+    "memory_bytes": 51539607552,
+    "audio_route": "Existing default Bluetooth/AirPods input/output; no default-device settings were edited",
+    "echo_cancellation_active": false,
+    "echo_warning_visible": true,
+    "microphone_and_system_audio_archives": "AAC/M4A, mono 16000 Hz"
+  },
+  "isolation": {
+    "new_capture_data_and_library": true,
+    "ordinary_preview_and_production_not_launched": true,
+    "capture_keychain_service": "dev.pennel.Pennel.capture.preview",
+    "credential_writes": false,
+    "external_paste_tracking_disabled_by_capture_mode": true,
+    "clipboard_notice_disabled": true,
+    "auto_detection_shortcuts_sync_calendar_and_automation_disabled_in_test_profile": true,
+    "user_confirmed_quiet_window": true,
+    "content_transmitted_only_to_owned_loopback_stub": true,
+    "limitation": "Capture WebKit/TCC/Keychain identity is separate from ordinary apps but fixed across Capture Preview runs; not a unique OS identity per data directory."
+  },
+  "observations": {
+    "normal": {
+      "capture_elapsed_secs": 36,
+      "completed_rows": 1,
+      "failed_rows": 0,
+      "notes_preserved": true,
+      "two_audio_tracks_available": true,
+      "stop_rpc_seconds": 0.19436687498819083,
+      "archive_durations_secs": {
+        "system": 36.326687,
+        "microphone": 36.268687
+      }
+    },
+    "provider_failure": {
+      "capture_elapsed_secs": 52,
+      "failed_rows": 2,
+      "notes_preserved": true,
+      "two_audio_tracks_available": true,
+      "stop_rpc_seconds": 0.23951154202222824,
+      "archive_durations_secs": {
+        "system": 51.996625,
+        "microphone": 51.821375
+      },
+      "physical_http_attempts": 4,
+      "physical_attempts_per_failed_chunk": 2
+    },
+    "restart_before_retry": {
+      "meeting_files_identical": true,
+      "provider_requests_before": 5,
+      "provider_requests_after": 5,
+      "no_automatic_retry": true
+    },
+    "partial_retry": {
+      "returned_error": "Provider error (503): provider server error",
+      "completed_rows": 1,
+      "failed_rows": 1,
+      "notes_and_remaining_audio_preserved": true,
+      "survived_app_relaunch": true,
+      "physical_requests": 2
+    },
+    "final_retry": {
+      "recovered_count": 1,
+      "completed_rows": 2,
+      "failed_rows": 0,
+      "physical_requests": 1,
+      "successful_prefix_not_resubmitted": true,
+      "notes_and_archives_unchanged": true,
+      "remaining_failed_wavs": 0,
+      "survived_final_relaunch": true
+    },
+    "playback": {
+      "native_saved_system_track_start_and_stop_succeeded": true,
+      "seek_start_ms": 30000,
+      "listening_judgment": "not performed"
+    },
+    "ui": {
+      "observed_recording_notes_and_saved_transcript": true,
+      "saved_failure_warning_missing_after_relaunch": true,
+      "failed_rows_have_no_targeted_retry": true,
+      "files_and_recovery_has_no_transcription_retry": true,
+      "full_recording_retranscription_is_distinct": true,
+      "recovered_rows_visible_after_final_relaunch": true,
+      "human_usability_acceptance": false
+    }
+  },
+  "provider_requests": [
+    {
+      "ordinal": 1,
+      "mode": "ok_all",
+      "mode_ordinal": 1,
+      "status": 200,
+      "audio_bytes": 665644,
+      "audio_sha256": "4da9d1fd09505883977a669d991934ba138e796fa66c14ddf4e84bbaca4b6c18"
+    },
+    {
+      "ordinal": 2,
+      "mode": "fail_all",
+      "mode_ordinal": 1,
+      "status": 503,
+      "audio_bytes": 960044,
+      "audio_sha256": "395a6f681170c1405bbe2652a2eb95ff68a2a34d5af36c32af8c224c874a848c"
+    },
+    {
+      "ordinal": 3,
+      "mode": "fail_all",
+      "mode_ordinal": 2,
+      "status": 503,
+      "audio_bytes": 960044,
+      "audio_sha256": "395a6f681170c1405bbe2652a2eb95ff68a2a34d5af36c32af8c224c874a848c"
+    },
+    {
+      "ordinal": 4,
+      "mode": "fail_all",
+      "mode_ordinal": 3,
+      "status": 503,
+      "audio_bytes": 688044,
+      "audio_sha256": "901b531697da4ce0ba2ed28b75f29d51e3bd09054bf01aba6a27d5784347a46d"
+    },
+    {
+      "ordinal": 5,
+      "mode": "fail_all",
+      "mode_ordinal": 4,
+      "status": 503,
+      "audio_bytes": 688044,
+      "audio_sha256": "901b531697da4ce0ba2ed28b75f29d51e3bd09054bf01aba6a27d5784347a46d"
+    },
+    {
+      "ordinal": 6,
+      "mode": "prefix_then_fail",
+      "mode_ordinal": 1,
+      "status": 200,
+      "audio_bytes": 960044,
+      "audio_sha256": "395a6f681170c1405bbe2652a2eb95ff68a2a34d5af36c32af8c224c874a848c"
+    },
+    {
+      "ordinal": 7,
+      "mode": "prefix_then_fail",
+      "mode_ordinal": 2,
+      "status": 503,
+      "audio_bytes": 688044,
+      "audio_sha256": "901b531697da4ce0ba2ed28b75f29d51e3bd09054bf01aba6a27d5784347a46d"
+    },
+    {
+      "ordinal": 8,
+      "mode": "ok_all",
+      "mode_ordinal": 1,
+      "status": 200,
+      "audio_bytes": 688044,
+      "audio_sha256": "901b531697da4ce0ba2ed28b75f29d51e3bd09054bf01aba6a27d5784347a46d"
+    }
+  ],
+  "unperformed": [
+    "Actual local/Apple/hosted speech recognition and word accuracy; EN/NL/mixed quality",
+    "Two-party call, speaker/overlap quality and acoustic echo acceptance",
+    "Permission denial/revocation, input/output-device changes and interruption stress",
+    "60-minute recording, resource/latency qualification and delayed-provider Stop stress",
+    "Native disk-write failure, exhausted-disk/crash-during-write recovery",
+    "VoiceOver, native 200% enlargement and human task acceptance",
+    "Suggestions model qualification and generated output quality",
+    "Windows/Linux/iPhone acceptance, signed upgrade, release and deployment"
+  ],
+  "defect": {
+    "title": "Expose failed-chunk transcription recovery after reopening a saved meeting",
+    "url": "https://github.com/pennel-app/pennel/issues/183",
+    "status": "Open / Backlog / Desktop / Next / P2",
+    "fixed_in_this_session": false
+  },
+  "artifact_sha256": {
+    "failed-result.json": "921ebb06dcda2d06801b91d2a9b8452bca6be5865fd0a53a764f0f9611592a49",
+    "failed-stop.json": "8c4d2a8e9f16189f78c136ced7b0a31c0f54a7e02501c31a275607a833c0375c",
+    "files-before-restart.json": "75ac8aac65d7c768f1f7ffcb71c1fe744feabd5d7136654b53bf339634d50014",
+    "files-final.json": "9adf0577f61e01b23bafcf293d5d9d54018b382ae7488f33985407450c0999c4",
+    "final-reopen.json": "44e864570cf785931ef4bc012d04f93a25105298cb78bdb4e2e2a409301a2d80",
+    "final-retry.json": "0108ead7c9a9ed89b420f99cf03f834db6aa929aa0bd6c568ea58c5ad7fd1b1b",
+    "normal-result.json": "c41dbd1f8a5f706851681931313326945a0814885113c3009e3dabe08df75a7f",
+    "normal-stop.json": "97b55751febf07f90fd64840e3c515c80c2a028d9abb2d59ee146c9f9ecc6edf",
+    "package.json": "27baefdfd4f1d92b8f7761e7fd0ce327a19498e4d8a705cfb6e55765a835d327",
+    "partial-reopen.json": "bc35d4bdac042c81f7399db48254b2e8a53728eba70f18865ade50462d9a5b2a",
+    "partial-retry.json": "9e9d1e65fe9e04dd29125924588b64851dd120d3b913a079caa7c901be5fa5f3",
+    "playback.json": "80f46ec3dad096cabbd86200b5bbe63309157c72b231a8d2e9311cf7fcd7364c",
+    "provider-requests.json": "cc7c3b63611466feb19b12af742c163d31cdd744c1bfee896638793d98f83fd5",
+    "restart-result.json": "aab7fc01b6ec628d95ccf76817dbc92c784c3e0ecd156bf2ab70e6ef55c902ee",
+    "baseline_support.py": "ad07344d30cc0a068d31d8abcae01dd23eb1e0e5ce3f152552f17f2dfa0bb441",
+    "client.py": "2871ac47f425d89b760b50c367cc1ae5a558a6e1d685dd4b4f94f3dfc919b6e1"
+  },
+  "local_artifact_root": "build/mac-recording-recovery-178/20261108T124533Z",
+  "cleanup": {
+    "owned_native_preview_quit": true,
+    "owned_loopback_service_stopped": true,
+    "retained_local_audio_and_qa_artifacts": true,
+    "product_source_changed": false
+  },
+  "validation": {
+    "stage_assertions": "passed",
+    "metadata_and_hash_review": "passed after correcting source comparison to the complete production prefix",
+    "note_and_archive_hashes_verified": 6,
+    "referenced_artifact_hashes_verified": 16,
+    "product_build_required": false,
+    "reason": "Only baseline evidence documents changed; the retained native candidate was exercised directly."
+  }
+}
