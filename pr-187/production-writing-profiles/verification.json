@@ -1,0 +1,10 @@
+{
+  "mock_data": true,
+  "production_account_accessed": false,
+  "baseline_commit": "9c1227bba9651a112e14b1f4a27a9f71d3d6691d",
+  "matched_fixture_input": true,
+  "matched_screenshots": 12,
+  "successful_interaction_flows": 12,
+  "production_learning_and_sharing_controls_exposed": true,
+  "production_opt_in_consent_and_profile_privacy_verified": true
+}
