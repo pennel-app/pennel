@@ -40,19 +40,63 @@ impl RelayClient {
     }
 
     /// A 401 gets one forced refresh, in case the access token was revoked before it expired.
-    fn post(&self, path: &str, body: &Value) -> Result<(u16, Value), PennelError> {
+    fn request(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<(u16, Value), PennelError> {
         let url = format!("{}{path}", self.session.base_url());
+        let epoch = self.session.generation();
         let token = self.session.access_token()?;
-        let mut response = send_json(&self.http, "POST", &url, Some(&token), Some(body))?;
+        let mut response = send_json(&self.http, method, &url, Some(&token), body)?;
         if response.0 == 401 {
             let token = self.session.refreshed_token()?;
-            response = send_json(&self.http, "POST", &url, Some(&token), Some(body))?;
+            response = send_json(&self.http, method, &url, Some(&token), body)?;
+        }
+        if epoch != self.session.generation() || !self.session.signed_in() {
+            return Err(PennelError::Cancelled);
         }
         Ok(response)
     }
 
+    fn post(&self, path: &str, body: &Value) -> Result<(u16, Value), PennelError> {
+        self.request("POST", path, Some(body))
+    }
+
     pub fn poll(&self, client: &str) -> Result<Vec<RelayRequest>, PennelError> {
-        let (status, body) = self.post("/v1/relay/poll", &json!({ "client": client }))?;
+        self.poll_body(&json!({ "client": client }))
+    }
+
+    pub fn poll_with_capabilities(
+        &self,
+        client: &str,
+        capabilities: &[String],
+    ) -> Result<Vec<RelayRequest>, PennelError> {
+        self.poll_body(&json!({"client": client, "capabilities": capabilities}))
+    }
+
+    pub fn writing_style_source(&self, enabled: Option<bool>) -> Result<bool, PennelError> {
+        let method = match enabled {
+            None => "GET",
+            Some(true) => "PUT",
+            Some(false) => "DELETE",
+        };
+        let body = enabled.map(|_| json!({}));
+        let (status, response) = self.request(method, "/v1/writing-style/source", body.as_ref())?;
+        if status != 200 {
+            return Err(error_from(status, &response));
+        }
+        response
+            .get("designated")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| PennelError::InvalidResponse {
+                message: "unexpected writing profile source response".into(),
+            })
+    }
+
+    fn poll_body(&self, request: &Value) -> Result<Vec<RelayRequest>, PennelError> {
+        let (status, body) = self.post("/v1/relay/poll", request)?;
         if status != 200 {
             return Err(error_from(status, &body));
         }
@@ -154,6 +198,54 @@ mod tests {
             .with_body(r#"{"requests":[]}"#)
             .create();
         assert!(client(&server).poll("x").unwrap().is_empty());
+    }
+
+    #[test]
+    fn explicit_capabilities_do_not_implicitly_enable_meetings() {
+        let mut server = mockito::Server::new();
+        let _refresh = refresh(&mut server, "acc", "ref2");
+        let poll = server
+            .mock("POST", "/v1/relay/poll")
+            .match_body(Matcher::Json(
+                json!({"client":"preview", "capabilities":["get_writing_profile"]}),
+            ))
+            .with_body(r#"{"requests":[]}"#)
+            .create();
+        assert!(
+            client(&server)
+                .poll_with_capabilities("preview", &["get_writing_profile".into()])
+                .unwrap()
+                .is_empty()
+        );
+        poll.assert();
+    }
+
+    #[test]
+    fn source_selection_never_sends_a_caller_supplied_device_or_profile() {
+        let mut server = mockito::Server::new();
+        let _refresh = refresh(&mut server, "acc", "ref2");
+        let read = server
+            .mock("GET", "/v1/writing-style/source")
+            .match_header("authorization", "Bearer acc")
+            .with_body(r#"{"designated":false}"#)
+            .create();
+        let choose = server
+            .mock("PUT", "/v1/writing-style/source")
+            .match_body(Matcher::Json(json!({})))
+            .with_body(r#"{"designated":true}"#)
+            .create();
+        let remove = server
+            .mock("DELETE", "/v1/writing-style/source")
+            .match_body(Matcher::Json(json!({})))
+            .with_body(r#"{"designated":false}"#)
+            .create();
+        let relay = client(&server);
+        assert!(!relay.writing_style_source(None).unwrap());
+        assert!(relay.writing_style_source(Some(true)).unwrap());
+        assert!(!relay.writing_style_source(Some(false)).unwrap());
+        read.assert();
+        choose.assert();
+        remove.assert();
     }
 
     #[test]

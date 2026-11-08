@@ -26,3 +26,16 @@ An explicit new transcription pass over a retained recording, producing a revise
 
 **Suggestion**:
 A source-linked item proposed for the meeting owner's review that flags an action, decision, open question or changed commitment. Its quoted passage can contain several events, with unsupported owners or dates left unknown.
+
+**Writing profile**:
+A person's language-specific writing tendencies inferred from their own speech and corrected by them. It describes expression, rather than the sound of their voice or the facts they discussed.
+_Avoid_: Speaking profile, voiceprint
+
+**Speech sample**:
+A passage of the owner's recognized speech admitted as evidence for a writing profile. A capture session can contain several samples without becoming several independent examples.
+
+**Learned trait**:
+A writing tendency supported by speech from several capture sessions, such as directness or sentence rhythm.
+
+**Trait override**:
+A person's explicit correction to a writing-profile trait, retained as further speech is learned.

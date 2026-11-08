@@ -762,7 +762,69 @@ export interface CloudError {
   message: string;
 }
 
+export interface WritingProfileTrait {
+  key: string;
+  value: string;
+  support: number;
+  overridden: boolean;
+}
+
+export interface WritingProfileLanguage {
+  language: string;
+  word_count: number;
+  session_count: number;
+  status: "ready" | "insufficient_evidence";
+  traits: WritingProfileTrait[];
+  guidance: string[];
+}
+
+export interface WritingProfileSource {
+  id: string;
+  session_id: string;
+  kind: "dictation" | "meeting";
+  created_at_ms: number;
+  title: string;
+  fingerprint: string;
+  word_count: number;
+  language: string | null;
+  excluded: boolean;
+  analyzed: boolean;
+}
+
+export interface WritingProfileStatus {
+  available: boolean;
+  learning_enabled: boolean;
+  sharing_enabled: boolean;
+  started_at_ms: number | null;
+  revision: number;
+  processing?: boolean;
+  error: string | null;
+  min_words: number;
+  min_sessions: number;
+  languages: WritingProfileLanguage[];
+  sources: WritingProfileSource[];
+  trait_options: { key: string; values: string[] }[];
+}
+
+export interface WritingProfileConnection {
+  enabled: boolean;
+  signed_in: boolean;
+  designated: boolean;
+  mcp_url: string;
+  error?: string | null;
+}
+
 export const api = {
+  writingProfileStatus: () => invoke<WritingProfileStatus>("writing_profile_status"),
+  setWritingProfileLearning: (enabled: boolean) => invoke<WritingProfileStatus>("set_writing_profile_learning", { enabled }),
+  refreshWritingProfile: () => invoke<WritingProfileStatus>("refresh_writing_profile"),
+  setWritingProfileSourceExcluded: (sourceId: string, excluded: boolean) => invoke<WritingProfileStatus>("set_writing_profile_source_excluded", { sourceId, excluded }),
+  setWritingProfileTrait: (language: string, traitKey: string, value: string | null) => invoke<WritingProfileStatus>("set_writing_profile_trait", { language, traitKey, value }),
+  deleteWritingProfile: () => invoke<WritingProfileStatus>("delete_writing_profile"),
+  writingProfileConnection: () => invoke<WritingProfileConnection>("writing_profile_connection"),
+  setWritingProfileSharing: (enabled: boolean) => invoke<WritingProfileConnection>("set_writing_profile_sharing", { enabled }),
+  onWritingProfileChanged: (handler: () => void): Promise<() => void> =>
+    listen<null>("writing-profile-changed", handler),
   insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
   insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),
   beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy }),

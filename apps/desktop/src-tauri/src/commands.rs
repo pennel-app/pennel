@@ -2246,6 +2246,8 @@ mod tests {
             dictation_active: std::sync::atomic::AtomicBool::new(false),
             dictation_jobs: std::sync::atomic::AtomicUsize::new(0),
             paste_jobs: std::sync::atomic::AtomicUsize::new(0),
+            writing_profile_sharing_epoch: std::sync::Mutex::new(0),
+            writing_profile_source_gate: std::sync::Mutex::new(()),
             meeting_context: std::sync::Mutex::new(Some(crate::meeting_runtime::MeetingContext {
                 token,
                 uid,

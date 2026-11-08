@@ -840,6 +840,41 @@
     return undefined;
   }
 
+  const writingTraitOptions = [
+    { key: "directness", values: ["direct", "balanced", "indirect"] },
+    { key: "detail", values: ["concise", "balanced", "detailed"] },
+    { key: "register", values: ["conversational", "plain", "technical", "formal"] },
+    { key: "sentence_rhythm", values: ["short", "mixed", "long"] },
+    { key: "clause_structure", values: ["simple", "linked", "layered"] },
+    { key: "hedging", values: ["rare", "occasional", "frequent"] },
+  ];
+  const writingLearned = { directness: "direct", detail: "concise", register: "plain", sentence_rhythm: "short", clause_structure: "simple", hedging: "rare" };
+  const writingOverrides = new Map();
+  const writingState = { available: true, learning_enabled: Boolean(options.writing_profile), sharing_enabled: ["ready", "offline"].includes(options.writing_profile),
+    started_at_ms: options.writing_profile ? now - 4 * 86_400_000 : null, revision: 1, error: null, min_words: 1000, min_sessions: 3, languages: [], sources: [], trait_options: clone(writingTraitOptions) };
+  const seededWritingSources = options.writing_profile === "learning" ? [["en", 250]]
+    : options.writing_profile ? [["en", 460], ["en", 350], ["en", 390], ["nl", 500], ["nl", 310], ["nl", 290]] : [];
+  writingState.sources = seededWritingSources.map(([language, word_count], index) => ({ id: `synthetic-writing-source-${index}`, session_id: `synthetic-writing-session-${index}`,
+    kind: index % 2 ? "meeting" : "dictation", created_at_ms: now - (6 - index) * 86_400_000, title: `Synthetic owner speech ${index + 1}`,
+    fingerprint: `synthetic-writing-fingerprint-${index}`, word_count, language, excluded: false, analyzed: true }));
+  function writingSnapshot() {
+    writingState.languages = [...new Set(writingState.sources.filter(source => !source.excluded && source.analyzed).map(source => source.language))].map(language => {
+      const sources = writingState.sources.filter(source => source.language === language && !source.excluded && source.analyzed);
+      const word_count = sources.reduce((sum, source) => sum + source.word_count, 0), session_count = new Set(sources.map(source => source.session_id)).size;
+      const ready = word_count >= writingState.min_words && session_count >= writingState.min_sessions;
+      return { language, word_count, session_count, status: ready ? "ready" : "insufficient_evidence", traits: writingTraitOptions.flatMap(option => {
+        const override = writingOverrides.get(`${language}:${option.key}`);
+        return ready || override ? [{ key: option.key, value: override || writingLearned[option.key], support: session_count, overridden: !!override }] : [];
+      }), guidance: [] };
+    });
+    return clone(writingState);
+  }
+  function writingConnection() {
+    return { enabled: writingState.sharing_enabled, signed_in: signedIn, designated: writingState.sharing_enabled && options.writing_profile !== "other_source", mcp_url: "https://api.pennel.app/mcp/style",
+      ...(options.writing_profile === "offline" ? { error: "connection_unavailable" } : {}) };
+  }
+  function writingChanged() { writingState.revision++; emit("writing-profile-changed", null); return writingSnapshot(); }
+
   async function invoke(command, args = {}) {
     requireCurrentReview();
     calls.push(command);
@@ -862,6 +897,26 @@
       "prepare_insight_insertion", "reconcile_insight_insertions", "resolve_insight_insertion", "reassociate_insight_source",
       "begin_insights_analysis", "insights_job", "cancel_insights_analysis"].includes(command)) return insightCommand(command, args);
     switch (command) {
+      case "writing_profile_status": return writingSnapshot();
+      case "set_writing_profile_learning": writingState.learning_enabled = Boolean(args.enabled); writingState.started_at_ms ??= now; return writingChanged();
+      case "refresh_writing_profile": return writingChanged();
+      case "set_writing_profile_source_excluded": {
+        const source = writingState.sources.find(source => source.id === args.sourceId);
+        if (!source) throw Error("Unknown synthetic speech source.");
+        source.excluded = Boolean(args.excluded); return writingChanged();
+      }
+      case "set_writing_profile_trait": {
+        const option = writingTraitOptions.find(option => option.key === args.traitKey);
+        if (!option || args.value !== null && !option.values.includes(args.value)) throw Error("Unknown synthetic style trait.");
+        const key = `${args.language}:${args.traitKey}`;
+        if (args.value === null) writingOverrides.delete(key); else writingOverrides.set(key, args.value);
+        return writingChanged();
+      }
+      case "delete_writing_profile": writingState.learning_enabled = false; writingState.sharing_enabled = false; writingState.started_at_ms = null; writingState.sources = []; writingOverrides.clear(); return writingChanged();
+      case "writing_profile_connection": return writingConnection();
+      case "set_writing_profile_sharing":
+        if (args.enabled && !signedIn) throw { code: "signed_out", message: "Synthetic account is signed out." };
+        writingState.sharing_enabled = Boolean(args.enabled); writingChanged(); return writingConnection();
       case "desktop_environment": return {
         material: options.native_material || "unavailable",
         appearance: settings.appearance === "system" ? options.appearance : settings.appearance,
@@ -1387,7 +1442,7 @@
         signedIn = true; cloudAccountEpoch++; syncSetupPhase = "paused";
         return { kind: "done", email: cloudAccount.email };
       case "cloud_sync_now": return syncReport();
-      case "cloud_logout": signedIn = false; cloudAccountEpoch++; settings.cloud_sync = false; syncSetupPhase = "signed_out"; deviceLink = emptyLink(); emit("sync-changed", syncReport()); emit("settings-changed", null); return null;
+      case "cloud_logout": signedIn = false; cloudAccountEpoch++; settings.cloud_sync = false; writingState.sharing_enabled = false; syncSetupPhase = "signed_out"; deviceLink = emptyLink(); emit("sync-changed", syncReport()); emit("settings-changed", null); return null;
       case "cloud_sync_disable": settings.cloud_sync = false; syncSetupPhase = "paused"; emit("sync-changed", syncReport()); return null;
       case "cloud_rename_device": case "cloud_revoke_device": case "cloud_sync_confirm_deletes":
       case "delete_conflict_copy": case "open_url": case "copy_secret_text": return null;

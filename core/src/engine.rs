@@ -15,7 +15,7 @@ use crate::cloud::{SecretStore, VAULT_KEY_ACCOUNT};
 use crate::dictation_pad::DictationPad;
 use crate::error::PennelError;
 use crate::export::MeetingExport;
-use crate::history::{HistoryEntry, HistoryStatus, HistoryStore};
+use crate::history::{HistoryCaptureKind, HistoryEntry, HistoryStatus, HistoryStore};
 use crate::live_dictation::{DictationPreviewObserver, LiveDictationSession};
 use crate::llm::Reasoning;
 use crate::local_engine::LocalEngine;
@@ -39,6 +39,9 @@ use crate::templates::{MeetingTemplate, TemplateStore};
 use crate::wav::{decode_wav, encode_wav};
 
 const MAX_PROMPT_CHARS: usize = 800;
+
+#[path = "writing_profile_engine.rs"]
+mod writing_profile_engine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -372,6 +375,13 @@ pub struct PennelEngine {
     #[cfg(test)]
     pub(crate) cleanup_language_evidence: Mutex<Option<String>>,
     history: Mutex<HistoryStore>,
+    writing_profile: Mutex<crate::writing_profile::WritingProfileStore>,
+    writing_profile_refresh: Mutex<()>,
+    writing_profile_cancellation: Mutex<Option<Arc<crate::InferenceCancellation>>>,
+    #[cfg(test)]
+    writing_profile_before_dispatch: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    writing_profile_test_pool: Mutex<Option<Arc<crate::meeting_scheduler::PhysicalInferencePool>>>,
     pub(crate) conversations: Mutex<crate::conversations::State>,
     unsaved_history: Mutex<RecoveryState>,
     dictation_pad: Mutex<DictationPad>,
@@ -426,6 +436,8 @@ const RECOVERY_BYTES: usize = 5 * 1024 * 1024;
 struct UnsavedDictation {
     entry: HistoryEntry,
     cleanup: CleanupStatus,
+    capture_kind: HistoryCaptureKind,
+    profile_allowed: bool,
 }
 
 #[derive(Default)]
@@ -972,12 +984,13 @@ impl PennelEngine {
         }
         let _slot = self.reserve_history()?;
         let settings = self.settings();
-        let (wav, app, created_at_ms) = {
+        let (wav, app, created_at_ms, provenance) = {
             let history = self.history.lock().unwrap();
             (
                 history.failed_audio(&history_id)?,
                 history.app_bundle_id(&history_id)?,
                 history.created_at_ms(&history_id)?,
+                history.capture_provenance(&history_id)?,
             )
         };
         let transcript = self.process(&settings, &wav, app.as_deref(), &keys)?;
@@ -994,6 +1007,8 @@ impl PennelEngine {
             },
             transcript.cleanup,
             None,
+            provenance.0,
+            provenance.1,
         )
     }
 
@@ -1059,12 +1074,14 @@ impl PennelEngine {
             };
         };
         let entry = &result.entry;
-        self.history.lock().unwrap().insert_done_with_id(
+        self.history.lock().unwrap().insert_done_with_provenance(
             &entry.id,
             entry.app_bundle_id.as_deref(),
             &entry.raw,
             &entry.text,
             entry.created_at_ms,
+            result.capture_kind,
+            result.profile_allowed,
         )?;
         recovery.entries.remove(&id);
         Ok(())
@@ -2371,6 +2388,10 @@ impl PennelEngine {
 
     pub(crate) fn register_inference(&self, cancellation: &Arc<crate::InferenceCancellation>) {
         let _gate = self.meeting_gate.lock().unwrap();
+        self.register_inference_locked(cancellation);
+    }
+
+    fn register_inference_locked(&self, cancellation: &Arc<crate::InferenceCancellation>) {
         let mut requests = self.inference_requests.lock().unwrap();
         requests
             .requests
@@ -2500,6 +2521,9 @@ impl PennelEngine {
             });
         }
         self.invalidate_inference_requests();
+        if self.secrets.read().unwrap().is_some() {
+            self.writing_profile.lock().unwrap().set_sharing(false)?;
+        }
         Ok(())
     }
 
@@ -2515,18 +2539,22 @@ impl PennelEngine {
         mut entry: HistoryEntry,
         cleanup: CleanupStatus,
         progress: Option<&LiveDictationSession>,
+        capture_kind: HistoryCaptureKind,
+        profile_allowed: bool,
     ) -> Result<DictationResult, PennelError> {
         let mut insert = || {
             let saved = self
                 .history
                 .lock()
                 .unwrap()
-                .insert_done_with_id(
+                .insert_done_with_provenance(
                     &entry.id,
                     entry.app_bundle_id.as_deref(),
                     &entry.raw,
                     &entry.text,
                     entry.created_at_ms,
+                    capture_kind,
+                    profile_allowed,
                 )
                 .is_ok();
             if !saved {
@@ -2542,6 +2570,8 @@ impl PennelEngine {
                     UnsavedDictation {
                         entry: entry.clone(),
                         cleanup: cleanup.clone(),
+                        capture_kind,
+                        profile_allowed,
                     },
                 );
             }
@@ -2628,6 +2658,8 @@ impl PennelEngine {
             },
             CleanupStatus::Applied,
             progress,
+            HistoryCaptureKind::Command,
+            false,
         )
     }
 
@@ -2652,6 +2684,7 @@ impl PennelEngine {
             return Err(PennelError::NoSpeech);
         }
         let _slot = self.reserve_history()?;
+        let profile_allowed = self.writing_profile_learning_enabled();
         let (account, _) = settings
             .resolve(&settings.dictation_stt)
             .ok_or(PennelError::NotFound)?;
@@ -2674,10 +2707,13 @@ impl PennelEngine {
                 | PennelError::ModelNotDownloaded),
             ) => {
                 let insert = || {
-                    self.history
-                        .lock()
-                        .unwrap()
-                        .insert_failed(app, &wav, &e.to_string(), now_ms())
+                    self.history.lock().unwrap().insert_failed_with_provenance(
+                        app,
+                        &wav,
+                        &e.to_string(),
+                        now_ms(),
+                        profile_allowed,
+                    )
                 };
                 if let Some(progress) = progress {
                     progress.with_active(insert)?;
@@ -2701,6 +2737,8 @@ impl PennelEngine {
             },
             transcript.cleanup,
             progress,
+            HistoryCaptureKind::Dictation,
+            profile_allowed,
         )
     }
 
@@ -2735,6 +2773,7 @@ impl PennelEngine {
             None
         };
         let history = HistoryStore::open(&dir)?;
+        let writing_profile = crate::writing_profile::WritingProfileStore::open(&dir)?;
         let dictation_pad = DictationPad::open(&dir)?;
         let index = open_index(&dir.join("index.sqlite"));
         storage.finish()?;
@@ -2752,6 +2791,13 @@ impl PennelEngine {
             #[cfg(test)]
             cleanup_language_evidence: Mutex::new(None),
             history: Mutex::new(history),
+            writing_profile: Mutex::new(writing_profile),
+            writing_profile_refresh: Mutex::new(()),
+            writing_profile_cancellation: Mutex::new(None),
+            #[cfg(test)]
+            writing_profile_before_dispatch: Mutex::new(None),
+            #[cfg(test)]
+            writing_profile_test_pool: Mutex::new(None),
             conversations: Mutex::new(crate::conversations::State::default()),
             unsaved_history: Mutex::new(RecoveryState::default()),
             dictation_pad: Mutex::new(dictation_pad),

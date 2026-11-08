@@ -155,6 +155,8 @@ pub struct UtteranceMetadata {
     pub spans: Vec<TimedTextSpan>,
     pub attribution: AutomaticAttribution,
     pub attribution_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_voice_profile_fingerprint: Option<String>,
     pub lineage: Vec<String>,
     pub manual: Option<ManualCorrection>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -177,6 +179,7 @@ impl UtteranceMetadata {
             spans: Vec::new(),
             attribution: AutomaticAttribution::default(),
             attribution_revision: 0,
+            self_voice_profile_fingerprint: None,
             lineage: Vec::new(),
             manual: None,
             unresolved_manual: Vec::new(),
@@ -609,6 +612,10 @@ fn validate_row(row: &MeetingUtterance) -> bool {
                 ))
                 .expect("primitive utterance identity"),
             )
+        || metadata
+            .self_voice_profile_fingerprint
+            .as_ref()
+            .is_some_and(|fingerprint| !valid_digest(fingerprint))
         || metadata
             .attribution
             .voices

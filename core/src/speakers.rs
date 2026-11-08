@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use pennel_speakers::{Diarization, Identity};
+use sha2::{Digest, Sha256};
 
 use crate::diarize::{
     Track, apply_utterances, carry_utterance_names, from_sortformer, mostly_silent,
@@ -57,6 +58,14 @@ pub struct MeetingVoice {
 /// One recognition or "Remember this voice" at a time: each reads, relabels and writes the transcript,
 /// its names and the meeting's voiceprints, which must not interleave.
 pub(crate) static RECOGNITION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn voice_profile_fingerprint(embedding: &[f32]) -> String {
+    let mut hash = Sha256::new();
+    for value in embedding {
+        hash.update(value.to_bits().to_le_bytes());
+    }
+    crate::models::hex(&hash.finalize())
+}
 
 #[cfg(feature = "speakers")]
 pub(crate) fn diarize_local(
@@ -695,8 +704,22 @@ impl PennelEngine {
                 my_voice.filter(|_| track == Track::Microphone),
                 &known_prints,
             );
-            let (updated, applied) =
+            let (mut updated, applied) =
                 apply_utterances(&after, &diarization.turns, &identities, track);
+            let owner_fingerprint = my_voice.map(voice_profile_fingerprint);
+            for row in &mut updated {
+                let analyzed_source = matches!(
+                    (track, row.metadata.source_id.as_deref()),
+                    (Track::Microphone, Some("microphone" | "room_microphone"))
+                        | (Track::System, Some("system" | "system_audio"))
+                );
+                if analyzed_source && !row.segment.failed {
+                    row.metadata.self_voice_profile_fingerprint =
+                        (row.metadata.attribution.self_voice && track == Track::Microphone)
+                            .then(|| owner_fingerprint.clone())
+                            .flatten();
+                }
+            }
             after = updated;
             me_found |= applied.me_found;
             for (voice, speaker) in applied.voices {
@@ -938,6 +961,24 @@ mod tests {
                 named: 1,
                 me_found: true
             }
+        );
+        let snapshot = engine
+            .meeting_store()
+            .read_transcript_snapshot(&id)
+            .unwrap();
+        let owner_fingerprint = voice_profile_fingerprint(&me);
+        assert_eq!(
+            snapshot.utterances[0]
+                .metadata
+                .self_voice_profile_fingerprint
+                .as_deref(),
+            Some(owner_fingerprint.as_str())
+        );
+        assert!(
+            snapshot.utterances[1]
+                .metadata
+                .self_voice_profile_fingerprint
+                .is_none()
         );
         let labels: Vec<(Speaker, Option<u32>)> = engine
             .meeting_store()
