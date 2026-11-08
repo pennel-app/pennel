@@ -40,7 +40,9 @@ make core && make test                               # Rust core
 swift test --package-path apps/macos-platform          # affected Mac services
 ```
 
-CI (`.github/workflows/ci.yml`, `desktop.yml`) must stay green on macOS, Windows and Linux.
+**macOS-first phase (2026-11-08, [#174](https://github.com/pennel-app/pennel/issues/174)).** Routine PR/main validation retains Mac core/native-platform checks, full Mac desktop frontend/backend/build/package checks and current iPhone/mobile checks. Routine Windows/Linux product tests, builds, installers and automatic releases are paused; shared platform source and UI parity rules remain. Lightweight Linux selector, packaging-helper and release/status jobs remain utility jobs. Selected CI jobs must stay green.
+
+Manual `desktop.yml` and `decision-evaluation.yml` dispatches default to `platforms=macos`; `platforms=all` explicitly restores full-platform validation for that run. Signed desktop candidates also default to Mac and accept `all`, with their existing required version/build inputs. Manual validation never publishes releases. Resuming routine Windows/Linux validation or publication requires a deliberate policy/workflow change backed by current full-platform evidence; one manual run does not resume it. See [CI scope](docs/ci-performance.md#current-macos-first-phase-8-november-2026) and [releasing](docs/releasing.md).
 
 Mobile changes also require the mobile workspace's type, unit, generation and native build checks. Keep core artifacts outside generated native projects, verify clean and repeated non-clean Prebuild, and preserve preview/production data and credential isolation. A simulator or build does not establish signed-device, keyboard cold-start, Cloud deployment or App Review acceptance. Keep Android implementation gated on the agreed iPhone acceptance. Record exact commands and outstanding gates in `docs/mobile.md`.
 

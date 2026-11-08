@@ -1,6 +1,12 @@
 import json
+import hashlib
+import os
 from pathlib import Path
 import re
+import runpy
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 
@@ -94,17 +100,40 @@ class DesktopBuildTests(unittest.TestCase):
                 self.assertIsNone(re.search(r'^        if:', steps[upload][2], flags=re.MULTILINE))
                 self.assertNotIn('continue-on-error:', steps[upload][2])
 
-    def test_all_installer_targets_and_portability_validation_remain(self):
+    def test_mac_default_and_manual_all_targets_and_portability_validation_remain(self):
         job = app_job()
-        targets = re.findall(r'^            target: (.+)$', job, flags=re.MULTILINE)
-        bundles = re.findall(r'^            bundles: (.+)$', job, flags=re.MULTILINE)
-        self.assertEqual(targets, [
+        self.assertIn('matrix: ${{ fromJSON(needs.changes.outputs.desktop_matrix) }}', job)
+        resolve = runpy.run_path(str(ROOT / 'scripts/ci-platforms.py'))['resolve_platforms']
+        mac = resolve('push', 'all')['desktop_matrix']['include']
+        full = resolve('workflow_dispatch', 'all')['desktop_matrix']['include']
+        self.assertEqual([row['target'] for row in mac], ['aarch64-apple-darwin'])
+        self.assertEqual([row['target'] for row in full], [
             'aarch64-apple-darwin', 'x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu',
         ])
-        self.assertEqual(bundles, ['app,dmg', 'nsis,msi', 'deb,appimage'])
+        self.assertEqual([row['bundles'] for row in full], ['app,dmg', 'nsis,msi', 'deb,appimage'])
         self.assertIn('release.build_distributable(', job)
         self.assertIn('needs: [changes, version]', job)
         self.assertIn('fail-fast: false', job)
+
+    def test_foreign_core_is_manual_all_only(self):
+        workflow = WORKFLOW.read_text()
+        core = workflow.split('\n  core:\n', 1)[1].split('\n  app:\n', 1)[0]
+        self.assertIn("if: needs.changes.outputs.core == 'true' && needs.changes.outputs.cross_platform == 'true'", core)
+        self.assertIn("platforms: ${{ inputs.platforms || 'macos' }}", workflow)
+        self.assertRegex(workflow, r'platforms:\n(?:.*\n){0,5}\s+default: macos')
+
+    def test_evaluation_and_signed_candidates_have_explicit_manual_all_paths(self):
+        evaluation = (ROOT / '.github/workflows/decision-evaluation.yml').read_text()
+        candidate = (ROOT / '.github/workflows/desktop-candidate.yml').read_text()
+        self.assertIn('workflow_dispatch:', evaluation)
+        self.assertIn('matrix: ${{ fromJSON(needs.changes.outputs.evaluation_matrix) }}', evaluation)
+        self.assertIn("platforms: ${{ inputs.platforms || 'macos' }}", evaluation)
+        self.assertIn('matrix: ${{ fromJSON(needs.platforms.outputs.desktop_matrix) }}', candidate)
+        self.assertIn('needs: platforms', candidate)
+        self.assertIn('PENNEL_CI_PLATFORM_SCOPE: ${{ inputs.platforms }}', candidate)
+        self.assertNotIn('gh release create', candidate)
+        for text in (evaluation, candidate):
+            self.assertRegex(text, r'platforms:\n(?:.*\n){0,5}\s+default: macos')
 
     def test_cold_cache_bypass_keeps_every_build_and_test(self):
         for mode in ('serial', 'candidate'):
@@ -146,13 +175,67 @@ class DesktopBuildTests(unittest.TestCase):
     def test_release_and_cleanup_gates_remain_failure_safe(self):
         workflow = WORKFLOW.read_text()
         release = workflow.split('\n  release:\n', 1)[1]
-        self.assertIn('needs: [version, core, app, packaging-tools]', release)
-        self.assertIn("if: needs.version.outputs.release == 'true'", release)
+        self.assertIn('needs: [changes, version, app, packaging-tools]', release)
+        self.assertIn("if: needs.version.outputs.release == 'true' && needs.changes.outputs.platform_scope == 'macos'", release)
         self.assertNotIn('always()', release)
         self.assertNotIn('continue-on-error:', release)
+        publish = release.split('name: Publish the GitHub release', 1)[1].split('name: Update the Homebrew cask', 1)[0]
+        self.assertIn('find dist -type f -name "Pennel_${VERSION}_aarch64.dmg"', publish)
+        self.assertIn('${#files[@]}" -ne 1', publish)
+        for foreign in ('.exe', '.msi', '.deb', '.AppImage'):
+            self.assertNotIn(foreign, publish)
         self.assertIn("cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", workflow)
         self.assertIn("if: always() && runner.os == 'macOS' && env.PENNEL_SIGNING_KEYCHAIN != ''", workflow)
         self.assertIn("if: always() && runner.os == 'Linux'", workflow)
+
+    def test_publisher_only_sends_one_current_mac_dmg_and_checksums(self):
+        workflow = WORKFLOW.read_text()
+        block = workflow.split('      - name: Publish the GitHub release\n', 1)[1]
+        block = block.split('      - name: Update the Homebrew cask\n', 1)[0]
+        script = textwrap.dedent(block.split('        run: |\n', 1)[1])
+        current = 'Pennel_1.2.3_aarch64.dmg'
+        foreign = ['Pennel_1.2.3_x64-setup.exe', 'Pennel_1.2.3_x64.msi',
+                   'Pennel_1.2.3_amd64.deb', 'Pennel_1.2.3_amd64.AppImage']
+        scenarios = {
+            'mac-with-foreign-assets': (['one/' + current] + foreign, True),
+            'missing-mac': (foreign, False),
+            'ambiguous-mac': (['one/' + current, 'two/' + current] + foreign, False),
+            'stale-mac': (['Pennel_1.2.2_aarch64.dmg'] + foreign, False),
+        }
+        for name, (files, succeeds) in scenarios.items():
+            with self.subTest(scenario=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'dist').mkdir()
+                tools = root / 'tools'
+                tools.mkdir()
+                gh = tools / 'gh'
+                gh.write_text('#!/usr/bin/env python3\nimport json,os,pathlib,sys\n'
+                              'pathlib.Path(os.environ["GH_ARGS_RECEIPT"]).write_text(json.dumps(sys.argv[1:]))\n')
+                sha = tools / 'sha256sum'
+                sha.write_text('#!/usr/bin/env python3\nimport hashlib,pathlib,sys\n'
+                               'for name in sys.argv[1:]: print(hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest()+"  "+name)\n')
+                gh.chmod(0o700)
+                sha.chmod(0o700)
+                for filename in files:
+                    target = root / 'dist' / filename
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(('synthetic ' + filename).encode())
+                receipt = root / 'gh-arguments.json'
+                env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                           VERSION='1.2.3', GITHUB_SHA='a' * 40, GH_TOKEN='synthetic',
+                           GH_ARGS_RECEIPT=str(receipt))
+                result = subprocess.run(['bash', '-c', script], cwd=root, env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode == 0, succeeds, result.stderr + result.stdout)
+                if succeeds:
+                    arguments = json.loads(receipt.read_text())
+                    self.assertEqual(arguments[:3], ['release', 'create', 'v1.2.3'])
+                    self.assertEqual(arguments[3:arguments.index('--target')],
+                                     ['dist/one/' + current, 'SHA256SUMS.txt'])
+                    expected = hashlib.sha256(('synthetic one/' + current).encode()).hexdigest()
+                    self.assertEqual((root / 'SHA256SUMS.txt').read_text().split(), [expected, current])
+                else:
+                    self.assertFalse(receipt.exists(), 'Invalid assets reached publication')
 
 
 if __name__ == '__main__':

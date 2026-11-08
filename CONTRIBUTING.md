@@ -65,23 +65,32 @@ Documentation-only changes need link and rendering checks. UI changes need light
 ## Pull request checks
 
 PR jobs run only for affected components. README and documentation changes run
-lightweight change-selection tests without building apps. Desktop changes build
-the shared app on all three platforms; core changes also run default/lean and
+lightweight change-selection tests without building apps. During the
+[macOS-first phase](docs/ci-performance.md#current-macos-first-phase-8-november-2026),
+desktop changes build the Mac app; core changes also run Mac default/lean and
 speaker checks and validate the generated mobile consumer. macOS platform changes
 run platform tests and desktop builds. Mobile changes run the generated mobile
 workflow, including native service and keyboard tests. Shared assets validate their
 active consumers; Tauri bundle configuration also runs packaging tests. Build
 scripts, workflows, the Makefile, Cargo configuration, and unrecognized inputs
-conservatively run all checks.
+conservatively run all active checks. Windows/Linux product validation is paused
+for routine runs; platform source and explicit manual validation remain.
 
 Selection uses the complete merge-base diff, including deleted and renamed files.
 Jobs are skipped within workflows so checks still report a result. Branch pushes
-do not duplicate PR builds; pushes to `main` and manual desktop runs retain full
-validation and existing release behavior. Rules live in `scripts/ci-changes.py`;
+do not duplicate PR builds. Main pushes retain full active Mac/mobile validation;
+manual desktop and evaluation dispatches default to `platforms=macos`. Choose
+`platforms=all` to validate the retained Windows/Linux targets explicitly. Manual
+runs never publish. Eligible main releases publish the Mac DMG and checksums with
+the existing Homebrew update; see [releasing](docs/releasing.md).
+
+Component rules live in `scripts/ci-changes.py`, and platform scope is selected by
+`scripts/ci-platforms.py`;
 verify them with:
 
 ```sh
 python3 -B -m unittest discover -s scripts/tests -p 'test_ci_changes.py'
+python3 -B -m unittest discover -s scripts/tests -p 'test_ci_platforms.py'
 actionlint -shellcheck=
 ```
 

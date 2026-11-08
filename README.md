@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pennel-app/pennel/releases/latest"><strong>Download Pennel</strong></a>
+  <a href="https://github.com/pennel-app/pennel/releases/latest"><strong>Download for macOS</strong></a>
   &nbsp;·&nbsp;
   <a href="#get-started">Get started</a>
   &nbsp;·&nbsp;
@@ -21,7 +21,7 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
-<p align="center">macOS · Windows · Linux &nbsp; / &nbsp; Open source · Apache-2.0</p>
+<p align="center">macOS · Windows and Linux paused &nbsp; / &nbsp; Open source · Apache-2.0</p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/meeting-dark.png">
@@ -34,13 +34,13 @@ Write an email by speaking. Turn a conversation into notes you can come back to.
 
 ## Install
 
-Choose your installer from the [latest release](https://github.com/pennel-app/pennel/releases/latest).
+Download the Mac installer from the [latest release](https://github.com/pennel-app/pennel/releases/latest). During the [macOS-first phase approved on 8 November 2026](https://github.com/pennel-app/pennel/issues/174), routine Windows/Linux validation and new installers are paused. Their shared source and previously published installers remain available.
 
 | Platform | Requirements | Download |
 | --- | --- | --- |
 | macOS | Apple Silicon · macOS 14.4 or later | [`.dmg`](https://github.com/pennel-app/pennel/releases/latest) |
-| Windows | Windows 11 · x64 | [`.exe` or `.msi`](https://github.com/pennel-app/pennel/releases/latest) |
-| Linux | x86-64 · WebKitGTK 4.1 | [`.deb` or `.AppImage`](https://github.com/pennel-app/pennel/releases/latest) |
+| Windows (paused) | Windows 11 · x64 | [Previous `.exe` or `.msi` releases](https://github.com/pennel-app/pennel/releases) |
+| Linux (paused) | x86-64 · WebKitGTK 4.1 | [Previous `.deb` or `.AppImage` releases](https://github.com/pennel-app/pennel/releases) |
 
 On a Mac, you can also install with Homebrew:
 
@@ -48,7 +48,7 @@ On a Mac, you can also install with Homebrew:
 brew install --cask pennel-app/pennel/pennel
 ```
 
-Mac releases use Pennel’s own signing certificate and are not yet Apple-notarized; the Homebrew cask handles download quarantine. Windows installers are unsigned, so SmartScreen may ask for confirmation. Linux users should check the [runtime dependencies](docs/linux-packaging.md#runtime-prerequisites), including when using an AppImage.
+Mac releases use Pennel’s own signing certificate and are not yet Apple-notarized; the Homebrew cask handles download quarantine. Previously published Windows installers are unsigned, so SmartScreen may ask for confirmation. For existing Windows/Linux installs and source builds, the platform guidance below still applies; Linux users should check the [runtime dependencies](docs/linux-packaging.md#runtime-prerequisites), including when using an AppImage.
 
 ## Get started
 
@@ -85,7 +85,7 @@ Use downloadable speech models, Apple’s built-in models on compatible Macs, or
 - **Keys stay in your system’s credential store.** Keychain on Mac, Credential Manager on Windows and Secret Service on Linux.
 - **You choose what leaves your computer.** A remote provider receives the audio or text needed for the task you select. Meetings and recordings are stored locally.
 
-Apple dictation requires macOS 26 or later. Apple Intelligence also requires an eligible Mac with Apple Intelligence enabled. Other local models work on the supported systems listed above.
+Apple dictation requires macOS 26 or later. Apple Intelligence also requires an eligible Mac with Apple Intelligence enabled. Other local models remain available in the shared desktop implementation; see [platform details](docs/desktop.md#platform-behavior).
 
 ## Follow along
 

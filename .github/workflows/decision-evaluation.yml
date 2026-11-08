@@ -6,12 +6,27 @@ on:
       - 'core/**'
       - 'evaluations/decision-models/**'
       - '.github/workflows/decision-evaluation.yml'
+      - '.github/workflows/changes.yml'
+      - 'scripts/ci-platforms.py'
+      - 'scripts/tests/test_ci_platforms.py'
   push:
     branches: [main]
     paths:
       - 'core/**'
       - 'evaluations/decision-models/**'
       - '.github/workflows/decision-evaluation.yml'
+      - '.github/workflows/changes.yml'
+      - 'scripts/ci-platforms.py'
+      - 'scripts/tests/test_ci_platforms.py'
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: macOS-first validation or explicit all-platform validation
+        type: choice
+        default: macos
+        options:
+          - macos
+          - all
 
 concurrency:
   group: decision-evaluation-${{ github.ref }}
@@ -20,13 +35,14 @@ concurrency:
 jobs:
   changes:
     uses: ./.github/workflows/changes.yml
+    with:
+      platforms: ${{ inputs.platforms || 'macos' }}
 
   offline:
     needs: changes
     strategy:
       fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+      matrix: ${{ fromJSON(needs.changes.outputs.evaluation_matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
