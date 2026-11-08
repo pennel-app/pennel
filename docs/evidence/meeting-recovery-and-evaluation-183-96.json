@@ -279,10 +279,109 @@
     "build/local-decider-pilot-96/20261108T143343Z/finished-freeze.json": "8e416f286e1ada12002d6893d56f055c06f33849a039f7cef176a92bbf73511d",
     "build/local-decider-pilot-96/20261108T143343Z/finished-pilot.json": "e9ef9abb31692d818bcde8119e04a1030d63141c0949b54bc038fba9c342c5b3",
     "build/local-decider-pilot-96/20261108T143343Z/session.json": "4d091eec1139fe7f04a2ee60de4908089038c3b89de16bb117b5979b35aff1b5",
-    "build/local-decider-pilot-96/20261108T143343Z/attempt-1-before-model-ready/finished-pilot.json": "85474f2630c2e599f1f08f9c32ba68a7ce62c5c4fbafbe049cc3992947d33797"
+    "build/local-decider-pilot-96/20261108T143343Z/attempt-1-before-model-ready/finished-pilot.json": "85474f2630c2e599f1f08f9c32ba68a7ce62c5c4fbafbe049cc3992947d33797",
+    "build/meeting-implementation-183-96/native-qa-integrated/candidate.json": "126e58a0e66248ceb8f6c375af1590b38bd41c7f59ebe660c0910e86b444a724",
+    "build/meeting-implementation-183-96/native-qa-integrated/provider-ledger-final.json": "4a13984887d91e853623c67da4a84a84b452b4984ecdce00994992355bb6784a",
+    "build/meeting-implementation-183-96/native-qa-integrated/final-after-reopen.json": "b2bb8fb88cc052ead13b8438e66f19921a713a22a50eec9abc7037d855b52881",
+    "build/meeting-implementation-183-96/integrated-interactions/manifest.json": "5cf94efccb3891de40fc55cbb059c75f490cae2b80a68ba840558d328cebda9b",
+    "build/meeting-implementation-183-96/dictionary-uniqueness-repro.json": "2d2770eae0a920bce6224d2a267b5484ed103e0e55fb75636514a74bd2c6e292",
+    "build/meeting-implementation-183-96/logs/integrated-frontend-tests.log": "38a2ca15ff5ac0a14570036ef75da8bcdce3f62e9d07004bd65487446802600a",
+    "build/meeting-implementation-183-96/logs/integrated-frontend-build.log": "5b6638fe5f534de7bb0566e5c44db7e346e25a9d40313b5d1389b7d0a9fb0f80",
+    "build/meeting-implementation-183-96/logs/integrated-mac-capture-build.log": "a78fc91ecc5b8759ab1866746977e9fe0a05ebf9107bd3934d51faad06e83ee2",
+    "build/meeting-implementation-183-96/integrated-minimum/manifest.json": "59024c706ba605cbebc4fd1dda3b5ccb20e71de268311e01c891541d736e42bc",
+    "build/meeting-implementation-183-96/logs/integrated-minimum.log": "5dbdddca09d4da4b3f378baba62bc677b2cbcd8c8d6a0b155f3525a0f827ce72"
   },
   "evidence_policy": "Raw profiles/audio and full logs stay in ignored local QA artifacts; public data is sanitized metadata and invented-only response evidence.",
   "visual_evidence": {
+    "kind": "Owned headless mock shared-frontend renders, identical recovery fixture input",
+    "before_revision": "3272f0abdca5ed8802c50f85850032b43233d2e7",
+    "after_frontend_revision": "fbe87a0872603e8684e09cbd74fb7c22f9240188",
+    "identical_fixture_sha256": "82fc50ff49aeeea98036fb456c37e0cf2285181093020396e749da49644e543a",
+    "images": [
+      {
+        "stage": "before",
+        "locale": "en",
+        "appearance": "light",
+        "sha256": "58f9bd7a2806295380a6fa69f25253ff9548b30c5c124228e0606cbed3b93954",
+        "file": "build/meeting-implementation-183-96/visual-before-integrated/en/light/meeting-failed-recovery.png"
+      },
+      {
+        "stage": "before",
+        "locale": "en",
+        "appearance": "dark",
+        "sha256": "f1c8792033a47fa1be1dbcc06ab756fb7aca50cff20561a1367313b1ff07d839",
+        "file": "build/meeting-implementation-183-96/visual-before-integrated/en/dark/meeting-failed-recovery.png"
+      },
+      {
+        "stage": "before",
+        "locale": "nl",
+        "appearance": "light",
+        "sha256": "c48da21b01948d861f67bb23133560cfb428d3a505cae01f4ca0be6857a95b98",
+        "file": "build/meeting-implementation-183-96/visual-before-integrated/nl/light/meeting-failed-recovery.png"
+      },
+      {
+        "stage": "before",
+        "locale": "nl",
+        "appearance": "dark",
+        "sha256": "6e9f2bb2738af522093b910a8d9a562f1eb4a370c32619fc62cbb94c52c63de9",
+        "file": "build/meeting-implementation-183-96/visual-before-integrated/nl/dark/meeting-failed-recovery.png"
+      },
+      {
+        "stage": "after",
+        "locale": "en",
+        "appearance": "light",
+        "sha256": "19fc336e22136f972b10e96f32393d0bad3a9affacf79e001e35df142d79447f",
+        "file": "build/meeting-implementation-183-96/visual-after-integrated/en/light/meeting-failed-recovery.png"
+      },
+      {
+        "stage": "after",
+        "locale": "en",
+        "appearance": "dark",
+        "sha256": "7cfb241af5a1629a822bf3113956d7f6cdbf17c9b5c1ba0cff60785cc6d5b1bb",
+        "file": "build/meeting-implementation-183-96/visual-after-integrated/en/dark/meeting-failed-recovery.png"
+      },
+      {
+        "stage": "after",
+        "locale": "nl",
+        "appearance": "light",
+        "sha256": "159b6e0c46c31715c6d37be0f4e1b88a64b44b2dd3812aaa1b5e393efa87b3e1",
+        "file": "build/meeting-implementation-183-96/visual-after-integrated/nl/light/meeting-failed-recovery.png"
+      },
+      {
+        "stage": "after",
+        "locale": "nl",
+        "appearance": "dark",
+        "sha256": "e995172e0a5ca5b6da2eb37afb2356473e277f639ca8b0048133c583cd4a4097",
+        "file": "build/meeting-implementation-183-96/visual-after-integrated/nl/dark/meeting-failed-recovery.png"
+      }
+    ]
+  },
+  "integration": {
+    "main_base": "3272f0abdca5ed8802c50f85850032b43233d2e7",
+    "merge_commit": "8e51ea00eb69eccd5e3185962ca5fd2b6030a704",
+    "verified_integrated_code_commit": "fbe87a0872603e8684e09cbd74fb7c22f9240188",
+    "dictionary_case_fix": "fbe87a0872603e8684e09cbd74fb7c22f9240188",
+    "core_mobile_qualification_locale_bytes_unchanged": true,
+    "frontend_unit_passed": 421,
+    "frontend_type_build": "passed",
+    "recovery_and_both_dictionary_entry_cases_en_nl_light_dark": 12,
+    "native_dictionary_navigation_preserves_draft": true,
+    "native_partial_error_then_remaining_only_recovery": true,
+    "native_relaunch_plans_and_meeting_hashes_identical": true,
+    "native_no_automatic_retry": true,
+    "native_fixture_requests": 3,
+    "native_missing_audio_disabled": true,
+    "native_candidate": {
+      "source_commit": "fbe87a0872603e8684e09cbd74fb7c22f9240188",
+      "binary_sha256": "63d784750d5f0d412c1f99dc9f386a09b22bf382588a546ed5a140aae9970721",
+      "package_sha256": "64982790a6331dc989a5ad649b2ada3edb3b2e70157ac563fa0772b5dc5219a0",
+      "package_bytes": 14710133,
+      "team": "B538Q2K76C"
+    },
+    "owned_native_app_and_stub_stopped": true,
+    "minimum_en_nl_light_dark": 4
+  },
+  "pre_integration_visual_evidence": {
     "kind": "Owned headless shared-frontend mock renders; not native audio/provider acceptance",
     "before_revision": "e6bf6afb96bb6f4657930298701c47c6a152dae5",
     "after_frontend_revision": "0894ab8fae53099480dc8c6ad54961d5f91a2b3a",
