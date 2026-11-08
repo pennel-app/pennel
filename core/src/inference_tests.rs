@@ -2,7 +2,7 @@ use super::*;
 use mockito::Matcher;
 
 fn transport_cancellation() -> Arc<InferenceCancellation> {
-    // Transport assertions must survive unrelated speech fixtures; priority/cancellation tests use their own tokens.
+    // Foreground setup keeps unrelated speech fixtures out of transport/manual-cancellation assertions.
     InferenceCancellation::for_priority(crate::InferencePriority::ForegroundQuestion)
 }
 
@@ -49,6 +49,45 @@ fn transport_fixture_is_not_preempted_by_unrelated_speech_demand() {
             }
         });
     }
+}
+
+#[test]
+fn foreground_transport_fixture_remains_manually_cancellable() {
+    let pool = Arc::new(crate::meeting_scheduler::PhysicalInferencePool::default());
+    let cancellation = transport_cancellation();
+    let (entered, started) = std::sync::mpsc::channel();
+    let (release, resumed) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        let worker_pool = pool.clone();
+        let worker_cancellation = cancellation.clone();
+        let worker = scope.spawn(move || {
+            run_cancelled_in_pool(
+                &worker_pool,
+                worker_cancellation,
+                std::time::Instant::now() + std::time::Duration::from_secs(5),
+                move |_| {
+                    entered.send(()).unwrap();
+                    resumed
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                    Ok(())
+                },
+            )
+        });
+        started
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        pool.speech_started();
+        let survived_speech = !cancellation.is_cancelled();
+        cancellation.cancel();
+        let manually_cancelled = cancellation.is_cancelled();
+        release.send(()).unwrap();
+        let result = worker.join().unwrap();
+        pool.speech_finished();
+        assert!(survived_speech);
+        assert!(manually_cancelled);
+        assert_eq!(result, Err(PennelError::Cancelled));
+    });
 }
 
 fn config(protocol: InferenceProtocol) -> InferenceConfig {
@@ -661,7 +700,7 @@ fn cancellation_during_a_request_discards_late_results() {
             writer.write_all(body.as_bytes())
         })
         .create();
-    let cancel = InferenceCancellation::new();
+    let cancel = transport_cancellation();
     let trigger = cancel.clone();
     let (cancelled_tx, cancelled_rx) = std::sync::mpsc::sync_channel(1);
     let signal = std::thread::spawn(move || {
@@ -965,7 +1004,7 @@ fn cancellation_or_account_change_during_refresh_never_posts_content() {
         let mut server = mockito::Server::new();
         let (managed, secrets) = managed_fixture(&server);
         let session = managed.session.clone();
-        let cancellation = InferenceCancellation::new();
+        let cancellation = transport_cancellation();
         let change = cancellation.clone();
         let refresh = server.mock("POST", "/v1/auth/refresh").with_body_from_request(move |_| {
             if change_account { session.cancel_login(); } else { change.cancel(); }
