@@ -209,7 +209,7 @@
   {"name":"english-model-metadata","window":"settings","section":"settings","tab":"providers","steps":[{"eval":"import('/tests/english-defaults.interactions.mjs').then(module => module.checkEnglishModelMetadata())"}]},
   {"name":"english-recording-errors","window":"workspace","section":"recording","recording_storage_error":true,"steps":[{"eval":"import('/tests/english-defaults.interactions.mjs').then(module => module.checkEnglishRecordingErrors())"}]},
   {"name":"settings-recording","window":"settings","section":"settings","tab":"recording"},
-  {"name":"settings-dictionary","window":"settings","section":"settings","tab":"dictionary"},
+  {"name":"settings-dictionary-legacy","window":"settings","section":"settings","tab":"dictionary"},
   {"name":"settings-styles","window":"settings","section":"settings","tab":"styles"},
   {"name":"settings-appearance","window":"settings","section":"settings","tab":"appearance"},
   {"name":"sync-signed-out","window":"settings","section":"settings","tab":"account"},
