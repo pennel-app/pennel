@@ -2,7 +2,7 @@ import { t } from "./i18n.ts";
 
 export type WorkspaceSection = "dictation" | "meetings" | "history" | "settings" | "recording";
 export type WorkspaceTask = "dictation" | "meetings";
-export type SettingsCategory = "dictation" | "meeting-settings" | "appearance" | "account" | "advanced";
+export type SettingsCategory = "dictation" | "dictionary" | "meeting-settings" | "appearance" | "account" | "advanced";
 
 /** History and active capture belong to their task even when reached by a legacy link. */
 export function workspaceTask(route: WorkspaceRoute): WorkspaceTask {
@@ -18,7 +18,7 @@ export function resumesOtherCapture(route: WorkspaceRoute, currentSession: strin
 
 export function settingsCategory(tab: string | null): SettingsCategory {
   if (["meeting-settings", "meetings", "recording"].includes(tab ?? "")) return "meeting-settings";
-  if (tab === "appearance" || tab === "account") return tab;
+  if (tab === "appearance" || tab === "account" || tab === "dictionary") return tab;
   if (["advanced", "providers", "local", "models"].includes(tab ?? "")) return "advanced";
   return "dictation";
 }

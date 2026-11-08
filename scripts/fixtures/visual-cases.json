@@ -76,6 +76,7 @@
   {"name":"live-captions-wide","window":"workspace","section":"recording","configured_text_provider":true,"live_question_manual":true,"live_captions":true,"size":[1400,850],"steps":[{"eval":"import(\"/tests/live-captions.interactions.mjs\").then(module => module.checkLiveCaptions())"}]},
   {"name":"live-captions-minimum","window":"workspace","section":"recording","configured_text_provider":true,"live_question_manual":true,"live_captions":true,"size":[760,520],"steps":[{"eval":"import(\"/tests/live-captions.interactions.mjs\").then(module => module.checkLiveCaptions())"}]},
   {"name":"live-captions-provider-states","window":"workspace","section":"recording","configured_text_provider":true,"live_captions":true,"size":[1400,850],"steps":[{"eval":"import(\"/tests/live-captions.interactions.mjs\").then(module => module.checkLiveCaptionStates())"}]},
+  {"name":"settings-dictionary","window":"workspace","section":"settings","tab":"dictionary","size":[980,640]},
   {"name":"live-captions-preference","window":"workspace","section":"settings","tab":"dictation","size":[980,640],"steps":[{"eval":"import(\"/tests/live-captions.interactions.mjs\").then(module => module.checkLiveTextPreference())"}]},
   {"name":"live-workspace-windows-wide","window":"workspace","section":"recording","platform":"windows","configured_text_provider":true,"size":[1400,850]},
   {"name":"live-workspace-windows-minimum","window":"workspace","section":"recording","platform":"windows","configured_text_provider":true,"size":[760,520]},
