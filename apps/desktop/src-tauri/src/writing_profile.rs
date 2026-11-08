@@ -362,7 +362,7 @@ mod tests {
             .unwrap();
         assert!(shared.engine.cloud_signed_in());
         assert!(!shared.settings().claude_access);
-        change_sharing(&shared, true, |enabled| Ok(enabled)).unwrap();
+        change_sharing(&shared, true, Ok).unwrap();
         assert!(shared.engine.writing_profile_sharing_enabled());
         assert!(!shared.engine.writing_profile_learning_enabled());
         assert!(!shared.settings().claude_access);
