@@ -472,6 +472,7 @@ def validate_observation(observation, image_policy='exact'):
                 rust_steps = [step for step in steps if 'rust-cache' in step['name'] or 'Restore mobile Rust' in step['name']]
                 rust = bool(rust_steps)
                 node = any('setup-node' in step['name'] for step in steps)
+                python = any('setup-python' in step['name'] for step in steps)
                 if rust and not meta.get('rustc'):
                     errors.append(workflow + ': missing observed Rust compiler identity')
                 if rust and observation['cache_state'] == 'warm' and (
@@ -482,6 +483,8 @@ def validate_observation(observation, image_policy='exact'):
                     errors.append(workflow + ': controlled cold Rust cache was not bypassed')
                 if node and (not meta.get('node') or not meta.get('npm')):
                     errors.append(workflow + ': missing observed Node/npm identity')
+                if python and not meta.get('python'):
+                    errors.append(workflow + ': missing observed Python identity')
                 if node and observation['cache_state'] == 'warm' and not meta.get('node_cache_restored'):
                     errors.append(workflow + ': missing observed npm dependency restore')
                 if node and observation['cache_state'] == 'cold' and meta.get('node_cache_keys'):

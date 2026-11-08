@@ -361,3 +361,57 @@ safeguards remain serial; `PENNEL_CI_FORCE_SERIAL=true` and exact scoped serial
 controls retain the fallback. No new variable or native cache family is needed.
 Publication/merge and current combined-source functional CI remain distinct;
 this report does not claim that the implementation has merged or shipped.
+
+## Python identity enforcement — 8 November 2026
+
+The assessor now requires an observed Python identity whenever a physical job
+selects `setup-python`, matching its existing Rust and Node evidence requirements.
+Previously, missing Python in both arms could compare equal and qualify an
+otherwise complete synthetic 80-observation campaign. The regression failed
+before the three-line guard and passes afterward. Missing keys, null/empty
+identities, either/both modes and Python patch mismatches are covered under
+exact and rolling-build policies. Jobs without `setup-python` remain unaffected.
+
+All 45 assessor tests and 148 CI-helper tests pass, as do actionlint (ShellCheck
+disabled) and whitespace checks. Corrected-assessor replay preserves all eight
+gate verdicts, matched pairs and medians exactly. All 60 active setup-Python jobs
+already retain observed versions: 40 CPython 3.11.9 and 20 CPython 3.11.18. The
+112-outcome audit still has 110 passing observations and two historical failures;
+the portable report, raw captures, source roster and archives are unchanged.
+No new benchmark request, replacement sample or source pooling was needed.
+
+Reproduce from the app checkout holding the retained raw captures:
+
+```sh
+python3 -B -m unittest discover -s scripts/tests -p 'test_ci_*.py' -q
+python3 -B - <<'PY'
+import hashlib
+import json
+import runpy
+from pathlib import Path
+
+record = json.loads(Path('docs/evidence/ci-qualification-73-rolling.json').read_text())
+assessor = runpy.run_path('scripts/ci-qualification.py')
+raw, active = [], []
+for row in record['outcomes']:
+    data = Path(row['capture_file']).read_bytes()
+    assert hashlib.sha256(data).hexdigest() == row['capture_sha256']
+    observation = json.loads(data)
+    raw.append(observation)
+    if row['active_qualification_scope']:
+        active.append(observation)
+result = assessor['assess'](active, image_policy='rolling-build',
+                            approval_reference=record['policy_approval'])
+assert len(active) == 80 and result['rollout_qualified']
+for stored in record['gates']:
+    actual = result['categories'][stored['category']][stored['cache_state']]
+    for key in ('qualified', 'matched_pairs', 'control_median_seconds', 'candidate_median_seconds'):
+        assert actual[key] == stored[key]
+valid = sum(assessor['validate_observation'](o, image_policy='rolling-build')['valid'] for o in raw)
+assert len(raw) == 112 and valid == 110
+print('8/8 gates unchanged; active80 qualified; all112 retain110 valid/2 failures')
+PY
+```
+
+Independent review and exact corrected-head functional CI remain separate from
+this replay. The older native-CAS adoption gates are independent and remain off.

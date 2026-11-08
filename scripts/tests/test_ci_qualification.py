@@ -33,7 +33,7 @@ def artifact(document):
     return {'id': next(COUNTER), 'created_at': stamp(20), 'document': document}
 
 
-def job(name, seconds, steps=(), rust=False, node=False, cold=False, native=False):
+def job(name, seconds, steps=(), rust=False, node=False, cold=False, native=False, python=False):
     image = 'macos-26-arm64' if native or name == 'build-and-test' or 'macos-' in name else (
         'windows-2025' if 'windows-' in name else 'ubuntu-24.04')
     values = [{'name': step, 'conclusion': 'success'} for step in steps]
@@ -42,6 +42,8 @@ def job(name, seconds, steps=(), rust=False, node=False, cold=False, native=Fals
                        'conclusion': 'skipped' if cold else 'success'})
     if node:
         values.append({'name': 'Run actions/setup-node@v5', 'conclusion': 'success'})
+    if python:
+        values.append({'name': 'Run actions/setup-python@v5', 'conclusion': 'success'})
     if not values:
         values = [{'name': 'Set up job', 'conclusion': 'success'}]
     return {'id': next(COUNTER), 'name': name, 'status': 'completed', 'conclusion': 'success',
@@ -52,7 +54,8 @@ def job(name, seconds, steps=(), rust=False, node=False, cold=False, native=Fals
                 'rust_key': 'v0-rust-frozen-env-deps' if rust and not cold else None,
                 'rust_exact': True if rust and not cold else None,
                 'node': 'v22.21.0' if node else None, 'npm': '10.9.4' if node else None,
-                'python': None, 'node_cache_keys': ['node-cache-frozen'] if node and not cold else [],
+                'python': 'CPython (3.11.9)' if python else None,
+                'node_cache_keys': ['node-cache-frozen'] if node and not cold else [],
                 'node_cache_restored': node and not cold,
             }}
 
@@ -104,7 +107,7 @@ def observation(category='docs', mode='serial', cache='warm', pair='one', second
                 run['jobs'].append(job('offline (' + os_name + ')', seconds, (
                     'Build evaluation-only bridge without native models', 'Evaluation Rust checks',
                     'Offline corpus, metrics and mocked transports',
-                    'Real deterministic baselines and reproducible report'), rust=True, cold=cold))
+                    'Real deterministic baselines and reproducible report'), rust=True, cold=cold, python=True))
         if workflow == 'mobile.yml':
             lanes = ['serial'] if mode == 'serial' else ['release', 'runtime']
             receipts = []
@@ -197,6 +200,57 @@ class QualificationTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertFalse(CI.validate_observation(obs)['valid'])
 
+    def test_setup_python_requires_observed_identity(self):
+        for policy in CI.IMAGE_POLICIES:
+            for cache in ('warm', 'cold'):
+                for missing in ('absent', None, ''):
+                    obs = observation('core', cache=cache)
+                    python_job = next(j for j in obs['runs'][-1]['jobs'] if j['name'].startswith('offline ('))
+                    if missing == 'absent':
+                        del python_job['identity']['python']
+                    else:
+                        python_job['identity']['python'] = missing
+                    with self.subTest(policy=policy, cache=cache, missing=missing):
+                        result = CI.validate_observation(obs, image_policy=policy)
+                        self.assertFalse(result['valid'])
+                        self.assertIn('decision-evaluation.yml: missing observed Python identity', result['errors'])
+
+    def test_missing_python_in_either_or_both_modes_cannot_qualify_complete_rollout(self):
+        for policy in CI.IMAGE_POLICIES:
+            for missing_modes in (('serial',), ('candidate',), ('serial', 'candidate')):
+                values = [observation(category, mode, cache, f'{category}-{cache}-{index}')
+                          for category in CI.WORKFLOWS for cache in ('warm', 'cold')
+                          for index in range(5) for mode in ('serial', 'candidate')]
+                kwargs = {'image_policy': policy, 'approval_reference': ROLLING_APPROVAL}
+                self.assertTrue(CI.assess(values, **kwargs)['rollout_qualified'])
+                for obs in values:
+                    if obs['category'] == 'core' and obs['mode'] in missing_modes:
+                        for python_job in obs['runs'][-1]['jobs'][1:]:
+                            python_job['identity']['python'] = None
+                with self.subTest(policy=policy, modes=missing_modes):
+                    report = CI.assess(values, **kwargs)
+                    self.assertFalse(report['rollout_qualified'])
+                    for cache in ('warm', 'cold'):
+                        gate = report['categories']['core'][cache]
+                        self.assertFalse(gate['qualified'])
+                        for obs in gate['observations']:
+                            if obs['mode'] in missing_modes:
+                                self.assertFalse(obs['valid'])
+                                self.assertIn('decision-evaluation.yml: missing observed Python identity', obs['errors'])
+
+    def test_python_patch_versions_still_must_match(self):
+        for policy in CI.IMAGE_POLICIES:
+            for cache in ('warm', 'cold'):
+                values = [observation('core', mode, cache, str(index))
+                          for index in range(5) for mode in ('serial', 'candidate')]
+                values[-1]['runs'][-1]['jobs'][1]['identity']['python'] = 'CPython (3.11.18)'
+                report = CI.assess(values, image_policy=policy, approval_reference=ROLLING_APPROVAL)
+                with self.subTest(policy=policy, cache=cache):
+                    gate = report['categories']['core'][cache]
+                    self.assertFalse(gate['qualified'])
+                    self.assertEqual(gate['rejected_pairs'], [
+                        {'pair': '4', 'reason': 'Source/image/toolchain/cache identities differ'}])
+
     def test_cold_is_a_controlled_bypass_not_an_unobserved_cache_miss(self):
         obs = observation('desktop', cache='cold')
         obs['runs'][1]['jobs'][1]['steps'][-2]['conclusion'] = 'success'
@@ -271,10 +325,12 @@ class QualificationTests(unittest.TestCase):
                   '2026-01-01T00:00:00Z Version: 20261026.0455.2\n'
                   '2026-01-01T00:00:00Z ##[endgroup]\n'
                   'rustc 1.99.1 (frozen)\nnode: v22.21.0\nnpm: 10.9.4\n'
+                  'Successfully set up CPython (3.11.9)\n'
                   'Cache restored from key: v0-rust-frozen-env-deps\nfull match: true\n'
                   'Cache restored from key: node-cache-frozen\n')
         identity = CI.log_identity(prefix)
         self.assertEqual(identity['image_version'], '20261026.0455.2')
+        self.assertEqual(identity['python'], 'CPython (3.11.9)')
         self.assertTrue(identity['rust_exact'])
         self.assertTrue(identity['node_cache_restored'])
         self.assertIsNone(CI.log_identity('Version: an-unrelated-tool')['image_version'])
