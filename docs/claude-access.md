@@ -4,6 +4,8 @@ Claude (claude.ai connectors, Claude Desktop, Claude Code, any MCP client) can s
 
 The authoritative design (decisions, security analysis) is in the pennel-cloud repository: `docs/superpowers/specs/2026-10-26-account-platform-mcp-design.md`. This file mirrors the part the app implements.
 
+The [writing-profile preview](writing-profile.md) uses a separate `/mcp/style` connector and consent. Its profile permission does not authorize these meeting tools, and existing meeting permissions do not authorize writing-profile access.
+
 ## What the user does
 
 1. Settings → Account → **Claude-toegang**: switch it on (off by default, per computer). Requires being signed in to Pennel Cloud.

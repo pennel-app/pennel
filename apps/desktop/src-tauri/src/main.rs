@@ -58,6 +58,7 @@ mod ui;
 #[cfg(windows)]
 mod windows_meetings;
 mod workspace;
+mod writing_profile;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -935,10 +936,16 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         dictation_active: AtomicBool::new(false),
         dictation_jobs: std::sync::atomic::AtomicUsize::new(0),
         paste_jobs: std::sync::atomic::AtomicUsize::new(0),
+        writing_profile_sharing_epoch: Mutex::new(0),
+        writing_profile_source_gate: Mutex::new(()),
     });
     app.manage(shared.clone());
     app.manage(cloud::SyncRunner::start(shared.clone(), handle.clone()));
     app.manage(claude_access::ClaudeAccessRunner::start(
+        shared.clone(),
+        handle.clone(),
+    ));
+    app.manage(writing_profile::ProfileRunner::start(
         shared.clone(),
         handle.clone(),
     ));
@@ -1137,6 +1144,14 @@ fn main() {
             capture::capture_snapshot,
             commands::app_info,
             commands::save_settings,
+            writing_profile::writing_profile_status,
+            writing_profile::set_writing_profile_learning,
+            writing_profile::refresh_writing_profile,
+            writing_profile::set_writing_profile_source_excluded,
+            writing_profile::set_writing_profile_trait,
+            writing_profile::delete_writing_profile,
+            writing_profile::writing_profile_connection,
+            writing_profile::set_writing_profile_sharing,
             commands::apply_task_model_choice,
             commands::add_provider,
             commands::remove_provider,
@@ -1406,6 +1421,7 @@ fn main() {
                             }
                             app.state::<cloud::SyncRunner>().stop();
                             app.state::<claude_access::ClaudeAccessRunner>().stop();
+                            app.state::<writing_profile::ProfileRunner>().stop();
                             platform_audio::stop();
                             let listener = shared.hotkey.lock().unwrap().take();
                             drop(listener);

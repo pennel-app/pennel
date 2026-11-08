@@ -407,6 +407,22 @@ mark { background: none; color: inherit; font-weight: 600; }
 .checkbox, .radio { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: var(--font-body); }
 .toggle-field .help { margin: -2px 0 8px 22px; }
 .rule-row { flex-wrap: nowrap; gap: 10px; min-height: 30px; padding: 2px 0; }
+.writing-profile-actions { margin: var(--space-3) 0; }
+.writing-profile-language, .writing-profile-sources { margin-top: var(--space-4); border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.writing-profile-language > summary, .writing-profile-sources > summary { cursor: default; font-weight: 500; }
+.writing-profile-language > summary { list-style: none; }
+.writing-profile-language > summary::-webkit-details-marker { display: none; }
+.writing-profile-language > summary::before { content: "›"; font-size: var(--font-content); line-height: 1; }
+.writing-profile-language[open] > summary::before { transform: rotate(90deg); }
+.writing-profile-language-body { padding-top: var(--space-2); }
+.writing-profile-language progress { width: 100%; height: 5px; accent-color: var(--foreground); }
+.writing-profile-trait { flex-wrap: nowrap; gap: var(--space-4); padding: var(--space-2) 0; }
+.writing-profile-trait .help { margin: 0; font-size: var(--font-caption); }
+.writing-profile-source { padding: var(--space-3) 0; }
+.writing-profile-source + .writing-profile-source { border-top: 1px solid var(--border); }
+.writing-profile-source strong { overflow-wrap: anywhere; }
+.writing-profile-source .toggle-field { margin-top: var(--space-2); }
+.writing-profile-url { overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; font-size: var(--font-label); }
 .rule-row > .ui-icon { width: 16px; height: 16px; color: var(--muted); }
 
 .settings-footer { flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-4); padding: var(--space-1) 0 0; }

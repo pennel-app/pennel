@@ -74,6 +74,7 @@ mod transcript_projection;
 mod utterance_integration_tests;
 mod voices;
 mod wav;
+mod writing_profile;
 
 pub use call_detector::{CallDetector, CallEvent, CallObservation};
 pub use cleanup_verification::CleanupVerificationAvailability;

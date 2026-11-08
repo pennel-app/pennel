@@ -43,6 +43,19 @@ pub fn should_run(signed_in: bool, enabled: bool) -> bool {
 
 pub trait Relay: Send + Sync + 'static {
     fn active(&self) -> bool;
+    fn generation(&self) -> u64 {
+        0
+    }
+    fn permitted(&self, _request: &RelayRequest) -> bool {
+        self.active()
+    }
+    fn revalidate(&self, request: &RelayRequest, answer: RelayAnswer) -> RelayAnswer {
+        if self.permitted(request) {
+            answer
+        } else {
+            disabled()
+        }
+    }
     fn poll(&self) -> Result<Vec<RelayRequest>, PennelError>;
     fn answer(&self, request: &RelayRequest) -> RelayAnswer;
     fn respond(&self, id: &str, answer: &RelayAnswer) -> Result<(), PennelError>;
@@ -169,11 +182,15 @@ fn run(
         ) {
             set_status(&inner, on_status.as_ref(), ClaudeStatus::Connecting);
         }
+        let generation = relay.generation();
         match relay.poll() {
             Ok(requests) => {
                 failures = 0;
                 if inner.stopped() {
                     return;
+                }
+                if generation != relay.generation() {
+                    continue;
                 }
                 let last = if requests.is_empty() {
                     last_request(&inner)
@@ -188,7 +205,7 @@ fn run(
                     },
                 );
                 for request in requests {
-                    dispatch(&inner, &relay, request);
+                    dispatch(&inner, &relay, request, generation);
                 }
             }
             Err(PennelError::NotSignedIn) => {
@@ -215,7 +232,14 @@ fn run(
     }
 }
 
-fn dispatch(inner: &Arc<Inner>, relay: &Arc<dyn Relay>, request: RelayRequest) {
+fn disabled() -> RelayAnswer {
+    RelayAnswer::Failed {
+        code: "unavailable".into(),
+        message: "Access is disabled or the requested profile is no longer current.".into(),
+    }
+}
+
+fn dispatch(inner: &Arc<Inner>, relay: &Arc<dyn Relay>, request: RelayRequest, generation: u64) {
     if inner.workers.fetch_add(1, Ordering::SeqCst) >= MAX_WORKERS {
         inner.workers.fetch_sub(1, Ordering::SeqCst);
         let busy = RelayAnswer::Failed {
@@ -230,19 +254,24 @@ fn dispatch(inner: &Arc<Inner>, relay: &Arc<dyn Relay>, request: RelayRequest) {
     std::thread::spawn(move || {
         let started = std::time::Instant::now();
         let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            if relay.active() {
+            if !inner.stopped() && relay.generation() == generation && relay.permitted(&request) {
                 relay.answer(&request)
             } else {
-                RelayAnswer::Failed {
-                    code: "unavailable".into(),
-                    message: "Claude access is disabled on this computer.".into(),
-                }
+                disabled()
             }
         }))
         .unwrap_or_else(|_| RelayAnswer::Failed {
             code: "failed".into(),
             message: "Pennel could not answer this question.".into(),
         });
+        let mut answer = if inner.stopped() || relay.generation() != generation {
+            disabled()
+        } else {
+            relay.revalidate(&request, answer)
+        };
+        if inner.stopped() || relay.generation() != generation {
+            answer = disabled();
+        }
         let outcome = match &answer {
             RelayAnswer::Text { .. } => "ok",
             RelayAnswer::Failed { code, .. } => code.as_str(),
@@ -264,17 +293,78 @@ impl Relay for EngineRelay {
     fn active(&self) -> bool {
         should_run(
             self.0.engine.cloud_signed_in(),
-            self.0.settings().claude_access,
+            self.0.settings().claude_access || self.0.engine.writing_profile_sharing_enabled(),
         )
     }
 
+    fn generation(&self) -> u64 {
+        self.0.engine.cloud_account_epoch()
+    }
+
+    fn permitted(&self, request: &RelayRequest) -> bool {
+        self.0.engine.cloud_signed_in()
+            && if request.tool == "get_writing_profile" {
+                self.0.preview && self.0.engine.writing_profile_sharing_enabled()
+            } else {
+                self.0.settings().claude_access
+            }
+    }
+
+    fn revalidate(&self, request: &RelayRequest, answer: RelayAnswer) -> RelayAnswer {
+        if !self.permitted(request) {
+            return disabled();
+        }
+        if request.tool == "get_writing_profile" {
+            // A source may have been deleted while the first snapshot was being prepared.
+            let current = self.answer(request);
+            if current != answer {
+                return disabled();
+            }
+        }
+        answer
+    }
+
     fn poll(&self) -> Result<Vec<RelayRequest>, PennelError> {
-        self.0
-            .engine
-            .cloud_relay_poll(format!("pennel-desktop/{}", self.0.version))
+        let mut capabilities = Vec::new();
+        if self.0.settings().claude_access {
+            capabilities.extend(
+                [
+                    "search_meetings",
+                    "list_recent_meetings",
+                    "get_meeting",
+                    "ask_meetings",
+                ]
+                .map(str::to_owned),
+            );
+        }
+        if self.0.preview && self.0.engine.writing_profile_sharing_enabled() {
+            capabilities.push("get_writing_profile".into());
+        }
+        self.0.engine.cloud_relay_poll_with_capabilities(
+            &format!("pennel-desktop/{}", self.0.version),
+            &capabilities,
+        )
     }
 
     fn answer(&self, request: &RelayRequest) -> RelayAnswer {
+        if !self.permitted(request) {
+            return disabled();
+        }
+        if request.tool == "get_writing_profile" {
+            let Some(language) = crate::writing_profile::profile_language(&request.arguments_json)
+            else {
+                return RelayAnswer::Failed {
+                    code: "invalid_arguments".into(),
+                    message: "Supply only a valid output language.".into(),
+                };
+            };
+            return match self.0.engine.writing_profile_shared(&language) {
+                Ok(profile) => RelayAnswer::Text {
+                    text: profile.to_string(),
+                },
+                Err(_) => disabled(),
+            };
+        }
         self.0.engine.claude_access_answer(
             request.tool.clone(),
             request.arguments_json.clone(),
@@ -336,7 +426,7 @@ pub async fn set_claude_access(
 mod tests {
     use super::*;
     use std::collections::VecDeque;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::time::Instant;
 
     fn wait_until(mut condition: impl FnMut() -> bool) {
@@ -354,9 +444,16 @@ mod tests {
         poll_count: AtomicUsize,
         answered: Mutex<Vec<(String, RelayAnswer)>>,
         off_after_poll: AtomicBool,
+        epoch: AtomicU64,
+        change_identity_after_poll: AtomicBool,
+        off_after_answer: AtomicBool,
+        change_identity_after_answer: AtomicBool,
     }
 
     impl Relay for Fake {
+        fn generation(&self) -> u64 {
+            self.epoch.load(Ordering::SeqCst)
+        }
         fn active(&self) -> bool {
             self.active.load(Ordering::SeqCst)
         }
@@ -365,6 +462,12 @@ mod tests {
             if self.off_after_poll.load(Ordering::SeqCst) {
                 self.active.store(false, Ordering::SeqCst);
             }
+            if self
+                .change_identity_after_poll
+                .swap(false, Ordering::SeqCst)
+            {
+                self.epoch.fetch_add(1, Ordering::SeqCst);
+            }
             let next = self.polls.lock().unwrap().pop_front();
             next.unwrap_or_else(|| {
                 std::thread::sleep(Duration::from_millis(5));
@@ -372,6 +475,15 @@ mod tests {
             })
         }
         fn answer(&self, request: &RelayRequest) -> RelayAnswer {
+            if self.off_after_answer.load(Ordering::SeqCst) {
+                self.active.store(false, Ordering::SeqCst);
+            }
+            if self
+                .change_identity_after_answer
+                .swap(false, Ordering::SeqCst)
+            {
+                self.epoch.fetch_add(1, Ordering::SeqCst);
+            }
             RelayAnswer::Text {
                 text: format!("antwoord op {}", request.tool),
             }
@@ -486,6 +598,50 @@ mod tests {
         let (id, answer) = fake.answered.lock().unwrap()[0].clone();
         assert_eq!(id, "late");
         assert!(matches!(answer, RelayAnswer::Failed { code, .. } if code == "unavailable"));
+        runner.stop();
+    }
+
+    #[test]
+    fn disabling_or_switching_identity_during_answer_withholds_content() {
+        for switch_identity in [false, true] {
+            let fake = Arc::new(Fake::default());
+            fake.active.store(true, Ordering::SeqCst);
+            fake.off_after_answer
+                .store(!switch_identity, Ordering::SeqCst);
+            fake.change_identity_after_answer
+                .store(switch_identity, Ordering::SeqCst);
+            fake.polls
+                .lock()
+                .unwrap()
+                .push_back(Ok(vec![request("inflight")]));
+            let (runner, _) = runner(&fake);
+            wait_until(|| !fake.answered.lock().unwrap().is_empty());
+            assert!(
+                matches!(&fake.answered.lock().unwrap()[0].1, RelayAnswer::Failed {code, ..} if code == "unavailable")
+            );
+            runner.stop();
+        }
+    }
+
+    #[test]
+    fn account_change_during_poll_discards_old_requests_and_runner_recovers() {
+        let fake = Arc::new(Fake::default());
+        fake.active.store(true, Ordering::SeqCst);
+        fake.change_identity_after_poll
+            .store(true, Ordering::SeqCst);
+        fake.polls
+            .lock()
+            .unwrap()
+            .push_back(Ok(vec![request("old-account")]));
+        let (runner, _) = runner(&fake);
+        wait_until(|| fake.poll_count.load(Ordering::SeqCst) > 1);
+        assert!(fake.answered.lock().unwrap().is_empty());
+        fake.polls
+            .lock()
+            .unwrap()
+            .push_back(Ok(vec![request("new-account")]));
+        wait_until(|| !fake.answered.lock().unwrap().is_empty());
+        assert_eq!(fake.answered.lock().unwrap()[0].0, "new-account");
         runner.stop();
     }
 

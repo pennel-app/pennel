@@ -8,6 +8,7 @@ import type { Context } from "../main";
 import { summaryAutomationChoice } from "../meeting-summary-automation";
 import { icon } from "../icons";
 import { appBadge } from "../app-icon";
+import { writingProfileSection } from "./writing-profile";
 
 const apps: [string, string][] = [
   ["com.microsoft.teams2", "Microsoft Teams"], ["us.zoom.xos", "Zoom"],
@@ -188,6 +189,7 @@ export async function meetingSettingsView(ctx: Context): Promise<HTMLElement> {
       (id) => ctx.save((next) => { next.default_template = id; }), "menu")),
     await templateSection(ctx, templates),
     ...await speakerSections(ctx, setup),
+    writingProfileSection(ctx),
     section(l("settings.audio.title"), l("settings.audio.help"),
       select([["30", l("settings.audio.days30")], ["90", l("settings.audio.days90")], ["365", l("settings.audio.year")], ["0", l("settings.action.always")]], String(settings.meeting_audio_retention_days),
         (value) => ctx.save((next) => { next.meeting_audio_retention_days = Number(value); }))));

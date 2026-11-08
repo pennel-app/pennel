@@ -1563,6 +1563,8 @@ mod tests {
             dictation_active: AtomicBool::new(false),
             dictation_jobs: AtomicUsize::new(0),
             paste_jobs: AtomicUsize::new(0),
+            writing_profile_sharing_epoch: Mutex::new(0),
+            writing_profile_source_gate: Mutex::new(()),
             meeting_context: Mutex::new(Some(MeetingContext {
                 token: token.clone(),
                 uid,
