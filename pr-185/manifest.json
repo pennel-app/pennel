@@ -1,0 +1,66 @@
+{
+  "pull_request": "https://github.com/pennel-app/pennel/pull/185",
+  "capture": "Owned headless mock render; synthetic fixture data; no user screen capture",
+  "before_source": "3272f0abdca5ed8802c50f85850032b43233d2e7",
+  "after_source": "fbe87a0872603e8684e09cbd74fb7c22f9240188",
+  "evidence_source": "c4a83a818e6827fdd4d30766010605216e716d8a",
+  "fixture_js_sha256": "82fc50ff49aeeea98036fb456c37e0cf2285181093020396e749da49644e543a",
+  "fixture_case": "meeting-failed-recovery",
+  "dimensions": {
+    "width": 980,
+    "height": 640
+  },
+  "response_scope": "Official local Decider on invented material. One premature loading HTTP503 and one model-ready HTTP200. The latter omitted required serving revision/provider identity; pilot blocked and stopped. Not model-quality qualification.",
+  "files": [
+    {
+      "path": "pr-185/before-en-light.png",
+      "bytes": 52325,
+      "sha256": "58f9bd7a2806295380a6fa69f25253ff9548b30c5c124228e0606cbed3b93954"
+    },
+    {
+      "path": "pr-185/before-en-dark.png",
+      "bytes": 52504,
+      "sha256": "f1c8792033a47fa1be1dbcc06ab756fb7aca50cff20561a1367313b1ff07d839"
+    },
+    {
+      "path": "pr-185/before-nl-light.png",
+      "bytes": 53363,
+      "sha256": "c48da21b01948d861f67bb23133560cfb428d3a505cae01f4ca0be6857a95b98"
+    },
+    {
+      "path": "pr-185/before-nl-dark.png",
+      "bytes": 53794,
+      "sha256": "6e9f2bb2738af522093b910a8d9a562f1eb4a370c32619fc62cbb94c52c63de9"
+    },
+    {
+      "path": "pr-185/after-en-light.png",
+      "bytes": 61027,
+      "sha256": "19fc336e22136f972b10e96f32393d0bad3a9affacf79e001e35df142d79447f"
+    },
+    {
+      "path": "pr-185/after-en-dark.png",
+      "bytes": 61194,
+      "sha256": "7cfb241af5a1629a822bf3113956d7f6cdbf17c9b5c1ba0cff60785cc6d5b1bb"
+    },
+    {
+      "path": "pr-185/after-nl-light.png",
+      "bytes": 62796,
+      "sha256": "159b6e0c46c31715c6d37be0f4e1b88a64b44b2dd3812aaa1b5e393efa87b3e1"
+    },
+    {
+      "path": "pr-185/after-nl-dark.png",
+      "bytes": 63239,
+      "sha256": "e995172e0a5ca5b6da2eb37afb2356473e277f639ca8b0048133c583cd4a4097"
+    },
+    {
+      "path": "pr-185/local-decider-response.json",
+      "bytes": 1501,
+      "sha256": "7adf3cf87caac5be7d2948b583dbba4fb747ca6753b0fcfdff91800c34218a2b"
+    },
+    {
+      "path": "pr-185/preload-probe-response.json",
+      "bytes": 113,
+      "sha256": "b822fb744a8fa7f034c04b96f971ebbae9fbadccca63997db6ea977ac26fbb50"
+    }
+  ]
+}
