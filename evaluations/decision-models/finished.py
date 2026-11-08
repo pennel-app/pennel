@@ -94,6 +94,19 @@ def _bridge_call(bridge, request, *, deadline=None, clock=time.monotonic):
     return value
 
 
+def _export_fixture(bridge, fixture, configuration, expected_actual, *, deadline=None, clock=time.monotonic):
+    return _bridge_call(bridge, {"op": "finished_meeting_export", "fixture": fixture,
+                                 "configuration": configuration, "expected_actual": expected_actual},
+                        deadline=deadline, clock=clock)
+
+
+def _verify_export(exported, bridge, *, deadline=None, clock=time.monotonic):
+    rebuilt = _export_fixture(bridge, exported["fixture"], exported["configuration"],
+                              exported.get("expected_actual"), deadline=deadline, clock=clock)
+    if rebuilt != exported:
+        raise FinishedError("production_export_changed")
+
+
 def freeze(fixtures, configuration, bridge, expected_actual=None, expected_answers=None,
            *, deadline=None, clock=time.monotonic):
     if not isinstance(fixtures, list) or not fixtures:
@@ -111,9 +124,8 @@ def freeze(fixtures, configuration, bridge, expected_actual=None, expected_answe
         if family in families and families[family] != split:
             raise FinishedError("family_split_leakage")
         families[family] = split
-        exports.append(_bridge_call(bridge, {"op": "finished_meeting_export", "fixture": fixture,
-                                            "configuration": configuration, "expected_actual": expected_actual},
-                                    deadline=deadline, clock=clock))
+        exports.append(_export_fixture(bridge, fixture, configuration, expected_actual,
+                                       deadline=deadline, clock=clock))
     _validate_expected_answers(exports, expected_answers)
     value = {"schema_version": 1, "protocol_id": "production-finished-meeting-v1",
              "protocol_sha256": file_hash(PROTOCOL), "runner_sha256": file_hash(__file__),
@@ -137,12 +149,7 @@ def verify_freeze(frozen, bridge, *, deadline=None, clock=time.monotonic):
     if not isinstance(exports, list) or not exports:
         raise FinishedError("production_freeze_changed")
     for exported in exports:
-        rebuilt = _bridge_call(bridge, {"op": "finished_meeting_export", "fixture": exported["fixture"],
-                                        "configuration": exported["configuration"],
-                                        "expected_actual": exported.get("expected_actual")},
-                               deadline=deadline, clock=clock)
-        if rebuilt != exported:
-            raise FinishedError("production_export_changed")
+        _verify_export(exported, bridge, deadline=deadline, clock=clock)
     rebuilt = freeze([value["fixture"] for value in exports], exports[0]["configuration"], bridge,
                      exports[0].get("expected_actual"), frozen.get("expected_answers"),
                      deadline=deadline, clock=clock)
@@ -360,12 +367,7 @@ def run_local_pilot(frozen, bridge, *, execute=False, transport=None, max_second
         report["fixtures"].append(fixture_report)
         # Re-preparation is inside the whole-job clock and cannot discard earlier attempts.
         try:
-            rebuilt = _bridge_call(bridge, {"op": "finished_meeting_export", "fixture": exported["fixture"],
-                                           "configuration": exported["configuration"],
-                                           "expected_actual": exported.get("expected_actual")},
-                                   deadline=job_deadline, clock=clock)
-            if rebuilt != exported:
-                raise FinishedError("production_export_changed")
+            _verify_export(exported, bridge, deadline=job_deadline, clock=clock)
         except Exception as error:
             report["reason"] = (_deadline_reason(clock(), job_deadline, global_deadline)
                                 or (str(error) if isinstance(error, FinishedError) else "core_bridge_failed"))
