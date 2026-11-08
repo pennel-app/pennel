@@ -74,3 +74,22 @@ open for the Decider serving revision/provider identity blocker and remaining
 language, quality, calibration, resources, natural-ASR and human/device work.
 Closing [#183](https://github.com/pennel-app/pennel/issues/183) after review, CI and
 merge completes its bounded recovery fix, not those separate acceptance gates.
+
+## Integration with writing profiles
+
+Main advanced during final CI to
+`a60ade30e2e5c837c9069b10385c9e22a2fa282d`. Integration commit
+`9b3b22ed62ed60fd893b1b2e525d2f11c3538047` preserves that writing-profile feature
+and this meeting work. The two manual merge resolutions retain both glossary
+term sets and main's canonical `settings-dictionary-legacy-window` fixture name.
+
+The new optional self-voice metadata defaults to absent. Recovery continues to
+preserve complete authoritative utterance metadata. The earlier bridge hash,
+freeze and image observations above remain bound to their stated source commits;
+they are not relabelled as new inference or acceptance evidence.
+
+The metadata source changed, so complete production export fingerprints must
+change and historical exports must be rejected by the new context. Refreshed
+offline preparation/replay and combined core, frontend/backend, rendering and
+hosted native checks are recorded in the PR before merge. No model trial or
+qualification is repeated or granted by this integration.
