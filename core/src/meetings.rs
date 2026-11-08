@@ -208,6 +208,56 @@ struct Frontmatter {
     extra: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailedTranscriptionRecoveryStatus {
+    Complete,
+    Retryable,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailedTranscriptionRecoveryReason {
+    MetadataUnavailable,
+    UnverifiedProvenance,
+    AudioChanged,
+    UnreadableAudio,
+    NoRetainedAudio,
+}
+
+/// Current retained candidates, not a guarantee of audio integrity or recognition success.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FailedTranscriptionRecoveryPlan {
+    pub failed_count: Option<u32>,
+    pub retryable_count: Option<u32>,
+    pub status: FailedTranscriptionRecoveryStatus,
+    pub reason_code: Option<FailedTranscriptionRecoveryReason>,
+}
+
+impl FailedTranscriptionRecoveryPlan {
+    fn metadata_unavailable() -> Self {
+        Self {
+            failed_count: None,
+            retryable_count: None,
+            status: FailedTranscriptionRecoveryStatus::Unavailable,
+            reason_code: Some(FailedTranscriptionRecoveryReason::MetadataUnavailable),
+        }
+    }
+}
+
+impl FailedTranscriptionRecoveryReason {
+    fn priority(self) -> u8 {
+        match self {
+            Self::MetadataUnavailable => 5,
+            Self::UnverifiedProvenance => 4,
+            Self::AudioChanged => 3,
+            Self::UnreadableAudio => 2,
+            Self::NoRetainedAudio => 1,
+        }
+    }
+}
+
 pub struct MeetingStore {
     dir: PathBuf,
 }
@@ -1354,20 +1404,103 @@ impl MeetingStore {
         }
     }
 
-    pub(crate) fn recovery_audio_path(&self, id: &str, row: &MeetingUtterance) -> Option<PathBuf> {
-        let proof = row.metadata.recovery_audio.as_ref()?;
+    pub(crate) fn failed_recovery_plan(
+        &self,
+        id: &str,
+        snapshot: &MeetingTranscriptSnapshot,
+    ) -> FailedTranscriptionRecoveryPlan {
+        if !matches!(
+            snapshot.metadata_status,
+            crate::TranscriptMetadataStatus::Valid | crate::TranscriptMetadataStatus::Absent
+        ) {
+            return FailedTranscriptionRecoveryPlan::metadata_unavailable();
+        }
+        let failed = snapshot
+            .utterances
+            .iter()
+            .filter(|row| row.segment.failed)
+            .collect::<Vec<_>>();
+        let Ok(failed_count) = u32::try_from(failed.len()) else {
+            return FailedTranscriptionRecoveryPlan::metadata_unavailable();
+        };
+        let mut retryable_count = 0;
+        let mut reason_code: Option<FailedTranscriptionRecoveryReason> = None;
+        for row in failed {
+            match self.recovery_audio_candidate(id, row) {
+                Ok(_) => retryable_count += 1,
+                Err(reason) => {
+                    if reason_code.is_none_or(|previous| reason.priority() > previous.priority()) {
+                        reason_code = Some(reason);
+                    }
+                }
+            }
+        }
+        FailedTranscriptionRecoveryPlan {
+            failed_count: Some(failed_count),
+            retryable_count: Some(retryable_count),
+            status: if failed_count == 0 {
+                FailedTranscriptionRecoveryStatus::Complete
+            } else if retryable_count > 0 {
+                FailedTranscriptionRecoveryStatus::Retryable
+            } else {
+                FailedTranscriptionRecoveryStatus::Unavailable
+            },
+            reason_code,
+        }
+    }
+
+    /// Header-only selection keeps ordinary detail reads independent of retained PCM size.
+    /// Recognition must verify the complete bytes again before and after its provider call.
+    pub(crate) fn recovery_audio_candidate(
+        &self,
+        id: &str,
+        row: &MeetingUtterance,
+    ) -> Result<PathBuf, FailedTranscriptionRecoveryReason> {
+        use FailedTranscriptionRecoveryReason as Reason;
+        let proof = row
+            .metadata
+            .recovery_audio
+            .as_ref()
+            .ok_or(Reason::NoRetainedAudio)?;
         if !proof.valid()
             || proof.disposition != crate::meeting_utterances::RecoveryAudioDisposition::Pending
         {
-            return None;
+            return Err(Reason::UnverifiedProvenance);
         }
         let directory = self.dir_of(id).join("failed");
-        if !fs::symlink_metadata(&directory)
-            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
-        {
-            return None;
+        let unavailable = |error: std::io::Error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                Reason::NoRetainedAudio
+            } else {
+                Reason::UnreadableAudio
+            }
+        };
+        let metadata = fs::symlink_metadata(&directory).map_err(unavailable)?;
+        if metadata.file_type().is_symlink() {
+            return Err(Reason::UnverifiedProvenance);
+        }
+        if !metadata.is_dir() {
+            return Err(Reason::UnreadableAudio);
         }
         let path = directory.join(&proof.file_name);
+        let metadata = fs::symlink_metadata(&path).map_err(unavailable)?;
+        if metadata.file_type().is_symlink() {
+            return Err(Reason::UnverifiedProvenance);
+        }
+        if !metadata.is_file() {
+            return Err(Reason::UnreadableAudio);
+        }
+        let actual = recovery_header_provenance(&path).ok_or(Reason::UnreadableAudio)?;
+        if !proof.same_chunk(&actual) {
+            return Err(Reason::AudioChanged);
+        }
+        Ok(path)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn recovery_audio_path(&self, id: &str, row: &MeetingUtterance) -> Option<PathBuf> {
+        let path = self.recovery_audio_candidate(id, row).ok()?;
+        let proof = row.metadata.recovery_audio.as_ref()?;
         let actual = recovery_provenance(&path, proof.disposition)?;
         (proof.same_chunk(&actual) && (proof.sha256.is_empty() || proof.sha256 == actual.sha256))
             .then_some(path)
@@ -2231,6 +2364,158 @@ mod tests {
             },
         );
         (path, row)
+    }
+
+    #[test]
+    fn failed_recovery_plan_counts_eligible_audio_without_reading_pcm_or_writing() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store.create("Owned recovery plan", start()).unwrap();
+        let (_, pending) = proven_row(&store, &id, Speaker::Me, 0, true);
+        let (_, mut unverified) = proven_row(&store, &id, Speaker::Others, 2_000, true);
+        unverified
+            .metadata
+            .recovery_audio
+            .as_mut()
+            .unwrap()
+            .disposition = crate::meeting_utterances::RecoveryAudioDisposition::Unverified;
+        store
+            .write_transcript_snapshot(&id, None, &[pending, unverified])
+            .unwrap();
+        store.write_notes(&id, "Private fixture note.").unwrap();
+        let root = store.dir_of(&id);
+        let before = ["transcript.md", "transcript.meta.json", "notes.md"]
+            .map(|name| fs::read(root.join(name)).unwrap());
+        let snapshot = store.read_transcript_snapshot(&id).unwrap();
+
+        RECOVERY_PCM_READ_BYTES.with(|count| count.set(0));
+        let plan = store.failed_recovery_plan(&id, &snapshot);
+
+        assert_eq!(plan.failed_count, Some(2));
+        assert_eq!(plan.retryable_count, Some(1));
+        assert_eq!(plan.status, FailedTranscriptionRecoveryStatus::Retryable);
+        assert_eq!(
+            plan.reason_code,
+            Some(FailedTranscriptionRecoveryReason::UnverifiedProvenance)
+        );
+        assert_eq!(RECOVERY_PCM_READ_BYTES.with(std::cell::Cell::get), 0);
+        assert_eq!(
+            ["transcript.md", "transcript.meta.json", "notes.md"]
+                .map(|name| fs::read(root.join(name)).unwrap()),
+            before
+        );
+        let public = serde_json::to_value(plan).unwrap();
+        assert_eq!(public.as_object().unwrap().len(), 4);
+        assert_eq!(public["status"], "retryable");
+        assert_eq!(public["reason_code"], "unverified_provenance");
+        assert!(!public.to_string().contains(".wav"));
+        assert!(!public.to_string().contains("sha256"));
+    }
+
+    #[test]
+    fn failed_recovery_plan_does_not_substitute_full_archives_for_missing_chunks() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store.create("Owned missing failed audio", start()).unwrap();
+        let mut failed = seg(0, Speaker::Others, "");
+        failed.failed = true;
+        store.write_transcript(&id, &[failed]).unwrap();
+        let audio = store.dir_of(&id).join("audio");
+        fs::create_dir_all(&audio).unwrap();
+        fs::write(audio.join("system.m4a"), b"owned archive placeholder").unwrap();
+
+        let snapshot = store.read_transcript_snapshot(&id).unwrap();
+        let plan = store.failed_recovery_plan(&id, &snapshot);
+
+        assert_eq!(plan.failed_count, Some(1));
+        assert_eq!(plan.retryable_count, Some(0));
+        assert_eq!(plan.status, FailedTranscriptionRecoveryStatus::Unavailable);
+        assert_eq!(
+            plan.reason_code,
+            Some(FailedTranscriptionRecoveryReason::NoRetainedAudio)
+        );
+    }
+
+    #[test]
+    fn failed_recovery_plan_distinguishes_header_changes_and_unreadable_audio() {
+        for changed_header in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let store = MeetingStore::new(directory.path());
+            let id = store
+                .create("Owned changed recovery audio", start())
+                .unwrap();
+            let (path, row) = proven_row(&store, &id, Speaker::Me, 0, true);
+            store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+            let snapshot = store.read_transcript_snapshot(&id).unwrap();
+            fs::write(
+                path,
+                if changed_header {
+                    crate::wav::encode_wav(&vec![0.25; 32_000], 16_000)
+                } else {
+                    b"unreadable owned audio".to_vec()
+                },
+            )
+            .unwrap();
+
+            let plan = store.failed_recovery_plan(&id, &snapshot);
+
+            assert_eq!(plan.failed_count, Some(1));
+            assert_eq!(plan.retryable_count, Some(0));
+            assert_eq!(plan.status, FailedTranscriptionRecoveryStatus::Unavailable);
+            assert_eq!(
+                plan.reason_code,
+                Some(if changed_header {
+                    FailedTranscriptionRecoveryReason::AudioChanged
+                } else {
+                    FailedTranscriptionRecoveryReason::UnreadableAudio
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn failed_recovery_plan_keeps_counts_unknown_for_unavailable_metadata() {
+        use crate::TranscriptMetadataStatus;
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned unknown recovery metadata", start())
+            .unwrap();
+        let (_, row) = proven_row(&store, &id, Speaker::Me, 0, true);
+        store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        let mut snapshot = store.read_transcript_snapshot(&id).unwrap();
+        for status in [
+            TranscriptMetadataStatus::Pending,
+            TranscriptMetadataStatus::Stale,
+            TranscriptMetadataStatus::Corrupt,
+            TranscriptMetadataStatus::Unsupported,
+        ] {
+            snapshot.metadata_status = status;
+            let plan = store.failed_recovery_plan(&id, &snapshot);
+            assert_eq!(plan.failed_count, None);
+            assert_eq!(plan.retryable_count, None);
+            assert_eq!(plan.status, FailedTranscriptionRecoveryStatus::Unavailable);
+            assert_eq!(
+                plan.reason_code,
+                Some(FailedTranscriptionRecoveryReason::MetadataUnavailable)
+            );
+        }
+    }
+
+    #[test]
+    fn failed_recovery_plan_reports_known_completion_without_recovery_audio() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store.create("Owned complete transcript", start()).unwrap();
+        store
+            .write_transcript(&id, &[seg(0, Speaker::Me, "Saved result.")])
+            .unwrap();
+        let snapshot = store.read_transcript_snapshot(&id).unwrap();
+        let plan = store.failed_recovery_plan(&id, &snapshot);
+        assert_eq!(plan.failed_count, Some(0));
+        assert_eq!(plan.retryable_count, Some(0));
+        assert_eq!(plan.status, FailedTranscriptionRecoveryStatus::Complete);
+        assert_eq!(plan.reason_code, None);
     }
 
     #[test]

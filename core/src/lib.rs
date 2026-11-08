@@ -160,7 +160,11 @@ pub use meeting_utterances::{
     MeetingTranscriptSnapshot, MeetingUtterance, RecoveryAudioDisposition, RecoveryAudioProvenance,
     RecoveryAudioTrack, TimedTextSpan, TranscriptMetadataStatus, UtteranceMetadata,
 };
-pub use meetings::{MeetingInfo, NoteLine, Segment, Speaker, SpeakerName, mark_lines};
+pub use meetings::{
+    FailedTranscriptionRecoveryPlan, FailedTranscriptionRecoveryReason,
+    FailedTranscriptionRecoveryStatus, MeetingInfo, NoteLine, Segment, Speaker, SpeakerName,
+    mark_lines,
+};
 pub use models::{DownloadListener, LocalModel, ModelState};
 pub use paste_queue::PasteQueue;
 pub use pennel_typing as keyboard;

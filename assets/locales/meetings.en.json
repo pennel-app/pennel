@@ -521,5 +521,22 @@
   "meetings.summary_setup_short": "Text processing needs setup.",
   "meetings.summary_automation_unanswered": "Automatic summaries are off until you choose.",
   "meetings.summary_automation_choose": "Choose…",
-  "meetings.tools_return_document": "Back to document"
+  "meetings.tools_return_document": "Back to document",
+  "meetings.failed_recovery_title": "Transcript incomplete",
+  "meetings.failed_recovery_unknown": "Transcription recovery unavailable",
+  "meetings.failed_recovery_count": "Passages still needing transcription: {count}.",
+  "meetings.failed_recovery_available": "Retained audio is available for {retryable} of {count} passages.",
+  "meetings.failed_recovery_retry": "Retry failed transcription",
+  "meetings.failed_recovery_working": "Retrying transcription…",
+  "meetings.failed_recovery_complete": "Transcription recovery complete",
+  "meetings.failed_recovery_metadata": "Transcript source information is unavailable. Keep the files and restore the source information before retrying.",
+  "meetings.failed_recovery_unverified": "Some audio cannot be linked to its original passage. Keep the files and review their sources.",
+  "meetings.failed_recovery_audio_changed": "Some retained audio has changed. Keep the files and review the recording before retrying.",
+  "meetings.failed_recovery_unreadable": "Some retained audio cannot be read. Keep the files and check the recording.",
+  "meetings.failed_recovery_no_audio": "No matching retry audio remains. If a full recording is available, use Retranscribe recording.",
+  "meetings.failed_recovery_unknown_help": "Recovery availability could not be checked. Reopen the meeting to check again.",
+  "meetings.failed_recovery_outcome_complete": "No failed passages remain.",
+  "meetings.failed_recovery_outcome_partial": "Some passages were recovered. Review the remaining transcription status.",
+  "meetings.failed_recovery_outcome_none": "No passages were recovered. The transcript is still incomplete.",
+  "meetings.failed_recovery_meeting_changed": "This meeting changed before recovery. Reopen the meeting and try again."
 }
