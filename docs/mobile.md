@@ -583,3 +583,12 @@ Local checks passed: the core Release build, 1,071 core tests (7 existing ignore
 Separately, the owner explicitly selected Dutch Apple on-device speech recognition on the connected iPhone 16 Pro/iOS 27.0.1, using its existing installed Preview 0.1.0 build 8. The fixed sample passed and an explicit retained-audio retry processed all 49 chunks, leaving no failed chunks. Three chunks returned no recognized text. Original audio, notes and the meeting document remained byte-identical; only meeting speech selection and speech language changed. This demonstrates recovery with the installed build, not installation or signed-upgrade acceptance of PR #164, a word-accuracy benchmark, or Cloud billing restoration. Private recording content and backups remain local.
 
 The four labeled light/dark notice comparisons on the PR use the same synthetic billing-error input and actual English/Dutch localization functions. They are headless mock renders. Review/merge, installed-patch acceptance, hosted cross-platform checks, provider billing and Cloud deployment remain separate gates. Android acceptance and the separate speaker-recognition service are not established here.
+
+
+## Writing-profile shared-core compatibility — 8 November 2026
+
+[#184](https://github.com/pennel-app/pennel/issues/184) adds desktop-preview-only writing-profile APIs without changing UniFFI contracts or exposing mobile profile learning/sharing. Original dictation provenance remains outside the unchanged schema-v1 history row; attribution has an optional owner-profile fingerprint.
+
+Verification used `make mobile-test`, `scripts/with-toolchain.sh bash scripts/build-mobile-core-ios.sh`, clean/repeated `npm run test:prebuild` in an isolated source copy, `cp apps/mobile/Podfile.lock apps/mobile/ios/Podfile.lock`, pinned `pod _1.16.2_ install --deployment` from `apps/mobile/ios`, and `npm run build:ios` from `apps/mobile`. Type/plugin/widget/UI checks and 116 MobileKit tests passed; device/simulator core preparation, clean/repeated generation and the unsigned Release simulator app build passed. An older generated Pods graph was refreshed from its existing canonical lock; no dependency versions changed.
+
+Existing Preview data, credentials and native build artifacts were preserved. No physical iPhone session was started. iPhone corpus contribution, signed-device/keyboard acceptance and real style quality remain outside this desktop preview; see [the receipt](evidence/writing-profile-184.md) and [profile acceptance](writing-profile.md).
