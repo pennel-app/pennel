@@ -6,6 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      platforms:
+        description: macOS-first validation or explicit all-platform validation
+        type: choice
+        default: macos
+        options:
+          - macos
+          - all
       cache_probe:
         description: Allow this manual run to seed Linux caches for a repeat-run cache check
         type: boolean
@@ -19,6 +26,8 @@ concurrency:
 jobs:
   changes:
     uses: ./.github/workflows/changes.yml
+    with:
+      platforms: ${{ inputs.platforms || 'macos' }}
 
   version:
     needs: changes
@@ -42,7 +51,7 @@ jobs:
 
   core:
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.cross_platform == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -114,23 +123,10 @@ jobs:
   app:
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            runner: macos-15
-            target: aarch64-apple-darwin
-            bundles: app,dmg
-          - os: windows-latest
-            runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            bundles: nsis,msi
-          - os: ubuntu-22.04
-            runner: ${{ vars.LINUX_RUNNER || 'ubuntu-22.04' }}
-            target: x86_64-unknown-linux-gnu
-            bundles: deb,appimage
+      matrix: ${{ fromJSON(needs.changes.outputs.desktop_matrix) }}
     needs: [changes, version]
     if: needs.changes.outputs.app == 'true'
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.os == 'ubuntu-22.04' && (vars.LINUX_RUNNER || matrix.os) || matrix.os }}
     timeout-minutes: 90
     env:
       TRANSCRIBE_CMAKE_ARGS: ${{ vars.TRANSCRIBE_CMAKE_ARGS }}
@@ -316,8 +312,8 @@ jobs:
         run: make packaging-test
 
   release:
-    needs: [version, core, app, packaging-tools]
-    if: needs.version.outputs.release == 'true'
+    needs: [changes, version, app, packaging-tools]
+    if: needs.version.outputs.release == 'true' && needs.changes.outputs.platform_scope == 'macos'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -334,11 +330,15 @@ jobs:
       - name: Publish the GitHub release
         run: |
           set -euo pipefail
-          # Self-hosted runners can keep bundles of earlier versions; ship only this one.
-          mapfile -t files < <(find dist -type f -name "Pennel_${VERSION}_*" \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' -o -name '*.deb' -o -name '*.AppImage' \))
-          for kind in _aarch64.dmg -setup.exe .msi .deb .AppImage; do
-            printf '%s\n' "${files[@]}" | grep -q -- "$kind\$" || { echo "::error::missing $kind for $VERSION"; exit 1; }
-          done
+          # Publish only the current Mac artifact during the macOS-first phase.
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find dist -type f -name "Pennel_${VERSION}_aarch64.dmg" -print0)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one Mac DMG for $VERSION"
+            exit 1
+          fi
           sha256sum "${files[@]}" | sed 's#  .*/#  #' > SHA256SUMS.txt
           gh release create "v${VERSION}" "${files[@]}" SHA256SUMS.txt \
             --target "$GITHUB_SHA" --title "Pennel ${VERSION}" --generate-notes

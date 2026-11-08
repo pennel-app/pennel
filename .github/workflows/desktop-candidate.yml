@@ -3,6 +3,13 @@ name: signed desktop candidate
 on:
   workflow_dispatch:
     inputs:
+      platforms:
+        description: macOS-first candidates or explicit all-platform validation
+        type: choice
+        default: macos
+        options:
+          - macos
+          - all
       version:
         description: Candidate semantic version (for example 0.2.0-beta.1)
         required: true
@@ -24,18 +31,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  platforms:
+    runs-on: ubuntu-latest
+    outputs:
+      desktop_matrix: ${{ steps.select.outputs.desktop_matrix }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve candidate platforms
+        id: select
+        env:
+          PENNEL_CI_PLATFORM_SCOPE: ${{ inputs.platforms }}
+        run: python3 -B scripts/ci-platforms.py >> "$GITHUB_OUTPUT"
+
   candidate:
+    needs: platforms
     environment: desktop-release
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+      matrix: ${{ fromJSON(needs.platforms.outputs.desktop_matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:

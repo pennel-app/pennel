@@ -1,29 +1,51 @@
 # CI performance, validation qualification and compiler-cache pilot
 
+## Current macOS-first phase (8 November 2026)
+
+The user-approved [macOS-first phase (#174)](https://github.com/pennel-app/pennel/issues/174) pauses routine PR/main Windows/Linux product tests, builds, installers and automatic publication. Mac core/native-platform checks, full Mac desktop frontend/backend/build/package checks and current iPhone/mobile checks remain. Shared platform source is retained. Linux selector, Python packaging-helper and release/status jobs remain lightweight utilities, without establishing Linux product validation.
+
+Manual `desktop.yml` and `decision-evaluation.yml` dispatches default to `platforms=macos`. Explicit full-platform validation remains available:
+
+```sh
+gh workflow run desktop.yml -f platforms=all
+gh workflow run decision-evaluation.yml -f platforms=all
+```
+
+`all` restores the retained Windows/Linux core tests and installers in the desktop workflow and all evaluation targets in decision evaluation. The [signed candidate workflow](releasing.md#signed-shared-candidates-and-legacy-mac-upgrades) also defaults to Mac and accepts `all` with its existing required version/build inputs. Manual validation never publishes a release. Resuming routine Windows/Linux validation or automatic publication requires a deliberate policy/workflow change backed by current full-platform evidence; one manual run does not resume them.
+
+Automatic releases now contain exactly the current Mac aarch64 DMG and `SHA256SUMS.txt`, with the existing Homebrew cask update and serialized main pipeline. Mac app, packaging-tool and version gates remain required. The Mac build still needs its upstream Sherpa download; reducing OS scope does not resolve that dependency failure or waive Mac checks. See [releasing](releasing.md) for signing and acceptance boundaries.
+
+This phase changes validation coverage, not scheduling qualification. The full-platform [#73](https://github.com/pennel-app/pennel/issues/73) campaign below remains historical evidence for its frozen sources and selected jobs; it does not qualify the reduced matrix or establish a new completion-time claim. Routine native CAS remains off.
+
 ## Selected TestFlight archives
 
 The [Preview distribution route](mobile-testflight.md) adds an independent Xcode Cloud archive lane. It reuses exact-source validation, prepares only device Rust libraries and retains complete checksummed native release inputs in Cloud DerivedData. This does not qualify or enable the GitHub CAS experiment below.
 
 Measure publisher preparation, ready-job queue, toolchain/dependencies, native cache restore/build, archive/signing, upload and Apple processing separately. Preserve source/toolchain/configuration identities, native hit/miss and artifact/binding hashes. Compare one cold and at least three matched warm observations with equivalent archive controls, including setup and transfer costs. Installation/update on both iPhones is separate acceptance. No measured Cloud speedup is established merely by adding the pipeline.
 
-The CI acceleration work is tracked in [#73](https://github.com/pennel-app/pennel/issues/73). The initial changes preserve affected-platform coverage and use existing standard hosted runners. Desktop release planning/build/publication remains serialized so concurrent main pushes cannot choose the same automatic version.
+The original CI acceleration work is tracked in [#73](https://github.com/pennel-app/pennel/issues/73). Its initial design preserved the then-required affected-platform coverage on standard hosted runners. Desktop release planning/build/publication remains serialized so concurrent main pushes cannot choose the same automatic version.
 
 ## Cache ownership
 
-Routine Rust dependency caches are saved by successful main pushes; pull requests restore available dependency caches. The desktop workflow's explicit manual `cache_probe` exception may save branch-scoped Linux caches to verify stable hosted cache keys before merge. A probe must show a subsequent exact cache hit before obsolete Linux entries are retired. Do not remove working main caches merely to create space for an experiment.
+Routine Rust dependency caches are saved by successful main pushes; pull requests restore available dependency caches. The desktop workflow's explicit manual `cache_probe` exception, with `platforms=all`, may save branch-scoped Linux caches to verify stable hosted cache keys before merge. A probe must show a subsequent exact cache hit before obsolete Linux entries are retired. Do not remove working main caches merely to create space for an experiment.
 
 Hosted Linux uses a stable Rust installation path. Self-hosted runner homes remain isolated. Compiler/environment fingerprints remain enabled; compiler upgrades or relevant configuration changes legitimately produce new keys.
 
-## Complete-PR validation qualification
+<a id="complete-pr-validation-qualification"></a>
+
+## Historical complete-PR qualification (5–7 November 2026)
 
 The [adopted design](https://github.com/pennel-app/pennel/issues/153#issuecomment-6642797787)
-has [passed all eight qualification gates](evidence/ci-qualification-73-rolling.md)
+[passed all eight qualification gates](evidence/ci-qualification-73-rolling.md)
 under the approved rolling-build protocol: 80 active observations pass, while
-all 112 outcomes retain two historical failures. The implementation now selects
+all 112 outcomes retain two historical failures. This campaign included the
+then-selected Mac, Windows and Linux desktop/core jobs and iPhone validation.
+The implementation selects
 candidate/warm for ordinary same-repository PRs and exact main pushes. Manual,
 privileged, foreign-head and other push contexts remain serial. The serial
 override and scoped serial controls remain available. This is separate from
-the native compiler-cache experiment and does not claim a code merge or release.
+the native compiler-cache experiment and the reduced matrix under #174. It does
+not qualify or measure the reduced matrix, or claim a code merge or release.
 
 The [first 5 November qualification checkpoint](evidence/ci-qualification-73.md)
 retains the original exact-image assessment and every physical workflow attempt.
@@ -31,8 +53,12 @@ Lander subsequently [approved rolling image build numbers](https://github.com/pe
 while retaining source, toolchain and cache matching. The
 [rolling-build qualification](evidence/ci-qualification-73-rolling.md) reports
 the complete matched dataset, raw history, source strata and limitations.
-Core warm and cold use separately frozen sources; counts and medians never
-pool sources within a category/cache gate.
+Its [exact frozen base/head/merge scope](evidence/ci-qualification-73-rolling.md#clock-and-source-scope)
+is benchmark PRs #158 (docs), #160 (mobile), #170 (desktop), #171 (core warm)
+and #173 (core cold). Core warm and cold use separately frozen sources; counts
+and medians never pool sources within a category/cache gate. Retain those
+reports, figures and failed observations unchanged; they do not measure the
+macOS-first phase.
 
 | Affected PR category | Initial complete-cohort objective |
 | --- | ---: |
@@ -70,12 +96,12 @@ shares generated projects, Pods, mutable framework links, build directories or
 native products. A final Linux result checks the expected job and phase set and
 rejects missing, cancelled, failed or unexpectedly skipped selected work.
 
-Each desktop OS retains frontend tests, backend checks, installers and package
-inspection. In candidate mode Tauri's hook performs the single production
+Each selected desktop OS retains frontend tests, backend checks, installers and
+package inspection. In candidate mode Tauri's hook performs the single production
 frontend build; backend compilation checks follow packaging so frontend assets
 exist. Serial mode retains the original explicit frontend build and ordering.
-Uploads and release eligibility still require every check. Main release version
-planning/build/publication remains serialized.
+Uploads and release eligibility still require every selected check. Main release
+version planning/build/publication remains serialized.
 
 Both mobile jobs use the existing Rust cache family. The original job remains
 the only successful-main writer; the new Debug job restores only. Static key

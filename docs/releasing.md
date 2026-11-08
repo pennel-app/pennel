@@ -2,18 +2,31 @@
 
 ## Automatic releases (shared app)
 
-The `release` job in `.github/workflows/desktop.yml` publishes the shared Tauri app. It runs after a push to `main` once every other job in that run passed, and only when `core/`, `apps/desktop/`, `apps/macos-platform/` or `assets/` changed since the newest `v*` tag.
+The `release` job in `.github/workflows/desktop.yml` publishes the shared Tauri Mac app during the [macOS-first phase approved on 8 November 2026 (#174)](https://github.com/pennel-app/pennel/issues/174). It runs after a push to `main` once the required Mac app, packaging-tool and version jobs passed, and only when `core/`, `apps/desktop/`, `apps/macos-platform/` or `assets/` changed since the newest `v*` tag. Routine Mac core/native-platform and iPhone/mobile validation remain in place. Paused Windows/Linux core jobs and installers are not release prerequisites.
 
 - **Version.** `scripts/desktop-auto-release.py plan` bumps the patch of the newest `v*` tag. For a minor or major release, raise `version` in `apps/desktop/src-tauri/tauri.conf.json` (and `package.json`, `Cargo.toml`); a configured version higher than the bump wins. The first release uses the configured version.
-- **Assets.** The tag `v<version>` and a GitHub release with `Pennel_<version>_aarch64.dmg`, the Windows NSIS `.exe` and `.msi`, the Linux `.deb` and `.AppImage`, and `SHA256SUMS.txt`.
+- **Assets.** The tag `v<version>` and a GitHub release containing exactly the current `Pennel_<version>_aarch64.dmg` and `SHA256SUMS.txt`. Automatic Windows/Linux publication is paused; [previously published installers](https://github.com/pennel-app/pennel/releases) remain available.
 - **Homebrew.** The job rewrites `Casks/pennel.rb` in [`pennel-app/homebrew-pennel`](https://github.com/pennel-app/homebrew-pennel) through the `HOMEBREW_TAP_DEPLOY_KEY` secret (a write deploy key on that repository). Users install with `brew install --cask pennel-app/pennel/pennel`.
-- **Signing.** Mac builds are signed with the self-signed certificate *Pennel Release Signing* (hardened runtime, `Pennel.entitlements`), not notarized. macOS ties Microphone, Accessibility, Input Monitoring and Audio Capture approvals to the signature's designated requirement, `identifier "dev.pennel.Pennel" and certificate root = H"<sha1>"`; because the certificate stays the same, approvals survive every `brew upgrade`. Gatekeeper does not trust the certificate, so the cask still removes the quarantine attribute after install. Windows installers are unsigned; no in-app updater manifest is published. Once a Developer ID, notarization credentials, a Windows certificate and the Tauri updater key exist, move the build onto the signed path of `scripts/desktop-release.py` (switching to the Developer ID changes the requirement once, so users grant permissions one more time).
+- **Signing.** Mac builds are signed with the self-signed certificate *Pennel Release Signing* (hardened runtime, `Pennel.entitlements`), not notarized. macOS ties Microphone, Accessibility, Input Monitoring and Audio Capture approvals to the signature's designated requirement, `identifier "dev.pennel.Pennel" and certificate root = H"<sha1>"`; keeping the certificate stable preserves that requirement across `brew upgrade`. Gatekeeper does not trust the certificate, so the cask still removes the quarantine attribute after install. Previously published Windows installers are unsigned; no in-app updater manifest is published. Developer ID/notarization and installed signing/upgrade acceptance remain separate under [#140](https://github.com/pennel-app/pennel/issues/140). Once the required signing/notarization configuration and Tauri updater key exist, use the signed path of `scripts/desktop-release.py` (switching to the Developer ID changes the requirement once, so users grant permissions one more time).
 - **Release certificate.** Stored as the secrets `APPLE_CERTIFICATE` (base64 `.p12`) and `APPLE_CERTIFICATE_PASSWORD` and the variable `APPLE_SIGNING_IDENTITY` (`Pennel Release Signing`); valid until 2046. No copy exists outside GitHub. `scripts/import-mac-signing-cert.sh` imports it into a throwaway keychain on the runner, because Tauri's own `APPLE_CERTIFICATE` import only accepts Apple-issued identities. The bundle inspection fails when the designated requirement differs from `PENNEL_RELEASE_CERT_SHA1` in `desktop.yml`. Runs without the secret (forks) sign ad hoc. Replacing the certificate resets every user's approvals: create it like `scripts/create-dev-cert.sh` does, update the secrets and `PENNEL_RELEASE_CERT_SHA1` together, and say so in the release notes.
 - Main runs queue instead of cancelling each other, so a release is never interrupted halfway.
+
+## Manual platform validation
+
+`desktop.yml` and `decision-evaluation.yml` dispatches default to `platforms=macos`. To include the retained Windows/Linux core tests, desktop installers and evaluation targets, explicitly run:
+
+```sh
+gh workflow run desktop.yml -f platforms=all
+gh workflow run decision-evaluation.yml -f platforms=all
+```
+
+Manual validation never publishes a release. Resuming routine Windows/Linux validation or automatic publication requires a deliberate policy/workflow change and current full-platform evidence; an `all` run does not resume them. The Mac build still needs its upstream Sherpa download, so narrowing platform scope does not resolve that dependency failure or waive Mac checks.
 
 ## Signed shared candidates and legacy Mac upgrades
 
 `scripts/desktop-release.py` prepares signed Tauri candidates without publishing or rewriting tracked versions. It requires the existing Tauri updater key/public key and platform signing configuration. Mac candidates also require an existing Developer ID identity, notarization credentials, and a build number greater than the last distributed native or shared build. See [candidate and update artifact gates](linux-packaging.md#candidate-and-update-artifacts).
+
+The manual `desktop-candidate.yml` workflow defaults to `platforms=macos`. Select `platforms=all` to include Windows/Linux candidates, together with its existing required `version`, `mac_build_number` and `previous_mac_build_number` inputs and the signing configuration above. It only prepares candidate artifacts and never publishes a release.
 
 Existing native Mac installs still need their Sparkle-to-Tauri transition. Keep the existing Sparkle signing key in Keychain account `pennel`; `SUPublicEDKey` remains in `apps/desktop/src-tauri/Info.plist`. The shared release helper's `--legacy-sparkle` option creates the replacement app archive and appcast using that existing identity.
 

@@ -2,7 +2,20 @@ name: affected checks
 
 on:
   workflow_call:
+    inputs:
+      platforms:
+        description: Desktop platform scope; all is available only for manual validation
+        type: string
+        default: macos
     outputs:
+      platform_scope:
+        value: ${{ jobs.changes.outputs.platform_scope }}
+      cross_platform:
+        value: ${{ jobs.changes.outputs.cross_platform }}
+      desktop_matrix:
+        value: ${{ jobs.changes.outputs.desktop_matrix }}
+      evaluation_matrix:
+        value: ${{ jobs.changes.outputs.evaluation_matrix }}
       core:
         value: ${{ jobs.changes.outputs.core }}
       platform:
@@ -23,6 +36,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      platform_scope: ${{ steps.platforms.outputs.platform_scope }}
+      cross_platform: ${{ steps.platforms.outputs.cross_platform }}
+      desktop_matrix: ${{ steps.platforms.outputs.desktop_matrix }}
+      evaluation_matrix: ${{ steps.platforms.outputs.evaluation_matrix }}
       core: ${{ steps.filter.outputs.core }}
       platform: ${{ steps.filter.outputs.platform }}
       app: ${{ steps.filter.outputs.app }}
@@ -41,6 +58,11 @@ jobs:
           PENNEL_CI_QUALIFICATION_CONFIG: ${{ vars.PENNEL_CI_QUALIFICATION_CONFIG }}
           PENNEL_CI_FORCE_SERIAL: ${{ vars.PENNEL_CI_FORCE_SERIAL }}
         run: python3 -B scripts/ci-mode.py
+      - name: Resolve active desktop platforms
+        id: platforms
+        env:
+          PENNEL_CI_PLATFORM_SCOPE: ${{ inputs.platforms }}
+        run: python3 -B scripts/ci-platforms.py >> "$GITHUB_OUTPUT"
       - name: Test change selection
         run: python3 -B -m unittest discover -s scripts/tests -p 'test_ci_*.py'
       - name: English diagnostic defaults
