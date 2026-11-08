@@ -127,10 +127,11 @@ export function dictationView(ctx: Context): HTMLElement {
 export function dictionaryView(ctx: Context): HTMLElement {
   const terms = ctx.info.settings.dictionary;
   const input = textField({ type: "text", placeholder: l("dictation.dictionary.example"), class: "grow" });
-  const add = () => {
+  const add = async () => {
     const term = input.value.trim();
     if (!term || terms.includes(term)) return;
-    ctx.save((n) => n.dictionary.push(term));
+    try { await ctx.save((n) => n.dictionary.push(term)); } catch { return; }
+    document.querySelector<HTMLInputElement>(".dictionary-settings input")?.focus({ preventScroll: true });
   };
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") add();

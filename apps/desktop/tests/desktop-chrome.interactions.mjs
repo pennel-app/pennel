@@ -127,7 +127,7 @@ export async function checkDesktopChrome() {
     await until(() => document.querySelector(`[data-settings-category="${lastCategory}"][aria-current="page"]`) && !document.querySelector("#content").inert, "End did not select the last Settings category.");
     assert(document.activeElement?.dataset.settingsCategory === lastCategory, "Settings category navigation lost focus after mounting.");
     assert(Math.abs(document.querySelector(".toolbar-section").getBoundingClientRect().left - document.querySelector(".settings-title").getBoundingClientRect().left) < 1, "Settings context and content lost their shared left inset.");
-    assert(categories.length === 5, "Settings must expose its five task-based categories.");
+    assert(categories.length === 6, "Settings must expose its six task-based categories.");
     await until(() => window.__PENNEL_DESKTOP_COMMAND_STATE__?.find === false, "Unavailable Settings search remained enabled in the native menu.");
     assert(!document.querySelector('.workspace-toolbar [data-command="find"]'), "Settings must not reintroduce a second search control.");
     modal = document.createElement("dialog");
