@@ -24,6 +24,9 @@ const TASK: &str = "meeting_suggestions_v1";
 const GROUPING: &str = "independent-event-passages-spans-typed-prior-with-neighbours-v3";
 const MAX_WINDOWS: usize = 512;
 
+#[cfg(feature = "evaluation")]
+pub(crate) mod evaluation;
+
 #[derive(Clone)]
 struct SourceBlock {
     source: InsightSource,

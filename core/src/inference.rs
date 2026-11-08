@@ -752,7 +752,7 @@ struct WireRequest<'a> {
     request_id: Option<&'a str>,
 }
 
-fn decision_body(
+pub(crate) fn decision_body(
     config: &InferenceConfig,
     request: &DecisionRequest,
 ) -> Result<Vec<u8>, PennelError> {
@@ -1586,6 +1586,21 @@ fn decision_result(
         identity: identity(config, endpoint, response)?,
         usage: usage(response)?,
     })
+}
+
+#[cfg(feature = "evaluation")]
+pub(crate) fn evaluation_decision_response(
+    config: &InferenceConfig,
+    endpoint: String,
+    request: &DecisionRequest,
+    raw: &[u8],
+) -> Result<DecisionResult, PennelError> {
+    if raw.len() as u64 > MAX_RESPONSE_BYTES {
+        return Err(invalid("The inference response exceeds its size limit."));
+    }
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| invalid("The inference response is not valid UTF-8."))?;
+    decision_result(config, endpoint, request, &parse_unique_json(text)?)
 }
 
 fn validate_rerank_request(request: &RerankRequest) -> Result<(), PennelError> {

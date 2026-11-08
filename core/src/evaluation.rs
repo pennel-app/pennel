@@ -19,6 +19,8 @@ use crate::settings::Style;
 use crate::summary::{BLOCK_CHARS, MAP_REDUCE_ABOVE, blocks, chunk_messages, summary_messages};
 use crate::templates::TemplateStore;
 
+mod finished;
+
 pub const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 
 struct OwnedRoot(PathBuf);
@@ -485,6 +487,8 @@ pub fn evaluate(input: Value) -> Result<Value, &'static str> {
     match input["op"].as_str().unwrap_or("evaluate") {
         "evaluate" => evaluate_suite(input),
         "citations" => parse_citations(input),
+        "finished_meeting_export" => finished::export(input),
+        "finished_meeting_replay" => finished::replay(input),
         "cleanup_prompt" => {
             let dictionary = if input["dictionary"].is_null() {
                 Vec::<String>::new()
@@ -776,5 +780,33 @@ mod tests {
         let result = evaluate(json!({"op":"request_body","provider":"openrouter","model":"fixture","reasoning":"off","messages":[{"role":"user","content":"synthetic"}]})).unwrap();
         assert_eq!(result["body"]["temperature"], 0);
         assert_eq!(result["body"]["reasoning"]["enabled"], false);
+    }
+}
+
+#[cfg(test)]
+mod finished_contract_tests {
+    use super::*;
+
+    #[test]
+    fn exports_production_contract() {
+        let result = evaluate(json!({
+            "op":"finished_meeting_export",
+            "fixture":{"id":"development_en","family_id":"development_family","split":"development","language":"en",
+                "utterances":[{"start_ms":0,"end_ms":1000,"speaker":"others","text":"Noor will prepare the fictional demo."}]},
+            "configuration":{"protocol":"local_decider","endpoint":"http://127.0.0.1:8080/v1/decisions",
+                "model":"pplx-decider-flash-v1.2","max_input_bytes":16000,"timeout_secs":30}
+        })).expect("finished evaluation must export the actual production request");
+        assert_eq!(
+            result["qualification_request"]["task"],
+            "meeting_suggestions_v1"
+        );
+        assert_eq!(
+            result["windows"][0]["request"]["questions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            4
+        );
+        assert_eq!(result["production_admission"], false);
     }
 }

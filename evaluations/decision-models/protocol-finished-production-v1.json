@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "protocol_id": "production-finished-meeting-v1",
+  "use_case": "manual_finished_suggestions",
+  "production_contract_source": "Rust finished_meeting_export and finished_meeting_replay",
+  "languages": ["en", "nl", "mixed"],
+  "splits": ["development", "calibration", "heldout"],
+  "split_unit": "meeting_family_including_translations_and_prefixes",
+  "pilot_split": "development",
+  "pilot_model": "pplx-decider-flash-v1.2",
+  "pilot_protocol": "local_decider",
+  "pilot_whole_job_timeout_secs": 30,
+  "pilot_max_elapsed_secs_after_ready": 1800,
+  "max_new_retained_runtime_model_bytes": 8000000000,
+  "hosted_spend_usd": 0,
+  "automatic_retries": false,
+  "fallbacks": false,
+  "activation": false,
+  "qualification": false,
+  "full_qualification_requires": "Existing exact-context component/event and complete-item quality, calibration/held-out, resource and source-judgment gates remain required. Compatibility is not adoption."
+}
