@@ -6,6 +6,18 @@ struct SystemAudioTapError: Error {
     let status: OSStatus
 }
 
+/// Nil/empty process resolution is explicitly global, rather than an implicit targeted tap.
+struct SystemAudioTapSelection: Equatable {
+    let processes: [AudioObjectID]?
+
+    init(processes: [AudioObjectID]?) {
+        let resolved = processes?.filter { $0 != kAudioObjectUnknown } ?? []
+        self.processes = resolved.isEmpty ? nil : resolved
+    }
+
+    var appScoped: Bool { processes != nil }
+}
+
 /// Captures everything the Mac plays (except Pennel itself) via a Core Audio process tap,
 /// which only needs the "System Audio Recording Only" permission, not Screen Recording.
 final class SystemAudioTap: @unchecked Sendable {
@@ -29,9 +41,13 @@ final class SystemAudioTap: @unchecked Sendable {
     /// Construct the aggregate before resolving the tap's effective input format. Bluetooth
     /// profiles can leave the tap ASBD at 48 kHz while the aggregate actually delivers 24 kHz.
     func prepare(processes: [AudioObjectID]? = nil) throws -> AVAudioFormat {
+        try prepare(selection: SystemAudioTapSelection(processes: processes))
+    }
+
+    func prepare(selection: SystemAudioTapSelection) throws -> AVAudioFormat {
         stop()
         do {
-            let description = if let processes, !processes.isEmpty {
+            let description = if let processes = selection.processes {
                 CATapDescription(stereoMixdownOfProcesses: processes)
             } else {
                 CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcessObject().map { [$0] } ?? [])

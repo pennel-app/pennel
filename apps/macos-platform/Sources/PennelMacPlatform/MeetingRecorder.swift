@@ -170,6 +170,52 @@ struct MeetingCaptureHealth {
     }
 }
 
+struct MeetingAudioSourceIntegrity {
+    let appRequested: Bool
+    private(set) var selection: SystemAudioTapSelection?
+    private(set) var lost = false
+    private(set) var includedGlobalScope = false
+
+    var appScopedForNaming: Bool { appRequested && selection?.appScoped == true && !lost }
+    var scope: String { selection.map { $0.appScoped ? "app" : "global" } ?? "unavailable" }
+    var warning: String? {
+        appRequested && includedGlobalScope
+            ? "System audio may include other apps because the meeting app's audio was unavailable."
+            : nil
+    }
+
+    mutating func prepare<T>(processes: [AudioObjectID]?, report: (Bool) -> Void,
+                             capture: (SystemAudioTapSelection) throws -> T) rethrows -> T {
+        let selected = SystemAudioTapSelection(processes: appRequested ? processes : nil)
+        selection = selected
+        if appRequested && !selected.appScoped { lost = true; includedGlobalScope = true }
+        // The guard must be invalidated before a global tap can create or deliver any audio.
+        report(appScopedForNaming)
+        do { return try capture(selected) }
+        catch { failed(report: report); throw error }
+    }
+
+    mutating func failed(report: (Bool) -> Void) {
+        selection = nil
+        if appRequested { lost = true }
+        report(false)
+    }
+}
+
+struct MeetingAudioClock {
+    private var started: TimeInterval?
+    private var stopped: TimeInterval?
+
+    mutating func start(at uptime: TimeInterval) { started = uptime; stopped = nil }
+    mutating func stop(at uptime: TimeInterval) { if stopped == nil { stopped = uptime } }
+    func elapsedMilliseconds(at uptime: TimeInterval) -> Double? {
+        let end = stopped ?? uptime
+        guard let started, started.isFinite, end.isFinite, end >= started else { return nil }
+        let elapsed = (end - started) * 1_000
+        return elapsed.isFinite ? elapsed : nil
+    }
+}
+
 final class NativeMeetingRecorder {
     private let log = Diagnostics("meeting")
     private var engine = AVAudioEngine()
@@ -192,6 +238,9 @@ final class NativeMeetingRecorder {
     private let micSilence = SilenceProbe(threshold: 5)
     private var health = MeetingCaptureHealth(echoRequested: true)
     private var tapProcesses: (() -> [AudioObjectID])?
+    private var audioSource = MeetingAudioSourceIntegrity(appRequested: false)
+    private var scopeChanged: ((Bool) -> Void)?
+    private var audioClock = MeetingAudioClock()
     var onSystemAudioSilent: (() -> Void)?
 
     var heardSystemAudio: Bool { others?.heardSound ?? finalHeardSystemAudio }
@@ -199,9 +248,12 @@ final class NativeMeetingRecorder {
     var isEchoCancellationEnabled: Bool { health.echoActive }
     var healthSnapshot: [String: Any] {
         var object = health.bridgeObject(heardSystemAudio: heardSystemAudio, archiveError: me?.archiveError ?? others?.archiveError ?? finalArchiveError)
-        let warnings = [health.echoWarning, captureWarning].compactMap { $0 }
+        let warnings = [health.echoWarning, captureWarning, audioSource.warning].compactMap { $0 }
         object["capture_warning"] = warnings.isEmpty ? NSNull() : warnings.joined(separator: " ") as Any
         object["capture_diagnostics"] = diagnostics?.snapshot() ?? [:]
+        object["system_audio_scope"] = audioSource.scope
+        object["app_audio_scope_valid"] = audioSource.appScopedForNaming
+        object["audio_elapsed_ms"] = audioClock.elapsedMilliseconds(at: ProcessInfo.processInfo.systemUptime) as Any? ?? NSNull()
         return object
     }
 
@@ -213,12 +265,15 @@ final class NativeMeetingRecorder {
     /// When the recording began, for mapping wall-clock moments (dictation) onto the meeting timeline.
     var startDate: Date? { startedAt }
 
-    func start(directory: URL, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, tapProcesses: (() -> [AudioObjectID])? = nil, echoCancellation: Bool = true, microphoneURL: URL? = nil, systemURL: URL? = nil) throws {
+    func start(directory: URL, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, tapProcesses: (() -> [AudioObjectID])? = nil, echoCancellation: Bool = true, microphoneURL: URL? = nil, systemURL: URL? = nil, scopeChanged: ((Bool) -> Void)? = nil) throws {
         quiescent = false
         self.tapProcesses = tapProcesses
+        audioSource = MeetingAudioSourceIntegrity(appRequested: tapProcesses != nil)
+        self.scopeChanged = scopeChanged
         self.echoCancellation = echoCancellation
         health = MeetingCaptureHealth(echoRequested: echoCancellation)
         let started = ProcessInfo.processInfo.systemUptime
+        audioClock.start(at: started)
         startedAt = Date()
         recordingGeneration &+= 1
         captureWarning = nil
@@ -255,6 +310,7 @@ final class NativeMeetingRecorder {
         engine.stop()
         disableVoiceProcessing()
         tap.stop()
+        audioClock.stop(at: ProcessInfo.processInfo.systemUptime)
         me?.quiesce()
         others?.quiesce()
         health.microphoneStarting()
@@ -282,6 +338,7 @@ final class NativeMeetingRecorder {
         others = nil
         startedAt = nil
         tapProcesses = nil
+        scopeChanged = nil
         return meError ?? othersError
     }
 
@@ -302,25 +359,50 @@ final class NativeMeetingRecorder {
 
     private func startMicrophone(echoCancellation: Bool, writer: TrackWriter) throws {
         let input = engine.inputNode
-        // Voice-processing reconfiguration can temporarily clear the hardware-side format.
-        let hardwareFormat = input.inputFormat(forBus: 0)
-        guard AudioInput.isUsable(sampleRate: hardwareFormat.sampleRate, channels: hardwareFormat.channelCount) else {
-            throw NoInputDevice()
-        }
-        if echoCancellation {
-            // Apple's echo canceller removes what the speakers play from the mic; keep other audio at full volume.
-            do {
-                try input.setVoiceProcessingEnabled(true)
-                input.voiceProcessingOtherAudioDuckingConfiguration =
-                    AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false, duckingLevel: .min)
-                // Voice processing is a duplex unit: without a running output side the mic delivers only zeros.
-                engine.mainMixerNode.outputVolume = 0
-            } catch {
-                log.error("voice processing unavailable: \(error.localizedDescription)")
-            }
-        } else {
-            disableVoiceProcessing()
-        }
+        let before = input.inputFormat(forBus: 0)
+        let beforeOutput = input.outputFormat(forBus: 0)
+        log.notice("microphone format before setup: input=\(before.sampleRate) Hz/\(before.channelCount) ch, output=\(beforeOutput.sampleRate) Hz/\(beforeOutput.channelCount) ch, echo_requested=\(echoCancellation)")
+        // Configure voice processing before selecting the tap format: it may replace the IO unit
+        // and asynchronously rebuild the default-device aggregate, including on the fresh raw retry.
+        var formatReads = 0
+        let hardwareFormat = try MeetingMicrophoneFormatReadiness.resolve(
+            attempts: 41,
+            configure: {
+                if echoCancellation {
+                    // Keep the duplex output running without playing the captured microphone.
+                    do {
+                        try input.setVoiceProcessingEnabled(true)
+                        input.voiceProcessingOtherAudioDuckingConfiguration =
+                            AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false, duckingLevel: .min)
+                        self.engine.mainMixerNode.outputVolume = 0
+                    } catch {
+                        self.log.error("voice processing unavailable: \(error.localizedDescription)")
+                    }
+                } else {
+                    self.disableVoiceProcessing()
+                }
+            },
+            read: {
+                formatReads += 1
+                let format = input.inputFormat(forBus: 0)
+                if formatReads == 1 || formatReads == 41 {
+                    let output = input.outputFormat(forBus: 0)
+                    self.log.notice("microphone format after setup: input=\(format.sampleRate) Hz/\(format.channelCount) ch, output=\(output.sampleRate) Hz/\(output.channelCount) ch, echo=\(input.isVoiceProcessingEnabled), read=\(formatReads)")
+                }
+                return format
+            },
+            usable: { AudioInput.isUsable(sampleRate: $0.sampleRate, channels: $0.channelCount) },
+            defaultInputAvailable: { AudioInput.defaultDeviceAvailable() },
+            checkAccess: {
+                switch MicrophoneAccess.state {
+                case .granted: break
+                case .denied: throw MicrophoneStartError.permissionDenied
+                case .notDetermined: throw MicrophoneStartError.permissionPending
+                }
+            },
+            pause: { Thread.sleep(forTimeInterval: 0.05) }
+        )
+        if formatReads > 1 { log.notice("microphone route format became ready after \(formatReads) reads") }
         log.notice("microphone tap starting: hardware=\(hardwareFormat.sampleRate) Hz, channels=\(hardwareFormat.channelCount), echo=\(input.isVoiceProcessingEnabled)")
         let resampler = MonoResampler(from: hardwareFormat)
         let diagnostics = diagnostics
@@ -406,7 +488,9 @@ final class NativeMeetingRecorder {
         silence.reset()
         let generation = recordingGeneration
         do {
-            let format = try tap.prepare(processes: tapProcesses?())
+            let format = try audioSource.prepare(processes: tapProcesses?(), report: scopeChanged ?? { _ in }) { [tap] in
+                try tap.prepare(selection: $0)
+            }
             let resampler = MonoResampler(from: format)
             let timing = CaptureTimingProbe()
             let diagnostics = diagnostics
@@ -458,7 +542,11 @@ final class NativeMeetingRecorder {
                 }
             }
             health.systemAudioStarted()
+            if audioSource.appRequested && audioSource.selection?.appScoped == false {
+                diagnostics?.event("rebuild", track: "system", fields: ["reason": "app_audio_scope_fallback_global"])
+            }
         } catch {
+            audioSource.failed(report: scopeChanged ?? { _ in })
             diagnostics?.event("error", track: "system", fields: ["error_code": "system_capture_start_failed"])
             log.error("system audio tap failed: \(String(describing: error))")
             health.systemAudioFailed()

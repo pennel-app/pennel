@@ -321,6 +321,42 @@ pub fn start_with_calendar(
     attendees: Vec<String>,
     calendar_context: Option<serde_json::Value>,
 ) -> Result<String, String> {
+    start_with_calendar_impl(
+        shared,
+        title,
+        detected_app,
+        attendees,
+        calendar_context,
+        None,
+    )
+}
+
+pub(crate) fn start_detected_with_calendar(
+    app: &AppHandle,
+    shared: &Arc<Shared>,
+    title: String,
+    detected_call: crate::call_detection::DetectedCall,
+    attendees: Vec<String>,
+    calendar_context: Option<serde_json::Value>,
+) -> Result<String, String> {
+    start_with_calendar_impl(
+        shared,
+        title,
+        Some(detected_call.app_id.clone()),
+        attendees,
+        calendar_context,
+        Some((app.clone(), detected_call)),
+    )
+}
+
+fn start_with_calendar_impl(
+    shared: &Arc<Shared>,
+    title: String,
+    detected_app: Option<String>,
+    attendees: Vec<String>,
+    calendar_context: Option<serde_json::Value>,
+    clean_end_context: Option<(AppHandle, crate::call_detection::DetectedCall)>,
+) -> Result<String, String> {
     let token = begin_recording(shared, detected_app.clone())?;
     #[cfg(target_os = "macos")]
     let _tray_update = crate::macos_tray::UpdateOnDrop;
@@ -430,28 +466,28 @@ pub fn start_with_calendar(
         .meeting_recording_metadata(id.clone())
         .ok()
         .flatten();
+    let clean_end = clean_end_context.map(|(app, detected_call)| {
+        let owner = Arc::downgrade(shared);
+        let session_token = token.clone();
+        Arc::new(move || {
+            if let Some(shared) = owner.upgrade()
+                && stop_matching_with_episode(
+                    app.clone(),
+                    shared,
+                    Some(detected_call.app_id.as_str()),
+                    Some(&session_token),
+                    Some(&detected_call),
+                )
+                .is_err()
+            {
+                LOG.error("A verified call end could not stop its recording.");
+            }
+        }) as crate::meeting_speaker_evidence::CleanEndCallback
+    });
+    let evidence_clock = recorder.evidence_clock();
+    let capture_source = recorder.app_speaker_capture_source();
     if let Some(context) = shared.meeting_context.lock().unwrap().as_mut() {
         context.started = recorder.started_at();
-        context.speaker_evidence = if settings.meeting_app_speakers {
-            recording_metadata.as_ref().and_then(|recording| {
-                crate::meeting_speaker_evidence::EvidenceSampler::start(
-                    recorder.started_at(),
-                    detected_app.as_deref(),
-                    &recording.meeting_uid,
-                    &recording.started_at,
-                    {
-                        let owner = Arc::downgrade(shared);
-                        Arc::new(move || {
-                            owner
-                                .upgrade()
-                                .is_some_and(|shared| shared.settings().meeting_app_speakers)
-                        })
-                    },
-                )
-            })
-        } else {
-            None
-        };
         context.system_audio = system_audio;
         context.audio_warning = recorder.audio_warning();
         context.consent_copied = consent_copied;
@@ -463,6 +499,44 @@ pub fn start_with_calendar(
         .unwrap()
         .recording(&token)
         .map_err(|error| error.to_string())?;
+    // Publish capture ownership before an end notification can stop it. Registration uses the
+    // coordinator's lock order so an observer cannot be attached after hardware quiescence.
+    {
+        let lifecycle = shared.recording.lock().unwrap();
+        let state = lifecycle.snapshot();
+        if state.phase == RecordingPhase::Recording
+            && state.session_id.as_deref() == Some(&token)
+            && let Some(context) = shared
+                .meeting_context
+                .lock()
+                .unwrap()
+                .as_mut()
+                .filter(|context| context.token == token)
+        {
+            context.speaker_evidence = if settings.meeting_app_speakers {
+                recording_metadata.as_ref().and_then(|recording| {
+                    crate::meeting_speaker_evidence::EvidenceSampler::start(
+                        evidence_clock,
+                        detected_app.as_deref(),
+                        &recording.meeting_uid,
+                        &recording.started_at,
+                        {
+                            let owner = Arc::downgrade(shared);
+                            Arc::new(move || {
+                                owner
+                                    .upgrade()
+                                    .is_some_and(|shared| shared.settings().meeting_app_speakers)
+                            })
+                        },
+                        capture_source,
+                        clean_end,
+                    )
+                })
+            } else {
+                None
+            };
+        }
+    }
     monitor_health(shared.clone(), token);
     if shared.recording_cancel.load(Ordering::SeqCst) {
         stop_and_wait(shared)?;
@@ -829,14 +903,45 @@ pub fn stop_matching(
     expected_call: Option<&str>,
     expected_session: Option<&str>,
 ) -> Result<(), String> {
+    stop_matching_with_episode(app, shared, expected_call, expected_session, None)
+}
+
+fn stop_matching_with_episode(
+    app: AppHandle,
+    shared: Arc<Shared>,
+    expected_call: Option<&str>,
+    expected_session: Option<&str>,
+    clean_end_episode: Option<&crate::call_detection::DetectedCall>,
+) -> Result<(), String> {
     let Some((token, mut recorder)) =
         take_recorder_matching(&shared, expected_call, expected_session)?
     else {
+        // An end during native startup uses the coordinator's existing cancellation path.
+        // Do not reset a detector episode if this callback belongs to a replacement session.
+        if let Some(episode) = clean_end_episode {
+            let cancelled_same_session = {
+                let lifecycle = shared.recording.lock().unwrap();
+                let state = lifecycle.snapshot();
+                shared.recording_cancel.load(Ordering::SeqCst)
+                    && expected_session == state.session_id.as_deref()
+                    && lifecycle.owns_call(&episode.app_id)
+                    && matches!(
+                        state.phase,
+                        RecordingPhase::Starting | RecordingPhase::Recording
+                    )
+            };
+            if cancelled_same_session {
+                crate::call_detection::recorded_call_ended(&app, episode);
+            }
+        }
         return Ok(());
     };
     // This command runs off-main. Its IPC receipt acknowledges actual capture shutdown,
     // while the owned worker below performs all persistence and transcript finalization.
     quiesce(&shared, &token, &mut recorder);
+    if let Some(episode) = clean_end_episode {
+        crate::call_detection::recorded_call_ended(&app, episode);
+    }
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
     std::thread::spawn(move || {
@@ -1430,6 +1535,31 @@ mod tests {
             shared.recording.lock().unwrap().snapshot().phase,
             RecordingPhase::Recording
         );
+        session.stop().unwrap();
+    }
+
+    #[test]
+    fn stale_clean_end_token_cannot_stop_a_same_app_replacement_recording() {
+        let (_root, shared, session, _token) = recording();
+        let mut replacement = pennel_core::RecordingLifecycle::default();
+        let current = replacement
+            .begin(Some(crate::meeting_speaker_evidence::TEAMS.into()))
+            .unwrap();
+        replacement.recording(&current).unwrap();
+        *shared.recording.lock().unwrap() = replacement;
+        assert!(
+            take_recorder_matching(
+                &shared,
+                Some(crate::meeting_speaker_evidence::TEAMS),
+                Some("prior-coordinator-token")
+            )
+            .unwrap()
+            .is_none()
+        );
+        let state = shared.recording.lock().unwrap().snapshot();
+        assert_eq!(state.session_id.as_deref(), Some(current.as_str()));
+        assert_eq!(state.phase, RecordingPhase::Recording);
+        assert!(!shared.recording_cancel.load(Ordering::SeqCst));
         session.stop().unwrap();
     }
 

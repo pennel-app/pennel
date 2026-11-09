@@ -116,6 +116,27 @@ test("missing and ambiguous Teams evidence never claims that names were applied"
   assert.match(voiceNamingNotice({ status: "applied" }), /applied automatically/);
 });
 
+test("lost app audio scope explains why automatic names require a new detected call", () => {
+  const naming = { status: "unavailable", reason: "audio_capture_not_app_scoped" };
+  assert.match(voiceNamingNotice(naming), /audio van andere apps/);
+  assert.match(voiceNamingNotice(naming), /gedetecteerde Teams-oproep/);
+  setInterfaceLanguage("en");
+  assert.match(voiceNamingNotice(naming), /audio from other apps/);
+  assert.match(voiceNamingNotice(naming), /detected Teams call/);
+  assert.doesNotMatch(voiceNamingNotice({ ...naming, status: "applied" }), /applied automatically/);
+  assert.deepEqual(naming, { status: "unavailable", reason: "audio_capture_not_app_scoped" });
+});
+
+test("unverified recording timing suspends names with separate retry guidance", () => {
+  const naming = { status: "unavailable", reason: "audio_clock_unverified" };
+  assert.match(voiceNamingNotice(naming), /timing van de opname/);
+  assert.doesNotMatch(voiceNamingNotice(naming), /andere apps/);
+  setInterfaceLanguage("en");
+  assert.match(voiceNamingNotice(naming), /recording timing/);
+  assert.match(voiceNamingNotice(naming), /new recording/);
+  assert.doesNotMatch(voiceNamingNotice({ ...naming, status: "applied" }), /applied automatically/);
+});
+
 test("the trained date is shown in Dutch", () => {
   assert.equal(trainedLabel(null), "Nog niet getraind");
   assert.match(trainedLabel({ created_iso: "2026-10-26T10:00:00Z", speech_seconds: 20 }), /^Getraind op 26 okt/);

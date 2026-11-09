@@ -5,7 +5,7 @@
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::Path;
 use std::ptr::{self, NonNull};
-use std::sync::{Mutex, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 
 use pennel_core::HotkeyTrigger;
 use serde::Deserialize;
@@ -13,6 +13,7 @@ use serde_json::Value;
 
 type EventSink = unsafe extern "C" fn(*mut c_void, u32, bool);
 type AudioSink = unsafe extern "C" fn(*mut c_void, u32, *const f32, usize, u64);
+type CaptureScopeSink = unsafe extern "C" fn(*mut c_void, bool);
 type TextSink = unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char);
 
 unsafe extern "C" {
@@ -77,7 +78,7 @@ unsafe extern "C" {
         error: *mut *mut c_char,
     ) -> *mut c_void;
     fn pennel_mac_capture_stop(handle: *mut c_void);
-    fn pennel_mac_meeting_start_paths(
+    fn pennel_mac_meeting_start_paths_with_scope(
         directory: *const c_char,
         app: *const c_char,
         microphone_path: *const c_char,
@@ -85,6 +86,8 @@ unsafe extern "C" {
         echo: bool,
         sink: AudioSink,
         context: *mut c_void,
+        scope_sink: CaptureScopeSink,
+        scope_context: *mut c_void,
         error: *mut *mut c_char,
     ) -> *mut c_void;
     fn pennel_mac_meeting_status(handle: *mut c_void) -> *mut c_char;
@@ -512,6 +515,10 @@ pub fn call_snapshot(
 pub struct MeetingSpeakers {
     pub available: bool,
     #[serde(default)]
+    pub call_ended: bool,
+    #[serde(default)]
+    pub call_active: bool,
+    #[serde(default)]
     pub participants: Vec<String>,
     pub speaking: Vec<String>,
     #[serde(default)]
@@ -630,6 +637,19 @@ impl Drop for Capture {
 pub struct MeetingCapture {
     handle: Option<NonNull<c_void>>,
     callback: Box<AudioCallback>,
+    source_integrity: Arc<crate::meeting_speaker_evidence::AppAudioSourceIntegrity>,
+}
+
+/// Native retains this context only until quiescence/stop has invalidated pending rebuilds and
+/// drained callbacks. MeetingCapture owns its Arc through that shutdown; sampler clones may outlive it.
+unsafe extern "C" fn meeting_capture_scope(context: *mut c_void, app_scoped: bool) {
+    if let Some(source) = unsafe {
+        context
+            .cast::<crate::meeting_speaker_evidence::AppAudioSourceIntegrity>()
+            .as_ref()
+    } {
+        source.observe(app_scoped);
+    }
 }
 
 unsafe impl Send for MeetingCapture {}
@@ -647,6 +667,12 @@ impl MeetingCaptureQuiescence {
 }
 
 impl MeetingCapture {
+    pub fn app_audio_source(
+        &self,
+    ) -> Arc<crate::meeting_speaker_evidence::AppAudioSourceIntegrity> {
+        self.source_integrity.clone()
+    }
+
     pub fn quiescence(&self) -> MeetingCaptureQuiescence {
         MeetingCaptureQuiescence(self.handle.expect("capture has not been stopped"))
     }
@@ -665,8 +691,11 @@ impl MeetingCapture {
         let mut callback: Box<AudioCallback> = Box::new(Mutex::new(Box::new(callback)));
         let context = (&mut *callback as *mut AudioCallback).cast();
         let mut error = ptr::null_mut();
+        let source_integrity =
+            Arc::new(crate::meeting_speaker_evidence::AppAudioSourceIntegrity::new(app_id));
+        let scope_context = Arc::as_ptr(&source_integrity).cast_mut().cast();
         let handle = NonNull::new(unsafe {
-            pennel_mac_meeting_start_paths(
+            pennel_mac_meeting_start_paths_with_scope(
                 directory.as_ptr(),
                 app.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 microphone_path.as_ptr(),
@@ -674,6 +703,8 @@ impl MeetingCapture {
                 echo,
                 audio_frame,
                 context,
+                meeting_capture_scope,
+                scope_context,
                 &mut error,
             )
         });
@@ -683,6 +714,7 @@ impl MeetingCapture {
         Ok(Self {
             handle: Some(handle),
             callback,
+            source_integrity,
         })
     }
 
@@ -1117,5 +1149,25 @@ mod tests {
             assert!(snapshot[field].is_string(), "missing permission {field}");
         }
         assert!(snapshot["apple_speech"].is_boolean());
+    }
+
+    #[test]
+    fn native_scope_callback_updates_the_retained_sampler_guard_without_a_native_handle() {
+        let source = Arc::new(
+            crate::meeting_speaker_evidence::AppAudioSourceIntegrity::new(Some(
+                crate::meeting_speaker_evidence::TEAMS,
+            )),
+        );
+        let check = source.check(crate::meeting_speaker_evidence::TEAMS);
+        let context = Arc::as_ptr(&source).cast_mut().cast();
+        assert!(!check());
+        unsafe { meeting_capture_scope(context, true) };
+        assert!(check());
+        // The sampler's Arc keeps the context alive through finalization after capture stops.
+        drop(source);
+        unsafe { meeting_capture_scope(context, false) };
+        assert!(!check());
+        unsafe { meeting_capture_scope(context, true) };
+        assert!(!check());
     }
 }

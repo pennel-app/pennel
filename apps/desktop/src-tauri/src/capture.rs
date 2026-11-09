@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager};
 const VARIABLE: &str = "PENNEL_WINDOW_CAPTURE";
 const DATA_VARIABLE: &str = "PENNEL_CAPTURE_DATA_DIR";
 const IDENTIFIER: &str = "dev.pennel.Pennel.capture.preview";
+const LIVE_CALLS_VARIABLE: &str = "PENNEL_CAPTURE_LIVE_CALLS";
 
 #[link(name = "objc")]
 unsafe extern "C" {
@@ -62,6 +63,82 @@ pub fn data_directory(app: &AppHandle) -> Result<Option<PathBuf>, String> {
         enabled(app),
         std::env::var_os(DATA_VARIABLE).as_deref(),
     )
+}
+
+/// Capture previews normally skip observation; live acceptance explicitly opts into the same
+/// production call detector while retaining capture mode's other isolation guarantees.
+pub fn call_detection_enabled(app: &AppHandle) -> Result<bool, String> {
+    call_detection_for_configuration(
+        &app.config().identifier,
+        enabled(app),
+        std::env::var_os(LIVE_CALLS_VARIABLE).as_deref(),
+        std::env::var_os(DATA_VARIABLE).as_deref(),
+    )
+}
+
+#[derive(Serialize)]
+pub struct CaptureRuntimeStatus {
+    global_hotkey_active: bool,
+    dictation_active: bool,
+    dictation_jobs: usize,
+    recording_busy: bool,
+    auto_detect_enabled: bool,
+    call_detector_configured: bool,
+    audio_source_status: Option<serde_json::Value>,
+}
+
+/// Read actual isolation state without enabling hooks or requesting permission.
+#[tauri::command]
+pub fn capture_runtime_status(
+    app: AppHandle,
+    shared: tauri::State<'_, std::sync::Arc<crate::state::Shared>>,
+) -> Result<CaptureRuntimeStatus, String> {
+    if !enabled(&app) {
+        return Err("Capture runtime inspection requires the isolated capture app".into());
+    }
+    let directory = data_directory(&app)?.ok_or("Capture runtime inspection is unavailable")?;
+    if directory != shared.data_dir {
+        return Err("Capture runtime inspection requires the owned capture directory".into());
+    }
+    let global_hotkey_active = shared.hotkey.lock().unwrap().is_some();
+    let recording_busy = shared.recording.lock().unwrap().is_busy();
+    let settings = shared.settings();
+    let audio_source_status = shared
+        .meeting
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(crate::meeting::MeetingRecorder::audio_source_status);
+    Ok(CaptureRuntimeStatus {
+        global_hotkey_active,
+        dictation_active: shared
+            .dictation_active
+            .load(std::sync::atomic::Ordering::SeqCst),
+        dictation_jobs: shared
+            .dictation_jobs
+            .load(std::sync::atomic::Ordering::SeqCst),
+        recording_busy,
+        auto_detect_enabled: settings.auto_detect,
+        call_detector_configured: call_detection_enabled(&app)?,
+        audio_source_status,
+    })
+}
+
+fn call_detection_for_configuration(
+    identifier: &str,
+    capture: bool,
+    opt_in: Option<&std::ffi::OsStr>,
+    directory: Option<&std::ffi::OsStr>,
+) -> Result<bool, String> {
+    let Some(opt_in) = opt_in else {
+        return Ok(identifier != IDENTIFIER);
+    };
+    if opt_in != std::ffi::OsStr::new("1") {
+        return Err("PENNEL_CAPTURE_LIVE_CALLS must be unset or 1".into());
+    }
+    fixture_directory(identifier, capture, directory)?
+        .ok_or("Live capture call detection requires an isolated capture directory")?;
+    Ok(true)
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
@@ -233,6 +310,49 @@ pub fn dispatch(app: &AppHandle, arguments: &[String]) -> bool {
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+
+    #[test]
+    fn live_call_detection_requires_an_explicit_isolated_capture_opt_in() {
+        let directory = Some(OsStr::new("/tmp/pennel-live-capture-owned"));
+        assert!(!call_detection_for_configuration(IDENTIFIER, true, None, directory).unwrap());
+        assert!(
+            call_detection_for_configuration(IDENTIFIER, true, Some(OsStr::new("1")), directory)
+                .unwrap()
+        );
+        assert!(call_detection_for_configuration("dev.pennel.Pennel", false, None, None).unwrap());
+    }
+
+    #[test]
+    fn live_call_detection_opt_in_rejects_wrong_identity_capture_mode_or_directory() {
+        let opt_in = Some(OsStr::new("1"));
+        let directory = Some(OsStr::new("/tmp/pennel-live-capture-owned"));
+        for identifier in ["dev.pennel.Pennel", "dev.pennel.Pennel.preview"] {
+            assert!(call_detection_for_configuration(identifier, true, opt_in, directory).is_err());
+        }
+        assert!(call_detection_for_configuration(IDENTIFIER, false, opt_in, directory).is_err());
+        assert!(call_detection_for_configuration(IDENTIFIER, true, opt_in, None).is_err());
+        for path in ["relative", "/", "/tmp/../other-profile"] {
+            assert!(
+                call_detection_for_configuration(IDENTIFIER, true, opt_in, Some(OsStr::new(path)))
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn live_call_detection_rejects_malformed_opt_in_values() {
+        for value in ["", "0", "true", "yes", " 1"] {
+            assert!(
+                call_detection_for_configuration(
+                    IDENTIFIER,
+                    true,
+                    Some(OsStr::new(value)),
+                    Some(OsStr::new("/tmp/pennel-live-capture-owned"))
+                )
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn installed_apps_do_not_accept_capture_directory_overrides() {

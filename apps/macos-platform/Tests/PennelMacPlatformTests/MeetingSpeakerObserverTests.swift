@@ -9,6 +9,7 @@ private struct Node: ParticipantNode {
     var text = ""
     var domClasses: [String] = []
     var identifier = ""
+    var domIdentifier = ""
     var selected = false
     var checked: Bool? = nil
     var modal: Bool? = nil
@@ -27,9 +28,75 @@ private func window(_ tiles: Node...) -> Node {
     Node(role: "AXWindow", children: [Node(role: "AXWebArea", children: [Node(children: tiles)])])
 }
 
+private func soloCallWindow() -> Node {
+    window(
+        Node(role: "AXToolbar", label: "Meeting controls", domIdentifier: "horizontalMiddleEnd", children: [
+            Node(role: "AXButton", label: "Chat", domIdentifier: "chat-button"),
+            Node(role: "AXButton", label: "People", domIdentifier: "roster-button"),
+            Node(children: [Node(role: "AXButton", label: "Turn camera on", domIdentifier: "video-button")]),
+            Node(children: [Node(role: "AXButton", label: "Unmute mic", domIdentifier: "microphone-button")]),
+            Node(role: "AXButton", label: "Share", domIdentifier: "share-button"),
+        ]),
+        Node(role: "AXGroup", label: "Calling controls", domIdentifier: "horizontalEnd", children: [
+            Node(children: [Node(role: "AXButton", label: "Leave", domIdentifier: "hangup-button")]),
+        ]),
+        Node(role: "AXGroup", label: "Shared content view", children: [
+            Node(), Node(children: [Node(role: "AXStaticText", text: "Invite people to join you")]), Node(),
+        ])
+    )
+}
+
+private func prejoinWindow() -> Node {
+    window(Node(children: [
+        Node(role: "AXButton", label: "Cancel"),
+        Node(role: "AXButton", label: "Join now", domIdentifier: "prejoin-join-button"),
+    ]))
+}
+
 final class MeetingSpeakerObserverTests: XCTestCase {
     private let idleRing = ["fui-Primitive", "___dv8x4j0", "f1429bq1"]
     private let speakingRing = ["fui-Primitive", "___1vvhwjq", "vdi-frame-occlusion"]
+
+    func testMeasuredHostAloneCallIsAvailableWithAnEmptyRoster() {
+        let solo = soloCallWindow()
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(solo), .call)
+        XCTAssertEqual(TeamsParticipantParser.snapshot(windows: [solo]),
+                       MeetingSpeakerSnapshot(available: true, participants: [], speaking: []))
+    }
+
+    func testSoloWordsWithoutNativeControlIdsCannotProveCallAndMissingRosterStaysUnknown() {
+        var chat = soloCallWindow()
+        chat.children[0].children[0].children[0].domIdentifier = ""
+        var noPlaceholder = soloCallWindow()
+        noPlaceholder.children[0].children[0].children[2].children = []
+        for unsupported in [chat, window(Node(role: "AXStaticText", text: "Invite people to join you"))] {
+            XCTAssertEqual(TeamsParticipantParser.callWindowKind(unsupported), .unreadable)
+            XCTAssertFalse(TeamsParticipantParser.snapshot(windows: [unsupported]).available)
+        }
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(noPlaceholder), .call)
+        XCTAssertTrue(TeamsParticipantParser.hasNativeCallControls(noPlaceholder))
+        XCTAssertFalse(TeamsParticipantParser.snapshot(windows: [noPlaceholder]).available,
+                       "a proven active call does not invent an empty roster")
+    }
+
+    func testKnownPrejoinIsNotAnActiveCallAndCannotOfferNames() {
+        var prejoin = prejoinWindow()
+        prejoin.children[0].children[0].children.append(tile("Myself video, Ann, video is on", role: "AXImage"))
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(prejoin), .prejoin)
+        XCTAssertEqual(TeamsParticipantParser.callEligibility([prejoin]), false)
+        XCTAssertFalse(TeamsParticipantParser.snapshot(windows: [prejoin]).available)
+        XCTAssertEqual(TeamsParticipantParser.callEligibility([soloCallWindow()]), true)
+        XCTAssertNil(TeamsParticipantParser.callEligibility([window(Node(role: "AXButton", label: "Join now"))]))
+    }
+
+    func testCallLifecycleCannotBeAuthorizedByChatWordsOrParticipantTileLabelsAlone() {
+        XCTAssertFalse(TeamsParticipantParser.hasNativeCallControls(window(
+            tile("Ann, video is on", shown: "Ann"),
+            Node(role: "AXButton", label: "Join now"),
+            Node(role: "AXStaticText", text: "Invite people to join you")
+        )))
+        XCTAssertTrue(TeamsParticipantParser.hasNativeCallControls(soloCallWindow()))
+    }
 
     func testReadsParticipantsAndTheHighlightedSpeaker() {
         let snapshot = TeamsParticipantParser.snapshot(windows: [window(
@@ -202,6 +269,32 @@ final class MeetingSpeakerWindowTests: XCTestCase {
 
 
 final class MeetingSpeakerCallAssociationTests: XCTestCase {
+    func testOnlyAPreviouslyTrustedBoundPrejoinOrDestroyedWindowProvesCleanEnd() {
+        let ended = TeamsCallWindowState(kind: .prejoin, focused: true, bound: true)
+        XCTAssertTrue(MeetingSpeakerObserver.cleanCallEnded([ended], hadBinding: true, boundWindowDestroyed: false))
+        XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([ended], hadBinding: false, boundWindowDestroyed: false))
+        let main = TeamsCallWindowState(kind: .other, focused: true)
+        XCTAssertTrue(MeetingSpeakerObserver.cleanCallEnded([main], hadBinding: true, boundWindowDestroyed: true))
+        XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([main], hadBinding: true, boundWindowDestroyed: false))
+        XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([main, TeamsCallWindowState(kind: .unreadable)], hadBinding: true, boundWindowDestroyed: true))
+    }
+
+    func testHiddenMinimizedUnfocusedAmbiguousAndUnsupportedWindowsNeverProveEnd() {
+        for candidate in [
+            TeamsCallWindowState(kind: .prejoin, focused: true, minimized: true, bound: true),
+            TeamsCallWindowState(kind: .prejoin, focused: true, visible: false, bound: true),
+            TeamsCallWindowState(kind: .prejoin, bound: true),
+            TeamsCallWindowState(kind: .unreadable, focused: true, bound: true),
+            TeamsCallWindowState(kind: .other, focused: true, bound: true),
+        ] {
+            XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([candidate], hadBinding: true, boundWindowDestroyed: false))
+        }
+        XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([
+            TeamsCallWindowState(kind: .prejoin, focused: true, bound: true),
+            TeamsCallWindowState(kind: .call),
+        ], hadBinding: true, boundWindowDestroyed: false))
+    }
+
     private func callWindow(_ name: String) -> Node {
         window(tile("\(name), video is on", shown: name))
     }

@@ -570,5 +570,7 @@
   "meetings.speaker_teams_estimate": "{name} (Teams estimate)",
   "meetings.teams_names_revoked": "Teams observation stopped for this recording. Start a new recording after enabling it again.",
   "meetings.teams_names_ambiguous_call": "Multiple or unsupported Teams windows prevented name matching. Keep only the recorded call open.",
-  "meetings.speaker_processing_limited": "Some short or unclear passages have no speaker label."
+  "meetings.speaker_processing_limited": "Some short or unclear passages have no speaker label.",
+  "meetings.teams_names_capture_scope": "Teams names are unavailable because this recording may include audio from other apps. Start a new recording from a detected Teams call.",
+  "meetings.teams_names_clock": "Teams names are unavailable because recording timing could not be verified. Start a new recording to retry."
 }

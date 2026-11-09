@@ -9,6 +9,7 @@ protocol ParticipantNode {
     var text: String { get }
     var domClasses: [String] { get }
     var identifier: String { get }
+    var domIdentifier: String { get }
     var selected: Bool { get }
     var checked: Bool? { get }
     var modal: Bool? { get }
@@ -20,6 +21,7 @@ protocol ParticipantNode {
 extension ParticipantNode {
     var subrole: String { "" }
     var identifier: String { "" }
+    var domIdentifier: String { "" }
     var selected: Bool { false }
     var checked: Bool? { nil }
     var modal: Bool? { nil }
@@ -28,7 +30,7 @@ extension ParticipantNode {
 }
 
 enum TeamsCallWindowKind: Equatable {
-    case call, other, unreadable
+    case call, prejoin, other, unreadable
 }
 
 struct TeamsCallWindowState {
@@ -36,6 +38,7 @@ struct TeamsCallWindowState {
     var focused = false
     var minimized = false
     var visible = true
+    var bound = false
 }
 
 struct MeetingSpeakerSnapshot: Equatable {
@@ -49,6 +52,8 @@ struct MeetingSpeakerSnapshot: Equatable {
     var windowId: String? = nil
     var unavailableReason: String? = nil
     var duplicateNames = false
+    var callEnded = false
+    var callActive = false
 }
 
 /// Reads participant tiles from the Microsoft Teams desktop app (verified against Teams 26289 on macOS).
@@ -67,28 +72,106 @@ enum TeamsParticipantParser {
 
     /// Classifies call state without reading text values or collecting another window's roster.
     static func callWindowKind<Node: ParticipantNode>(_ root: Node) -> TeamsCallWindowKind {
+        let (nodes, complete) = windowNodes(root)
+        let controls = nativeControls(nodes)
+        if complete && controls.live { return .call }
+        let hasRemote = nodes.contains { node in
+            tileRoles.contains(node.role) && hasTileState(node)
+                && !selfLabelPrefixes.contains(where: { node.label.lowercased().hasPrefix($0) })
+        }
+        if complete && controls.prejoin && !hasRemote { return .prejoin }
+        if hasRemote || (!controls.join && nodes.contains { node in
+            tileRoles.contains(node.role) && selfLabelPrefixes.contains(where: { node.label.lowercased().hasPrefix($0) })
+        }) { return .call }
+        if complete && !controls.anyCallControl && (nodes.contains(where: isMainNavigation) || isWindowSharingButton(root)) { return .other }
+        return .unreadable
+    }
+
+    private static func windowNodes<Node: ParticipantNode>(_ root: Node) -> ([Node], Bool) {
         var remaining = 4_096
         var complete = true
-        var sawMainNavigation = false
-        func containsCall(_ node: Node, depth: Int) -> Bool {
-            guard remaining > 0, depth < maxDepth, !node.role.isEmpty else { complete = false; return false }
+        var nodes: [Node] = []
+        func collect(_ node: Node, depth: Int) {
+            guard remaining > 0, depth < maxDepth, !node.role.isEmpty else { complete = false; return }
             remaining -= 1
-            if tileRoles.contains(node.role) {
-                let label = node.label.lowercased()
-                if hasTileState(node) || selfLabelPrefixes.contains(where: { label.hasPrefix($0) }) { return true }
-            }
-            // An unsupported/audio-only call may also be a complete control tree. Only a known
-            // main-navigation shape positively establishes a non-call shell.
-            if isMainNavigation(node) { sawMainNavigation = true }
-            // Chat text values are never inspected; navigation labels require its control shape.
-            if leafRoles.contains(node.role) { return false }
+            nodes.append(node)
+            if leafRoles.contains(node.role) { return }
             let children = node.children
-            guard node.childrenReadable else { complete = false; return false }
-            for child in children where containsCall(child, depth: depth + 1) { return true }
-            return false
+            guard node.childrenReadable else { complete = false; return }
+            for child in children { collect(child, depth: depth + 1) }
         }
-        if containsCall(root, depth: 0) { return .call }
-        return complete && (sawMainNavigation || isWindowSharingButton(root)) ? .other : .unreadable
+        collect(root, depth: 0)
+        return (nodes, complete)
+    }
+
+    private struct NativeControls {
+        var meeting = false
+        var calling = false
+        var hangup = false
+        var join = false
+        var cancel = false
+        var live: Bool { meeting && calling && hangup }
+        var prejoin: Bool { join && cancel && !meeting && !calling && !hangup }
+        var anyCallControl: Bool { meeting || calling || hangup || join }
+    }
+
+    private static func nativeControls<Node: ParticipantNode>(_ nodes: [Node]) -> NativeControls {
+        var result = NativeControls()
+        for node in nodes {
+            if node.role == "AXToolbar", node.domIdentifier == "horizontalMiddleEnd", node.label == "Meeting controls" {
+                let (controls, complete) = windowNodes(node)
+                let required: Set<String> = ["chat-button", "roster-button", "video-button", "microphone-button", "share-button"]
+                result.meeting = complete && required.isSubset(of: Set(controls.filter { $0.role == "AXButton" }.map(\.domIdentifier)))
+            }
+            if node.role == "AXGroup", node.domIdentifier == "horizontalEnd", node.label == "Calling controls" {
+                let (controls, complete) = windowNodes(node)
+                result.calling = complete && controls.contains { $0.role == "AXButton" && $0.domIdentifier == "hangup-button" && $0.label == "Leave" }
+            }
+            if node.role == "AXButton", node.domIdentifier == "hangup-button", node.label == "Leave" { result.hangup = true }
+            if node.role == "AXButton", node.domIdentifier == "prejoin-join-button", node.label == "Join now" { result.join = true }
+        }
+        // Only a native prejoin anchor permits examining its fixed Cancel control; no chat values
+        // or participant tile labels are needed by the call detector's static-control check.
+        if result.join && !result.hangup { result.cancel = nodes.contains { $0.role == "AXButton" && $0.label == "Cancel" } }
+        return result
+    }
+
+    private static func soloStage<Node: ParticipantNode>(_ nodes: [Node]) -> Bool {
+        nodes.contains { node in
+            guard node.role == "AXGroup", node.childrenReadable, node.children.count == 3,
+                  node.children.allSatisfy({ $0.role == "AXGroup" }), node.label == "Shared content view"
+            else { return false }
+            let (stage, complete) = windowNodes(node)
+            guard complete, stage.allSatisfy({ ["AXGroup", "AXStaticText", "AXImage"].contains($0.role) }) else { return false }
+            let text = stage.filter { $0.role == "AXStaticText" }.map(\.text).filter { !$0.isEmpty }
+            return text == ["Invite people to join you"]
+        }
+    }
+
+    private static func knownSoloCall<Node: ParticipantNode>(_ root: Node) -> Bool {
+        let (nodes, complete) = windowNodes(root)
+        return complete && nativeControls(nodes).live && soloStage(nodes)
+    }
+
+    static func hasNativeCallControls<Node: ParticipantNode>(_ root: Node) -> Bool {
+        let (nodes, complete) = windowNodes(root)
+        return complete && nativeControls(nodes).live
+    }
+
+    /// Names-free eligibility override: a known prejoin is not an active call. Unknown layouts keep
+    /// the existing Core Audio detector behavior instead of guessing from missing controls.
+    static func callEligibility<Node: ParticipantNode>(_ roots: [Node]) -> Bool? {
+        var prejoin = false
+        for root in roots {
+            let (nodes, complete) = windowNodes(root)
+            guard complete else { return nil }
+            let controls = nativeControls(nodes)
+            if controls.live { return true }
+            if controls.prejoin { prejoin = true; continue }
+            if !controls.anyCallControl && (nodes.contains(where: isMainNavigation) || isWindowSharingButton(root)) { continue }
+            return nil
+        }
+        return prejoin ? false : nil
     }
 
     private static func isWindowSharingButton<Node: ParticipantNode>(_ node: Node) -> Bool {
@@ -170,7 +253,8 @@ enum TeamsParticipantParser {
         for root in roots {
             if !result.add(tile(root)) { collect(root, depth: 0, into: &result) }
         }
-        let snapshot = MeetingSpeakerSnapshot(available: !result.participants.isEmpty, participants: result.participants, speaking: result.speaking, duplicateNames: result.duplicateNames)
+        let available = !result.participants.isEmpty || roots.contains(where: knownSoloCall)
+        let snapshot = MeetingSpeakerSnapshot(available: available, participants: result.participants, speaking: result.speaking, duplicateNames: result.duplicateNames)
         return (snapshot, result.containers)
     }
 
@@ -245,6 +329,7 @@ final class AccessibilityParticipantNode: ParticipantNode {
         return title.isEmpty ? values[1] as? String ?? "" : title
     }()
     lazy var identifier: String = value(kAXIdentifierAttribute) as? String ?? ""
+    lazy var domIdentifier: String = value("AXDOMIdentifier") as? String ?? ""
     lazy var selected: Bool = value(kAXSelectedAttribute) as? Bool ?? false
     lazy var checked: Bool? = {
         guard role == "AXCheckBox", let state = value(kAXValueAttribute) as? NSNumber,
@@ -292,8 +377,10 @@ enum MeetingSpeakerObserver {
         let window: AXUIElement
         let windowNumber: UInt32
         let windowId: String
-        let containers: [AXUIElement]
+        var containers: [AXUIElement]
         let refreshAfter: Date
+        let trustedLifecycle: Bool
+        var ended = false
     }
     nonisolated(unsafe) private static var containerCache: ContainerCache?
 
@@ -314,6 +401,10 @@ enum MeetingSpeakerObserver {
         let pid = app.processIdentifier
         guard pid > 0 else { return unavailable("app_unavailable") }
         let processStartedAtMs = UInt64(max(0, launched.timeIntervalSince1970 * 1_000))
+        let bound = lock.withLock { () -> ContainerCache? in
+            guard let cache = containerCache, cache.pid == pid, cache.processStartedAtMs == processStartedAtMs else { return nil }
+            return cache
+        }
         let root = AXUIElementCreateApplication(pid)
         exposeWebContent(root, processKey: "\(pid):\(processStartedAtMs)")
 
@@ -339,48 +430,86 @@ enum MeetingSpeakerObserver {
               let windows = windowsValue as? [AXUIElement], !windows.isEmpty,
               windows.contains(where: { CFEqual($0, window) })
         else { return unavailable("ambiguous_call") }
-        let states = windows.map { candidate in
+        let nodes = windows.map(AccessibilityParticipantNode.init)
+        let states = zip(windows, nodes).map { candidate, node in
             var minimizedValue: AnyObject?
             let readableMinimized = AXUIElementCopyAttributeValue(candidate, kAXMinimizedAttribute as CFString, &minimizedValue) == .success
             let minimized = readableMinimized ? minimizedValue as? Bool : nil
             return TeamsCallWindowState(
-                kind: minimized == nil ? .unreadable : TeamsParticipantParser.callWindowKind(AccessibilityParticipantNode(candidate)),
+                kind: minimized == nil ? .unreadable : TeamsParticipantParser.callWindowKind(node),
                 focused: CFEqual(candidate, window),
                 minimized: minimized ?? true,
-                visible: windowBounds(candidate).flatMap { visibleWindowNumber(pid: pid, bounds: $0, windows: descriptions) } != nil
+                visible: windowBounds(candidate).flatMap { visibleWindowNumber(pid: pid, bounds: $0, windows: descriptions) } != nil,
+                bound: bound.map { CFEqual($0.window, candidate) } ?? false
             )
+        }
+        var destroyed = false
+        if let bound, !states.contains(where: \.bound) {
+            var role: AnyObject?
+            destroyed = AXUIElementCopyAttributeValue(bound.window, kAXRoleAttribute as CFString, &role) == .invalidUIElement
+        }
+        if var terminal = bound, cleanCallEnded(states, hadBinding: terminal.trustedLifecycle, boundWindowDestroyed: destroyed) {
+            terminal.ended = true
+            terminal.containers = []
+            lock.withLock { containerCache = terminal }
+            return MeetingSpeakerSnapshot(available: false, participants: [], speaking: [], processId: UInt32(pid),
+                                          processStartedAtMs: processStartedAtMs, windowId: terminal.windowId, callEnded: true)
         }
         if let reason = callAssociationReason(states) { return unavailable(reason) }
 
-        let previous = lock.withLock { () -> ContainerCache? in
-            guard let cache = containerCache, cache.pid == pid,
-                  cache.processStartedAtMs == processStartedAtMs,
-                  cache.windowNumber == windowNumber, CFEqual(cache.window, window)
-            else { return nil }
-            return cache
-        }
+        let previous = bound.flatMap { !$0.ended && $0.windowNumber == windowNumber && CFEqual($0.window, window) ? $0 : nil }
         let windowId = previous?.windowId ?? UUID().uuidString
+        guard let focusedIndex = states.firstIndex(where: \.focused) else { return unavailable("window_unavailable") }
+        let focusedNode = nodes[focusedIndex]
         var scan: (snapshot: MeetingSpeakerSnapshot, containers: [AccessibilityParticipantNode])
         if let previous, Date() < previous.refreshAfter, !previous.containers.isEmpty {
             scan = TeamsParticipantParser.scan(previous.containers.map(AccessibilityParticipantNode.init))
-            if !scan.snapshot.available { scan = TeamsParticipantParser.scan([AccessibilityParticipantNode(window)]) }
+            if !scan.snapshot.available { scan = TeamsParticipantParser.scan([focusedNode]) }
         } else {
-            scan = TeamsParticipantParser.scan([AccessibilityParticipantNode(window)])
+            scan = TeamsParticipantParser.scan([focusedNode])
         }
-        guard scan.snapshot.available else { return unavailable("layout_unavailable") }
+        let active = TeamsParticipantParser.hasNativeCallControls(focusedNode)
+        guard scan.snapshot.available || active else { return unavailable("layout_unavailable") }
         lock.withLock {
             containerCache = ContainerCache(
                 pid: pid, processStartedAtMs: processStartedAtMs, window: window,
                 windowNumber: windowNumber, windowId: windowId,
                 containers: scan.containers.map(\.element),
                 refreshAfter: previous.flatMap { Date() < $0.refreshAfter ? $0.refreshAfter : nil }
-                    ?? Date().addingTimeInterval(fullScanInterval)
+                    ?? Date().addingTimeInterval(fullScanInterval),
+                trustedLifecycle: previous?.trustedLifecycle == true || TeamsParticipantParser.hasNativeCallControls(focusedNode)
             )
         }
         scan.snapshot.processId = UInt32(pid)
         scan.snapshot.processStartedAtMs = processStartedAtMs
         scan.snapshot.windowId = windowId
+        scan.snapshot.callActive = active
+        if !scan.snapshot.available { scan.snapshot.unavailableReason = "roster_unavailable" }
         return scan.snapshot
+    }
+
+    static func cleanCallEnded(_ windows: [TeamsCallWindowState], hadBinding: Bool, boundWindowDestroyed: Bool) -> Bool {
+        guard hadBinding, !windows.isEmpty,
+              !windows.contains(where: { $0.kind == .call || $0.kind == .unreadable }),
+              let focused = windows.first(where: \.focused), focused.visible, !focused.minimized
+        else { return false }
+        if let bound = windows.first(where: \.bound) {
+            return bound.kind == .prejoin && bound.focused && bound.visible && !bound.minimized
+        }
+        return boundWindowDestroyed
+    }
+
+    /// Optional static-control override for the audio detector. This never collects participants.
+    static func callEligibility(appId: String) -> Bool? {
+        guard appId == teamsBundleId, AXIsProcessTrusted() else { return nil }
+        let apps = NSRunningApplication.runningApplications(withBundleIdentifier: appId)
+        guard apps.count == 1, let app = apps.first else { return nil }
+        let root = AXUIElementCreateApplication(app.processIdentifier)
+        exposeWebContent(root, processKey: "\(app.processIdentifier):eligibility")
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement], !windows.isEmpty else { return nil }
+        return TeamsParticipantParser.callEligibility(windows.map(AccessibilityParticipantNode.init))
     }
 
     static func callAssociationReason(_ windows: [TeamsCallWindowState]) -> String? {
