@@ -63,18 +63,6 @@ fn snapshot() -> Result<Vec<CallObservation>, String> {
     Ok(Vec::new())
 }
 
-pub fn current_recording_app() -> Option<String> {
-    unique_active_call(&snapshot().ok()?)
-}
-
-fn unique_active_call(observations: &[CallObservation]) -> Option<String> {
-    let mut calls = observations
-        .iter()
-        .filter(|observation| observation.is_call);
-    let first = calls.next()?;
-    calls.next().is_none().then(|| first.app_id.clone())
-}
-
 pub fn calendar() -> serde_json::Value {
     #[cfg(target_os = "macos")]
     return crate::macos::calendar_snapshot();
@@ -338,28 +326,6 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>) {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn a_manual_recording_only_associates_one_current_call() {
-        let observed = |id: &str, is_call| CallObservation {
-            app_id: id.into(),
-            is_call,
-            is_playing: true,
-        };
-        assert_eq!(
-            unique_active_call(&[observed("com.microsoft.teams2", true)]).as_deref(),
-            Some("com.microsoft.teams2")
-        );
-        assert!(unique_active_call(&[observed("com.microsoft.teams2", false)]).is_none());
-        assert!(
-            unique_active_call(&[
-                observed("com.microsoft.teams2", true),
-                observed("us.zoom.xos", true)
-            ])
-            .is_none()
-        );
-        assert!(unique_active_call(&[]).is_none());
-    }
 
     #[test]
     fn prompt_keeps_only_unchanged_authorized_calendar_context() {

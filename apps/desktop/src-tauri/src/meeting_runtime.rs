@@ -278,13 +278,8 @@ pub fn start(
     detected_app: Option<String>,
     attendees: Vec<String>,
 ) -> Result<String, String> {
-    let detected_app = detected_app.or_else(|| {
-        shared
-            .settings()
-            .meeting_app_speakers
-            .then(crate::call_detection::current_recording_app)
-            .flatten()
-    });
+    // Manual capture can include room or media audio. Naming follows the recorder's explicit call
+    // association rather than narrowing capture because an unrelated call happens to be active.
     // A manual start still records who was invited, so voices can be named after them later.
     let (attendees, calendar_context) =
         if attendees.is_empty() && shared.settings().calendar_enabled {

@@ -284,7 +284,7 @@
   "settings.writing.source.eligibility": "Meeting speech contributes only when your enrolled voice has a finalized, reliable attribution.",
   "settings.writing.sharing.connection_error": "The writing-profile connection is unavailable. Check your Cloud connection and try again.",
   "settings.speakers.meeting_app": "Use participant names from Microsoft Teams",
-  "settings.speakers.meeting_app_help": "While a meeting records, Pennel reads who Teams highlights as speaking. Participant observations stay on this computer.",
+  "settings.speakers.meeting_app_help": "For recordings started from a detected Teams call, Pennel reads who Teams highlights as speaking. Participant observations stay on this computer.",
   "settings.voice.incomplete": "Speaker labels incomplete",
   "settings.voice.incomplete_count": "Speaker labels incomplete: {count} voices without a label",
   "settings.speakers.names_policy": "Apply Teams names",
