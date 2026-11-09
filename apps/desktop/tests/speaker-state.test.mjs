@@ -98,6 +98,15 @@ test("saved processing failures and changed transcripts retain actionable guidan
   assert.equal(speakerProcessingNotice(null), "");
 });
 
+test("low evidence remains visible separately from exhausted identity capacity", () => {
+  const status = { phase: "complete", reason: "limited_evidence", complete: true, unassigned_voices: 0 };
+  assert.match(speakerProcessingNotice(status), /passages.*geen sprekerlabel/);
+  assert.doesNotMatch(speakerProcessingNotice(status), /stemmen zonder label/);
+  assert.match(speakerProcessingNotice({ ...status, phase: "incomplete", unassigned_voices: 2 }), /2 stemmen zonder label/);
+  setInterfaceLanguage("en");
+  assert.match(speakerProcessingNotice(status), /short or unclear passages/);
+});
+
 test("missing and ambiguous Teams evidence never claims that names were applied", () => {
   for (const status of ["unbound", "unavailable", "insufficient_evidence", "conflict"]) {
     assert.ok(voiceNamingNotice({ status, reason: "untrusted payload" }));

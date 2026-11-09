@@ -1466,11 +1466,24 @@ mod tests {
 
     #[test]
     fn naming_and_rerunning_does_not_enroll_a_voice() {
-        let f = fixture(16000);
+        let f = fixture(20 * 16000);
+        let qualified_reply = || RecognitionUploadResponse {
+            status: 200,
+            body: serde_json::json!({
+                "model": EMBEDDING_ID,
+                "turns": [{"start_ms": 0, "end_ms": 12000, "speaker": 0}],
+                "speakers": [{"speaker": 0, "speech_ms": 12000, "embedding": [1.0, 0.0]}],
+            })
+            .to_string(),
+        };
         let job = f
             .engine
             .clone()
-            .start_speaker_recognition(f.id.clone(), f.reader.clone(), Transport::new(Vec::new()))
+            .start_speaker_recognition(
+                f.id.clone(),
+                f.reader.clone(),
+                Transport::new(vec![Ok(qualified_reply())]),
+            )
             .unwrap();
         assert_eq!(settled(&job).stage, SpeakerRecognitionStage::Completed);
         f.engine
@@ -1479,7 +1492,11 @@ mod tests {
         let job = f
             .engine
             .clone()
-            .start_speaker_recognition(f.id.clone(), f.reader.clone(), Transport::new(Vec::new()))
+            .start_speaker_recognition(
+                f.id.clone(),
+                f.reader.clone(),
+                Transport::new(vec![Ok(qualified_reply())]),
+            )
             .unwrap();
         assert_eq!(settled(&job).stage, SpeakerRecognitionStage::Completed);
         assert_eq!(f.engine.meeting_speakers(f.id.clone())[0].name, "Person A");
@@ -2410,7 +2427,15 @@ mod tests {
             .unwrap();
         assert_eq!(settled(&resumed).stage, SpeakerRecognitionStage::Completed);
         assert_eq!(transport.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(f.engine.meeting_transcript(f.id.clone())[0].voice, Some(1));
+        // Confirmed transport work can complete while its short voice evidence stays uncertain.
+        assert_eq!(f.engine.meeting_transcript(f.id.clone())[0].voice, None);
+        let saved = f
+            .engine
+            .meeting_store()
+            .read_transcript_snapshot(&f.id)
+            .unwrap();
+        assert!(!saved.utterances[0].metadata.attribution.turns.is_empty());
+        assert!(saved.utterances[0].metadata.attribution.voices.is_empty());
     }
 
     #[test]

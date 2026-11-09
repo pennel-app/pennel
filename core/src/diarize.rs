@@ -334,6 +334,8 @@ pub(crate) struct DiarizedTrack<'a> {
     pub turns: &'a [SpeakerTurn],
     pub identities: &'a [Identity],
     pub track: Track,
+    /// None is the explicit legacy no-voiceprint path; Some(empty) intentionally admits no IDs.
+    pub eligible_speakers: Option<&'a std::collections::BTreeSet<u32>>,
 }
 
 /// Admit voices from both physical sources before assigning the shared portable IDs. Inference
@@ -347,7 +349,9 @@ fn apply_utterance_tracks(
     Vec<Applied>,
     u32,
 ) {
-    apply_utterance_tracks_with_reserved(before, tracks, &[])
+    let (rows, applications, unassigned, _) =
+        apply_utterance_tracks_with_reserved(before, tracks, &[]);
+    (rows, applications, unassigned)
 }
 
 pub(crate) fn apply_utterance_tracks_with_reserved(
@@ -358,6 +362,7 @@ pub(crate) fn apply_utterance_tracks_with_reserved(
     Vec<crate::meeting_utterances::MeetingUtterance>,
     Vec<Applied>,
     u32,
+    bool,
 ) {
     use std::collections::BTreeSet;
 
@@ -368,6 +373,7 @@ pub(crate) fn apply_utterance_tracks_with_reserved(
         blocked: bool,
     }
 
+    let mut limited_evidence = false;
     let candidates: Vec<Vec<Candidate>> = tracks
         .iter()
         .map(|input| {
@@ -421,6 +427,14 @@ pub(crate) fn apply_utterance_tracks_with_reserved(
                         .filter(|voice| VOICES.contains(voice))
                         .collect();
                     let manual_voice = manual.first().copied().filter(|_| manual.len() == 1);
+                    if manual_voice.is_none()
+                        && input
+                            .eligible_speakers
+                            .is_some_and(|eligible| !eligible.contains(&turn.speaker))
+                    {
+                        limited_evidence = true;
+                        return None;
+                    }
                     let preferred =
                         manual_voice.or_else(|| previous.get(&turn.speaker).copied().flatten());
                     Some(Candidate {
@@ -634,7 +648,7 @@ pub(crate) fn apply_utterance_tracks_with_reserved(
         rows = updated;
         applied.push(result);
     }
-    (rows, applied, unassigned)
+    (rows, applied, unassigned, limited_evidence)
 }
 
 /// Apply actual acoustic turns to exact authoritative spans. Missing word alignment preserves the
@@ -1752,11 +1766,13 @@ mod tests {
             &[mic, first, second],
             &[
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &system,
                     identities: &identities,
                     track: Track::System,
                 },
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &microphone,
                     identities: &identities[..1],
                     track: Track::Microphone,
@@ -1776,11 +1792,13 @@ mod tests {
             &first_pass,
             &[
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &microphone,
                     identities: &identities[..1],
                     track: Track::Microphone,
                 },
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &changed,
                     identities: &identities,
                     track: Track::System,
@@ -1829,11 +1847,13 @@ mod tests {
             &[mic, call],
             &[
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &turns,
                     identities: &identities,
                     track: Track::System,
                 },
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &turns,
                     identities: &identities,
                     track: Track::Microphone,
@@ -1875,11 +1895,13 @@ mod tests {
                 &[retained.clone(), fresh],
                 &[
                     DiarizedTrack {
+                        eligible_speakers: None,
                         turns: &turns,
                         identities: &identities,
                         track: Track::System,
                     },
                     DiarizedTrack {
+                        eligible_speakers: None,
                         turns: &turns,
                         identities: &identities,
                         track: Track::Microphone,
@@ -1918,11 +1940,13 @@ mod tests {
             &original,
             &[
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &existing,
                     identities: &identities,
                     track: Track::System,
                 },
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &existing,
                     identities: &identities,
                     track: Track::Microphone,
@@ -1943,11 +1967,13 @@ mod tests {
             &before,
             &[
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &with_fragment,
                     identities: &identities,
                     track: Track::System,
                 },
                 DiarizedTrack {
+                    eligible_speakers: None,
                     turns: &existing,
                     identities: &identities,
                     track: Track::Microphone,
@@ -1992,6 +2018,7 @@ mod tests {
         let (rows, _, missing) = apply_utterance_tracks(
             &[provisional, new_voice],
             &[DiarizedTrack {
+                eligible_speakers: None,
                 turns: &turns,
                 identities: &identities,
                 track: Track::Microphone,
@@ -2022,6 +2049,7 @@ mod tests {
         let (rows, applied, missing) = apply_utterance_tracks(
             &[row],
             &[DiarizedTrack {
+                eligible_speakers: None,
                 turns: &turns,
                 identities: &identities,
                 track: Track::Microphone,
@@ -2035,6 +2063,94 @@ mod tests {
         assert!(rows[0].metadata.attribution.self_voice);
         assert!(rows[0].metadata.manual.as_ref().unwrap().self_voice);
         assert!(rows[0].metadata.self_voice_profile_fingerprint.is_none());
+    }
+
+    #[test]
+    fn modern_empty_admission_abstains_without_capacity_failures_and_legacy_bypasses() {
+        use crate::meeting_utterances::AttributionKind;
+        let row = timed_row("Word", &[(0, 4, 0, 1_200)]);
+        let turns = [turn(0, 1_200, 0)];
+        let identities = [Identity::Unknown];
+        let empty = std::collections::BTreeSet::new();
+        let (modern, _, unassigned, limited) = apply_utterance_tracks_with_reserved(
+            std::slice::from_ref(&row),
+            &[DiarizedTrack {
+                turns: &turns,
+                identities: &identities,
+                track: Track::Microphone,
+                eligible_speakers: Some(&empty),
+            }],
+            &[],
+        );
+        assert_eq!(unassigned, 0);
+        assert!(limited);
+        assert_eq!(modern[0].segment.voice, None);
+        assert_eq!(
+            modern[0].metadata.attribution.kind,
+            AttributionKind::Unknown
+        );
+        assert_eq!(modern[0].segment.text, row.segment.text);
+        assert_eq!(modern[0].metadata.attribution.turns.len(), 1);
+        let (legacy, _, unassigned, limited) = apply_utterance_tracks_with_reserved(
+            &[row],
+            &[DiarizedTrack {
+                turns: &turns,
+                identities: &identities,
+                track: Track::Microphone,
+                eligible_speakers: None,
+            }],
+            &[],
+        );
+        assert_eq!(unassigned, 0);
+        assert!(!limited);
+        assert_eq!(legacy[0].segment.voice, Some(1));
+    }
+
+    #[test]
+    fn manually_owned_microphone_does_not_consume_identity_slots_or_limit_evidence() {
+        use crate::meeting_utterances::ManualCorrection;
+        let mut owner = timed_row("Owner", &[(0, 5, 0, 1_200)]);
+        owner.metadata.manual = Some(ManualCorrection {
+            self_voice: true,
+            name: None,
+            voice: None,
+            source_fingerprint: owner.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let mut rows = vec![owner];
+        let system_turns: Vec<_> = (0..12).map(|speaker| turn(0, 1_200, speaker)).collect();
+        let mic_turns: Vec<_> = (0..20).map(|speaker| turn(0, 1_200, speaker)).collect();
+        let mut call = timed_row("Call", &[(0, 4, 0, 1_200)]);
+        call.metadata.source_id = Some("system_audio".into());
+        call.metadata.refresh_fingerprints(&call.segment);
+        rows.push(call);
+        let admitted = (0..12).collect();
+        let empty = std::collections::BTreeSet::new();
+        let identities = vec![Identity::Unknown; 20];
+        let (after, applied, unassigned, limited) = apply_utterance_tracks_with_reserved(
+            &rows,
+            &[
+                DiarizedTrack {
+                    turns: &system_turns,
+                    identities: &identities,
+                    track: Track::System,
+                    eligible_speakers: Some(&admitted),
+                },
+                DiarizedTrack {
+                    turns: &mic_turns,
+                    identities: &identities,
+                    track: Track::Microphone,
+                    eligible_speakers: Some(&empty),
+                },
+            ],
+            &[],
+        );
+        assert_eq!(unassigned, 0);
+        assert!(!limited);
+        assert_eq!(applied[0].voices.len(), 12);
+        assert!(applied[1].voices.is_empty());
+        assert_eq!(after[0].segment.speaker, Speaker::Me);
+        assert!(after[0].metadata.manual.as_ref().unwrap().self_voice);
     }
 
     #[test]

@@ -31,6 +31,57 @@ const TOO_LITTLE_SPEECH: &str = "Pennel heard too little speech. Read the whole 
 const NO_VOICEPRINT: &str =
     "Pennel has no voiceprint for this voice. Run speaker recognition for this meeting again.";
 
+struct PreparedTrack {
+    diarization: Diarization,
+    track: Track,
+    eligible_speakers: Option<std::collections::BTreeSet<u32>>,
+}
+
+impl PreparedTrack {
+    fn new(mut diarization: Diarization, track: Track, identity_model: bool) -> Self {
+        let eligible_speakers = identity_model.then(|| {
+            diarization
+                .speakers
+                .iter()
+                .filter_map(|speaker| {
+                    if pennel_speakers::normalized(&speaker.embedding).is_empty() {
+                        return None;
+                    }
+                    let spans = pennel_speakers::voiceprint_spans(
+                        &diarization.turns,
+                        speaker.speaker,
+                        pennel_speakers::VOICEPRINT_BUDGET_MS,
+                    );
+                    let clean_ms: u64 = spans.iter().map(|(start, end)| end - start).sum();
+                    ((spans.len() >= 2 && clean_ms >= 3_000)
+                        || spans
+                            .iter()
+                            .any(|(start, end)| end - start >= pennel_speakers::MIN_ENROLLMENT_MS))
+                    .then_some(speaker.speaker)
+                })
+                .collect::<std::collections::BTreeSet<_>>()
+        });
+        if let Some(eligible) = &eligible_speakers {
+            // Low-evidence prints must not acquire Known/Me authority before admission runs.
+            for speaker in &mut diarization.speakers {
+                if !eligible.contains(&speaker.speaker) {
+                    speaker.embedding.clear();
+                }
+            }
+        }
+        Self {
+            diarization,
+            track,
+            eligible_speakers,
+        }
+    }
+}
+
+struct SpeakerApplication {
+    recognition: SpeakerRecognition,
+    limited_evidence: bool,
+}
+
 pub(crate) fn unavailable() -> PennelError {
     PennelError::InvalidResponse {
         message: UNAVAILABLE.into(),
@@ -406,27 +457,40 @@ impl PennelEngine {
         route: SpeakerRecognitionMode,
         cloud: Option<&crate::cloud::account::Session>,
     ) -> Result<Diarization, PennelError> {
+        self.speaker_diarization_prepared(samples, voiceprints, route, cloud)
+            .map(|(diarization, _)| diarization)
+    }
+
+    fn speaker_diarization_prepared(
+        &self,
+        samples: &[f32],
+        voiceprints: bool,
+        route: SpeakerRecognitionMode,
+        cloud: Option<&crate::cloud::account::Session>,
+    ) -> Result<(Diarization, bool), PennelError> {
         if route == SpeakerRecognitionMode::Cloud {
             return match cloud {
                 Some(session) => crate::cloud::diarize::diarize(session, samples),
                 None => crate::cloud::diarize::diarize(&*self.cloud_session()?, samples),
-            };
+            }
+            .map(|diarization| (diarization, true));
         }
         let models = (
             self.models.path(SEGMENTATION_ID),
             self.models.path(EMBEDDING_ID),
         );
         if let (Some(segmentation), Some(embedding)) = models {
-            return diarize_local(&segmentation, &embedding, samples);
+            return diarize_local(&segmentation, &embedding, samples)
+                .map(|diarization| (diarization, true));
         }
         if !cfg!(feature = "speakers") {
             return Err(unavailable());
         }
         match self.models.path(DIARIZER_ID) {
-            Some(sortformer) if !voiceprints => Ok(from_sortformer(&crate::diarize::diarize(
-                &sortformer,
-                samples,
-            )?)),
+            Some(sortformer) if !voiceprints => Ok((
+                from_sortformer(&crate::diarize::diarize(&sortformer, samples)?),
+                false,
+            )),
             _ => Err(PennelError::ModelNotDownloaded),
         }
     }
@@ -663,6 +727,7 @@ impl PennelEngine {
                     | "unassigned_voices"
                     | "source_changed"
                     | "permission_denied"
+                    | "limited_evidence"
             )
         }) {
             return Err(PennelError::storage(
@@ -908,9 +973,9 @@ impl PennelEngine {
                 } else {
                     Track::from(source)
                 };
-                let diarization =
-                    self.speaker_diarization_selected(&samples, false, route, cloud.as_deref())?;
-                results.push((diarization, track));
+                let (diarization, identity_model) =
+                    self.speaker_diarization_prepared(&samples, false, route, cloud.as_deref())?;
+                results.push(PreparedTrack::new(diarization, track, identity_model));
             }
         }
         if results.is_empty() {
@@ -933,26 +998,41 @@ impl PennelEngine {
                 "The meeting has changed. The speaker names were not replaced.",
             ));
         }
-        let result = self.apply_recognized_tracks_observed(
+        let result = self.apply_prepared_tracks_observed(
             &id,
             results,
             my_voice.as_deref(),
             None,
             |_, _| ensure_current(),
         )?;
+        self.record_recognition_result(&id, route, &result)?;
+        Ok(result.recognition)
+    }
+
+    fn record_recognition_result(
+        &self,
+        id: &str,
+        route: SpeakerRecognitionMode,
+        application: &SpeakerApplication,
+    ) -> Result<(), PennelError> {
+        let result = &application.recognition;
         self.set_meeting_speaker_processing_status(
-            id,
+            id.to_owned(),
             if result.complete {
                 "complete"
             } else {
                 "incomplete"
             }
             .into(),
-            (!result.complete).then(|| "unassigned_voices".into()),
+            if application.limited_evidence {
+                Some("limited_evidence".into())
+            } else {
+                (!result.complete).then(|| "unassigned_voices".into())
+            },
             route,
             result.unassigned_voices,
         )?;
-        Ok(result)
+        Ok(())
     }
 
     pub(crate) fn apply_recognized_speakers_observed(
@@ -964,15 +1044,18 @@ impl PennelEngine {
         job_directory: Option<&Path>,
         before_commit: impl FnOnce(&[crate::Segment], &[crate::SpeakerName]) -> Result<(), PennelError>,
     ) -> Result<SpeakerRecognition, PennelError> {
-        self.apply_recognized_tracks_observed(
+        let application = self.apply_prepared_tracks_observed(
             id,
-            vec![(diarization, track)],
+            vec![PreparedTrack::new(diarization, track, true)],
             my_voice,
             job_directory,
             before_commit,
-        )
+        )?;
+        self.record_recognition_result(id, SpeakerRecognitionMode::Cloud, &application)?;
+        Ok(application.recognition)
     }
 
+    #[cfg(test)]
     fn apply_recognized_tracks_observed(
         &self,
         id: &str,
@@ -981,6 +1064,27 @@ impl PennelEngine {
         job_directory: Option<&Path>,
         before_commit: impl FnOnce(&[crate::Segment], &[crate::SpeakerName]) -> Result<(), PennelError>,
     ) -> Result<SpeakerRecognition, PennelError> {
+        self.apply_prepared_tracks_observed(
+            id,
+            diarizations
+                .into_iter()
+                .map(|(diarization, track)| PreparedTrack::new(diarization, track, false))
+                .collect(),
+            my_voice,
+            job_directory,
+            before_commit,
+        )
+        .map(|application| application.recognition)
+    }
+
+    fn apply_prepared_tracks_observed(
+        &self,
+        id: &str,
+        diarizations: Vec<PreparedTrack>,
+        my_voice: Option<&[f32]>,
+        job_directory: Option<&Path>,
+        before_commit: impl FnOnce(&[crate::Segment], &[crate::SpeakerName]) -> Result<(), PennelError>,
+    ) -> Result<SpeakerApplication, PennelError> {
         let store = self.meeting_store();
         let voices = self.voice_store();
         let original_route = self.settings().speaker_recognition;
@@ -1011,10 +1115,10 @@ impl PennelEngine {
         let mut prints = voices.meeting_voiceprints(&self.meeting_key(id), Some(&old_hash));
         let identities: Vec<_> = diarizations
             .iter()
-            .map(|(diarization, track)| {
+            .map(|prepared| {
                 pennel_speakers::identify(
-                    &diarization.speakers,
-                    my_voice.filter(|_| *track == Track::Microphone),
+                    &prepared.diarization.speakers,
+                    my_voice.filter(|_| prepared.track == Track::Microphone),
                     &known_prints,
                 )
             })
@@ -1022,10 +1126,11 @@ impl PennelEngine {
         let inputs: Vec<_> = diarizations
             .iter()
             .zip(&identities)
-            .map(|((diarization, track), identities)| DiarizedTrack {
-                turns: &diarization.turns,
+            .map(|(prepared, identities)| DiarizedTrack {
+                turns: &prepared.diarization.turns,
                 identities,
-                track: *track,
+                track: prepared.track,
+                eligible_speakers: prepared.eligible_speakers.as_ref(),
             })
             .collect();
         // Public transcript snapshots hide successful-empty completion markers. Their retained
@@ -1056,23 +1161,25 @@ impl PennelEngine {
                     )
             })
             .collect();
-        let (mut after, applications, unassigned_voices) =
+        let (mut after, applications, unassigned_voices, limited_evidence) =
             apply_utterance_tracks_with_reserved(&after, &inputs, &retained_ids);
         let me_found = applications.iter().any(|applied| applied.me_found);
-        for (((diarization, track), identities), applied) in
+        for ((prepared, identities), applied) in
             diarizations.iter().zip(&identities).zip(applications)
         {
+            let diarization = &prepared.diarization;
+            let track = prepared.track;
             let owner_fingerprint = my_voice.map(voice_profile_fingerprint);
             for row in &mut after {
                 let analyzed_source = matches!(
-                    (*track, row.metadata.source_id.as_deref()),
+                    (track, row.metadata.source_id.as_deref()),
                     (Track::Microphone, Some("microphone" | "room_microphone"))
                         | (Track::System, Some("system" | "system_audio"))
                 );
                 if analyzed_source && !row.segment.failed {
                     row.metadata.self_voice_profile_fingerprint =
                         (row.metadata.attribution.self_voice
-                            && *track == Track::Microphone
+                            && track == Track::Microphone
                             && !row
                                 .metadata
                                 .manual
@@ -1143,12 +1250,15 @@ impl PennelEngine {
             .collect();
         present.sort_unstable();
         present.dedup();
-        Ok(SpeakerRecognition {
-            voices: present.len() as u32,
-            named: names.len() as u32,
-            me_found,
-            complete: unassigned_voices == 0,
-            unassigned_voices,
+        Ok(SpeakerApplication {
+            recognition: SpeakerRecognition {
+                voices: present.len() as u32,
+                named: names.len() as u32,
+                me_found,
+                complete: unassigned_voices == 0,
+                unassigned_voices,
+            },
+            limited_evidence,
         })
     }
 }
@@ -1349,9 +1459,12 @@ mod tests {
             .mock("POST", "/v1/audio/diarize")
             .with_body(cloud_result(
                 &[
-                    turn(0, 4_500, 0),
-                    turn(5_000, 9_500, 1),
-                    turn(10_000, 14_000, 2),
+                    turn(0, 2_000, 0),
+                    turn(2_500, 4_500, 0),
+                    turn(5_000, 7_000, 1),
+                    turn(7_500, 9_500, 1),
+                    turn(10_000, 11_500, 2),
+                    turn(12_000, 14_000, 2),
                 ],
                 &[(0, me.clone()), (1, jan.clone()), (2, room.clone())],
             ))
@@ -1446,7 +1559,10 @@ mod tests {
         assert!(engine.wants_microphone_track(Some(&speech(2))));
         let recognition = server
             .mock("POST", "/v1/audio/diarize")
-            .with_body(cloud_result(&[turn(0, 5_000, 0)], &[(0, vec![1.0, 0.0])]))
+            .with_body(cloud_result(
+                &[turn(0, 2_000, 0), turn(2_500, 5_000, 0)],
+                &[(0, vec![1.0, 0.0])],
+            ))
             .create();
         let result = engine
             .recognize_speakers(id.clone(), Some(speech(5)), None)
@@ -1486,7 +1602,10 @@ mod tests {
             .unwrap();
         let first_completed = Arc::new(AtomicBool::new(false));
         let marker = first_completed.clone();
-        let body = cloud_result(&[turn(0, 3_000, 0)], &[(0, vec![1.0, 0.0])]);
+        let body = cloud_result(
+            &[turn(0, 1_500, 0), turn(2_000, 4_000, 0)],
+            &[(0, vec![1.0, 0.0])],
+        );
         let first = server
             .mock("POST", "/v1/audio/diarize")
             .expect(1)
@@ -1498,7 +1617,10 @@ mod tests {
         let second = server
             .mock("POST", "/v1/audio/diarize")
             .expect(1)
-            .with_body(cloud_result(&[turn(0, 3_000, 0)], &[(0, vec![0.0, 1.0])]))
+            .with_body(cloud_result(
+                &[turn(0, 1_500, 0), turn(2_000, 4_000, 0)],
+                &[(0, vec![0.0, 1.0])],
+            ))
             .create();
         let mut order = Vec::new();
         let result = engine
@@ -1507,7 +1629,7 @@ mod tests {
                     assert!(first_completed.load(Ordering::SeqCst));
                 }
                 order.push(source);
-                Ok(Some(speech(3)))
+                Ok(Some(speech(4)))
             })
             .unwrap();
         assert_eq!(order, [Speaker::Others, Speaker::Me]);
@@ -1818,6 +1940,271 @@ mod tests {
                 .unwrap(),
             &empty
         );
+    }
+
+    #[test]
+    fn modern_brief_phantoms_and_weak_old_numbers_cannot_starve_repeated_clean_speech() {
+        use crate::meeting_utterances::{AcousticTurn, AttributionKind, MeetingUtterance};
+        let dir = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
+        let store = engine.meeting_store();
+        let id = store
+            .create("Clean identity admission", chrono::Local::now())
+            .unwrap();
+        let mut rows = Vec::new();
+        let mut turns = Vec::new();
+        let mut speakers = Vec::new();
+        for speaker in 0..13u32 {
+            let start = u64::from(speaker) * 1_000;
+            let end = if speaker == 12 { 17_000 } else { start + 400 };
+            let mut segment = line(
+                start,
+                Speaker::Others,
+                if speaker == 12 {
+                    "Repeated clean speech."
+                } else {
+                    "Yes."
+                },
+            );
+            segment.end_ms = end;
+            segment.voice = (speaker < 12).then_some(speaker + 1);
+            let mut row = MeetingUtterance::new(segment, Some("system_audio".into()));
+            if speaker < 12 {
+                row.metadata.attribution.kind = AttributionKind::Single;
+                row.metadata.attribution.voices = vec![speaker + 1];
+                row.metadata.attribution.turns = vec![AcousticTurn {
+                    start_ms: start,
+                    end_ms: end,
+                    voice: Some(speaker + 1),
+                }];
+                turns.push(turn(start, end, speaker));
+            } else {
+                turns.extend([turn(12_000, 14_000, speaker), turn(15_000, 17_000, speaker)]);
+            }
+            rows.push(row);
+            let mut embedding = vec![0.0; 13];
+            embedding[speaker as usize] = 1.0;
+            speakers.push(Voice {
+                speaker,
+                speech_ms: end - start,
+                embedding,
+            });
+        }
+        store.write_transcript_snapshot(&id, None, &rows).unwrap();
+        let before_text: Vec<_> = rows.iter().map(|row| row.segment.text.clone()).collect();
+        let _edit = engine.edit_meeting(&id).unwrap();
+        let _sync = engine.sync_gate.lock().unwrap();
+        let result = engine
+            .apply_recognized_speakers_observed(
+                &id,
+                Diarization { turns, speakers },
+                Track::System,
+                None,
+                None,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        let after = store.read_transcript_snapshot(&id).unwrap().utterances;
+        assert_eq!(result.voices, 1);
+        assert!(result.complete);
+        assert_eq!(
+            result.unassigned_voices, 0,
+            "intentional low-evidence abstentions are not capacity failures"
+        );
+        assert!(after[..12].iter().all(|row| row.segment.voice.is_none()
+            && row.metadata.attribution.kind == AttributionKind::Unknown));
+        assert_eq!(after[12].segment.voice, Some(1));
+        assert_eq!(
+            engine
+                .meeting_speaker_processing_status(id.clone())
+                .unwrap()
+                .reason
+                .as_deref(),
+            Some("limited_evidence")
+        );
+        assert_eq!(
+            after
+                .iter()
+                .map(|row| row.segment.text.clone())
+                .collect::<Vec<_>>(),
+            before_text
+        );
+    }
+
+    #[test]
+    fn modern_admission_keeps_repeated_speech_and_clear_long_monologues() {
+        let diarization = Diarization {
+            turns: vec![
+                turn(0, 400, 0),
+                turn(1_000, 3_000, 1),
+                turn(4_000, 6_000, 1),
+                turn(7_000, 17_000, 2),
+                turn(18_000, 38_000, 3),
+                turn(39_000, 43_000, 4),
+            ],
+            speakers: (0..5)
+                .map(|speaker| Voice {
+                    speaker,
+                    speech_ms: 20_000,
+                    embedding: vec![1.0, 0.0],
+                })
+                .collect(),
+        };
+        let prepared = PreparedTrack::new(diarization, Track::System, true);
+        assert_eq!(
+            prepared.eligible_speakers.unwrap(),
+            [1, 2, 3].into_iter().collect()
+        );
+        assert!(prepared.diarization.speakers[0].embedding.is_empty());
+        assert!(prepared.diarization.speakers[4].embedding.is_empty());
+        assert_eq!(
+            prepared.diarization.turns.len(),
+            6,
+            "admission must preserve short and uncertain turns"
+        );
+    }
+
+    #[test]
+    fn modern_admission_rejects_missing_zero_nonfinite_and_overlapping_prints() {
+        for embedding in [
+            vec![],
+            vec![0.0, 0.0],
+            vec![f32::NAN, 1.0],
+            vec![f32::INFINITY, 1.0],
+        ] {
+            let prepared = PreparedTrack::new(
+                Diarization {
+                    turns: vec![turn(0, 2_000, 0), turn(3_000, 5_000, 0)],
+                    speakers: vec![Voice {
+                        speaker: 0,
+                        speech_ms: 4_000,
+                        embedding,
+                    }],
+                },
+                Track::System,
+                true,
+            );
+            assert!(prepared.eligible_speakers.unwrap().is_empty());
+            assert!(prepared.diarization.speakers[0].embedding.is_empty());
+        }
+        let prepared = PreparedTrack::new(
+            Diarization {
+                turns: vec![turn(0, 12_000, 0), turn(0, 12_000, 1)],
+                speakers: (0..2)
+                    .map(|speaker| Voice {
+                        speaker,
+                        speech_ms: 12_000,
+                        embedding: vec![1.0, 0.0],
+                    })
+                    .collect(),
+            },
+            Track::System,
+            true,
+        );
+        assert!(
+            prepared.eligible_speakers.unwrap().is_empty(),
+            "overlap cannot establish clean identity duration"
+        );
+    }
+
+    #[test]
+    fn weak_modern_prints_cannot_gain_known_or_self_identity_before_admission() {
+        let prepared = PreparedTrack::new(
+            Diarization {
+                turns: vec![turn(0, 1_200, 0), turn(2_000, 3_200, 1)],
+                speakers: vec![
+                    Voice {
+                        speaker: 0,
+                        speech_ms: 1_200,
+                        embedding: vec![1.0, 0.0],
+                    },
+                    Voice {
+                        speaker: 1,
+                        speech_ms: 1_200,
+                        embedding: vec![0.0, 1.0],
+                    },
+                ],
+            },
+            Track::Microphone,
+            true,
+        );
+        assert_eq!(
+            pennel_speakers::identify(
+                &prepared.diarization.speakers,
+                Some(&[1.0, 0.0]),
+                &[&[0.0, 1.0]]
+            ),
+            [Identity::Unknown, Identity::Unknown]
+        );
+        assert!(prepared.eligible_speakers.unwrap().is_empty());
+    }
+
+    #[test]
+    fn explicit_legacy_mode_does_not_treat_empty_prints_as_modern_identity_evidence() {
+        let diarization = from_sortformer(&[(0, 400, 1)]);
+        let legacy = PreparedTrack::new(diarization.clone(), Track::System, false);
+        let modern = PreparedTrack::new(diarization, Track::System, true);
+        assert!(legacy.eligible_speakers.is_none());
+        assert_eq!(
+            modern.eligible_speakers,
+            Some(std::collections::BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn genuine_manual_identity_survives_modern_low_evidence_abstention() {
+        use crate::meeting_utterances::{AttributionKind, MeetingUtterance};
+        let dir = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
+        let store = engine.meeting_store();
+        let id = store
+            .create("Manual authority", chrono::Local::now())
+            .unwrap();
+        let mut row = MeetingUtterance::new(
+            Segment {
+                end_ms: 400,
+                voice: Some(7),
+                ..line(0, Speaker::Others, "Yes.")
+            },
+            Some("system_audio".into()),
+        );
+        row.metadata.attribution.kind = AttributionKind::Single;
+        row.metadata.attribution.voices = vec![7];
+        store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+        store
+            .rename_speaker(&id, 7, "Explicitly confirmed")
+            .unwrap();
+        let _edit = engine.edit_meeting(&id).unwrap();
+        let _sync = engine.sync_gate.lock().unwrap();
+        let result = engine
+            .apply_recognized_speakers_observed(
+                &id,
+                Diarization {
+                    turns: vec![turn(0, 400, 0)],
+                    speakers: vec![Voice {
+                        speaker: 0,
+                        speech_ms: 400,
+                        embedding: vec![1.0, 0.0],
+                    }],
+                },
+                Track::System,
+                None,
+                None,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(result.voices, 1);
+        assert_eq!(result.named, 1);
+        assert!(result.complete);
+        assert_eq!(result.unassigned_voices, 0);
+        assert_eq!(store.speaker_names(&id), [name(7, "Explicitly confirmed")]);
+        assert_eq!(
+            store.read_transcript_snapshot(&id).unwrap().utterances[0]
+                .segment
+                .voice,
+            Some(7)
+        );
+        assert!(engine.known_voices().is_empty());
     }
 
     #[test]
@@ -2228,7 +2615,12 @@ mod tests {
         server
             .mock("POST", "/v1/audio/diarize")
             .with_body(cloud_result(
-                &[turn(0, 4_500, 0), turn(5_000, 9_500, 1)],
+                &[
+                    turn(0, 2_000, 0),
+                    turn(2_500, 4_500, 0),
+                    turn(5_000, 7_000, 1),
+                    turn(7_500, 9_500, 1),
+                ],
                 &[(0, vec![0.0, 1.0]), (1, vec![-1.0, 0.0])],
             ))
             .create();

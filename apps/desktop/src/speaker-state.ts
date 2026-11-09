@@ -103,6 +103,12 @@ export function recognitionSummary(result: SpeakerRecognition): string {
 export function speakerProcessingNotice(status: SpeakerProcessingStatus | null): string {
   if (!status) return "";
   if (status.reason === "source_changed") return t("meetings.speaker_processing_outdated");
+  if (status.reason === "limited_evidence") {
+    const limited = t("meetings.speaker_processing_limited");
+    return status.unassigned_voices
+      ? `${t("settings.voice.incomplete_count", { count: formatNumber(status.unassigned_voices) })} · ${limited}`
+      : limited;
+  }
   if (status.phase === "incomplete") return status.unassigned_voices
     ? t("settings.voice.incomplete_count", { count: formatNumber(status.unassigned_voices) }) : t("settings.voice.incomplete");
   if (status.phase === "running") return t("meetings.speaker_processing_running");

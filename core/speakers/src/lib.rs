@@ -23,8 +23,10 @@ pub const KNOWN_THRESHOLD: f32 = 0.55;
 /// Joining the per-chunk clusters of one meeting: the same voice in another chunk.
 pub const MERGE_THRESHOLD: f32 = 0.55;
 /// Same-track reconciliation is stricter than matching a remembered voice. It also requires
-/// independent clean turns and forbids merging speakers that overlap in the source.
-pub const FRAGMENT_THRESHOLD: f32 = 0.85;
+/// independent clean turns and forbids merging speakers that overlap in the source. This initial
+/// postmerge policy tolerates measured within-person variation; sparse labeled passages do not
+/// establish whole-recording quality or qualify a different native clustering cutoff.
+pub const FRAGMENT_THRESHOLD: f32 = 0.70;
 /// Shorter enrollment audio gives an unstable voiceprint.
 pub const MIN_ENROLLMENT_MS: u64 = 10_000;
 /// Shorter clean spans do not provide stable identity evidence.
@@ -713,6 +715,116 @@ mod tests {
         source.speakers[2].embedding = unit(&[0.731, 0.682]);
         // Adjacent pairs pass, but the first and last do not. A chain cannot merge all three.
         assert_eq!(reconcile_fragments(source, 0.85).speakers.len(), 2);
+    }
+
+    fn varied_clean_fragments() -> Diarization {
+        Diarization {
+            turns: vec![
+                turn(0, 4_000, 0),
+                turn(5_000, 9_000, 0),
+                turn(10_000, 14_000, 1),
+                turn(15_000, 19_000, 1),
+                turn(20_000, 24_000, 2),
+                turn(25_000, 29_000, 2),
+            ],
+            speakers: vec![
+                speaker(0, &[1.0, 0.0, 0.0]),
+                speaker(1, &[0.74, (1.0f32 - 0.74 * 0.74).sqrt(), 0.0]),
+                speaker(2, &[0.46, 0.0, (1.0f32 - 0.46 * 0.46).sqrt()]),
+            ],
+        }
+    }
+
+    #[test]
+    fn default_fragment_policy_accepts_clean_within_person_variation() {
+        let source = varied_clean_fragments();
+        assert!(
+            (cosine(&source.speakers[0].embedding, &source.speakers[1].embedding) - 0.74).abs()
+                < 1e-6
+        );
+        assert!(cosine(&source.speakers[0].embedding, &source.speakers[2].embedding) <= 0.460_001);
+        assert!(cosine(&source.speakers[1].embedding, &source.speakers[2].embedding) <= 0.460_001);
+        // The earlier cutoff rejected this supported variation; a negative actor stays distinct.
+        assert_eq!(reconcile_fragments(source.clone(), 0.85).speakers.len(), 3);
+        let result = reconcile_fragments(source, FRAGMENT_THRESHOLD);
+        assert_eq!(result.speakers.len(), 2);
+        assert_eq!(
+            result
+                .turns
+                .iter()
+                .map(|turn| turn.speaker)
+                .collect::<Vec<_>>(),
+            [0, 0, 0, 0, 1, 1]
+        );
+    }
+
+    #[test]
+    fn default_fragment_policy_retains_overlap_despite_similar_clean_voiceprints() {
+        let mut source = varied_clean_fragments();
+        source.turns.push(turn(1_000, 1_500, 1));
+        for id in [0, 1] {
+            let clean = voiceprint_spans(&source.turns, id, VOICEPRINT_BUDGET_MS);
+            assert!(clean.len() >= 2);
+            assert!(clean.iter().map(|(start, end)| end - start).sum::<u64>() >= 3_000);
+        }
+        assert_eq!(
+            reconcile_fragments(source, FRAGMENT_THRESHOLD)
+                .speakers
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn default_fragment_policy_requires_repeated_sufficient_clean_speech() {
+        let mut one_turn = varied_clean_fragments();
+        one_turn.turns.retain(|turn| turn.speaker != 1);
+        one_turn.turns.push(turn(10_000, 18_000, 1));
+        assert_eq!(
+            reconcile_fragments(one_turn, FRAGMENT_THRESHOLD)
+                .speakers
+                .len(),
+            3
+        );
+
+        let mut too_little = varied_clean_fragments();
+        for turn in too_little.turns.iter_mut().filter(|turn| turn.speaker == 1) {
+            turn.end_ms = turn.start_ms + 1_400;
+        }
+        assert_eq!(
+            reconcile_fragments(too_little, FRAGMENT_THRESHOLD)
+                .speakers
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn default_fragment_policy_rejects_a_centroid_bridge_between_distinct_endpoints() {
+        let mut source = varied_clean_fragments();
+        let adjacent = 0.9f32;
+        let perpendicular = (1.0 - adjacent * adjacent).sqrt();
+        source.speakers[0].embedding = unit(&[1.0, 0.0]);
+        source.speakers[1].embedding = unit(&[adjacent, perpendicular]);
+        source.speakers[2].embedding = unit(&[
+            2.0 * adjacent * adjacent - 1.0,
+            2.0 * adjacent * perpendicular,
+        ]);
+        assert!(
+            cosine(&source.speakers[0].embedding, &source.speakers[1].embedding)
+                > FRAGMENT_THRESHOLD
+        );
+        assert!(
+            cosine(&source.speakers[1].embedding, &source.speakers[2].embedding)
+                > FRAGMENT_THRESHOLD
+        );
+        assert!(cosine(&source.speakers[0].embedding, &source.speakers[2].embedding) < 0.70);
+        assert_eq!(
+            reconcile_fragments(source, FRAGMENT_THRESHOLD)
+                .speakers
+                .len(),
+            2
+        );
     }
 
     #[test]

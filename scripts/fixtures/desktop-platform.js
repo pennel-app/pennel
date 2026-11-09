@@ -1407,6 +1407,8 @@
         : { voices: 2, named: 1, me_found: false, complete: true, unassigned_voices: 0 };
       case "speaker_processing_status": return options.speaker_overflow
         ? { phase: "incomplete", reason: "unassigned_voices", route: "local", model_ids: speakerModels.map(model => model.id), complete: false, unassigned_voices: 3 }
+        : options.speaker_limited
+        ? { phase: "complete", reason: "limited_evidence", route: "local", model_ids: speakerModels.map(model => model.id), complete: true, unassigned_voices: 0 }
         : null;
       case "confirm_meeting_microphone_owner":
         for (const segment of transcript) if (segment.source_id === "microphone") {
