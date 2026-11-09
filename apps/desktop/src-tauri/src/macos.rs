@@ -514,6 +514,16 @@ pub struct MeetingSpeakers {
     #[serde(default)]
     pub participants: Vec<String>,
     pub speaking: Vec<String>,
+    #[serde(default)]
+    pub process_id: Option<u32>,
+    #[serde(default)]
+    pub process_started_at_ms: Option<u64>,
+    #[serde(default)]
+    pub window_id: Option<String>,
+    #[serde(default)]
+    pub unavailable_reason: Option<String>,
+    #[serde(default)]
+    pub duplicate_names: bool,
 }
 
 /// Blocks for tens of milliseconds while the meeting app's interface is read; call it off the main thread.

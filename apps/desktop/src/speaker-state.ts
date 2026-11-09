@@ -1,5 +1,5 @@
 import { t, formatDateTime, formatNumber, localizeBackendText } from "./i18n.ts";
-import type { ModelState, SpeakerRecognition, VoiceProfile } from "./api";
+import type { ModelState, SpeakerProcessingStatus, SpeakerRecognition, VoiceNaming, VoiceProfile } from "./api";
 
 /** Catalogue sizes of the two speaker models, used until the first progress event reports a total. */
 export const speakerModelSizes: Record<string, number> = {
@@ -94,5 +94,38 @@ export function recognitionSummary(result: SpeakerRecognition): string {
   const parts = [result.voices ? t(result.voices === 1 ? "settings.voice.found_one" : "settings.voice.found_many", { count: formatNumber(result.voices) }) : t("settings.voice.found_none")];
   if (result.named) parts.push(t("settings.voice.named", { count: formatNumber(result.named) }));
   if (result.me_found) parts.push(t("settings.voice.me_found"));
+  if (result.complete === false) parts.push(result.unassigned_voices
+    ? t("settings.voice.incomplete_count", { count: formatNumber(result.unassigned_voices) })
+    : t("settings.voice.incomplete"));
   return parts.join(" · ");
+}
+
+export function speakerProcessingNotice(status: SpeakerProcessingStatus | null): string {
+  if (!status) return "";
+  if (status.reason === "source_changed") return t("meetings.speaker_processing_outdated");
+  if (status.phase === "incomplete") return status.unassigned_voices
+    ? t("settings.voice.incomplete_count", { count: formatNumber(status.unassigned_voices) }) : t("settings.voice.incomplete");
+  if (status.phase === "running") return t("meetings.speaker_processing_running");
+  if (status.phase === "failed") return t("meetings.speaker_processing_failed");
+  if (status.phase === "unavailable") return t("meetings.speaker_processing_unavailable");
+  if (status.phase === "skipped") return t("meetings.speaker_processing_skipped");
+  if (status.phase === "outdated") return t("meetings.speaker_processing_outdated");
+  return "";
+}
+
+export function voiceNamingNotice(naming: VoiceNaming | null): string {
+  if (naming?.reason === "consent_revoked") return t("meetings.teams_names_revoked");
+  if (naming?.reason === "ambiguous_call") return t("meetings.teams_names_ambiguous_call");
+  switch (naming?.status) {
+    case "disabled": return t("meetings.teams_names_disabled");
+    case "unsupported": return t("meetings.teams_names_unsupported");
+    case "permission_denied": return t("meetings.teams_names_permission");
+    case "unavailable": return t("meetings.teams_names_unavailable");
+    case "unbound": return t("meetings.teams_names_unbound");
+    case "insufficient_evidence": return t("meetings.teams_names_insufficient");
+    case "conflict": return t("meetings.teams_names_conflict");
+    case "automatic_ready": return t("meetings.teams_names_ready");
+    case "applied": return t("meetings.teams_names_applied");
+    default: return "";
+  }
 }

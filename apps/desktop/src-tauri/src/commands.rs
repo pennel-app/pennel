@@ -286,8 +286,38 @@ fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> R
         );
     }
     let previous = old_settings.hotkey;
+    let revoke_speaker_evidence =
+        old_settings.meeting_app_speakers && !settings.meeting_app_speakers;
     shared.engine.update_settings(settings).map_err(err)?;
     drop(recording);
+    if revoke_speaker_evidence {
+        let id = shared
+            .meeting_context
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|context| {
+                context.speaker_evidence.as_ref().map(|sampler| {
+                    sampler.disable();
+                    context.session.id()
+                })
+            });
+        if let Some(id) = id {
+            let disabled = pennel_core::AppSpeakerEvidence {
+                app_id: crate::meeting_speaker_evidence::TEAMS.into(),
+                availability: pennel_core::AppEvidenceAvailability::Disabled,
+                unavailable_reason: Some("consent_revoked".into()),
+                ..Default::default()
+            };
+            if shared
+                .engine
+                .set_meeting_app_speaker_evidence(&id, disabled)
+                .is_err()
+            {
+                LOG.error("Teams observation stopped, but its disabled status could not be saved.");
+            }
+        }
+    }
     let hotkey = shared.settings().hotkey;
     if hotkey != previous {
         let listener = shared.hotkey.lock().unwrap().clone();
@@ -1513,6 +1543,42 @@ pub async fn diarize_meeting(
     let _ = app.emit("library-changed", ());
     crate::cloud::poke(&app);
     Ok(recognition)
+}
+
+#[tauri::command]
+pub async fn confirm_meeting_microphone_owner(
+    id: String,
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<()> {
+    let shared = shared.inner().clone();
+    off_main("confirm_meeting_microphone_owner", move || {
+        let _library_job = meeting_runtime::LibraryJob::new(&shared)?;
+        checked_meeting_dir(&shared.engine, &id)?;
+        require_inactive_meeting(&shared, &id)?;
+        shared
+            .engine
+            .confirm_meeting_microphone_owner(id)
+            .map(|_| ())
+            .map_err(err)
+    })
+    .await?;
+    let _ = app.emit("library-changed", ());
+    crate::cloud::poke(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn speaker_processing_status(
+    id: String,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<Option<pennel_core::SpeakerProcessingStatus>> {
+    let shared = shared.inner().clone();
+    off_main("speaker_processing_status", move || {
+        checked_meeting_dir(&shared.engine, &id)?;
+        Ok(shared.engine.meeting_speaker_processing_status(id))
+    })
+    .await
 }
 
 #[derive(Serialize)]

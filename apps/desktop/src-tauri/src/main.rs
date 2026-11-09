@@ -1228,6 +1228,8 @@ fn main() {
             commands::delete_template,
             commands::rename_speaker,
             commands::diarize_meeting,
+            commands::confirm_meeting_microphone_owner,
+            commands::speaker_processing_status,
             commands::speaker_setup,
             commands::start_voice_enrollment,
             commands::finish_voice_enrollment,

@@ -346,6 +346,11 @@ public func meetingSpeakersSnapshot(_ rawAppId: UnsafePointer<CChar>?) -> Unsafe
         "available": snapshot.available,
         "participants": snapshot.participants,
         "speaking": snapshot.speaking,
+        "process_id": (snapshot.processId as Any?) ?? NSNull(),
+        "process_started_at_ms": (snapshot.processStartedAtMs as Any?) ?? NSNull(),
+        "window_id": (snapshot.windowId as Any?) ?? NSNull(),
+        "unavailable_reason": (snapshot.unavailableReason as Any?) ?? NSNull(),
+        "duplicate_names": snapshot.duplicateNames,
     ] as [String: Any])
 }
 

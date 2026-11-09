@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import PennelMacPlatform
 
 private struct Node: ParticipantNode {
@@ -6,6 +7,8 @@ private struct Node: ParticipantNode {
     var label = ""
     var text = ""
     var domClasses: [String] = []
+    var identifier = ""
+    var selected = false
     var children: [Node] = []
 }
 
@@ -64,6 +67,23 @@ final class MeetingSpeakerObserverTests: XCTestCase {
         XCTAssertEqual(snapshot.speaking, [])
     }
 
+    func testIgnoresDutchOwnVideoLabels() {
+        let snapshot = TeamsParticipantParser.snapshot(windows: [window(
+            tile("Mijn video, Ann, microfoon aan, video is ingeschakeld", ring: speakingRing, role: "AXImage"),
+            tile("Bert Jacobs, video is ingeschakeld", shown: "Bert Jacobs", ring: idleRing)
+        )])
+        XCTAssertEqual(snapshot.participants, ["Bert Jacobs"])
+        XCTAssertEqual(snapshot.speaking, [])
+    }
+
+    func testDuplicateDisplayNamesAreFlaggedInsteadOfCollapsedAsOnePerson() {
+        let snapshot = TeamsParticipantParser.snapshot(windows: [window(
+            tile("Ann, video is on", shown: "Ann", ring: speakingRing),
+            tile("ann, video is off", shown: "ann", ring: idleRing)
+        )])
+        XCTAssertTrue(snapshot.duplicateNames)
+    }
+
     func testMergesTheCompactAndFullMeetingWindows() {
         let compact = window(tile("Ann Peeters, video is on", ring: speakingRing))
         let full = window(
@@ -113,5 +133,129 @@ final class MeetingSpeakerMergeTests: XCTestCase {
         )
 
         XCTAssertEqual(merged, MeetingSpeakerSnapshot(available: true, participants: ["Ann", "Bert", "Cas"], speaking: ["Ann", "Cas"]))
+    }
+}
+
+
+final class MeetingSpeakerWindowTests: XCTestCase {
+    private func window(pid: Int, number: Int, x: Double = 10, onScreen: Bool = true) -> [String: Any] {
+        [
+            kCGWindowOwnerPID as String: pid,
+            kCGWindowNumber as String: number,
+            kCGWindowIsOnscreen as String: onScreen,
+            kCGWindowLayer as String: 0,
+            kCGWindowAlpha as String: 1.0,
+            kCGWindowBounds as String: ["X": x, "Y": 20.0, "Width": 800.0, "Height": 600.0],
+        ]
+    }
+
+    func testVisibilityRequiresTheSameProcessAndWindowBounds() {
+        let bounds = CGRect(x: 10, y: 20, width: 800, height: 600)
+        XCTAssertEqual(MeetingSpeakerObserver.visibleWindowNumber(pid: 42, bounds: bounds, windows: [window(pid: 42, number: 7)]), 7)
+        XCTAssertNil(MeetingSpeakerObserver.visibleWindowNumber(pid: 42, bounds: bounds, windows: [window(pid: 43, number: 7)]))
+        XCTAssertNil(MeetingSpeakerObserver.visibleWindowNumber(pid: 42, bounds: bounds, windows: [window(pid: 42, number: 7, x: 100)]))
+        XCTAssertNil(MeetingSpeakerObserver.visibleWindowNumber(pid: 42, bounds: bounds, windows: [window(pid: 42, number: 7, onScreen: false)]))
+    }
+
+    func testCompletelyCoveredWindowsAreUnavailableWithoutReadingTheirContents() {
+        let bounds = CGRect(x: 10, y: 20, width: 800, height: 600)
+        let cover = window(pid: 55, number: 8)
+        let target = window(pid: 42, number: 7)
+        XCTAssertNil(MeetingSpeakerObserver.visibleWindowNumber(pid: 42, bounds: bounds, windows: [cover, target]))
+        XCTAssertEqual(MeetingSpeakerObserver.visibleWindowNumber(pid: 42, bounds: bounds, windows: [target, cover]), 7)
+    }
+
+    func testAmbiguousSameSizedWindowsAreUnavailable() {
+        let bounds = CGRect(x: 10, y: 20, width: 800, height: 600)
+        XCTAssertNil(MeetingSpeakerObserver.visibleWindowNumber(pid: 42, bounds: bounds, windows: [window(pid: 42, number: 7), window(pid: 42, number: 8)]))
+    }
+}
+
+
+final class MeetingSpeakerCallAssociationTests: XCTestCase {
+    private func callWindow(_ name: String) -> Node {
+        window(tile("\(name), video is on", shown: name))
+    }
+
+    private func chatWindow() -> Node {
+        window(
+            Node(role: "AXTabGroup", identifier: "app-bar", children: [
+                Node(role: "AXTab", identifier: "chat-button", selected: true),
+                Node(role: "AXTab", identifier: "activity-button"),
+                Node(role: "AXTab", identifier: "calendar-button"),
+            ]),
+            Node(role: "AXMenuItem", label: "Ann Peeters, Available"),
+            Node(role: "AXImage", label: "Bert Jacobs, Away"),
+            Node(role: "AXTextArea", text: "Private conversation body")
+        )
+    }
+
+    func testTwoDistinctCallsAreAmbiguousEvenWithOneFocused() {
+        let windows = [callWindow("Ann"), callWindow("Bert")]
+        let states = windows.enumerated().map { offset, node in
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(node), focused: offset == 0)
+        }
+        XCTAssertEqual(MeetingSpeakerObserver.callAssociationReason(states), "ambiguous_call")
+    }
+
+    func testMinimizedOrCoveredCompetingCallStillMakesAudioAssociationAmbiguous() {
+        let focused = TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(callWindow("Ann")), focused: true)
+        for competing in [
+            TeamsCallWindowState(kind: .call, minimized: true, visible: false),
+            TeamsCallWindowState(kind: .call, visible: false),
+        ] {
+            XCTAssertEqual(MeetingSpeakerObserver.callAssociationReason([focused, competing]), "ambiguous_call")
+        }
+    }
+
+    func testOrdinaryChatAndMainWindowDoNotBecomeCallsFromCommaLabels() {
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(chatWindow()), .other)
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(callWindow("Ann")), .call)
+        let states = [
+            TeamsCallWindowState(kind: .call, focused: true),
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(chatWindow()), visible: false),
+        ]
+        XCTAssertNil(MeetingSpeakerObserver.callAssociationReason(states))
+        XCTAssertFalse(TeamsParticipantParser.snapshot(windows: [chatWindow()]).available)
+    }
+
+    func testUnreadableOrUnclassifiedCompetingWindowBlocksAutomaticAssociation() {
+        let states = [
+            TeamsCallWindowState(kind: .call, focused: true),
+            TeamsCallWindowState(kind: .unreadable, minimized: true, visible: false),
+        ]
+        XCTAssertEqual(MeetingSpeakerObserver.callAssociationReason(states), "ambiguous_call")
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(Node(role: "AXWindow")), .unreadable)
+    }
+
+    func testGenericCompleteControlTreeIsAnUnclassifiedPossibleSecondCall() {
+        let compactAudioCall = window(
+            Node(role: "AXButton", label: "Audio control"),
+            Node(role: "AXButton", label: "More options")
+        )
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(compactAudioCall), .unreadable)
+        let states = [
+            TeamsCallWindowState(kind: .call, focused: true),
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(compactAudioCall), visible: false),
+        ]
+        XCTAssertEqual(MeetingSpeakerObserver.callAssociationReason(states), "ambiguous_call")
+    }
+
+    func testNavigationRoleOrIdentifierAloneDoesNotProveANonCallWindow() {
+        for navigation in [
+            Node(role: "AXTabGroup", children: [Node(role: "AXButton", label: "Chat")]),
+            Node(role: "AXTabGroup", identifier: "app-bar", children: [Node(role: "AXTab", identifier: "chat-button")]),
+            Node(role: "AXGroup", identifier: "not-app-navigation", children: [Node(role: "AXTab", identifier: "chat-button", selected: true)]),
+        ] {
+            XCTAssertEqual(TeamsParticipantParser.callWindowKind(window(navigation)), .unreadable)
+        }
+    }
+
+    func testSameCallCompactAndFullViewsRemainAmbiguousWithoutAnIndependentCallIdentity() {
+        let states = [
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(callWindow("Ann")), focused: true),
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(callWindow("Ann"))),
+        ]
+        XCTAssertEqual(MeetingSpeakerObserver.callAssociationReason(states), "ambiguous_call")
     }
 }

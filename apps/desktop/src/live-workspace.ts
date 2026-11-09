@@ -21,7 +21,7 @@ import { meetingExportPreview } from "./meeting-export-preview";
 import { meetingWorkspaceTools } from "./meeting-workspace-tools";
 import { sourceRange, transcriptSourceBlocks } from "./source-navigation";
 import { icon } from "./icons";
-import { FailedRecoveryContextError, FailedTranscriptionRecovery } from "./failed-transcription-recovery";
+import { FailedRecoveryContextError, FailedTranscriptionRecovery, transcriptDisplayText } from "./failed-transcription-recovery";
 import "./meeting-workspace.css";
 
 interface LiveWorkspace {
@@ -688,7 +688,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       const segment = next.get(key);
       if (!segment) return true;
       if (selected.some(range => range.intersectsNode(row.body))
-        && row.body.textContent !== (segment.failed ? t("meetings.transcription_failed") : segment.text)) return true;
+        && row.body.textContent !== transcriptDisplayText(segment)) return true;
       if (selected.some(range => range.intersectsNode(row.speaker)) && row.speaker.textContent !== String(speakerUiLabel(segment))) return true;
       if (selected.some(range => range.intersectsNode(row.provisional))
         && row.provisional.hidden !== (segment.attribution?.provisional !== true || !!segment.confirmed_speaker_name)) return true;
@@ -718,7 +718,11 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       const key = keys[index];
       let row = rows.get(key);
       if (!row) {
-        const body = h("div", { class: "transcript-copy" }, segment.failed ? l("meetings.transcription_failed") : segment.text);
+        const body = h("div", { class: "transcript-copy" }, transcriptDisplayText(segment));
+        bindLocalization(body, () => {
+          const text = transcriptDisplayText(rows.get(key)?.segment ?? segment);
+          if (body.textContent !== text) body.textContent = text;
+        });
         const stamp = h("button", { class: "transcript-stamp text-button", onclick: () => {
           const current = rows.get(key)?.segment;
           if (!current || !finalized) return;
@@ -739,7 +743,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
         row = { element, body, speaker, stamp, provisional, correction, segment };
         rows.set(key, row);
       } else if (!sameSegment(row.segment, segment)) {
-        if (row.segment.text !== segment.text || row.segment.failed !== segment.failed) row.body.textContent = segment.failed ? t("meetings.transcription_failed") : segment.text;
+        if (row.segment.text !== segment.text || row.segment.failed !== segment.failed) row.body.textContent = transcriptDisplayText(segment);
         row.segment = segment;
       }
       const label = String(speakerUiLabel(segment, reviewDetail ?? undefined));

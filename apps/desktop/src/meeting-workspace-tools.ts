@@ -1,4 +1,4 @@
-import { api, listen, type MeetingDetail, type MeetingRetranscriptionStatus, type MeetingTemplate, type MeetingVoice, type SpeakerSetup, type VoiceNameCandidate, type VoiceNameSuggestion } from "./api";
+import { api, listen, type MeetingDetail, type MeetingRetranscriptionStatus, type MeetingTemplate, type MeetingVoice, type SpeakerProcessingStatus, type SpeakerSetup, type VoiceNameCandidate, type VoiceNameSuggestion, type VoiceNaming } from "./api";
 import type { Context } from "./main";
 import { bindLocalization, l, localizeBackendText, t } from "./i18n";
 import { askText, askTextWithSwitch, confirmDialog, controlButton, errorText, h, select, type NameChoice } from "./dom";
@@ -6,7 +6,7 @@ import { frozenRecognitionLabel } from "./recording-processing";
 import { retranscriptionControl, retranscriptionPercent } from "./meeting-retranscription";
 import { attributionEditable, attributionNoticeKey } from "./meeting-source";
 import { templateUiLabel } from "./meeting-labels";
-import { recognitionSummary } from "./speaker-state";
+import { recognitionSummary, speakerProcessingNotice, voiceNamingNotice } from "./speaker-state";
 import { summaryAutomationChoice } from "./meeting-summary-automation";
 
 const toolLabels = {
@@ -31,6 +31,7 @@ export function meetingWorkspaceTools(initial: Context, host: {
 }) {
   let ctx = initial, detail: MeetingDetail | null = null, setup: SpeakerSetup | null = null;
   let busy = false, voices: MeetingVoice[] = [], candidates: VoiceNameCandidate[] = [], templates: MeetingTemplate[] = [], binding = 0;
+  let speakerProcessing: SpeakerProcessingStatus | null = null, namingState: VoiceNaming | null = null;
   let activeTool: MeetingTool = "template", readRevision = 0;
   const messages = new Map<MeetingTool, ToolStatus>();
   let templateChoice: ReturnType<typeof select> | null = null;
@@ -38,6 +39,8 @@ export function meetingWorkspaceTools(initial: Context, host: {
   const template = h("div", { class: "meeting-template-choice" });
   const voiceList = h("div", { class: "meeting-voice-list" });
   const recognizeReason = h("p", { class: "help" });
+  const speakerProgress = h("p", { class: "help meeting-speaker-processing", role: "status", hidden: true });
+  const namingNotice = h("p", { class: "help meeting-speaker-naming", role: "status", hidden: true });
   const reprocessReason = h("p", { class: "help" });
   const reprocessProgress = h("p", { class: "help meeting-message meeting-retranscription-status", role: "status", hidden: true });
   const reprocessPlan = h("p", { class: "help meeting-retranscription-plan" });
@@ -49,6 +52,16 @@ export function meetingWorkspaceTools(initial: Context, host: {
     if (!owns(owner)) return;
     await host.refresh(); await refresh();
   }); } }, l("meetings.recognize_speakers"));
+  const microphoneOwner = controlButton({ class: "btn", onclick: () => { void run(async owner => {
+    await host.flush();
+    if (!owns(owner)) return;
+    if (!await confirmDialog(l("meetings.microphone_owner_title"), l("meetings.microphone_owner_confirm"), l("meetings.microphone_owner_action"))) return;
+    if (!owns(owner)) return;
+    await api.confirmMicrophoneOwner(owner.id);
+    setStatus(owner, { text: t("meetings.microphone_owner_done"), error: false, source: "action" });
+    if (!owns(owner)) return;
+    await host.refresh(); await refresh();
+  }); } }, l("meetings.microphone_owner"));
   const reprocess = controlButton({ class: "btn", onclick: () => { void run(async owner => {
     await host.flush();
     if (!owns(owner)) return;
@@ -83,7 +96,7 @@ export function meetingWorkspaceTools(initial: Context, host: {
   const root = h("section", { class: "meeting-workspace-tools" }, back, heading, status,
     h("section", { "data-meeting-tool": "people" }, h("h3", {}, l("meetings.workspace_people")), host.people),
     h("section", { "data-meeting-tool": "speakers" }, h("h3", {}, l("meetings.workspace_speaker_controls")), host.speakers,
-      recognizeReason, h("div", { class: "row" }, recognize, speakerSetup), voiceList),
+      recognizeReason, h("div", { class: "row" }, recognize, speakerSetup, microphoneOwner), speakerProgress, namingNotice, voiceList),
     h("section", { "data-meeting-tool": "template" }, h("h3", {}, l("meetings.summary_template_change")),
       h("p", { class: "help" }, l("meetings.tools_templates_help")), template),
     h("section", { "data-meeting-tool": "automation" }, automation.root),
@@ -143,6 +156,11 @@ export function meetingWorkspaceTools(initial: Context, host: {
     const reason = speakerReason(); recognizeReason.textContent = reason; recognizeReason.hidden = !reason;
     recognize.disabled = busy || !!reason || !!detail?.retranscription_status?.running; recognize.title = reason;
     speakerSetup.hidden = !reason;
+    microphoneOwner.disabled = busy || !host.finished() || !!detail?.retranscription_status?.running || !detail || !attributionEditable(detail.metadata_status)
+      || !detail.audio_tracks.some(track => track.source_id === "microphone" && track.available);
+    microphoneOwner.title = microphoneOwner.disabled ? t("meetings.microphone_owner_unavailable") : "";
+    speakerProgress.textContent = speakerProcessingNotice(speakerProcessing); speakerProgress.hidden = !speakerProgress.textContent;
+    namingNotice.textContent = voiceNamingNotice(namingState); namingNotice.hidden = !namingNotice.textContent;
     const control = detail ? retranscriptionControl(detail.retranscription_plan, detail.retranscription_status, !host.finished(), busy) : null;
     const metadata = detail && !attributionEditable(detail.metadata_status) && attributionNoticeKey(detail.metadata_status);
     const reasonText = !host.finished() ? t("meetings.tools_no_recording") : metadata ? t(metadata) : control?.reason ? localizeBackendText(control.reason) : "";
@@ -166,10 +184,11 @@ export function meetingWorkspaceTools(initial: Context, host: {
     const selected = value.section, target = value.id;
     try {
       if (host.finished() && ["speakers", "transcription", "files"].includes(selected)) {
-        const [saved, speaker, loadedVoices, loadedSuggestions] = await Promise.allSettled([api.meetingDetail(target),
+        const [saved, speaker, loadedVoices, loadedSuggestions, loadedProcessing] = await Promise.allSettled([api.meetingDetail(target),
           selected === "speakers" ? api.speakerSetup() : Promise.resolve(null),
           selected === "speakers" ? api.meetingVoices(target) : Promise.resolve(null),
-          selected === "speakers" ? api.meetingVoiceNaming(target) : Promise.resolve(null)]);
+          selected === "speakers" ? api.meetingVoiceNaming(target) : Promise.resolve(null),
+          selected === "speakers" ? api.speakerProcessingStatus(target) : Promise.resolve(null)]);
         if (!current()) return;
         if (saved.status === "fulfilled") detail = saved.value; else throw saved.reason;
         if (speaker.status === "rejected") throw speaker.reason;
@@ -178,6 +197,8 @@ export function meetingWorkspaceTools(initial: Context, host: {
         if (loadedVoices.status === "fulfilled" && loadedVoices.value) voices = loadedVoices.value;
         // Suggestions and candidates are optional; failing to read them never blocks naming voices.
         const naming = loadedSuggestions.status === "fulfilled" && loadedSuggestions.value ? loadedSuggestions.value : { suggestions: [], candidates: [] };
+        namingState = naming;
+        speakerProcessing = loadedProcessing.status === "fulfilled" ? loadedProcessing.value : null;
         candidates = naming.candidates;
         const suggested = (voice: MeetingVoice) => voice.name ? undefined : naming.suggestions.find(entry => entry.voice === voice.voice);
         const personName = (voice: MeetingVoice) => { const suggestion = suggested(voice); return suggestion?.shared_device ? undefined : suggestion?.name; };

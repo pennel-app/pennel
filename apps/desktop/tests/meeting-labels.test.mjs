@@ -5,6 +5,15 @@ import { dayGroup, meetingDate, sourceSpeakerLabel, speakerLabel, speakerUiLabel
 
 const others = { speaker: "others", voice: 2 };
 
+test("automatic names retain their origin and manual names take precedence", () => {
+  setInterfaceLanguage("en");
+  const segment = { ...others, automatic_speaker_name: "Sam", attribution: { kind: "single", voices: [2], self_voice: false, provisional: false } };
+  assert.equal(String(speakerUiLabel(segment)), "Sam (Teams estimate)");
+  assert.equal(String(speakerUiLabel({ ...segment, confirmed_speaker_name: "Manual name" })), "Manual name");
+  assert.notEqual(String(speakerUiLabel({ ...segment, attribution: { ...segment.attribution, kind: "mixed" } })), "Sam (Teams estimate)");
+  assert.equal(sourceSpeakerLabel(segment), "Anderen 2");
+});
+
 test("interface speaker names switch while source prefixes remain stable", () => {
   const label = speakerUiLabel(others);
   setInterfaceLanguage("nl");

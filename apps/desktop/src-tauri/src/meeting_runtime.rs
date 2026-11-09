@@ -278,6 +278,13 @@ pub fn start(
     detected_app: Option<String>,
     attendees: Vec<String>,
 ) -> Result<String, String> {
+    let detected_app = detected_app.or_else(|| {
+        shared
+            .settings()
+            .meeting_app_speakers
+            .then(crate::call_detection::current_recording_app)
+            .flatten()
+    });
     // A manual start still records who was invited, so voices can be named after them later.
     let (attendees, calendar_context) =
         if attendees.is_empty() && shared.settings().calendar_enabled {
@@ -391,7 +398,7 @@ pub fn start_with_calendar(
     let recorder = match MeetingRecorder::start(
         session.clone(),
         title,
-        detected_app,
+        detected_app.clone(),
         settings.echo_cancellation,
         shared.engine.clone(),
         &shared.version,
@@ -423,12 +430,33 @@ pub fn start_with_calendar(
         }
     };
     let system_audio = recorder.has_system_audio();
+    let recording_metadata = shared
+        .engine
+        .meeting_recording_metadata(id.clone())
+        .ok()
+        .flatten();
     if let Some(context) = shared.meeting_context.lock().unwrap().as_mut() {
         context.started = recorder.started_at();
-        context.speaker_evidence = settings
-            .meeting_app_speakers
-            .then(|| crate::meeting_speaker_evidence::EvidenceSampler::start(recorder.started_at()))
-            .flatten();
+        context.speaker_evidence = if settings.meeting_app_speakers {
+            recording_metadata.as_ref().and_then(|recording| {
+                crate::meeting_speaker_evidence::EvidenceSampler::start(
+                    recorder.started_at(),
+                    detected_app.as_deref(),
+                    &recording.meeting_uid,
+                    &recording.started_at,
+                    {
+                        let owner = Arc::downgrade(shared);
+                        Arc::new(move || {
+                            owner
+                                .upgrade()
+                                .is_some_and(|shared| shared.settings().meeting_app_speakers)
+                        })
+                    },
+                )
+            })
+        } else {
+            None
+        };
         context.system_audio = system_audio;
         context.audio_warning = recorder.audio_warning();
         context.consent_copied = consent_copied;
@@ -587,15 +615,18 @@ fn finish(shared: &Shared, token: &str, mut recorder: MeetingRecorder) -> Result
     }
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
-    let speaker_evidence = shared
+    let speaker_sampler = shared
         .meeting_context
         .lock()
         .unwrap()
         .as_mut()
         .filter(|context| context.token == token)
-        .and_then(|context| context.speaker_evidence.take())
-        .map(|sampler| sampler.finish());
+        .and_then(|context| context.speaker_evidence.take());
+    if let Some(sampler) = &speaker_sampler {
+        sampler.request_stop();
+    }
     let (captured, completion) = recorder.stop();
+    let speaker_evidence = speaker_sampler.map(|sampler| sampler.finish());
     let captured = captured.inspect(|id| {
         if let Some(evidence) = speaker_evidence
             && shared
@@ -860,13 +891,32 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
     if settings.diarization && shared.engine.speaker_recognition_ready() {
         let dir = std::path::PathBuf::from(shared.engine.meeting_dir(id.clone()));
         match crate::speakers::recognize(&shared, &id, &dir) {
-            Ok(_) => {
-                let _ = app.emit("meeting-updated", &id);
-            }
+            Ok(_) => {}
             Err(_) => {
                 LOG.error("Automatic speaker recognition failed; try again from the meeting.")
             }
         }
+        let _ = app.emit("meeting-updated", &id);
+    } else {
+        let (phase, reason) = if settings.diarization {
+            ("unavailable", "not_ready")
+        } else {
+            ("skipped", "disabled")
+        };
+        if shared
+            .engine
+            .set_meeting_speaker_processing_status(
+                id.clone(),
+                phase.into(),
+                Some(reason.into()),
+                settings.speaker_recognition,
+                0,
+            )
+            .is_err()
+        {
+            LOG.error("Speaker processing availability could not be saved.");
+        }
+        let _ = app.emit("meeting-updated", &id);
     }
     if shared.quitting.load(Ordering::SeqCst) {
         return;

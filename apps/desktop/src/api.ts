@@ -268,6 +268,7 @@ export interface Settings {
   auto_detect: boolean;
   diarization: boolean;
   meeting_app_speakers: boolean;
+  meeting_app_name_policy?: "suggest" | "automatic";
   speaker_recognition: SpeakerRecognitionMode;
   claude_access?: boolean;
   [key: string]: unknown;
@@ -366,6 +367,7 @@ export interface Segment {
   attribution_revision?: number;
   correction_review_required?: boolean;
   confirmed_speaker_name?: string | null;
+  automatic_speaker_name?: string | null;
 }
 
 export type MeetingAudioSource = "microphone" | "system_audio" | "system" | "room_microphone";
@@ -691,6 +693,17 @@ export interface SpeakerRecognition {
   voices: number;
   named: number;
   me_found: boolean;
+  complete?: boolean;
+  unassigned_voices?: number;
+}
+
+export interface SpeakerProcessingStatus {
+  phase: string;
+  reason: string | null;
+  route: string;
+  model_ids: string[];
+  complete: boolean;
+  unassigned_voices: number;
 }
 
 export interface VoiceProfile {
@@ -729,6 +742,9 @@ export interface VoiceNameCandidate {
 export interface VoiceNaming {
   suggestions: VoiceNameSuggestion[];
   candidates: VoiceNameCandidate[];
+  automatic_names?: VoiceNameSuggestion[];
+  status?: "disabled" | "unsupported" | "permission_denied" | "unavailable" | "unbound" | "insufficient_evidence" | "conflict" | "suggested" | "automatic_ready" | "applied";
+  reason?: string | null;
 }
 
 export interface SpeakerSetup {
@@ -990,6 +1006,8 @@ export const api = {
   pickMeetingContact: () => invoke<ContactPickResult>("pick_meeting_contact"),
   renameSpeaker: (id: string, voice: number, name: string) => invoke<void>("rename_speaker", { id, voice, name }),
   recognizeSpeakers: (id: string) => invoke<SpeakerRecognition>("diarize_meeting", { id }),
+  confirmMicrophoneOwner: (id: string) => invoke<void>("confirm_meeting_microphone_owner", { id }),
+  speakerProcessingStatus: (id: string) => invoke<SpeakerProcessingStatus | null>("speaker_processing_status", { id }),
   meetingVoices: (id: string) => invoke<MeetingVoice[]>("meeting_voices", { id }),
   meetingVoiceNaming: (id: string) => invoke<VoiceNaming>("meeting_voice_naming", { id }),
   rememberSpeaker: (id: string, voice: number, name: string) => invoke<void>("remember_speaker", { id, voice, name }),
