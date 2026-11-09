@@ -1,51 +1,217 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "date": "2026-11-09",
   "pr": "https://github.com/pennel-app/pennel/pull/190",
   "source": {
-    "product_commit": "d0e7f3288f48c0c4b1154d7f230a18f9c6204c00",
-    "core_quality_commit": "b3d55d84cb27ce9f0617852e77cfec180b25bf3e",
-    "baseline": "6dd72ccdc5061b92531fcbb6bdd9ebeb136ee60d"
+    "baseline": "6dd72ccdc5061b92531fcbb6bdd9ebeb136ee60d",
+    "head_before_continuation": "5091ae13632b0631073a9ca145044315002b9b73",
+    "continuation_commits": [
+      "b32ce4475e34dd96d4d1e161ecd59cf12cda4371",
+      "75af0ec05580750198783f1965ba2d9b569dc539"
+    ],
+    "reviewed_source_sha256": {
+      "core/speakers/src/clean_windows.rs": "cab71461c7c0270e0f31c7e95967a56d513ef3ff715dc11df05e06dfd240f0ec",
+      "core/src/meeting_app_evidence.rs": "c54d9f5b11965711d2789ebe9eab3c7d59ccc5ca0567cc8bce3a26fea0aec03c",
+      "apps/macos-platform/Sources/PennelMacPlatform/MeetingSpeakerObserver.swift": "8deb7c0f56b6647fa6ab5baed92000d64d519d9c6db657b34e25208955024de6",
+      "core/speakers/src/lib.rs": "529742ea571f32ff02b274437b58ea1a5229904bf09b3e5118c7f8e7476c741c",
+      "core/speakers/src/pipeline.rs": "92b7a1ceb134601fe31aed96cc06a61acfe58c6e2731d4a5e4794fd265c55200"
+    },
+    "build_and_check_scope": "Exact reviewed file hashes; build began on the preceding head with these continuation changes in the working tree.",
+    "reviewed_product_head": "0384523c877d0fee3e5705aaff52d6e17be8259d",
+    "product_source_inputs_exactly_equal_reviewed_head": true
   },
   "checks": {
-    "core_default": 1180,
+    "core_default": 1185,
     "core_existing_ignored": 7,
-    "core_lean": 1162,
+    "core_lean": 1167,
     "core_lean_existing_ignored": 5,
     "keyboard": 17,
     "frontend": 436,
     "desktop_backend": 287,
-    "mac_services": 168,
+    "mac_services": 175,
     "native_sampler": 9,
-    "native_speakers": 23,
+    "speaker_model_free": 49,
+    "native_speakers": 50,
     "native_speakers_existing_ignored": 1,
-    "wav_parser": 1,
+    "new_clean_window_regressions": 27,
+    "guarded_naming_api_controls": 31,
     "offline_scorer": 15,
-    "local_asr_tool": 6,
+    "language_policy_helpers": 2,
+    "strict_clippy": true,
+    "formatting": true,
+    "core_release": true,
+    "desktop_frontend_build": true,
     "mobile_plugins": 17,
     "mobile_widgets": 7,
     "mobile_ui": 159,
     "mobile_kit": 116,
     "ios_runtime_services": 144,
     "ios_keyboard": 36,
-    "strict_clippy": true,
-    "formatting": true,
     "clean_and_repeated_prebuild": true,
     "pod_ownership": 6,
     "ios_simulator_release": true,
     "ios_device_release": true
   },
   "native_mac": {
-    "product_commit": "d0e7f3288f48c0c4b1154d7f230a18f9c6204c00",
     "team": "B538Q2K76C",
-    "binary_sha256": "cafe0dce49ef58917dc7675744f9aa05c1ed7a066f7a2bbbe055adc7c854bae1",
+    "binary_sha256": "86b4635b0dc9f64b05c6f31db74a56d9e4dfc1bed26652999ee03cfdcb42b3d1",
+    "codesign_verified": true,
+    "hardened_runtime": true,
+    "source_inputs": 439,
+    "source_manifest_sha256": "44695bb2301c5373c51d9f9449177d95f9b0a46028ba120491b2aef2fc5efd13",
+    "build_scope": "Guarded Tauri release --no-bundle; new private bundle assembled from preserved verified capture skeleton and personally signed.",
+    "fresh_bundler_or_dmg": false,
     "notarized": false,
-    "codesign_verified": true
+    "installed": false,
+    "packaged_backend_two_recording_replay": {
+      "complete": true,
+      "actual_handler": "diarize_meeting",
+      "decoder": "AVAudioFile / AVAudioConverter to16kHz mono Float32 PCM via production Swift/Rust FFI",
+      "ffmpeg_substitution": false,
+      "new_audio_capture": false,
+      "external_provider_calls": false,
+      "remote_identities": [
+        4,
+        4
+      ],
+      "owner_rows": [
+        161,
+        24
+      ],
+      "capacity_unassigned": [
+        0,
+        0
+      ],
+      "visible_rows": [
+        432,
+        396
+      ],
+      "seconds": [
+        94.98,
+        65.763
+      ],
+      "ordered_words_notes_audio_preserved": true,
+      "source_revisions_match_core_driver": true,
+      "full_canonical_metadata_equivalence": true,
+      "canonical_stored_rows": [
+        440,
+        397
+      ],
+      "visible_projection_exactly_equal_core": true,
+      "native_voiceprint_caches_bit_identical": false,
+      "separate_native_cache_naming_replay": {
+        "guarded_api_controls_passed": 31,
+        "all_gates_and_named_unknown_intervals_exactly_equal_core": true,
+        "model_derived_observations": true,
+        "source_profiles_modified": false
+      }
+    },
+    "current_ui_and_cold_reopen": {
+      "backend_cold_reopen": true,
+      "current_native_ui": true,
+      "recordings": 2,
+      "locales": [
+        "en",
+        "nl"
+      ],
+      "appearances": [
+        "light",
+        "dark"
+      ],
+      "automatic_estimate_labels": true,
+      "owner_labels_preserved": true,
+      "unknown_mixed_overlap_words_not_falsely_named": true,
+      "private_window_images_published": false,
+      "automatic_profile_cold_reopen": true,
+      "native_ax_cases": 4,
+      "native_own_window_images": 3,
+      "en_light_case": "AX verification without a new native own-window image",
+      "speech_language_and_stt_choices_unchanged": true,
+      "settings_delta_only": {
+        "ui_language": {
+          "before": "en",
+          "after": "nl"
+        }
+      },
+      "automatic_profile_stopped": true
+    },
+    "source_equivalence_reviewed_head": "0384523c877d0fee3e5705aaff52d6e17be8259d",
+    "automatic_writeback": {
+      "actual_packaged_diarization_hooks": true,
+      "observation_origin": "MODEL_DERIVED_NOT_HISTORICAL_TEAMS",
+      "actual_live_capture_end_to_end": false,
+      "separate_private_clone": true,
+      "expected_names_each_recording": [
+        4,
+        4
+      ],
+      "automatic_proof_rows": [
+        114,
+        161
+      ],
+      "total_automatic_proof_rows": 275,
+      "status_each_recording": [
+        "applied",
+        "applied"
+      ],
+      "seconds": [
+        89.82,
+        65.422
+      ],
+      "evidence_revision_and_source_provenance_valid": true,
+      "canonical_words_times_sources_attribution_lineage_manual_owner_preserved": true,
+      "ordered_words_notes_audio_preserved": true,
+      "no_enrollment": true,
+      "repeated_get_stable": true,
+      "pristine_native_profile_modified": false,
+      "cold_reopen": {
+        "verified": true,
+        "expected_names_each_recording": [
+          4,
+          4
+        ],
+        "automatic_proof_rows_total": 275,
+        "status_each_recording": [
+          "applied",
+          "applied"
+        ],
+        "canonical_and_proof_files_unchanged": true,
+        "known_voices": 0,
+        "self_voice_profile": false,
+        "no_second_inference": true,
+        "profile_stopped_after_success": true
+      }
+    },
+    "reference_repair_profile": {
+      "actual_product_rename_handlers": true,
+      "meeting_local_aliases": [
+        4,
+        4
+      ],
+      "manual_named_rows": [
+        114,
+        161
+      ],
+      "owner_rows": [
+        161,
+        24
+      ],
+      "automatic_evidence_present": false,
+      "automatic_proof_rows": 0,
+      "voice_enrollment": false,
+      "real_ui_both_meetings_verified": true,
+      "profile_stopped": true
+    }
   },
   "ios_bindings": {
     "before": "a3dd71020d04772a6553b473927b97b74c5245a05ebad370251295f01ee5b3f5",
     "after": "a3dd71020d04772a6553b473927b97b74c5245a05ebad370251295f01ee5b3f5",
-    "identical": true
+    "identical": true,
+    "targets": [
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim"
+    ],
+    "core_source_digest": "225ce18247c15927666dd16646068164c71f8d3064ef3cdfc86925b0946618c9"
   },
   "visuals": {
     "commit": "d92e868f69a09d7886dfe1e49e13cf87886f2c75",
@@ -61,7 +227,8 @@
       "dark"
     ],
     "before": "6dd72cc",
-    "after": "d0e7f32"
+    "after": "d0e7f32",
+    "continuation_has_ui_changes": false
   },
   "private_recording_repair": {
     "original_hashes_verified_unchanged": true,
@@ -70,8 +237,8 @@
       24
     ],
     "numbered_estimated_groups": [
-      8,
-      11
+      4,
+      4
     ],
     "identity_capacity_unassigned": [
       0,
@@ -81,20 +248,353 @@
       true,
       true
     ],
+    "core_driver_visible_nonempty_rows": [
+      432,
+      396
+    ],
+    "core_driver_visible_rows_chronological": true,
     "words_notes_audio_preserved": true,
     "ordinary_profiles_modified": false,
     "voice_enrollment": false,
-    "reference_intervals_applied_to_whole_groups": false
+    "row_count_scope": "Core and actual signed Mac native-decoder replays; canonical rows and visible projections exactly equal.",
+    "canonical_stored_rows": [
+      440,
+      397
+    ],
+    "hidden_completion_markers": [
+      8,
+      1
+    ],
+    "original_frozen_file_count": [
+      20,
+      19
+    ],
+    "original_frozen_files_total": 39,
+    "meeting_local_manual_aliases_from_confirmed_reference_samples": [
+      4,
+      4
+    ],
+    "manual_named_rows": [
+      114,
+      161
+    ],
+    "manual_alias_scope": "Final qualified voice groups in the owned repair previews; confirmed reference samples, not reconstructed historical Teams observations. Unknown/Mixed/Overlap passages remain uncertain.",
+    "repair_copy_automatic_evidence_or_proof_rows": [
+      0,
+      0
+    ],
+    "repair_copy_voice_enrollment": false,
+    "real_native_ui_reference_name_views_verified": true,
+    "reference_names_render_without_teams_estimate_suffix": true,
+    "review_previews_refreshed_at_existing_owned_paths": true,
+    "previous_data_file_ownership_hashes_verified": [
+      35,
+      34
+    ],
+    "complete_previous_preview_backup_file_counts": [
+      37,
+      36
+    ],
+    "previous_preview_backups_hash_verified": true,
+    "new_validated_data_file_counts": [
+      70,
+      69
+    ],
+    "new_data_matches_validated_reference_profile": true,
+    "readme_and_reference_map_updated": true,
+    "targets_outside_all_ordinary_libraries": true,
+    "ordinary_libraries_checked": 3
+  },
+  "human_reference": {
+    "scope": "Actual saved final Core canonical acoustic metadata, not standalone PCM16 diagnostic output.",
+    "whole_call_ground_truth": false,
+    "first_mapping_fit": "A-D once; E/F held out and never refitted",
+    "second_mapping_fit": "G-J; no held-out human identity-recognition set",
+    "historical_captured_teams_samples": 0,
+    "totals": {
+      "first_calibration_ABCD": {
+        "reference_ms": 35755,
+        "correct_ms": 33855,
+        "unknown_or_abstained_ms": 1900,
+        "wrong_name_ms": 0,
+        "correct_coverage": 0.9468605789400084,
+        "unknown_share": 0.05313942105999161,
+        "wrong_name_share": 0.0
+      },
+      "first_held_out_EF": {
+        "reference_ms": 11975,
+        "correct_ms": 11975,
+        "unknown_or_abstained_ms": 0,
+        "wrong_name_ms": 0,
+        "correct_coverage": 1.0,
+        "unknown_share": 0.0,
+        "wrong_name_share": 0.0
+      },
+      "first_all_ABCDEF": {
+        "reference_ms": 47730,
+        "correct_ms": 45830,
+        "unknown_or_abstained_ms": 1900,
+        "wrong_name_ms": 0,
+        "correct_coverage": 0.9601927508904253,
+        "unknown_share": 0.03980724910957469,
+        "wrong_name_share": 0.0
+      },
+      "second_GHIJ": {
+        "reference_ms": 30890,
+        "correct_ms": 29373,
+        "unknown_or_abstained_ms": 1517,
+        "wrong_name_ms": 0,
+        "correct_coverage": 0.9508902557461962,
+        "unknown_share": 0.04910974425380382,
+        "wrong_name_share": 0.0
+      },
+      "all_confirmed_A_J": {
+        "reference_ms": 78620,
+        "correct_ms": 75203,
+        "unknown_or_abstained_ms": 3417,
+        "wrong_name_ms": 0,
+        "correct_coverage": 0.9565377766471636,
+        "unknown_share": 0.04346222335283643,
+        "wrong_name_share": 0.0
+      }
+    },
+    "standalone_pcm16_calibration_der_percent": 3.8,
+    "standalone_pcm16_calibration_missed_ms": 1358,
+    "actual_canonical_core_calibration_unknown_percent": 5.313942105999161,
+    "signed_mac_native_decoder_canonical_metadata_exactly_equal": true,
+    "native_cache_naming_replay_intervals_exactly_equal": true,
+    "held_out_scope": "E/F held out of the one-to-one identity-mapping fit; fixed references reused across candidate evaluations, not newly blinded whole-call qualification."
+  },
+  "automatic_naming_replay": {
+    "scope": "Model-derived consensus timeline; not historical captured Teams evidence or dense human ground truth.",
+    "guarded_api_controls_passed": 31,
+    "four_expected_names_each_recording": true,
+    "sparse_reference_only_oracles_applied_names": [
+      0,
+      0
+    ],
+    "historical_captured_teams_samples": 0,
+    "agreement_duration_turn_lineage_coverage_gates_unchanged": true,
+    "mixed_words_remain_mixed": true,
+    "names_cover_all_eligible_canonical_clean_acoustics": true,
+    "pre_existing_asr_region_denominator": "Consensus single-speaker audio intersect frozen pre-repair digest-matched successful nonempty SystemAudio row bounds; no output identity, mask, manual or provisional exclusions.",
+    "recordings": {
+      "first": {
+        "all_consensus_ms": 959200,
+        "named_share_all_consensus": 0.7583267306088407,
+        "pre_existing_transcribed_region_ms": 893800,
+        "named_share_pre_existing_transcribed_regions": 0.8138140523607071,
+        "model_agreeing_share_pre_existing_transcribed_regions": 0.8130980085030208,
+        "model_disagreement_ms": 640,
+        "named_single_row_word_share": 0.6289049090284929,
+        "consensus_excluded_by_asr_region_ms": 65400,
+        "consensus_inside_empty_asr_markers_ms": 32240,
+        "consensus_other_no_successful_asr_row_ms": 33160,
+        "empty_asr_marker_wall_ms": 141300,
+        "empty_asr_marker_regions": 8,
+        "post_repair_timing_split_consensus_exclusion_ms": 4980
+      },
+      "second": {
+        "all_consensus_ms": 1346960,
+        "named_share_all_consensus": 0.8272651006711409,
+        "pre_existing_transcribed_region_ms": 1284780,
+        "named_share_pre_existing_transcribed_regions": 0.8673025732031944,
+        "model_agreeing_share_pre_existing_transcribed_regions": 0.8638311617553199,
+        "model_disagreement_ms": 4460,
+        "named_single_row_word_share": 0.5996728207525123,
+        "consensus_excluded_by_asr_region_ms": 62180,
+        "consensus_inside_empty_asr_markers_ms": 4960,
+        "consensus_other_no_successful_asr_row_ms": 57220,
+        "empty_asr_marker_wall_ms": 16600,
+        "empty_asr_marker_regions": 1,
+        "post_repair_timing_split_consensus_exclusion_ms": 6760
+      }
+    },
+    "all_consensus_named_coverage_ge80_both": false,
+    "pre_existing_transcribed_region_named_coverage_ge80_both": true,
+    "model_disagreement_is_not_verified_human_error": true,
+    "timeline_comparator": "Separate Sortformer model in default and offline configurations; shared model weights, agreeing single-speaker intervals only, diagnostic four-speaker capability; not production default.",
+    "actual_signed_mac_native_cache_replay_validated": true,
+    "native_vs_core_named_unknown_intervals_exactly_equal": true
+  },
+  "exact_float_native_vs_core": {
+    "compared_unique_ms": 944539,
+    "name_or_unknown_set_disagreement_ms": 0,
+    "projection_bug_confirmed": false
+  },
+  "live_teams_observer": {
+    "scope": "Actual production public C ABI in a personally signed native probe; controlled call with public synthetic voices only. Controls verify participant identity and UI-highlight reading; unhighlighted samples are not independently annotated acoustic silence.",
+    "os_version": "27.0.1",
+    "teams_version": "26289.204.5281.6363",
+    "layout": "Measured English personal/free Teams desktop",
+    "team": "B538Q2K76C",
+    "probe_binary_sha256": "0f7f17a7366f5b5ec2bf7a59673398dee5834157149d9b9f933095516699b263",
+    "permission_changes": false,
+    "speaking_predicate_changed": false,
+    "first_guest_only": {
+      "samples": 100,
+      "available": 100,
+      "active": 65,
+      "false_muted_guest_highlights": 0,
+      "duplicates": 0,
+      "unexpected_participants": 0,
+      "identity_stable_within_phase": true,
+      "unhighlighted_samples": 35
+    },
+    "second_guest_only": {
+      "samples": 100,
+      "available": 100,
+      "active": 66,
+      "false_muted_guest_highlights": 0,
+      "duplicates": 0,
+      "unexpected_participants": 0,
+      "identity_stable_within_phase": true,
+      "unhighlighted_samples": 34
+    },
+    "both_muted": {
+      "samples": 100,
+      "available": 100,
+      "active": 0,
+      "duplicates": 0,
+      "unexpected_participants": 0,
+      "identity_stable_within_phase": true,
+      "unhighlighted_samples": 100
+    },
+    "window_lifecycle": {
+      "samples": 240,
+      "available": 89,
+      "unavailable": 151,
+      "unavailable_reason": "ambiguous_call",
+      "zero_names_while_unavailable": true,
+      "restoration_establishes_new_association": true,
+      "duplicates": 0,
+      "unexpected_participants": 0
+    },
+    "recording_content_transmitted_to_teams": false,
+    "completed_control_samples": 644,
+    "completed_available_samples": 489,
+    "after_quit": {
+      "samples": 4,
+      "available": 0,
+      "reason": "app_unavailable",
+      "participants": 0,
+      "speaking": 0
+    },
+    "live_adapter_controls_passed": true,
+    "qa_call_and_guest_browsers_closed": true,
+    "browser_sandbox_retained": true,
+    "host_microphone_camera_used": false,
+    "actual_saved_audio_packaged_automatic_writeback": true,
+    "actual_live_capture_to_automatic_name_writeback": false,
+    "both_guests_unmuted": {
+      "samples": 100,
+      "available": 100,
+      "first_guest_only": 26,
+      "second_guest_only": 7,
+      "both_guests": 39,
+      "duplicates": 0,
+      "unexpected_participants": 0,
+      "identity_stable_within_phase": true,
+      "scope": "Observed natural alternation and simultaneous highlights from public synthetic voice loops; not a dense acoustic ground-truth annotation.",
+      "unhighlighted_samples": 28
+    },
+    "acoustic_voice_activity_ground_truth": false
   },
   "qualification": {
-    "whole_recording_accuracy": false,
-    "exact_five_person_recovery": false,
-    "real_teams_name_precision": false,
-    "named_coverage": false,
-    "actual_teams_ax_layout_support": false,
+    "sparse_human_reference_wrong_name_ms": 0,
+    "dense_whole_recording_accuracy": false,
+    "identity_counts_match_five_person_references_both": true,
+    "exact_five_person_whole_recording_accuracy": false,
+    "historical_real_teams_name_precision": false,
+    "offline_primary_transcribed_region_named_coverage_ge80_both": true,
+    "offline_all_consensus_named_coverage_ge80_both": false,
+    "actual_measured_teams_ax_layout_support": true,
+    "live_speaking_control_scope": "First-only, second-only, both-muted, both-unmuted, minimize/restore/association-loss and post-quit controls passed; actual packaged automatic-name writeback remains separate.",
     "signed_iphone_acceptance": false,
     "accessibility": false,
-    "production_release": false
+    "production_release": false,
+    "review_handoff": "Implementation and recorded validation prepared for review; review and hosted-CI status tracked on the linked PR.",
+    "hosted_ci_for_continuation_head": "Not asserted by this local artifact receipt; see the linked PR checks.",
+    "signed_app_model_derived_automatic_writeback": true,
+    "actual_live_capture_to_automatic_name_writeback": false,
+    "current_native_ui": true,
+    "reference_repair_and_backup_verification": true
   },
-  "evidence_scope": "Local deterministic tests, owned render fixtures, saved-audio replay and personally signed packaged API/UI; no real Teams call or new microphone capture."
+  "previous_candidate": {
+    "source": {
+      "product_commit": "d0e7f3288f48c0c4b1154d7f230a18f9c6204c00",
+      "core_quality_commit": "b3d55d84cb27ce9f0617852e77cfec180b25bf3e",
+      "baseline": "6dd72ccdc5061b92531fcbb6bdd9ebeb136ee60d"
+    },
+    "checks": {
+      "core_default": 1180,
+      "core_existing_ignored": 7,
+      "core_lean": 1162,
+      "core_lean_existing_ignored": 5,
+      "keyboard": 17,
+      "frontend": 436,
+      "desktop_backend": 287,
+      "mac_services": 168,
+      "native_sampler": 9,
+      "native_speakers": 23,
+      "native_speakers_existing_ignored": 1,
+      "wav_parser": 1,
+      "offline_scorer": 15,
+      "local_asr_tool": 6,
+      "mobile_plugins": 17,
+      "mobile_widgets": 7,
+      "mobile_ui": 159,
+      "mobile_kit": 116,
+      "ios_runtime_services": 144,
+      "ios_keyboard": 36,
+      "strict_clippy": true,
+      "formatting": true,
+      "clean_and_repeated_prebuild": true,
+      "pod_ownership": 6,
+      "ios_simulator_release": true,
+      "ios_device_release": true
+    },
+    "native_mac": {
+      "product_commit": "d0e7f3288f48c0c4b1154d7f230a18f9c6204c00",
+      "team": "B538Q2K76C",
+      "binary_sha256": "cafe0dce49ef58917dc7675744f9aa05c1ed7a066f7a2bbbe055adc7c854bae1",
+      "notarized": false,
+      "codesign_verified": true
+    },
+    "private_recording_repair": {
+      "original_hashes_verified_unchanged": true,
+      "owner_passages_restored": [
+        161,
+        24
+      ],
+      "numbered_estimated_groups": [
+        8,
+        11
+      ],
+      "identity_capacity_unassigned": [
+        0,
+        0
+      ],
+      "limited_evidence": [
+        true,
+        true
+      ],
+      "words_notes_audio_preserved": true,
+      "ordinary_profiles_modified": false,
+      "voice_enrollment": false,
+      "reference_intervals_applied_to_whole_groups": false
+    },
+    "evidence_scope": "Local deterministic tests, owned render fixtures, saved-audio replay and personally signed packaged API/UI; no real Teams call or new microphone capture."
+  },
+  "evidence_scope": "Local guarded tests, two saved-audio Core and actual native-decoder repairs, sparse human references, separately model-derived naming replays and actual signed-app automatic writeback, actual native Teams observer controls, personally signed Mac QA products and unsigned iOS builds; no historical Teams trace or live capture-to-name writeback claim.",
+  "cleanup": {
+    "all_owned_qa_apps_stopped": true,
+    "teams_and_guest_browsers_stopped": true,
+    "owned_simulator_shutdown": true,
+    "ordinary_profiles_modified": false,
+    "provider_data_modified": false,
+    "credentials_modified": false,
+    "private_qa_browser_sandbox_retained": true,
+    "ordinary_app_installation": false
+  }
 }
