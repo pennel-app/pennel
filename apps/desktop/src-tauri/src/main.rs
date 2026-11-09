@@ -38,6 +38,7 @@ mod macos;
 mod macos_tray;
 mod meeting;
 mod meeting_runtime;
+mod meeting_speaker_evidence;
 mod owned_dictation;
 mod paste_queue;
 mod people;
@@ -1236,6 +1237,7 @@ fn main() {
             commands::forget_known_voice,
             commands::forget_all_voices,
             commands::meeting_voices,
+            commands::meeting_voice_suggestions,
             commands::remember_speaker,
             commands::export_meeting,
             commands::save_meeting_notes,

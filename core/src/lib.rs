@@ -32,8 +32,8 @@ mod live_speakers;
 mod llm;
 mod local_engine;
 mod localization;
-mod meeting_chat;
 mod meeting_app_evidence;
+mod meeting_chat;
 mod meeting_evidence;
 mod meeting_index;
 mod meeting_insight_engine;
@@ -115,6 +115,7 @@ pub use localization::{
     InterfaceLanguage, InterfaceLanguagePreference, localize_ui_text, resolve_interface_language,
     ui_text,
 };
+pub use meeting_app_evidence::{AppSpeakerEvidence, NameSuggestion, SpeakingSample};
 pub use meeting_chat::{ChatTurn, Citation, MeetingAnswer};
 pub use meeting_evidence::{
     MeetingEvidence, MeetingSourceAnchor, evidence_revision, segment_evidence_revision,

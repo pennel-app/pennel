@@ -539,5 +539,7 @@
   "meetings.failed_recovery_outcome_complete": "No failed passages remain.",
   "meetings.failed_recovery_outcome_partial": "Some passages were recovered. Review the remaining transcription status.",
   "meetings.failed_recovery_outcome_none": "No passages were recovered. The transcript is still incomplete.",
-  "meetings.failed_recovery_meeting_changed": "This meeting changed before recovery. Reopen the meeting and try again."
+  "meetings.failed_recovery_meeting_changed": "This meeting changed before recovery. Reopen the meeting and try again.",
+  "meetings.voice_suggestion": "Teams suggests {name}",
+  "meetings.voice_use_suggestion": "Use name"
 }

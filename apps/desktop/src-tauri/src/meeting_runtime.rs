@@ -27,6 +27,7 @@ pub struct MeetingContext {
     pub heard_system_audio: bool,
     pub audio_warning: Option<String>,
     pub consent_copied: bool,
+    pub speaker_evidence: Option<crate::meeting_speaker_evidence::EvidenceSampler>,
 }
 
 /// Serialize session writes without retaining capture's lifecycle lock during disk I/O.
@@ -354,6 +355,7 @@ pub fn start_with_calendar(
         heard_system_audio: false,
         audio_warning: None,
         consent_copied: false,
+        speaker_evidence: None,
     });
     let recorder = match MeetingRecorder::start(
         session.clone(),
@@ -392,6 +394,10 @@ pub fn start_with_calendar(
     let system_audio = recorder.has_system_audio();
     if let Some(context) = shared.meeting_context.lock().unwrap().as_mut() {
         context.started = recorder.started_at();
+        context.speaker_evidence = settings
+            .meeting_app_speakers
+            .then(|| crate::meeting_speaker_evidence::EvidenceSampler::start(recorder.started_at()))
+            .flatten();
         context.system_audio = system_audio;
         context.audio_warning = recorder.audio_warning();
         context.consent_copied = consent_copied;
@@ -550,7 +556,25 @@ fn finish(shared: &Shared, token: &str, mut recorder: MeetingRecorder) -> Result
     }
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
+    let speaker_evidence = shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_mut()
+        .filter(|context| context.token == token)
+        .and_then(|context| context.speaker_evidence.take())
+        .map(|sampler| sampler.finish());
     let (captured, completion) = recorder.stop();
+    let captured = captured.inspect(|id| {
+        if let Some(evidence) = speaker_evidence
+            && shared
+                .engine
+                .set_meeting_app_speaker_evidence(id, evidence)
+                .is_err()
+        {
+            LOG.error("Meeting app speaker evidence could not be saved. The recording is kept.");
+        }
+    });
     if let Some(context) = shared
         .meeting_context
         .lock()
@@ -1578,6 +1602,7 @@ mod tests {
                 heard_system_audio: false,
                 audio_warning: None,
                 consent_copied: false,
+                speaker_evidence: None,
             })),
         });
         (root, shared, session, token)

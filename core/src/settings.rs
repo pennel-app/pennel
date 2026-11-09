@@ -193,6 +193,9 @@ pub struct Settings {
     pub auto_detect: bool,
     #[serde(default)]
     pub diarization: bool,
+    /// Reads participant names and the active speaker from a supported meeting app (off by default).
+    #[serde(default)]
+    pub meeting_app_speakers: bool,
     #[serde(default)]
     pub speaker_recognition: SpeakerRecognitionMode,
     #[serde(default)]
@@ -281,6 +284,7 @@ pub fn default_settings() -> Settings {
         consent_enabled: false,
         auto_detect: true,
         diarization: false,
+        meeting_app_speakers: false,
         speaker_recognition: SpeakerRecognitionMode::Local,
         cloud_sync: false,
         claude_access: false,

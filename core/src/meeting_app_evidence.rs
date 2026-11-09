@@ -6,8 +6,22 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
+use crate::PennelEngine;
+use crate::error::PennelError;
+use crate::meetings::Speaker;
+
+/// What a meeting app showed during one recording. Stored beside the meeting's voiceprints in the
+/// private data folder, never in the synced meeting folder or exports.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppSpeakerEvidence {
+    pub app_id: String,
+    pub samples: Vec<SpeakingSample>,
+}
+
 /// One sample of the meeting app's interface on the recording timeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpeakingSample {
     pub at_ms: u64,
     /// `false` when the window was hidden, unreadable or belonged to another call.
@@ -24,10 +38,11 @@ pub struct VoiceTurn {
     pub end_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NameSuggestion {
     pub voice: u32,
     pub name: String,
+    pub app_id: String,
     /// Share of this voice's attributable evidence that pointed at `name`.
     pub agreement: f32,
     /// Share of this voice's speech covered by attributable evidence.
@@ -109,6 +124,7 @@ pub fn suggest_names(
                 .then(|| NameSuggestion {
                     voice,
                     name: name.to_owned(),
+                    app_id: String::new(),
                     agreement,
                     coverage,
                 })
@@ -143,6 +159,55 @@ fn attributable_intervals<'a>(
             (end > start).then_some((start, end, name.as_str()))
         })
         .collect()
+}
+
+impl PennelEngine {
+    /// Replaces the evidence for a meeting; an empty sample list removes it.
+    pub fn set_meeting_app_speaker_evidence(
+        &self,
+        id: &str,
+        evidence: AppSpeakerEvidence,
+    ) -> Result<(), PennelError> {
+        self.voice_store()
+            .set_app_speaker_evidence(&self.meeting_key(id), &evidence)
+    }
+
+    /// Names a meeting app suggests for voices the user has not named yet.
+    pub fn meeting_voice_suggestions(&self, id: &str) -> Vec<NameSuggestion> {
+        let Some(evidence) = self
+            .voice_store()
+            .app_speaker_evidence(&self.meeting_key(id))
+        else {
+            return Vec::new();
+        };
+        let store = self.meeting_store();
+        let named: Vec<u32> = store.speaker_names(id).iter().map(|n| n.voice).collect();
+        let Ok(snapshot) = store.read_transcript_snapshot(id) else {
+            return Vec::new();
+        };
+        let turns: Vec<VoiceTurn> = snapshot
+            .utterances
+            .iter()
+            .filter(|row| row.segment.speaker == Speaker::Others && !row.segment.failed)
+            .filter_map(|row| {
+                let voice = row.segment.voice.filter(|voice| !named.contains(voice))?;
+                Some(VoiceTurn {
+                    voice,
+                    start_ms: row.segment.start_ms,
+                    end_ms: row.segment.end_ms,
+                })
+            })
+            .collect();
+        suggest_names(&turns, &evidence.samples, FusionPolicy::default())
+            .into_iter()
+            .map(|suggestion| NameSuggestion {
+                name: crate::voices::clean_name(&suggestion.name),
+                app_id: evidence.app_id.clone(),
+                ..suggestion
+            })
+            .filter(|suggestion| !suggestion.name.is_empty())
+            .collect()
+    }
 }
 
 fn overlap_ms(a_start: u64, a_end: u64, b_start: u64, b_end: u64) -> u64 {

@@ -1,4 +1,4 @@
-import { api, listen, type MeetingDetail, type MeetingRetranscriptionStatus, type MeetingTemplate, type MeetingVoice, type SpeakerSetup } from "./api";
+import { api, listen, type MeetingDetail, type MeetingRetranscriptionStatus, type MeetingTemplate, type MeetingVoice, type SpeakerSetup, type VoiceNameSuggestion } from "./api";
 import type { Context } from "./main";
 import { bindLocalization, l, localizeBackendText, t } from "./i18n";
 import { askText, confirmDialog, controlButton, errorText, h, select } from "./dom";
@@ -166,20 +166,25 @@ export function meetingWorkspaceTools(initial: Context, host: {
     const selected = value.section, target = value.id;
     try {
       if (host.finished() && ["speakers", "transcription", "files"].includes(selected)) {
-        const [saved, speaker, loadedVoices] = await Promise.allSettled([api.meetingDetail(target),
+        const [saved, speaker, loadedVoices, loadedSuggestions] = await Promise.allSettled([api.meetingDetail(target),
           selected === "speakers" ? api.speakerSetup() : Promise.resolve(null),
-          selected === "speakers" ? api.meetingVoices(target) : Promise.resolve(null)]);
+          selected === "speakers" ? api.meetingVoices(target) : Promise.resolve(null),
+          selected === "speakers" ? api.meetingVoiceSuggestions(target) : Promise.resolve(null)]);
         if (!current()) return;
         if (saved.status === "fulfilled") detail = saved.value; else throw saved.reason;
         if (speaker.status === "rejected") throw speaker.reason;
         if (loadedVoices.status === "rejected") throw loadedVoices.reason;
         if (speaker.status === "fulfilled" && speaker.value) setup = speaker.value;
         if (loadedVoices.status === "fulfilled" && loadedVoices.value) voices = loadedVoices.value;
+        // Suggestions are optional evidence; failing to read them never blocks naming voices.
+        const suggestions = loadedSuggestions.status === "fulfilled" ? loadedSuggestions.value ?? [] : [];
+        const suggested = (voice: MeetingVoice) => voice.name ? undefined : suggestions.find(entry => entry.voice === voice.voice);
         if (selected === "speakers") voiceList.replaceChildren(...voices.filter(voice => voice.voice != null).map(voice => h("div", { class: "meeting-voice-row row" },
           h("span", { class: "grow" }, voice.name || t("meetings.voice_name_label", { name: String(voice.voice) })),
-          controlButton({ class: "btn compact", onclick: () => { void renameVoice(voice, false); } }, l("people.rename")),
+          ...voiceSuggestion(voice, suggested(voice)),
+          controlButton({ class: "btn compact", onclick: () => { void renameVoice(voice, false, suggested(voice)?.name); } }, l("people.rename")),
           controlButton({ class: "btn compact", disabled: !voice.can_remember, title: voice.can_remember ? "" : t("meetings.speaker_recognition_unavailable"),
-            onclick: () => { void renameVoice(voice, true); } }, l("people.remember")))));
+            onclick: () => { void renameVoice(voice, true, suggested(voice)?.name); } }, l("people.remember")))));
         if (selected === "files" && ctx.info.settings.cloud_sync) {
           const names = await api.meetingConflictFiles(target);
           if (!current()) return;
@@ -214,9 +219,21 @@ export function meetingWorkspaceTools(initial: Context, host: {
       : status.progress.phase === "speakers" ? t("meetings.recognizing_speakers")
       : status.progress.phase === "saving" ? t("meetings.retranscription_saving") : t("meetings.retranscription_decoding");
   }
-  async function renameVoice(voice: MeetingVoice, remember: boolean) {
+  function voiceSuggestion(voice: MeetingVoice, suggestion: VoiceNameSuggestion | undefined) {
+    if (!suggestion) return [];
+    return [h("span", { class: "help" }, t("meetings.voice_suggestion", { name: suggestion.name })),
+      controlButton({ class: "btn compact", onclick: () => { void useSuggestion(voice, suggestion.name); } }, l("meetings.voice_use_suggestion"))];
+  }
+  async function useSuggestion(voice: MeetingVoice, name: string) {
     await run(async owner => {
-      const name = await askText(l(remember ? "people.remember" : "people.rename"), voice.name ?? "",
+      if (!owns(owner)) return;
+      await api.renameSpeaker(owner.id, voice.voice, name);
+      await host.refresh(); await refresh();
+    });
+  }
+  async function renameVoice(voice: MeetingVoice, remember: boolean, suggestedName?: string) {
+    await run(async owner => {
+      const name = await askText(l(remember ? "people.remember" : "people.rename"), voice.name ?? suggestedName ?? "",
         l(remember ? "meetings.voice_remember_help" : "meetings.voice_name_help"));
       if (name === null || remember && !name || !owns(owner)) return;
       if (remember) await api.rememberSpeaker(owner.id, voice.voice, name); else await api.renameSpeaker(owner.id, voice.voice, name);

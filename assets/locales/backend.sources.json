@@ -782,5 +782,7 @@
   "backend.summary_unknown_scope": "Unknown output scope.",
   "backend.summary_missing_text": "Missing summary text.",
   "backend.summary_review_before_share": "Prepare and review the document before sharing it.",
-  "backend.summary_reviewed_export_only": "Copy the formatted notes or export the reviewed document to share it."
+  "backend.summary_reviewed_export_only": "Copy the formatted notes or export the reviewed document to share it.",
+  "backend.give_pennel_accessibility_access_to_read_meeting_participants": "Give Pennel Accessibility access to read meeting participants.",
+  "backend.meeting_participant_names_are_currently_only_read_from_microsoft_teams_on_macos": "Meeting participant names are currently only read from Microsoft Teams on macOS."
 }

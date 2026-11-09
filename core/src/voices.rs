@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::error::PennelError;
+use crate::meeting_app_evidence::AppSpeakerEvidence;
 use crate::meetings::durable_write;
 use crate::models::EMBEDDING_ID;
 
@@ -314,12 +315,44 @@ impl VoiceStore {
     }
 
     pub fn forget_meeting(&self, meeting: &str) -> Result<(), PennelError> {
-        match std::fs::remove_file(self.meeting_path(meeting)) {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                Err(PennelError::storage(error))
-            }
-            _ => Ok(()),
+        remove_if_present(&self.app_evidence_path(meeting))?;
+        remove_if_present(&self.meeting_path(meeting))
+    }
+
+    fn app_evidence_path(&self, meeting: &str) -> PathBuf {
+        let digest = crate::models::hex(&Sha256::digest(meeting.as_bytes()));
+        self.dir.join("app-evidence").join(format!("{digest}.json"))
+    }
+
+    pub fn app_speaker_evidence(&self, meeting: &str) -> Option<AppSpeakerEvidence> {
+        let json = std::fs::read_to_string(self.app_evidence_path(meeting)).ok()?;
+        serde_json::from_str(&json).ok()
+    }
+
+    pub fn set_app_speaker_evidence(
+        &self,
+        meeting: &str,
+        evidence: &AppSpeakerEvidence,
+    ) -> Result<(), PennelError> {
+        let path = self.app_evidence_path(meeting);
+        if evidence.samples.is_empty() {
+            return remove_if_present(&path);
         }
+        std::fs::create_dir_all(path.parent().expect("evidence folder"))
+            .map_err(PennelError::storage)?;
+        durable_write(
+            &path,
+            &serde_json::to_vec(evidence).map_err(PennelError::storage)?,
+        )
+    }
+}
+
+fn remove_if_present(path: &Path) -> Result<(), PennelError> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(PennelError::storage(error))
+        }
+        _ => Ok(()),
     }
 }
 

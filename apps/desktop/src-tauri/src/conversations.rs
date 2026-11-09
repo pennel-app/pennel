@@ -241,6 +241,7 @@ mod tests {
             heard_system_audio: false,
             audio_warning: None,
             consent_copied: false,
+            speaker_evidence: None,
         });
         let mut request = json!({"scope":{"kind":"meeting","meeting_uid":uid},
             "session_id":"replaced-session","expected_notes_revision":pennel_core::evidence_revision("Acknowledged synthetic notes")});

@@ -65,6 +65,7 @@ unsafe extern "C" {
     fn pennel_mac_hotkey_stop(handle: *mut c_void);
     fn pennel_mac_call_snapshot(apps: *const c_char, browsers: *const c_char) -> *mut c_char;
     fn pennel_mac_calendar_snapshot() -> *mut c_char;
+    fn pennel_mac_meeting_speakers_snapshot(app_id: *const c_char) -> *mut c_char;
     fn pennel_mac_calendar_source_available(
         calendar_id: *const c_char,
         source_id: *const c_char,
@@ -505,6 +506,23 @@ pub fn call_snapshot(
         take_json(pennel_mac_call_snapshot(apps.as_ptr(), browsers.as_ptr()))
     })
     .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct MeetingSpeakers {
+    pub available: bool,
+    pub speaking: Vec<String>,
+}
+
+/// Blocks for tens of milliseconds while the meeting app's interface is read; call it off the main thread.
+pub fn meeting_speakers_snapshot(app_id: &str) -> MeetingSpeakers {
+    let Ok(app_id) = c_string(app_id) else {
+        return MeetingSpeakers::default();
+    };
+    serde_json::from_value(unsafe {
+        take_json(pennel_mac_meeting_speakers_snapshot(app_id.as_ptr()))
+    })
+    .unwrap_or_default()
 }
 
 pub fn calendar_snapshot() -> Value {

@@ -336,7 +336,7 @@ impl PennelEngine {
     }
 
     /// Meeting voiceprints follow the meeting's sync identity, which survives a rename.
-    fn meeting_key(&self, id: &str) -> String {
+    pub(crate) fn meeting_key(&self, id: &str) -> String {
         self.meeting_store()
             .uid_of(id)
             .unwrap_or_else(|| id.to_owned())
@@ -1117,6 +1117,59 @@ mod tests {
         );
         first.assert();
         second.assert();
+    }
+
+    #[test]
+    fn meeting_app_evidence_suggests_names_only_for_unnamed_voices_and_is_forgotten_with_the_meeting()
+     {
+        use crate::meeting_app_evidence::{AppSpeakerEvidence, SpeakingSample};
+        let dir = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
+        let store = engine.meeting_store();
+        let id = store.create("Teams call", chrono::Local::now()).unwrap();
+        let voiced = |start_ms, voice| Segment {
+            end_ms: start_ms + 6_000,
+            voice: Some(voice),
+            ..line(start_ms, Speaker::Others, "Call speech.")
+        };
+        store
+            .write_owned_transcript(&id, &[voiced(0, 1), voiced(6_000, 2), voiced(12_000, 3)])
+            .unwrap();
+        store.rename_speaker(&id, 3, "Cas").unwrap();
+        let samples = (0..72)
+            .map(|step| SpeakingSample {
+                at_ms: step * 250,
+                available: true,
+                speaking: vec![["Ann", "Bert", "Cas Wouters"][(step / 24) as usize].into()],
+            })
+            .collect();
+        engine
+            .set_meeting_app_speaker_evidence(
+                &id,
+                AppSpeakerEvidence {
+                    app_id: "com.microsoft.teams2".into(),
+                    samples,
+                },
+            )
+            .unwrap();
+
+        let suggestions: Vec<_> = engine
+            .meeting_voice_suggestions(&id)
+            .into_iter()
+            .map(|s| (s.voice, s.name, s.app_id))
+            .collect();
+
+        assert_eq!(
+            suggestions,
+            [
+                (1, "Ann".to_owned(), "com.microsoft.teams2".to_owned()),
+                (2, "Bert".to_owned(), "com.microsoft.teams2".to_owned()),
+            ]
+        );
+        let key = engine.meeting_key(&id);
+        assert!(engine.voice_store().app_speaker_evidence(&key).is_some());
+        engine.delete_meeting(id.clone()).unwrap();
+        assert!(engine.voice_store().app_speaker_evidence(&key).is_none());
     }
 
     #[test]
