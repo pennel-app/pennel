@@ -539,5 +539,11 @@
   "meetings.failed_recovery_outcome_complete": "Er zijn geen mislukte delen meer.",
   "meetings.failed_recovery_outcome_partial": "Een deel van het transcript is hersteld. Controleer de resterende transcriptiestatus.",
   "meetings.failed_recovery_outcome_none": "Er zijn geen delen hersteld. Het transcript is nog onvolledig.",
-  "meetings.failed_recovery_meeting_changed": "Deze meeting is gewijzigd voordat het herstel begon. Open de meeting opnieuw en probeer het nogmaals."
+  "meetings.failed_recovery_meeting_changed": "Deze meeting is gewijzigd voordat het herstel begon. Open de meeting opnieuw en probeer het nogmaals.",
+  "meetings.voice_suggestion": "Teams stelt {name} voor",
+  "meetings.voice_use_suggestion": "Naam gebruiken",
+  "meetings.voice_shared_device": "Via {name} (gedeeld toestel)",
+  "meetings.voice_candidate_invited": "Uitgenodigd voor deze meeting",
+  "meetings.voice_candidate_meeting_app": "Getoond in Teams tijdens de meeting",
+  "meetings.voice_candidate_known_voice": "Een stem die je onthield"
 }

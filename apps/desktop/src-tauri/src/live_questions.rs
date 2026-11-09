@@ -447,6 +447,7 @@ mod tests {
             heard_system_audio: false,
             audio_warning: None,
             consent_copied: false,
+            speaker_evidence: None,
         });
         let samples = (0..16_000)
             .map(|index| (index as f32 * 0.1).sin() * 0.2)
@@ -663,6 +664,7 @@ mod tests {
             system_audio: false,
             heard_system_audio: false,
             audio_warning: None,
+            speaker_evidence: None,
             consent_copied: false,
         });
         let request = identity("one", &uid, &token);

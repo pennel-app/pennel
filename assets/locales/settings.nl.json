@@ -282,5 +282,7 @@
   "settings.writing.words": "woorden",
   "settings.writing.updating": "Profiel bijwerken…",
   "settings.writing.source.eligibility": "Vergaderspraak draagt alleen bij wanneer je ingeleerde stem definitief en betrouwbaar is herkend.",
-  "settings.writing.sharing.connection_error": "De schrijfprofielverbinding is niet beschikbaar. Controleer je Cloud-verbinding en probeer opnieuw."
+  "settings.writing.sharing.connection_error": "De schrijfprofielverbinding is niet beschikbaar. Controleer je Cloud-verbinding en probeer opnieuw.",
+  "settings.speakers.meeting_app": "Deelnemersnamen uit Microsoft Teams gebruiken",
+  "settings.speakers.meeting_app_help": "Tijdens de opname leest Pennel wie Teams als spreker aanduidt en stelt die namen voor bij de herkende stemmen. Jij bevestigt elke naam. Namen blijven op deze computer."
 }

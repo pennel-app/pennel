@@ -121,7 +121,7 @@
     style_rules: [{ bundle_id: "com.tinyspeck.slackmacgap", style: "casual" }, { bundle_id: "com.apple.MobileSMS", style: "casual" }, { bundle_id: "com.apple.mail", style: "formal" }, { bundle_id: "com.microsoft.Word", style: "formal" }, { bundle_id: "com.apple.Terminal", style: "literal" }, { bundle_id: "com.microsoft.VSCode", style: "literal" }], history_retention_days: 30, hotkey: "fn", local_unload_minutes: 5,
     meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", summary_automation: options.summary_automation || "unanswered", meeting_audio_retention_days: 30,
     app_rules: [], calendar_rules: [], event_rules: [], calendar_enabled: false, echo_cancellation: true,
-    record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), speaker_recognition: options.speaker_mode || "local",
+    record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), meeting_app_speakers: Boolean(options.meeting_app_speakers), speaker_recognition: options.speaker_mode || "local",
     appearance: options.appearance, dictation_pad_auto_paste: false, live_text_enabled: options.live_text_enabled !== false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
     onboarding: { version: 1, status: options.onboarding_status || (options.window === "onboarding" ? "pending" : options.shortcut_denied ? "skipped" : "completed"), resume_step: options.step || "welcome", goal: options.goal || "dictation" },
   };
@@ -139,7 +139,7 @@
   if (persistedSettings && typeof persistedSettings === "object") settings = { ...settings, ...persistedSettings };
   for (const slot of ["dictation_stt", "meeting_stt", "llm"]) if (options.model_choices?.[slot]) settings[slot] = clone(options.model_choices[slot]);
   const interfaceLanguage = () => settings.ui_language === "nl" || settings.ui_language === "en" ? settings.ui_language : systemInterfaceLanguage;
-  const capabilities = Object.fromEntries(["pad_external_paste", "global_hotkey", "record_shortcut", "microphone", "system_audio", "echo_cancellation", "call_detection", "calendar", "apple_speech", "apple_intelligence", "selection", "rich_clipboard", "audio_playback", "diarization", "local_models"].map(name => [name, available()]));
+  const capabilities = Object.fromEntries(["pad_external_paste", "global_hotkey", "record_shortcut", "microphone", "system_audio", "echo_cancellation", "call_detection", "calendar", "apple_speech", "apple_intelligence", "selection", "rich_clipboard", "audio_playback", "diarization", "meeting_app_speakers", "local_models"].map(name => [name, available()]));
   capabilities.local_acceleration = "metal";
   const permissionStatus = options.permission || "granted";
   let permissions = ["microphone", "accessibility", "calendar", "speech", "system_audio"].map(kind => ({ kind, status: kind === "calendar" ? "not_determined" : permissionStatus }));
@@ -166,6 +166,19 @@
   let voiceProfile = options.voice_profile ? { created_iso: "2026-10-20T10:00:00+02:00", speech_seconds: 22 } : null;
   let knownVoices = options.known_voices ? [{ id: "qa-noor", name: "Noor", meetings: 4, updated_iso: "2026-10-24T09:30:00+02:00" }, { id: "qa-sam", name: "Sam Peeters", meetings: 1, updated_iso: "2026-10-14T15:00:00+02:00" }] : [];
   const meetingVoices = [{ voice: 1, name: "Noor", remembered: Boolean(options.known_voices), can_remember: true }, { voice: 2, name: null, remembered: false, can_remember: true }];
+  if (options.teams_naming) meetingVoices.push({ voice: 3, name: null, remembered: false, can_remember: true }, { voice: 4, name: null, remembered: false, can_remember: true });
+  // Synthetic Teams evidence: voice 2 is one remote participant, voices 3 and 4 share a meeting room.
+  const voiceNaming = options.teams_naming ? {
+    suggestions: [
+      { voice: 2, name: "Bert Jacobs", app_id: "com.microsoft.teams2", agreement: 0.94, coverage: 0.81, shared_device: false },
+      { voice: 3, name: "Vergaderzaal 0.7", app_id: "com.microsoft.teams2", agreement: 0.97, coverage: 0.76, shared_device: true },
+      { voice: 4, name: "Vergaderzaal 0.7", app_id: "com.microsoft.teams2", agreement: 0.91, coverage: 0.7, shared_device: true },
+    ],
+    candidates: [
+      { name: "Bert Jacobs", source: "invited" }, { name: "Lotte Claes", source: "invited" }, { name: "Sam Peeters", source: "invited" },
+      { name: "Eva Wouters", source: "meeting_app" }, { name: "Noor", source: "known_voice" },
+    ],
+  } : { suggestions: [], candidates: [] };
   const modelFor = id => models.find(model => model.id === id) || speakerModels.find(model => model.id === id) || (id === diarizer.id ? diarizer : undefined);
   const activeDownloads = new Set(options.download_active ? ["whisper-large-v3-turbo"] : []);
   const downloadWaiters = new Map();
@@ -1383,6 +1396,7 @@
       case "diarize_meeting": return { voices: 2, named: 1, me_found: false };
       case "speaker_setup": return { local_available: options.speaker_local !== false, ready: options.speaker_mode === "cloud" ? signedIn : speakerModels.every(model => model.state.kind === "downloaded") || diarizer.state.kind === "downloaded", signed_in: signedIn, model_ids: speakerModels.map(model => model.id), legacy_model: diarizer.state.kind === "downloaded", profile: clone(voiceProfile), known: clone(knownVoices), enrollment_text: "Ik lees deze tekst voor zodat Pennel mijn stem leert kennen. Zo weet Pennel in elke meeting wanneer ik aan het woord ben, ook als we samen rond één microfoon zitten. Vandaag is een rustige dag: de koffie is nog warm, de zon schijnt door het raam en op mijn bureau ligt een schrift vol ideeën. Straks overlopen we de planning, verdelen we de taken en spreken we af wie welke vragen beantwoordt." };
       case "meeting_voices": return clone(meetingVoices);
+      case "meeting_voice_naming": return clone(voiceNaming);
       case "remember_speaker": { const voice = meetingVoices.find(item => item.voice === args.voice); if (voice) { voice.name = args.name; voice.remembered = true; } return null; }
       case "start_voice_enrollment": { let seconds = 0; globalThis.__PENNEL_ENROLLMENT__ = setInterval(() => emit("voice-enrollment", { seconds: ++seconds, level: 0.1, stopped: false }), 1000); return null; }
       case "finish_voice_enrollment": clearInterval(globalThis.__PENNEL_ENROLLMENT__); if (options.enrollment_delay_ms) await new Promise(resolve => setTimeout(resolve, options.enrollment_delay_ms)); if (options.enrollment_error) throw new Error(options.enrollment_error); voiceProfile = { created_iso: "2026-10-25T09:00:00+01:00", speech_seconds: 21 }; return clone(voiceProfile);

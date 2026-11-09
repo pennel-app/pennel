@@ -782,5 +782,7 @@
   "backend.summary_unknown_scope": "Onbekende inhoudskeuze voor uitvoer.",
   "backend.summary_missing_text": "De tekst van de samenvatting ontbreekt.",
   "backend.summary_review_before_share": "Bereid het document voor en controleer het voordat je deelt.",
-  "backend.summary_reviewed_export_only": "Kopieer de opgemaakte notities of exporteer het gecontroleerde document om het te delen."
+  "backend.summary_reviewed_export_only": "Kopieer de opgemaakte notities of exporteer het gecontroleerde document om het te delen.",
+  "backend.give_pennel_accessibility_access_to_read_meeting_participants": "Geef Pennel toegang tot Toegankelijkheid om meetingdeelnemers te lezen.",
+  "backend.meeting_participant_names_are_currently_only_read_from_microsoft_teams_on_macos": "Namen van meetingdeelnemers worden momenteel alleen uit Microsoft Teams op macOS gelezen."
 }

@@ -19,13 +19,28 @@ struct CalendarParticipantSnapshot: Sendable {
     let email: String?
     let response: String?
     let isSelf: Bool
+    let kind: String
 
-    init(name: String?, url: URL?, response: String?, isSelf: Bool) {
+    init(name: String?, url: URL?, response: String?, isSelf: Bool, kind: String = "unknown") {
         sourceId = url?.absoluteString
         self.name = name
         email = Self.email(from: url)
         self.response = response
         self.isSelf = isSelf
+        self.kind = kind
+    }
+
+    /// Rooms and resources are booked, not people: they never become attendee names.
+    var isPerson: Bool { kind != "room" && kind != "resource" && kind != "group" }
+
+    static func kind(_ type: EKParticipantType) -> String {
+        switch type {
+        case .person: "person"
+        case .room: "room"
+        case .resource: "resource"
+        case .group: "group"
+        default: "unknown"
+        }
     }
 
     static func email(from url: URL?) -> String? {
@@ -40,7 +55,7 @@ struct CalendarParticipantSnapshot: Sendable {
 
     var json: [String: Any] {
         ["source_id": sourceId as Any? ?? NSNull(), "name": name as Any? ?? NSNull(),
-         "email": email as Any? ?? NSNull(), "response": response as Any? ?? NSNull(), "is_self": isSelf]
+         "email": email as Any? ?? NSNull(), "response": response as Any? ?? NSNull(), "is_self": isSelf, "kind": kind]
     }
 }
 
@@ -132,13 +147,14 @@ final class CalendarProvider {
         return event.map { event in
             let participants = (event.attendees ?? []).map { participant in
                 CalendarParticipantSnapshot(name: participant.name, url: participant.url,
-                    response: Self.response(participant.participantStatus), isSelf: participant.isCurrentUser)
+                    response: Self.response(participant.participantStatus), isSelf: participant.isCurrentUser,
+                    kind: CalendarParticipantSnapshot.kind(participant.participantType))
             }
             return CurrentEvent(
                 title: event.title ?? "Meeting",
                 calendarId: event.calendar.calendarIdentifier,
                 calendarName: event.calendar.title,
-                attendees: participants.filter { !$0.isSelf }.compactMap(\.name),
+                attendees: participants.filter { !$0.isSelf && $0.isPerson }.compactMap(\.name),
                 calendarContext: CalendarContextSnapshot(sourceId: event.calendar.source?.sourceIdentifier,
                     calendarId: event.calendar.calendarIdentifier, eventId: event.eventIdentifier,
                     externalEventId: event.calendarItemExternalIdentifier,

@@ -282,5 +282,7 @@
   "settings.writing.words": "words",
   "settings.writing.updating": "Updating profile…",
   "settings.writing.source.eligibility": "Meeting speech contributes only when your enrolled voice has a finalized, reliable attribution.",
-  "settings.writing.sharing.connection_error": "The writing-profile connection is unavailable. Check your Cloud connection and try again."
+  "settings.writing.sharing.connection_error": "The writing-profile connection is unavailable. Check your Cloud connection and try again.",
+  "settings.speakers.meeting_app": "Use participant names from Microsoft Teams",
+  "settings.speakers.meeting_app_help": "While a meeting records, Pennel reads who Teams highlights as speaking and suggests those names for the voices it recognizes. You confirm each name. Names stay on this computer."
 }

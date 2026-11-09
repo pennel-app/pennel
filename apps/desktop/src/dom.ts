@@ -460,14 +460,20 @@ export function askText(title: UiText, value: string, detail: UiText = ""): Prom
   });
 }
 
-/** A name dialog with one opt-in switch below the field, such as Onthoud deze stem. */
-export function askTextWithSwitch(title: UiText, value: string, detail: UiText, label: UiText, checked = false): Promise<{ text: string; on: boolean } | null> {
+export interface NameChoice { name: string; hint: UiText }
+
+/** A name dialog with one opt-in switch below the field, such as Onthoud deze stem, and optional names to pick from. */
+export function askTextWithSwitch(title: UiText, value: string, detail: UiText, label: UiText, checked = false,
+  choices: NameChoice[] = [], switchDisabled = false): Promise<{ text: string; on: boolean } | null> {
   return new Promise((resolve) => {
     const { dialog, heading, description, close } = namedDialog(title, detail);
     const input = textField({ type: "text", value, "aria-label": title });
-    const option = h("input", { type: "checkbox", role: "switch", checked });
+    const option = h("input", { type: "checkbox", role: "switch", checked: checked && !switchDisabled, disabled: switchDisabled });
     const finish = (result: { text: string; on: boolean } | null) => { close(); resolve(result); };
-    const form = h("form", {}, heading, description, input, h("label", { class: "checkbox" }, option, label),
+    const picks = choices.length ? [h("div", { class: "name-choices" }, ...choices.map(choice =>
+      controlButton({ class: "btn compact", type: "button", title: choice.hint,
+        onclick: () => { input.value = choice.name; input.focus(); } }, choice.name)))] : [];
+    const form = h("form", {}, heading, description, input, ...picks, h("label", { class: "checkbox" }, option, label),
       h("div", { class: "dialog-actions row" }, h("span", { class: "grow" }),
         controlButton({ class: "btn", type: "button", onclick: () => finish(null) }, l("common.cancel")),
         controlButton({ class: "btn primary", type: "submit" }, l("common.save"))));

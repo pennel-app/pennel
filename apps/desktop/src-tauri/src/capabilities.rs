@@ -167,6 +167,7 @@ pub struct PlatformCapabilities {
     pub rich_clipboard: Capability,
     pub audio_playback: Capability,
     pub diarization: Capability,
+    pub meeting_app_speakers: Capability,
     pub local_models: Capability,
     pub local_acceleration: &'static str,
 }
@@ -188,6 +189,7 @@ impl PlatformCapabilities {
             &mut self.rich_clipboard,
             &mut self.audio_playback,
             &mut self.diarization,
+            &mut self.meeting_app_speakers,
             &mut self.local_models,
         ] {
             capability.localize();
@@ -349,6 +351,9 @@ pub fn snapshot(hotkey_error: Option<&str>) -> PlatformCapabilities {
         diarization: Capability::unsupported(
             "Speaker recognition requires a saved audio track and a local speaker model.",
         ),
+        meeting_app_speakers: Capability::unsupported(
+            "Meeting participant names are currently only read from Microsoft Teams on macOS.",
+        ),
         local_models: local_models_capability(pennel_core::local_models_unavailable_reason()),
         local_acceleration: if cfg!(target_os = "macos") {
             "metal"
@@ -385,6 +390,10 @@ pub fn snapshot(hotkey_error: Option<&str>) -> PlatformCapabilities {
         result.calendar = Capability::permission(
             find(PermissionKind::Calendar),
             "Give Pennel calendar access to use meeting information.",
+        );
+        result.meeting_app_speakers = Capability::permission(
+            find(PermissionKind::Accessibility),
+            "Give Pennel Accessibility access to read meeting participants.",
         );
         result.call_detection = Capability::available();
         result.echo_cancellation = Capability::available();

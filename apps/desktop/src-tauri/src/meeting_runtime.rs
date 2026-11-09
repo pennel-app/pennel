@@ -27,6 +27,7 @@ pub struct MeetingContext {
     pub heard_system_audio: bool,
     pub audio_warning: Option<String>,
     pub consent_copied: bool,
+    pub speaker_evidence: Option<crate::meeting_speaker_evidence::EvidenceSampler>,
 }
 
 /// Serialize session writes without retaining capture's lifecycle lock during disk I/O.
@@ -277,7 +278,38 @@ pub fn start(
     detected_app: Option<String>,
     attendees: Vec<String>,
 ) -> Result<String, String> {
-    start_with_calendar(shared, title, detected_app, attendees, None)
+    // A manual start still records who was invited, so voices can be named after them later.
+    let (attendees, calendar_context) =
+        if attendees.is_empty() && shared.settings().calendar_enabled {
+            current_invitees(&crate::call_detection::calendar())
+        } else {
+            (attendees, None)
+        };
+    start_with_calendar(shared, title, detected_app, attendees, calendar_context)
+}
+
+fn current_invitees(calendar: &serde_json::Value) -> (Vec<String>, Option<serde_json::Value>) {
+    let Some(event) = calendar
+        .get("current_event")
+        .filter(|event| event.is_object())
+    else {
+        return (Vec::new(), None);
+    };
+    let attendees = event
+        .get("attendees")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    let context = event
+        .get("calendar_context")
+        .filter(|value| value.is_object())
+        .cloned();
+    (attendees, context)
 }
 
 pub fn start_with_calendar(
@@ -354,6 +386,7 @@ pub fn start_with_calendar(
         heard_system_audio: false,
         audio_warning: None,
         consent_copied: false,
+        speaker_evidence: None,
     });
     let recorder = match MeetingRecorder::start(
         session.clone(),
@@ -392,6 +425,10 @@ pub fn start_with_calendar(
     let system_audio = recorder.has_system_audio();
     if let Some(context) = shared.meeting_context.lock().unwrap().as_mut() {
         context.started = recorder.started_at();
+        context.speaker_evidence = settings
+            .meeting_app_speakers
+            .then(|| crate::meeting_speaker_evidence::EvidenceSampler::start(recorder.started_at()))
+            .flatten();
         context.system_audio = system_audio;
         context.audio_warning = recorder.audio_warning();
         context.consent_copied = consent_copied;
@@ -550,7 +587,25 @@ fn finish(shared: &Shared, token: &str, mut recorder: MeetingRecorder) -> Result
     }
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
+    let speaker_evidence = shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_mut()
+        .filter(|context| context.token == token)
+        .and_then(|context| context.speaker_evidence.take())
+        .map(|sampler| sampler.finish());
     let (captured, completion) = recorder.stop();
+    let captured = captured.inspect(|id| {
+        if let Some(evidence) = speaker_evidence
+            && shared
+                .engine
+                .set_meeting_app_speaker_evidence(id, evidence)
+                .is_err()
+        {
+            LOG.error("Meeting app speaker evidence could not be saved. The recording is kept.");
+        }
+    });
     if let Some(context) = shared
         .meeting_context
         .lock()
@@ -929,6 +984,26 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
+
+    #[test]
+    fn manual_start_takes_invitees_and_context_from_the_current_event() {
+        let calendar = serde_json::json!({
+            "current_event": {
+                "title": "Weekly",
+                "attendees": ["Ann", "Bert"],
+                "calendar_context": { "source": "eventkit", "participants": [] }
+            }
+        });
+
+        let (attendees, context) = super::current_invitees(&calendar);
+
+        assert_eq!(attendees, ["Ann", "Bert"]);
+        assert!(context.is_some());
+        assert_eq!(
+            super::current_invitees(&serde_json::json!({ "current_event": null })),
+            (Vec::new(), None)
+        );
+    }
 
     #[test]
     fn live_speaker_controls_reject_stale_and_stopping_sessions_without_changing_settings() {
@@ -1578,6 +1653,7 @@ mod tests {
                 heard_system_audio: false,
                 audio_warning: None,
                 consent_copied: false,
+                speaker_evidence: None,
             })),
         });
         (root, shared, session, token)

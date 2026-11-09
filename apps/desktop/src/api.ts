@@ -138,6 +138,7 @@ export interface PlatformCapabilities {
   rich_clipboard: Capability;
   audio_playback: Capability;
   diarization: Capability;
+  meeting_app_speakers: Capability;
   local_models: Capability;
   local_acceleration: "metal" | "vulkan" | "cpu";
 }
@@ -266,6 +267,7 @@ export interface Settings {
   consent_enabled: boolean;
   auto_detect: boolean;
   diarization: boolean;
+  meeting_app_speakers: boolean;
   speaker_recognition: SpeakerRecognitionMode;
   claude_access?: boolean;
   [key: string]: unknown;
@@ -710,6 +712,25 @@ export interface MeetingVoice {
   can_remember: boolean;
 }
 
+export interface VoiceNameSuggestion {
+  voice: number;
+  name: string;
+  app_id: string;
+  agreement: number;
+  coverage: number;
+  shared_device: boolean;
+}
+
+export interface VoiceNameCandidate {
+  name: string;
+  source: "invited" | "meeting_app" | "known_voice";
+}
+
+export interface VoiceNaming {
+  suggestions: VoiceNameSuggestion[];
+  candidates: VoiceNameCandidate[];
+}
+
 export interface SpeakerSetup {
   local_available: boolean;
   ready: boolean;
@@ -970,6 +991,7 @@ export const api = {
   renameSpeaker: (id: string, voice: number, name: string) => invoke<void>("rename_speaker", { id, voice, name }),
   recognizeSpeakers: (id: string) => invoke<SpeakerRecognition>("diarize_meeting", { id }),
   meetingVoices: (id: string) => invoke<MeetingVoice[]>("meeting_voices", { id }),
+  meetingVoiceNaming: (id: string) => invoke<VoiceNaming>("meeting_voice_naming", { id }),
   rememberSpeaker: (id: string, voice: number, name: string) => invoke<void>("remember_speaker", { id, voice, name }),
   speakerSetup: () => invoke<SpeakerSetup>("speaker_setup"),
   startVoiceEnrollment: () => invoke<void>("start_voice_enrollment"),

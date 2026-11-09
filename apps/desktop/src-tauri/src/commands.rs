@@ -1627,6 +1627,19 @@ pub async fn forget_all_voices(shared: State<'_, Arc<Shared>>) -> Result<()> {
 }
 
 #[tauri::command]
+pub async fn meeting_voice_naming(
+    id: String,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<pennel_core::VoiceNaming> {
+    let shared = shared.inner().clone();
+    off_main("meeting_voice_naming", move || {
+        checked_meeting_dir(&shared.engine, &id)?;
+        Ok(shared.engine.meeting_voice_naming(&id))
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn meeting_voices(
     id: String,
     shared: State<'_, Arc<Shared>>,
@@ -1846,6 +1859,7 @@ mod tests {
             heard_system_audio: false,
             audio_warning: None,
             consent_copied: false,
+            speaker_evidence: None,
         });
         save_live_notes(&shared, "Saved before stop".into(), &token).unwrap();
         assert!(save_live_notes(&shared, "Stale".into(), "other-session").is_err());
@@ -2145,6 +2159,7 @@ mod tests {
             system_audio: true,
             heard_system_audio: true,
             audio_warning: None,
+            speaker_evidence: None,
             consent_copied: false,
         });
         session
@@ -2259,6 +2274,7 @@ mod tests {
                 pending_recording_finish: None,
                 system_audio: true,
                 heard_system_audio: true,
+                speaker_evidence: None,
                 audio_warning: Some("Systeemgeluid is onderbroken.".into()),
                 consent_copied: true,
             })),

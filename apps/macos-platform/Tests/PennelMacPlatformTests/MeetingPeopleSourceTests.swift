@@ -108,4 +108,19 @@ final class MeetingPeopleSourceTests: XCTestCase {
 
 private final class MeetingContactFocusView: NSView {
     override var acceptsFirstResponder: Bool { true }
+
+}
+
+final class CalendarParticipantKindTests: XCTestCase {
+    func testRoomsAndResourcesAreRecordedButAreNotPeople() {
+        let room = CalendarParticipantSnapshot(name: "Room 0.7", url: URL(string: "mailto:room@example.test"), response: nil, isSelf: false,
+                                               kind: CalendarParticipantSnapshot.kind(.room))
+        let person = CalendarParticipantSnapshot(name: "Tom", url: nil, response: nil, isSelf: false,
+                                                 kind: CalendarParticipantSnapshot.kind(.person))
+
+        XCTAssertEqual(room.json["kind"] as? String, "room")
+        XCTAssertFalse(room.isPerson)
+        XCTAssertTrue(person.isPerson)
+        XCTAssertFalse(CalendarParticipantSnapshot(name: "Beamer", url: nil, response: nil, isSelf: false, kind: "resource").isPerson)
+    }
 }
