@@ -84,11 +84,24 @@ struct TapInputLayout {
     let streamIndices: [Int]
     let format: AVAudioFormat
 
-    static func resolve(tap: AudioStreamBasicDescription, deviceRate: Double, hardwareChannels: Int,
+    static func resolve(tap: AudioStreamBasicDescription, deviceRate: Double, hardwareChannels: Int?,
                         streamStarts: [Int], streamFormats: [AudioStreamBasicDescription], bufferChannels: [Int]) -> Self? {
-        guard deviceRate.isFinite, deviceRate > 0, hardwareChannels >= 0,
+        guard let hardwareChannels, deviceRate.isFinite, deviceRate > 0, hardwareChannels >= 0,
               tap.mChannelsPerFrame > 0, streamStarts.count == streamFormats.count else { return nil }
         let channels = Int(tap.mChannelsPerFrame)
+        guard let channelBase = streamStarts.min(), channelBase > 0,
+              streamFormats.allSatisfy({ $0.mChannelsPerFrame > 0 }),
+              streamFormats.reduce(0, { $0 + Int($1.mChannelsPerFrame) }) == hardwareChannels + channels,
+              bufferChannels.reduce(0, +) == hardwareChannels + channels
+        else { return nil }
+        // StartingChannel names elements of the owning device; it need not start at one in
+        // the input scope's AudioBufferList. Normalize one complete contiguous input layout.
+        var expectedStart = channelBase
+        for index in streamStarts.indices.sorted(by: { streamStarts[$0] < streamStarts[$1] }) {
+            guard streamStarts[index] == expectedStart else { return nil }
+            expectedStart += Int(streamFormats[index].mChannelsPerFrame)
+        }
+        let inputStarts = streamStarts.map { $0 - channelBase + 1 }
         let wanted = hardwareChannels..<(hardwareChannels + channels)
         var offset = 0
         var buffers: [Int] = []
@@ -103,14 +116,14 @@ struct TapInputLayout {
         }
         guard buffers.reduce(0, { $0 + bufferChannels[$1] }) == channels else { return nil }
         let streams = streamStarts.indices.filter { index in
-            let start = streamStarts[index] - 1
+            let start = inputStarts[index] - 1
             return start >= wanted.lowerBound && start + Int(streamFormats[index].mChannelsPerFrame) <= wanted.upperBound
         }
         guard !streams.isEmpty, streams.reduce(0, { $0 + Int(streamFormats[$1].mChannelsPerFrame) }) == channels else { return nil }
         var expectedChannel = wanted.lowerBound
-        for index in streams.sorted(by: { streamStarts[$0] < streamStarts[$1] }) {
+        for index in streams.sorted(by: { inputStarts[$0] < inputStarts[$1] }) {
             let format = streamFormats[index]
-            guard streamStarts[index] - 1 == expectedChannel,
+            guard inputStarts[index] - 1 == expectedChannel,
                   format.mFormatID == kAudioFormatLinearPCM, format.mBitsPerChannel == 32,
                   format.mFormatFlags & kAudioFormatFlagIsFloat != 0,
                   format.mFormatFlags & kAudioFormatFlagIsBigEndian == 0 else { return nil }

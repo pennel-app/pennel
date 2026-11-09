@@ -4,11 +4,53 @@ import XCTest
 @testable import PennelMacPlatform
 
 final class SystemCaptureTimingTests: XCTestCase {
+    func testMeasuredTapOnlyDeviceElementSevenMapsToFirstScopeLocalInputBuffer() throws {
+        let tap = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
+        let layout = try XCTUnwrap(TapInputLayout.resolve(tap: tap.streamDescription.pointee, deviceRate: 48_000,
+                                                        hardwareChannels: 0, streamStarts: [7],
+                                                        streamFormats: [tap.streamDescription.pointee], bufferChannels: [2]))
+        XCTAssertEqual(layout.bufferIndices, [0])
+        XCTAssertEqual(layout.streamIndices, [0])
+        XCTAssertEqual(layout.format, tap)
+        let buffer = try tone(format: tap, frames: 480, position: 0)
+        XCTAssertTrue(layout.validBuffers(UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)))
+    }
+
+    func testContiguousFullDuplexDeviceElementsNormalizeWithoutIncludingTheMicrophone() throws {
+        let tap = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
+        let layout = try XCTUnwrap(TapInputLayout.resolve(tap: tap.streamDescription.pointee, deviceRate: 24_000,
+                                                        hardwareChannels: 1, streamStarts: [7, 8],
+                                                        streamFormats: [description(mono(48_000)), tap.streamDescription.pointee],
+                                                        bufferChannels: [1, 2]))
+        XCTAssertEqual(layout.bufferIndices, [1])
+        XCTAssertEqual(layout.streamIndices, [1])
+        XCTAssertEqual(layout.format.sampleRate, 24_000)
+    }
+
+    func testGapsOverlapsUnknownHardwareAndUnmatchedChannelTotalsStayAmbiguous() throws {
+        let tap = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
+        let formats = [description(mono(48_000)), tap.streamDescription.pointee]
+        for starts in [[7, 9], [7, 7]] {
+            XCTAssertNil(TapInputLayout.resolve(tap: tap.streamDescription.pointee, deviceRate: 48_000,
+                                               hardwareChannels: 1, streamStarts: starts, streamFormats: formats, bufferChannels: [1, 2]))
+        }
+        XCTAssertNil(TapInputLayout.resolve(tap: tap.streamDescription.pointee, deviceRate: 48_000,
+                                           hardwareChannels: nil, streamStarts: [7], streamFormats: [tap.streamDescription.pointee], bufferChannels: [2]))
+        XCTAssertNil(TapInputLayout.resolve(tap: tap.streamDescription.pointee, deviceRate: 48_000,
+                                           hardwareChannels: 1, streamStarts: [7, 8], streamFormats: formats, bufferChannels: [1, 3]))
+        var combined = tap.streamDescription.pointee
+        combined.mChannelsPerFrame = 3
+        combined.mBytesPerFrame = 12
+        combined.mBytesPerPacket = 12
+        XCTAssertNil(TapInputLayout.resolve(tap: tap.streamDescription.pointee, deviceRate: 48_000,
+                                           hardwareChannels: 1, streamStarts: [7], streamFormats: [combined], bufferChannels: [3]))
+    }
+
     func testAggregateRateOverridesStaleBluetoothTapRateWithoutChangingPitchOrPadding() throws {
         let tap = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
         let resolved = try XCTUnwrap(TapInputLayout.resolve(tap: tap.streamDescription.pointee, deviceRate: 24_000,
                                                           hardwareChannels: 1, streamStarts: [1, 2],
-                                                          streamFormats: [mono(48_000).streamDescription.pointee, tap.streamDescription.pointee],
+                                                          streamFormats: [description(mono(48_000)), tap.streamDescription.pointee],
                                                           bufferChannels: [1, 2]))
         XCTAssertEqual(resolved.bufferIndices, [1])
         XCTAssertEqual(resolved.streamIndices, [1])
@@ -180,6 +222,10 @@ final class SystemCaptureTimingTests: XCTestCase {
         XCTAssertEqual(collector.samples.count, count)
         XCTAssertEqual(count, 64_000)
         XCTAssertTrue(collector.samples[16_000..<48_000].allSatisfy { $0 == 0 })
+    }
+
+    private func description(_ format: AVAudioFormat) -> AudioStreamBasicDescription {
+        withExtendedLifetime(format) { format.streamDescription.pointee }
     }
 
     private func mono(_ rate: Double) -> AVAudioFormat {
