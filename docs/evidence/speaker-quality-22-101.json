@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-09",
+  "pr": "https://github.com/pennel-app/pennel/pull/190",
+  "source": {
+    "product_commit": "d0e7f3288f48c0c4b1154d7f230a18f9c6204c00",
+    "core_quality_commit": "b3d55d84cb27ce9f0617852e77cfec180b25bf3e",
+    "baseline": "6dd72ccdc5061b92531fcbb6bdd9ebeb136ee60d"
+  },
+  "checks": {
+    "core_default": 1180,
+    "core_existing_ignored": 7,
+    "core_lean": 1162,
+    "core_lean_existing_ignored": 5,
+    "keyboard": 17,
+    "frontend": 436,
+    "desktop_backend": 287,
+    "mac_services": 168,
+    "native_sampler": 9,
+    "native_speakers": 23,
+    "native_speakers_existing_ignored": 1,
+    "wav_parser": 1,
+    "offline_scorer": 15,
+    "local_asr_tool": 6,
+    "mobile_plugins": 17,
+    "mobile_widgets": 7,
+    "mobile_ui": 159,
+    "mobile_kit": 116,
+    "ios_runtime_services": 144,
+    "ios_keyboard": 36,
+    "strict_clippy": true,
+    "formatting": true,
+    "clean_and_repeated_prebuild": true,
+    "pod_ownership": 6,
+    "ios_simulator_release": true,
+    "ios_device_release": true
+  },
+  "native_mac": {
+    "product_commit": "d0e7f3288f48c0c4b1154d7f230a18f9c6204c00",
+    "team": "B538Q2K76C",
+    "binary_sha256": "cafe0dce49ef58917dc7675744f9aa05c1ed7a066f7a2bbbe055adc7c854bae1",
+    "notarized": false,
+    "codesign_verified": true
+  },
+  "ios_bindings": {
+    "before": "a3dd71020d04772a6553b473927b97b74c5245a05ebad370251295f01ee5b3f5",
+    "after": "a3dd71020d04772a6553b473927b97b74c5245a05ebad370251295f01ee5b3f5",
+    "identical": true
+  },
+  "visuals": {
+    "commit": "d92e868f69a09d7886dfe1e49e13cf87886f2c75",
+    "images": 32,
+    "pr": 190,
+    "input": "matched synthetic fixtures",
+    "locales": [
+      "en",
+      "nl"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "before": "6dd72cc",
+    "after": "d0e7f32"
+  },
+  "private_recording_repair": {
+    "original_hashes_verified_unchanged": true,
+    "owner_passages_restored": [
+      161,
+      24
+    ],
+    "numbered_estimated_groups": [
+      8,
+      11
+    ],
+    "identity_capacity_unassigned": [
+      0,
+      0
+    ],
+    "limited_evidence": [
+      true,
+      true
+    ],
+    "words_notes_audio_preserved": true,
+    "ordinary_profiles_modified": false,
+    "voice_enrollment": false,
+    "reference_intervals_applied_to_whole_groups": false
+  },
+  "qualification": {
+    "whole_recording_accuracy": false,
+    "exact_five_person_recovery": false,
+    "real_teams_name_precision": false,
+    "named_coverage": false,
+    "actual_teams_ax_layout_support": false,
+    "signed_iphone_acceptance": false,
+    "accessibility": false,
+    "production_release": false
+  },
+  "evidence_scope": "Local deterministic tests, owned render fixtures, saved-audio replay and personally signed packaged API/UI; no real Teams call or new microphone capture."
+}
