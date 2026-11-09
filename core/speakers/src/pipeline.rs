@@ -7,8 +7,8 @@ use sherpa_onnx::{
 };
 
 use crate::{
-    CLUSTER_THRESHOLD, Diarization, Error, FRAGMENT_THRESHOLD, SAMPLE_RATE, Speaker,
-    VOICEPRINT_BUDGET_MS, normalized, reconcile_fragments, renumber, speech_ms, voiceprint_spans,
+    CLUSTER_THRESHOLD, Diarization, Error, SAMPLE_RATE, Speaker, VOICEPRINT_BUDGET_MS, normalized,
+    renumber, speech_ms, voiceprint_spans,
 };
 
 pub struct Models<'a> {
@@ -140,15 +140,33 @@ impl Diarizer {
     }
 
     pub fn process(&self, samples: &[f32]) -> Result<Diarization, Error> {
-        self.process_unreconciled(samples)
-            .map(|diarization| reconcile_fragments(diarization, FRAGMENT_THRESHOLD))
+        let turns = self.raw_turns(samples)?;
+        crate::clean_windows::reconcile(&turns, |start, end| {
+            self.embedder.embed_spans(samples, &[(start, end)])
+        })
     }
 
-    /// Same inference and clean voiceprints as production, before fragment reconciliation. Offline
-    /// evaluation can compare both results without a second model run or different audio input.
+    /// Native turns and legacy whole-cluster clean voiceprints, retained for offline baseline
+    /// comparisons. Production instead reconciles independently embedded clean windows.
     pub fn process_unreconciled(&self, samples: &[f32]) -> Result<Diarization, Error> {
+        let turns = self.raw_turns(samples)?;
+        let count = turns.iter().map(|turn| turn.speaker + 1).max().unwrap_or(0);
+        let speakers = (0..count)
+            .map(|speaker| {
+                let spans = voiceprint_spans(&turns, speaker, VOICEPRINT_BUDGET_MS);
+                Ok(Speaker {
+                    speaker,
+                    speech_ms: speech_ms(&turns, speaker),
+                    embedding: self.embedder.embed_spans(samples, &spans)?,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Diarization { turns, speakers })
+    }
+
+    fn raw_turns(&self, samples: &[f32]) -> Result<Vec<crate::Turn>, Error> {
         if samples.len() < SAMPLE_RATE as usize {
-            return Ok(Diarization::default());
+            return Ok(Vec::new());
         }
         let result = self
             .diarizer
@@ -161,18 +179,7 @@ impl Diarizer {
                 i64::from(segment.speaker),
             )
         });
-        let (turns, count) = renumber(raw);
-        let speakers = (0..count as u32)
-            .map(|speaker| {
-                let spans = voiceprint_spans(&turns, speaker, VOICEPRINT_BUDGET_MS);
-                Ok(Speaker {
-                    speaker,
-                    speech_ms: speech_ms(&turns, speaker),
-                    embedding: self.embedder.embed_spans(samples, &spans)?,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        Ok(Diarization { turns, speakers })
+        Ok(renumber(raw).0)
     }
 }
 

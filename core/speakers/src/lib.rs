@@ -6,6 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(any(feature = "onnx", test))]
+mod clean_windows;
+
 #[cfg(feature = "onnx")]
 mod pipeline;
 #[cfg(feature = "onnx")]
@@ -22,10 +25,8 @@ pub const ME_THRESHOLD: f32 = 0.5;
 pub const KNOWN_THRESHOLD: f32 = 0.55;
 /// Joining the per-chunk clusters of one meeting: the same voice in another chunk.
 pub const MERGE_THRESHOLD: f32 = 0.55;
-/// Same-track reconciliation is stricter than matching a remembered voice. It also requires
-/// independent clean turns and forbids merging speakers that overlap in the source. This initial
-/// postmerge policy tolerates measured within-person variation; sparse labeled passages do not
-/// establish whole-recording quality or qualify a different native clustering cutoff.
+/// Legacy centroid-only reconciliation for already computed results. Native audio uses clean
+/// window clustering instead; this retains compatibility for callers without the original audio.
 pub const FRAGMENT_THRESHOLD: f32 = 0.70;
 /// Shorter enrollment audio gives an unstable voiceprint.
 pub const MIN_ENROLLMENT_MS: u64 = 10_000;
@@ -48,7 +49,7 @@ pub struct Turn {
 pub struct Speaker {
     pub speaker: u32,
     pub speech_ms: u64,
-    /// L2-normalised voiceprint; empty when the speaker never spoke long enough for one.
+    /// L2-normalised voiceprint; empty when clean evidence is insufficient or attribution is uncertain.
     pub embedding: Vec<f32>,
 }
 
