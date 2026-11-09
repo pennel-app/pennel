@@ -182,8 +182,9 @@ export function meetingWorkspaceTools(initial: Context, host: {
         const suggested = (voice: MeetingVoice) => voice.name ? undefined : naming.suggestions.find(entry => entry.voice === voice.voice);
         const personName = (voice: MeetingVoice) => { const suggestion = suggested(voice); return suggestion?.shared_device ? undefined : suggestion?.name; };
         if (selected === "speakers") voiceList.replaceChildren(...voices.filter(voice => voice.voice != null).map(voice => h("div", { class: "meeting-voice-row row" },
-          h("span", { class: "grow" }, voice.name || t("meetings.voice_name_label", { name: String(voice.voice) })),
-          ...voiceSuggestion(voice, suggested(voice)),
+          h("span", { class: suggested(voice) ? "grow meeting-voice-name has-hint" : "grow meeting-voice-name" }, voice.name || t("meetings.voice_name_label", { name: String(voice.voice) }),
+            ...suggestionHint(suggested(voice))),
+          ...suggestionAction(voice, suggested(voice)),
           controlButton({ class: "btn compact", onclick: () => { void renameVoice(voice, false, personName(voice)); } }, l("people.rename")),
           controlButton({ class: "btn compact", disabled: !voice.can_remember, title: voice.can_remember ? "" : t("meetings.speaker_recognition_unavailable"),
             onclick: () => { void renameVoice(voice, true, personName(voice)); } }, l("people.remember")))));
@@ -221,12 +222,15 @@ export function meetingWorkspaceTools(initial: Context, host: {
       : status.progress.phase === "speakers" ? t("meetings.recognizing_speakers")
       : status.progress.phase === "saving" ? t("meetings.retranscription_saving") : t("meetings.retranscription_decoding");
   }
-  function voiceSuggestion(voice: MeetingVoice, suggestion: VoiceNameSuggestion | undefined) {
+  function suggestionHint(suggestion: VoiceNameSuggestion | undefined) {
     if (!suggestion) return [];
     // A room or shared laptop says where the voice came from, not who it is.
-    if (suggestion.shared_device) return [h("span", { class: "help" }, t("meetings.voice_shared_device", { name: suggestion.name }))];
-    return [h("span", { class: "help" }, t("meetings.voice_suggestion", { name: suggestion.name })),
-      controlButton({ class: "btn compact", onclick: () => { void useSuggestion(voice, suggestion.name); } }, l("meetings.voice_use_suggestion"))];
+    const text = suggestion.shared_device ? t("meetings.voice_shared_device", { name: suggestion.name }) : t("meetings.voice_suggestion", { name: suggestion.name });
+    return [h("span", { class: "help meeting-voice-hint" }, text)];
+  }
+  function suggestionAction(voice: MeetingVoice, suggestion: VoiceNameSuggestion | undefined) {
+    if (!suggestion || suggestion.shared_device) return [];
+    return [controlButton({ class: "btn compact", onclick: () => { void useSuggestion(voice, suggestion.name); } }, l("meetings.voice_use_suggestion"))];
   }
   async function useSuggestion(voice: MeetingVoice, name: string) {
     await run(async owner => {

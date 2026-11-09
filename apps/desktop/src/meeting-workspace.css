@@ -73,6 +73,10 @@
 .meeting-workspace-tools .live-speaker-controls { margin-bottom: 8px; }
 .meeting-workspace-tools .meeting-voice-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .meeting-voice-row > .grow { min-width: 0; overflow-wrap: anywhere; }
+.meeting-voice-row { flex-wrap: wrap; }
+.meeting-voice-name { display: flex; flex-direction: column; gap: 2px; }
+.meeting-voice-name.has-hint { flex-basis: 100%; }
+.meeting-voice-hint { overflow-wrap: normal; }
 .meeting-file-actions { margin-bottom: 8px; }
 .meeting-export-copy { width: 100%; min-height: 240px; flex: 1 0 240px; font: inherit; line-height: 1.6; resize: vertical; white-space: pre-wrap; }
 .meeting-export-preview .btn[aria-pressed="true"] { background: var(--selection); }
