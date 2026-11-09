@@ -4,18 +4,26 @@ import ApplicationServices
 /// The part of an accessibility element the participant reader needs, so the parser can run on fixtures.
 protocol ParticipantNode {
     var role: String { get }
+    var subrole: String { get }
     var label: String { get }
     var text: String { get }
     var domClasses: [String] { get }
     var identifier: String { get }
     var selected: Bool { get }
+    var checked: Bool? { get }
+    var modal: Bool? { get }
+    var size: CGSize? { get }
     var children: [Self] { get }
     var childrenReadable: Bool { get }
 }
 
 extension ParticipantNode {
+    var subrole: String { "" }
     var identifier: String { "" }
     var selected: Bool { false }
+    var checked: Bool? { nil }
+    var modal: Bool? { nil }
+    var size: CGSize? { nil }
     var childrenReadable: Bool { true }
 }
 
@@ -61,18 +69,18 @@ enum TeamsParticipantParser {
     static func callWindowKind<Node: ParticipantNode>(_ root: Node) -> TeamsCallWindowKind {
         var remaining = 4_096
         var complete = true
-        var sawMainChatNavigation = false
+        var sawMainNavigation = false
         func containsCall(_ node: Node, depth: Int) -> Bool {
             guard remaining > 0, depth < maxDepth, !node.role.isEmpty else { complete = false; return false }
             remaining -= 1
             if tileRoles.contains(node.role) {
                 let label = node.label.lowercased()
-                if hasVideoState(label) || selfLabelPrefixes.contains(where: { label.hasPrefix($0) }) { return true }
+                if hasTileState(node) || selfLabelPrefixes.contains(where: { label.hasPrefix($0) }) { return true }
             }
             // An unsupported/audio-only call may also be a complete control tree. Only a known
-            // main-navigation shape with Chat selected positively establishes a non-call shell.
-            if isMainChatNavigation(node) { sawMainChatNavigation = true }
-            // Labels/text of ordinary chat controls and messages are never inspected.
+            // main-navigation shape positively establishes a non-call shell.
+            if isMainNavigation(node) { sawMainNavigation = true }
+            // Chat text values are never inspected; navigation labels require its control shape.
             if leafRoles.contains(node.role) { return false }
             let children = node.children
             guard node.childrenReadable else { complete = false; return false }
@@ -80,10 +88,22 @@ enum TeamsParticipantParser {
             return false
         }
         if containsCall(root, depth: 0) { return .call }
-        return complete && sawMainChatNavigation ? .other : .unreadable
+        return complete && (sawMainNavigation || isWindowSharingButton(root)) ? .other : .unreadable
     }
 
-    private static func isMainChatNavigation<Node: ParticipantNode>(_ node: Node) -> Bool {
+    private static func isWindowSharingButton<Node: ParticipantNode>(_ node: Node) -> Bool {
+        // macOS 27.0.1 / Teams 26289 exposes its native sharing-session titlebar button as a
+        // separate top-level AXDialog. Only the measured, content-free leaf surface is excluded.
+        guard node.role == "AXWindow", node.subrole == "AXDialog", node.modal == false,
+              node.size == CGSize(width: 66, height: 20), node.childrenReadable, node.children.count == 1,
+              let button = node.children.first, button.role == "AXButton", button.label == "WindowSharingSessionButton",
+              button.childrenReadable, button.children.isEmpty, node.label == "Window"
+        else { return false }
+        return true
+    }
+
+    private static func isMainNavigation<Node: ParticipantNode>(_ node: Node) -> Bool {
+        if isPersonalNavigation(node) { return true }
         guard ["AXTabGroup", "AXToolbar", "AXGroup"].contains(node.role), node.identifier == "app-bar" else { return false }
         let controls = node.children.filter { ["AXTab", "AXRadioButton", "AXButton"].contains($0.role) }
         let required: Set<String> = ["activity-button", "chat-button", "calendar-button"]
@@ -92,9 +112,52 @@ enum TeamsParticipantParser {
             && controls.contains { $0.identifier == "chat-button" && $0.selected }
     }
 
+    private static func isPersonalNavigation<Node: ParticipantNode>(_ node: Node) -> Bool {
+        // Measured Teams personal/free shell: navigation uses labelled group wrappers, empty
+        // identifiers and checkbox AXValues. Restrict recognition to the complete static shape.
+        let names: Set<String> = ["Chat", "Meet", "People", "Copilot", "Communities", "Calendar", "Activity"]
+        guard node.role == "AXGroup", node.childrenReadable,
+              node.children.count == names.count
+        else { return false }
+        // Establish the checkbox-only structure before reading any group labels.
+        var controls: [Node] = []
+        for wrapper in node.children {
+            guard wrapper.role == "AXGroup", wrapper.childrenReadable, wrapper.children.count == 1,
+                  let control = wrapper.children.first, control.role == "AXCheckBox", control.checked != nil
+            else { return false }
+            controls.append(control)
+        }
+        guard node.label == "Apps" else { return false }
+        var shown = Set<String>()
+        var checkedCount = 0
+        for (wrapper, control) in zip(node.children, controls) {
+            guard names.contains(wrapper.label), shown.insert(wrapper.label).inserted,
+                  control.label == wrapper.label, let checked = control.checked
+            else { return false }
+            if checked { checkedCount += 1 }
+        }
+        return shown == names && checkedCount == 1
+    }
+
     private static func hasVideoState(_ label: String) -> Bool {
         let states: Set<String> = ["video is on", "video is off", "video is ingeschakeld", "video is uitgeschakeld", "video staat aan", "video staat uit", "video is aan", "video is uit"]
         return label.lowercased().components(separatedBy: ", ").dropFirst().contains { states.contains($0) }
+    }
+
+    private static func hasTileState<Node: ParticipantNode>(_ node: Node) -> Bool {
+        if hasVideoState(node.label) { return true }
+        // Personal/free Teams omits video state on camera-off menu items. A context menu alone
+        // also appears in chat, so require the measured video-occlusion marker within the tile.
+        guard node.role == "AXMenuItem", node.label.hasSuffix(", Context menu is available") else { return false }
+        var remaining = 32
+        func containsVideoMarker(_ candidate: Node, depth: Int) -> Bool {
+            guard remaining > 0, depth <= 3 else { return false }
+            remaining -= 1
+            if candidate.domClasses.contains("vdi-occlusion") || candidate.domClasses.contains(speakingClass) { return true }
+            guard candidate.childrenReadable else { return false }
+            return candidate.children.filter { $0.role == "AXGroup" }.contains { containsVideoMarker($0, depth: depth + 1) }
+        }
+        return containsVideoMarker(node, depth: 0)
     }
 
     static func snapshot<Node: ParticipantNode>(windows: [Node]) -> MeetingSpeakerSnapshot {
@@ -141,7 +204,7 @@ enum TeamsParticipantParser {
     static func tile<Node: ParticipantNode>(_ node: Node) -> (name: String, speaking: Bool)? {
         guard tileRoles.contains(node.role) else { return nil }
         let label = node.label
-        guard hasVideoState(label), !selfLabelPrefixes.contains(where: { label.lowercased().hasPrefix($0) }) else { return nil }
+        guard hasTileState(node), !selfLabelPrefixes.contains(where: { label.lowercased().hasPrefix($0) }) else { return nil }
         let shown = firstText(node, depth: 0).flatMap { label.hasPrefix($0) ? $0 : nil }
         let name = (shown ?? label.components(separatedBy: ", ")[0]).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
@@ -171,6 +234,7 @@ final class AccessibilityParticipantNode: ParticipantNode {
     }
 
     lazy var role: String = value(kAXRoleAttribute) as? String ?? ""
+    lazy var subrole: String = value(kAXSubroleAttribute) as? String ?? ""
     lazy var label: String = {
         var values: CFArray?
         let names = [kAXTitleAttribute, kAXDescriptionAttribute] as CFArray
@@ -182,11 +246,31 @@ final class AccessibilityParticipantNode: ParticipantNode {
     }()
     lazy var identifier: String = value(kAXIdentifierAttribute) as? String ?? ""
     lazy var selected: Bool = value(kAXSelectedAttribute) as? Bool ?? false
+    lazy var checked: Bool? = {
+        guard role == "AXCheckBox", let state = value(kAXValueAttribute) as? NSNumber,
+              state.doubleValue == 0 || state.doubleValue == 1
+        else { return nil }
+        return state.doubleValue == 1
+    }()
+    lazy var modal: Bool? = value(kAXModalAttribute) as? Bool
+    lazy var size: CGSize? = {
+        guard let raw = value(kAXSizeAttribute), CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        var size = CGSize.zero
+        guard AXValueGetValue(unsafeBitCast(raw, to: AXValue.self), .cgSize, &size) else { return nil }
+        return size
+    }()
     lazy var text: String = value(kAXValueAttribute) as? String ?? ""
     lazy var domClasses: [String] = value("AXDOMClassList") as? [String] ?? []
     private lazy var childReading: (nodes: [AccessibilityParticipantNode], readable: Bool) = {
         var value: AnyObject?
         let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+        if role == "AXButton", result == .noValue || result == .attributeUnsupported {
+            // A native leaf may omit AXChildren. Prove that omission from the complete
+            // attribute list; an unavailable read or a declared-but-unreadable child list fails.
+            var names: CFArray?
+            if AXUIElementCopyAttributeNames(element, &names) == .success,
+               let names = names as? [String], !names.contains(kAXChildrenAttribute) { return ([], true) }
+        }
         guard result == .success, let children = value as? [AXUIElement] else { return ([], false) }
         return (children.map(AccessibilityParticipantNode.init), true)
     }()

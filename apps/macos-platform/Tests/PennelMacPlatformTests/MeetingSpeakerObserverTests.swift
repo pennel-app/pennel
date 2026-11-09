@@ -4,12 +4,17 @@ import CoreGraphics
 
 private struct Node: ParticipantNode {
     var role = "AXGroup"
+    var subrole = ""
     var label = ""
     var text = ""
     var domClasses: [String] = []
     var identifier = ""
     var selected = false
+    var checked: Bool? = nil
+    var modal: Bool? = nil
+    var size: CGSize? = nil
     var children: [Node] = []
+    var childrenReadable = true
 }
 
 private func tile(_ label: String, shown: String? = nil, ring: [String]? = nil, role: String = "AXMenuItem") -> Node {
@@ -74,6 +79,30 @@ final class MeetingSpeakerObserverTests: XCTestCase {
         )])
         XCTAssertEqual(snapshot.participants, ["Bert Jacobs"])
         XCTAssertEqual(snapshot.speaking, [])
+    }
+
+    func testReadsMeasuredPersonalCameraOffTileWithoutAVideoStateSuffix() {
+        let guest = Node(role: "AXMenuItem", label: "Pennel QA A (Guest), Context menu is available", children: [
+            Node(children: [Node(domClasses: ["fui-Flex", "vdi-occlusion"])]),
+            Node(domClasses: speakingRing),
+            Node(role: "AXStaticText", text: "Pennel QA A (Guest)"),
+        ])
+        let snapshot = TeamsParticipantParser.snapshot(windows: [window(guest)])
+        XCTAssertEqual(snapshot.participants, ["Pennel QA A (Guest)"])
+        XCTAssertEqual(snapshot.speaking, ["Pennel QA A (Guest)"])
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(window(guest)), .call)
+    }
+
+    func testContextMenuLabelsAloneAndUnrelatedVideoClassesAreNotParticipantTiles() {
+        for candidate in [
+            Node(role: "AXMenuItem", label: "Ann, Context menu is available"),
+            Node(role: "AXMenuItem", label: "Ann, Context menu is available", children: [Node(domClasses: ["video-tile"])]),
+            Node(role: "AXMenuItem", label: "Ann, Available", children: [Node(domClasses: ["vdi-occlusion"])]),
+            Node(role: "AXButton", label: "Ann, Context menu is available", children: [Node(domClasses: ["vdi-occlusion"])]),
+        ] {
+            XCTAssertFalse(TeamsParticipantParser.snapshot(windows: [window(candidate)]).available)
+            XCTAssertEqual(TeamsParticipantParser.callWindowKind(window(candidate)), .unreadable)
+        }
     }
 
     func testDuplicateDisplayNamesAreFlaggedInsteadOfCollapsedAsOnePerson() {
@@ -188,6 +217,98 @@ final class MeetingSpeakerCallAssociationTests: XCTestCase {
             Node(role: "AXImage", label: "Bert Jacobs, Away"),
             Node(role: "AXTextArea", text: "Private conversation body")
         )
+    }
+
+    private func personalNavigation(selected: String = "Calendar") -> Node {
+        // Teams personal/free 26289: identifiers are empty, and AXValue marks a checked
+        // checkbox even though AXSelected is false. Each control has one group wrapper.
+        Node(role: "AXGroup", label: "Apps", children:
+            ["Chat", "Meet", "People", "Copilot", "Communities", "Calendar", "Activity"].map { name in
+                Node(role: "AXGroup", label: name, children: [
+                    Node(role: "AXCheckBox", label: name, checked: name == selected),
+                ])
+            }
+        )
+    }
+
+    private func sharingButtonWindow() -> Node {
+        Node(role: "AXWindow", subrole: "AXDialog", label: "Window", modal: false,
+             size: CGSize(width: 66, height: 20), children: [
+                Node(role: "AXButton", label: "WindowSharingSessionButton"),
+             ])
+    }
+
+    func testMeasuredNativeWindowSharingButtonIsAnAuxiliarySurface() {
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(sharingButtonWindow()), .other)
+        XCTAssertNil(MeetingSpeakerObserver.callAssociationReason([
+            TeamsCallWindowState(kind: .call, focused: true),
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(sharingButtonWindow())),
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(sharingButtonWindow())),
+        ]))
+    }
+
+    func testSharingButtonExclusionDoesNotAcceptOtherDialogsOrHideASecondCall() {
+        var wrongSubrole = sharingButtonWindow()
+        wrongSubrole.subrole = "AXStandardWindow"
+        var wrongTitle = sharingButtonWindow()
+        wrongTitle.label = "Other window"
+        var wrongButton = sharingButtonWindow()
+        wrongButton.children[0].label = "More options"
+        var missingModality = sharingButtonWindow()
+        missingModality.modal = nil
+        var modal = sharingButtonWindow()
+        modal.modal = true
+        var wrongSize = sharingButtonWindow()
+        wrongSize.size = CGSize(width: 66, height: 21)
+        var additionalContent = sharingButtonWindow()
+        additionalContent.children.append(Node())
+        var unreadable = sharingButtonWindow()
+        unreadable.childrenReadable = false
+        var unreadableButton = sharingButtonWindow()
+        unreadableButton.children[0].childrenReadable = false
+        var nestedContent = sharingButtonWindow()
+        nestedContent.children[0].children = [Node(role: "AXGroup")]
+        for node in [wrongSubrole, wrongTitle, wrongButton, missingModality, modal, wrongSize, additionalContent, unreadable, unreadableButton, nestedContent] {
+            XCTAssertEqual(TeamsParticipantParser.callWindowKind(node), .unreadable)
+        }
+        XCTAssertEqual(MeetingSpeakerObserver.callAssociationReason([
+            TeamsCallWindowState(kind: .call, focused: true),
+            TeamsCallWindowState(kind: .call, minimized: true, visible: false),
+            TeamsCallWindowState(kind: TeamsParticipantParser.callWindowKind(sharingButtonWindow())),
+        ]), "ambiguous_call")
+        var actualCall = sharingButtonWindow()
+        actualCall.children.append(tile("Ann, video is off", shown: "Ann"))
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(actualCall), .call)
+    }
+
+    func testMeasuredPersonalNavigationRecognizesTheMainShellOnEachTab() {
+        for selected in ["Chat", "Meet", "Calendar"] {
+            XCTAssertEqual(TeamsParticipantParser.callWindowKind(window(personalNavigation(selected: selected))), .other)
+        }
+    }
+
+    func testPersonalNavigationRequiresTheCompleteMeasuredShapeAndOneCheckedControl() {
+        var missingControl = personalNavigation()
+        missingControl.children.removeLast()
+        var multipleChecked = personalNavigation()
+        multipleChecked.children[0].children[0].checked = true
+        var unknownChecked = personalNavigation()
+        unknownChecked.children[0].children[0].checked = nil
+        var wrongRole = personalNavigation()
+        wrongRole.children[0].children[0].role = "AXButton"
+        var mismatchedWrapper = personalNavigation()
+        mismatchedWrapper.children[0].label = "Calendar"
+        var arbitraryGroup = personalNavigation()
+        arbitraryGroup.label = "Other controls"
+        for navigation in [missingControl, multipleChecked, unknownChecked, wrongRole, mismatchedWrapper, arbitraryGroup] {
+            XCTAssertEqual(TeamsParticipantParser.callWindowKind(window(navigation)), .unreadable)
+        }
+    }
+
+    func testParticipantTilesStillMakeAMainNavigationWindowACall() {
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(window(
+            personalNavigation(), tile("Ann, video is off", shown: "Ann")
+        )), .call)
     }
 
     func testTwoDistinctCallsAreAmbiguousEvenWithOneFocused() {

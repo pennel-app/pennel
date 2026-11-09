@@ -267,6 +267,24 @@ fn clear_system_voice(row: &MeetingUtterance) -> Option<u32> {
     (row.segment.voice == Some(*voice) && crate::meetings::VOICES.contains(voice)).then_some(*voice)
 }
 
+fn acoustic_row_eligible(row: &MeetingUtterance) -> bool {
+    row.metadata.source_id.as_deref() == Some("system_audio")
+        && !row.segment.failed
+        && !row.segment.text.trim().is_empty()
+        && !row.metadata.attribution.provisional
+        && !row.metadata.attribution.self_voice
+        && row.metadata.manual.is_none()
+        && row.metadata.unresolved_manual.is_empty()
+        && matches!(
+            row.metadata.attribution.kind,
+            AttributionKind::Single | AttributionKind::Mixed | AttributionKind::Overlap
+        )
+}
+
+fn writable_single_target(row: &MeetingUtterance, voice: u32) -> bool {
+    acoustic_row_eligible(row) && clear_system_voice(row) == Some(voice)
+}
+
 fn acoustic_intervals(
     row: &MeetingUtterance,
 ) -> impl Iterator<Item = (Option<u32>, u64, u64)> + '_ {
@@ -282,6 +300,22 @@ fn acoustic_intervals(
             start,
             end,
         ))
+    })
+}
+
+fn row_voice_turns(row: &MeetingUtterance) -> impl Iterator<Item = VoiceTurn> + '_ {
+    let eligible = acoustic_row_eligible(row);
+    acoustic_intervals(row).filter_map(move |(voice, start_ms, end_ms)| {
+        let voice = voice?;
+        (eligible
+            && row.metadata.attribution.voices.contains(&voice)
+            && (row.metadata.attribution.kind != AttributionKind::Single
+                || clear_system_voice(row) == Some(voice)))
+        .then_some(VoiceTurn {
+            voice,
+            start_ms,
+            end_ms,
+        })
     })
 }
 
@@ -307,22 +341,7 @@ fn union_voice_turns(mut turns: Vec<VoiceTurn>) -> Vec<VoiceTurn> {
 
 /// Automatic identity requires acoustic speech, never the surrounding ASR chunk's duration.
 fn clean_system_turns(rows: &[MeetingUtterance]) -> Vec<VoiceTurn> {
-    let candidates = union_voice_turns(
-        rows.iter()
-            .flat_map(|row| {
-                let voice = clear_system_voice(row);
-                acoustic_intervals(row).filter_map(move |(observed, start_ms, end_ms)| {
-                    voice
-                        .filter(|voice| Some(*voice) == observed)
-                        .map(|voice| VoiceTurn {
-                            voice,
-                            start_ms,
-                            end_ms,
-                        })
-                })
-            })
-            .collect(),
-    );
+    let candidates = union_voice_turns(rows.iter().flat_map(row_voice_turns).collect());
     // Mixed/unknown rows can contain a competing speaker even when their words could not be
     // split. Include their actual acoustic intervals when removing overlapping evidence.
     let mut observed: Vec<_> = rows
@@ -437,34 +456,40 @@ fn automatic_names_for_rows(
     let intervals = attributable_intervals(&ordered, automatic_policy());
     automatic_suggestions(&turns, samples)
         .into_iter()
+        // The alias is portable only when at least one unambiguous textual row can retain its
+        // source-bound automatic provenance. Mixed words keep their existing attribution.
+        .filter(|suggestion| {
+            rows.iter()
+                .any(|row| writable_single_target(row, suggestion.voice))
+        })
         .filter(|suggestion| {
             // A chunk split by ASR can leave disconnected fragments with one original lineage. They
             // provide useful speech evidence, but cannot manufacture three independent observations.
             let mut anchors: Vec<std::collections::BTreeSet<&str>> = Vec::new();
-            for row in rows
-                .iter()
-                .filter(|row| clear_system_voice(row) == Some(suggestion.voice))
-            {
-                let support = turns
-                    .iter()
-                    .filter(|turn| turn.voice == suggestion.voice)
-                    .map(|turn| {
-                        (
-                            turn.start_ms.max(row.segment.start_ms),
-                            turn.end_ms.min(row.segment.end_ms),
-                        )
-                    })
-                    .filter(|(start, end)| start < end)
-                    .flat_map(|(start, end)| {
-                        intervals
+            for row in rows.iter().filter(|row| acoustic_row_eligible(row)) {
+                let own = union_voice_turns(
+                    row_voice_turns(row)
+                        .filter(|turn| turn.voice == suggestion.voice)
+                        .collect(),
+                );
+                let mut support = 0;
+                for own in own {
+                    for clean in turns.iter().filter(|turn| turn.voice == suggestion.voice) {
+                        let start = own.start_ms.max(clean.start_ms);
+                        let end = own.end_ms.min(clean.end_ms);
+                        if start >= end {
+                            continue;
+                        }
+                        support += intervals
                             .iter()
                             .filter(|(_, _, name)| same_name(name, &suggestion.name))
-                            .map(move |(observed_start, observed_end, _)| {
+                            .map(|(observed_start, observed_end, _)| {
                                 overlap_ms(start, end, *observed_start, *observed_end)
                             })
-                    })
-                    .sum::<u64>();
-                if support < 1_000 || row.metadata.attribution.turns.is_empty() {
+                            .sum::<u64>();
+                    }
+                }
+                if support < 1_000 {
                     continue;
                 }
                 let mut anchor: std::collections::BTreeSet<&str> = row
@@ -613,12 +638,13 @@ impl PennelEngine {
             names.iter().any(|name| {
                 name.voice == voice && !rows.iter().any(|row| named_automatically(row, name))
             }) || rows.iter().any(|row| {
-                row.segment.voice == Some(voice) && row.metadata.manual.is_some()
-                    || row
-                        .metadata
-                        .unresolved_manual
-                        .iter()
-                        .any(|manual| manual.voice == Some(voice))
+                row.metadata.manual.as_ref().is_some_and(|manual| {
+                    row.segment.voice == Some(voice) || manual.voice == Some(voice)
+                }) || row
+                    .metadata
+                    .unresolved_manual
+                    .iter()
+                    .any(|manual| manual.voice == Some(voice))
             })
         };
         result.suggestions = all_suggestions
@@ -686,27 +712,30 @@ impl PennelEngine {
             return result;
         }
         let automatic = automatic_names_for_rows(rows, &evidence.samples);
-        let mut conflict = false;
+        let authority_conflict = |voice: u32, name: &str| {
+            names
+                .iter()
+                .any(|existing| existing.voice == voice && !same_name(&existing.name, name))
+                || rows.iter().any(|row| {
+                    row.metadata.manual.as_ref().is_some_and(|manual| {
+                        (row.segment.voice == Some(voice) || manual.voice == Some(voice))
+                            && manual.review_required
+                    }) || row
+                        .metadata
+                        .unresolved_manual
+                        .iter()
+                        .any(|manual| manual.voice == Some(voice))
+                })
+        };
+        let mut conflict = all_suggestions.iter().any(|suggestion| {
+            protected(suggestion.voice) && authority_conflict(suggestion.voice, &suggestion.name)
+        });
         result.automatic_names = automatic
             .into_iter()
             .map(decorate)
             .filter(|candidate| {
                 if protected(candidate.voice) {
-                    conflict |= names.iter().any(|name| {
-                        name.voice == candidate.voice && !same_name(&name.name, &candidate.name)
-                    }) || rows.iter().any(|row| {
-                        row.segment.voice == Some(candidate.voice)
-                            && row
-                                .metadata
-                                .manual
-                                .as_ref()
-                                .is_some_and(|manual| manual.review_required)
-                            || row
-                                .metadata
-                                .unresolved_manual
-                                .iter()
-                                .any(|manual| manual.voice == Some(candidate.voice))
-                    });
+                    conflict |= authority_conflict(candidate.voice, &candidate.name);
                     return false;
                 }
                 let shared = all_suggestions.iter().any(|suggestion| {
@@ -798,15 +827,10 @@ impl PennelEngine {
                 voice: candidate.voice,
                 name: candidate.name.clone(),
             });
-            for row in rows.iter_mut().filter(|row| {
-                row.metadata.source_id.as_deref() == Some("system_audio")
-                    && row.segment.voice == Some(candidate.voice)
-                    && row.metadata.manual.is_none()
-                    && !row.segment.failed
-                    && row.metadata.attribution.kind == AttributionKind::Single
-                    && !row.metadata.attribution.provisional
-                    && !row.metadata.attribution.self_voice
-            }) {
+            for row in rows
+                .iter_mut()
+                .filter(|row| writable_single_target(row, candidate.voice))
+            {
                 row.metadata.refresh_fingerprints(&row.segment);
                 row.metadata.automatic_name = Some(AutomaticNameAttribution {
                     name: candidate.name.clone(),
@@ -1295,7 +1319,7 @@ mod tests {
     }
 
     #[test]
-    fn physical_source_and_final_attribution_are_required_for_name_evidence() {
+    fn physical_source_final_acoustics_and_unedited_authority_are_required_for_name_evidence() {
         let system = clean_row("system_audio", 1, 0, 5_000);
         let microphone = clean_row("microphone", 2, 0, 5_000);
         let room = clean_row("room_microphone", 3, 0, 5_000);
@@ -1303,9 +1327,39 @@ mod tests {
         provisional.metadata.attribution.provisional = true;
         let mut mixed = clean_row("system_audio", 5, 20_000, 25_000);
         mixed.metadata.attribution.kind = AttributionKind::Mixed;
+        let mut failed = clean_row("system_audio", 6, 30_000, 35_000);
+        failed.segment.failed = true;
+        let mut manual = clean_row("system_audio", 7, 40_000, 45_000);
+        manual.metadata.manual = Some(crate::ManualCorrection {
+            name: Some("Confirmed choice".into()),
+            voice: Some(7),
+            source_fingerprint: manual.metadata.source_fingerprint.clone(),
+            review_required: false,
+            self_voice: false,
+        });
+        let mut unresolved = clean_row("system_audio", 8, 50_000, 55_000);
+        unresolved
+            .metadata
+            .unresolved_manual
+            .push(crate::ManualCorrection {
+                name: Some("Needs review".into()),
+                voice: Some(8),
+                source_fingerprint: unresolved.metadata.source_fingerprint.clone(),
+                review_required: true,
+                self_voice: false,
+            });
         assert_eq!(
-            clean_system_turns(&[system, microphone, room, provisional, mixed]),
-            [turn(1, 0, 5_000)]
+            clean_system_turns(&[
+                system,
+                microphone,
+                room,
+                provisional,
+                mixed,
+                failed,
+                manual,
+                unresolved
+            ]),
+            [turn(1, 0, 5_000), turn(5, 20_000, 25_000)]
         );
     }
 
@@ -1713,5 +1767,222 @@ mod tests {
         assert!(!naming.suggestions.is_empty());
         assert!(naming.automatic_names.is_empty());
         assert!(store.speaker_names(&id).is_empty());
+    }
+
+    fn mixed_learning_rows() -> Vec<MeetingUtterance> {
+        let mut rows = Vec::new();
+        for start in [0, 20_000, 40_000] {
+            let mut row = clean_row("system_audio", 1, start, start + 15_000);
+            row.segment.voice = None;
+            row.metadata.attribution.kind = AttributionKind::Mixed;
+            row.metadata.attribution.voices = vec![1, 3];
+            row.metadata.attribution.turns = vec![
+                crate::AcousticTurn {
+                    start_ms: start,
+                    end_ms: start + 4_000,
+                    voice: Some(1),
+                },
+                crate::AcousticTurn {
+                    start_ms: start + 6_000,
+                    end_ms: start + 10_000,
+                    voice: Some(3),
+                },
+            ];
+            rows.push(row);
+        }
+        rows.push(clean_row("system_audio", 1, 60_000, 60_500));
+        rows
+    }
+
+    fn install_mixed_learning_rows(engine: &PennelEngine, id: &str, rows: &[MeetingUtterance]) {
+        let store = engine.meeting_store();
+        let before = store.read_transcript_snapshot(id).unwrap();
+        store
+            .write_transcript_snapshot(id, Some(before.revision), rows)
+            .unwrap();
+        let mut evidence = engine
+            .voice_store()
+            .app_speaker_evidence(&engine.meeting_key(id))
+            .unwrap();
+        evidence.samples.clear();
+        evidence.participants = vec!["Ann".into(), "Bert".into()];
+        for start in [0, 20_000, 40_000] {
+            evidence
+                .samples
+                .extend(sampled(start + 400, start + 4_400, &["Ann"]));
+            evidence.samples.push(SpeakingSample {
+                at_ms: start + 4_400,
+                available: true,
+                speaking: Vec::new(),
+            });
+            evidence
+                .samples
+                .extend(sampled(start + 6_400, start + 10_400, &["Bert"]));
+            evidence.samples.push(SpeakingSample {
+                at_ms: start + 10_400,
+                available: true,
+                speaking: Vec::new(),
+            });
+        }
+        engine
+            .set_meeting_app_speaker_evidence(id, evidence)
+            .unwrap();
+    }
+
+    #[test]
+    fn mixed_acoustic_turns_can_name_a_voice_without_attributing_mixed_words() {
+        let (_directory, engine, id) = automatic_fixture();
+        let mut rows = mixed_learning_rows();
+        rows[0].metadata.attribution.kind = AttributionKind::Overlap;
+        rows[0]
+            .metadata
+            .attribution
+            .turns
+            .push(crate::AcousticTurn {
+                start_ms: 1_000,
+                end_ms: 1_250,
+                voice: None,
+            });
+        install_mixed_learning_rows(&engine, &id, &rows);
+        let before = engine
+            .meeting_store()
+            .read_transcript_snapshot(&id)
+            .unwrap();
+        let naming = engine.apply_meeting_automatic_names(&id).unwrap();
+        assert_eq!(naming.status, VoiceNamingStatus::Applied);
+        assert_eq!(
+            engine.meeting_speakers(id.clone()),
+            [SpeakerName {
+                voice: 1,
+                name: "Ann".into()
+            }]
+        );
+        let after = engine
+            .meeting_store()
+            .read_transcript_snapshot(&id)
+            .unwrap();
+        assert_eq!(after.utterances[..3], before.utterances[..3]);
+        assert!(after.utterances[3].metadata.automatic_name.is_some());
+        assert!(after.utterances[3].metadata.manual.is_none());
+        assert!(engine.known_voices().is_empty());
+        assert!(engine.voice_profile().is_none());
+        assert_eq!(
+            clean_system_turns(&rows)
+                .iter()
+                .filter(|turn| turn.voice == 1)
+                .map(|turn| turn.end_ms - turn.start_ms)
+                .sum::<u64>(),
+            12_250
+        );
+    }
+
+    #[test]
+    fn mixed_acoustic_learning_requires_a_single_provenance_target_and_independent_rows() {
+        let (_directory, engine, id) = automatic_fixture();
+        let mut rows = mixed_learning_rows();
+        rows.pop();
+        install_mixed_learning_rows(&engine, &id, &rows);
+        assert!(
+            engine
+                .apply_meeting_automatic_names(&id)
+                .unwrap()
+                .automatic_names
+                .is_empty()
+        );
+        assert!(engine.meeting_speakers(id.clone()).is_empty());
+
+        let mut rows = mixed_learning_rows();
+        let lineage = uuid::Uuid::now_v7().to_string();
+        for row in &mut rows[..3] {
+            row.metadata.lineage = vec![lineage.clone()];
+        }
+        install_mixed_learning_rows(&engine, &id, &rows);
+        assert!(
+            engine
+                .apply_meeting_automatic_names(&id)
+                .unwrap()
+                .automatic_names
+                .is_empty()
+        );
+        assert!(engine.meeting_speakers(id).is_empty());
+    }
+
+    #[test]
+    fn mixed_acoustic_learning_still_subtracts_real_overlap() {
+        let (_directory, engine, id) = automatic_fixture();
+        let mut rows = mixed_learning_rows();
+        for row in &mut rows[..3] {
+            row.metadata.attribution.kind = AttributionKind::Overlap;
+            row.metadata.attribution.turns.push(crate::AcousticTurn {
+                start_ms: row.segment.start_ms + 1_000,
+                end_ms: row.segment.start_ms + 2_500,
+                voice: Some(3),
+            });
+        }
+        install_mixed_learning_rows(&engine, &id, &rows);
+        assert!(
+            engine
+                .apply_meeting_automatic_names(&id)
+                .unwrap()
+                .automatic_names
+                .is_empty()
+        );
+        assert!(engine.meeting_speakers(id).is_empty());
+    }
+
+    #[test]
+    fn overlapping_coarse_bounds_cannot_manufacture_acoustic_lineage_support() {
+        let (_directory, engine, id) = automatic_fixture();
+        let mut single = clean_row("system_audio", 1, 0, 45_000);
+        single.metadata.attribution.turns = [0, 20_000, 40_000]
+            .into_iter()
+            .map(|start_ms| crate::AcousticTurn {
+                start_ms,
+                end_ms: start_ms + 4_000,
+                voice: Some(1),
+            })
+            .collect();
+        let mut rows = vec![single];
+        for start in [10_000, 30_000] {
+            let mut coarse = clean_row("system_audio", 3, 0, 45_000);
+            coarse.segment.voice = None;
+            coarse.segment.text = format!("Unaligned coarse text {start}.");
+            coarse.metadata.refresh_fingerprints(&coarse.segment);
+            coarse.metadata.attribution.kind = AttributionKind::Mixed;
+            coarse.metadata.attribution.turns[0].start_ms = start;
+            coarse.metadata.attribution.turns[0].end_ms = start + 1_000;
+            rows.push(coarse);
+        }
+        install_mixed_learning_rows(&engine, &id, &rows);
+        assert!(
+            engine
+                .apply_meeting_automatic_names(&id)
+                .unwrap()
+                .automatic_names
+                .is_empty()
+        );
+        assert!(engine.meeting_speakers(id).is_empty());
+    }
+
+    #[test]
+    fn a_manual_voice_reference_in_mixed_speech_remains_authoritative() {
+        let (_directory, engine, id) = automatic_fixture();
+        let mut rows = mixed_learning_rows();
+        let mut retained = clean_row("system_audio", 1, 70_000, 71_000);
+        retained.segment.voice = None;
+        retained.metadata.attribution.kind = AttributionKind::Mixed;
+        retained.metadata.manual = Some(crate::ManualCorrection {
+            voice: Some(1),
+            name: Some("Retained choice".into()),
+            source_fingerprint: retained.metadata.source_fingerprint.clone(),
+            review_required: true,
+            self_voice: false,
+        });
+        rows.push(retained);
+        install_mixed_learning_rows(&engine, &id, &rows);
+        let naming = engine.apply_meeting_automatic_names(&id).unwrap();
+        assert_eq!(naming.status, VoiceNamingStatus::Conflict);
+        assert!(naming.automatic_names.is_empty());
+        assert!(engine.meeting_speakers(id).is_empty());
     }
 }
