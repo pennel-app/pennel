@@ -522,6 +522,7 @@ mod tests {
             );
         }
         row.metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("Ada".into()),
             voice: Some(3),
             source_fingerprint: row.metadata.source_fingerprint.clone(),
@@ -606,6 +607,7 @@ mod tests {
         assert_eq!(fingerprint, utterance_evidence_revision(&row));
         row.metadata.attribution.provisional = true;
         row.metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("Ada".into()),
             voice: None,
             source_fingerprint: row.metadata.source_fingerprint.clone(),

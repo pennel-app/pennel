@@ -14,7 +14,7 @@ pub const METADATA_PART_BYTES: usize = 1_048_576;
 const MAX_MANIFEST_BYTES: u64 = 1_048_576;
 
 fn supported_metadata_schema(version: u64) -> bool {
-    matches!(version, 1..=4)
+    matches!(version, 1..=5)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +138,9 @@ pub struct ManualCorrection {
     pub voice: Option<u32>,
     pub source_fingerprint: String,
     pub review_required: bool,
+    /// Explicit microphone-owner confirmation, never inferred from a device route.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub self_voice: bool,
 }
 
 /// UTF-8 byte bounds in exact authoritative text followed by absolute audio milliseconds.
@@ -165,6 +168,11 @@ pub struct UtteranceMetadata {
     pub original_text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_audio: Option<RecoveryAudioProvenance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automatic_name: Option<crate::meeting_app_evidence::AutomaticNameAttribution>,
+    /// Incomplete recognition remains retryable even when some words were recovered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partial_text: Option<String>,
 }
 
 impl UtteranceMetadata {
@@ -185,6 +193,8 @@ impl UtteranceMetadata {
             unresolved_manual: Vec::new(),
             original_text: None,
             recovery_audio: None,
+            automatic_name: None,
+            partial_text: None,
         };
         metadata.refresh_fingerprints(segment);
         metadata
@@ -644,6 +654,35 @@ fn validate_row(row: &MeetingUtterance) -> bool {
     {
         return false;
     }
+    if let Some(partial) = &metadata.partial_text
+        && (!segment.failed
+            || partial.trim().is_empty()
+            || partial != &segment.text
+            || metadata
+                .recovery_audio
+                .as_ref()
+                .is_none_or(|audio| audio.disposition != RecoveryAudioDisposition::Pending))
+    {
+        return false;
+    }
+    if let Some(proof) = &metadata.automatic_name
+        && (metadata.source_id.as_deref() != Some("system_audio")
+            || segment.failed
+            || metadata.manual.is_some()
+            || metadata.attribution.kind != AttributionKind::Single
+            || metadata.attribution.provisional
+            || metadata.attribution.self_voice
+            || metadata.attribution.voices.as_slice() != segment.voice.as_slice()
+            || proof.name.is_empty()
+            || crate::voices::clean_name(&proof.name) != proof.name
+            || proof.app_id != "com.microsoft.teams2"
+            || !proof.binding.valid()
+            || !valid_digest(&proof.evidence_revision)
+            || proof.source_fingerprint != metadata.source_fingerprint
+            || proof.attribution_revision != metadata.attribution_revision)
+    {
+        return false;
+    }
     if metadata.attribution.kind == AttributionKind::Single
         && !((metadata.attribution.voices.len() == 1 && !metadata.attribution.self_voice)
             || metadata.attribution.voices.is_empty() && metadata.attribution.self_voice)
@@ -701,6 +740,11 @@ fn validate_row(row: &MeetingUtterance) -> bool {
                     .name
                     .as_ref()
                     .is_none_or(|name| name.chars().count() <= 40 && !name.contains(['\r', '\n']))
+                && (!correction.self_voice
+                    || correction.voice.is_none()
+                        && correction.name.is_none()
+                        && (correction.review_required
+                            || metadata.source_id.as_deref() == Some("microphone")))
         })
 }
 
@@ -808,6 +852,12 @@ pub(crate) fn load_snapshot(
     let mut ids = HashSet::new();
     for (previous, metadata) in snapshot.utterances.iter().zip(metadata) {
         let mut segment = previous.segment.clone();
+        if let Some(partial) = &metadata.partial_text {
+            if !segment.failed || !segment.text.is_empty() || metadata_schema < 5 {
+                return snapshot;
+            }
+            segment.text = partial.clone();
+        }
         if let Some(original) = &metadata.original_text {
             if segment.failed
                 || original.split_whitespace().collect::<Vec<_>>().join(" ") != segment.text
@@ -818,8 +868,28 @@ pub(crate) fn load_snapshot(
         }
         segment.end_ms = metadata.end_ms;
         let row = MeetingUtterance { segment, metadata };
+        if row
+            .metadata
+            .automatic_name
+            .as_ref()
+            .is_some_and(|proof| proof.binding.recording_uid != uid)
+        {
+            return snapshot;
+        }
         if matches!(metadata_schema, 1 | 3) && row.metadata.attribution.provisional
             || matches!(metadata_schema, 1 | 2) && row.metadata.recovery_audio.is_some()
+            || metadata_schema < 5
+                && (row.metadata.automatic_name.is_some()
+                    || row
+                        .metadata
+                        .manual
+                        .as_ref()
+                        .is_some_and(|manual| manual.self_voice)
+                    || row
+                        .metadata
+                        .unresolved_manual
+                        .iter()
+                        .any(|manual| manual.self_voice))
         {
             return snapshot;
         }
@@ -933,8 +1003,13 @@ pub(crate) fn refresh_for_update(
         .collect();
     for row in rows.iter_mut() {
         if row.segment.failed {
-            row.segment.text.clear();
-            row.metadata.spans.clear();
+            if row.metadata.partial_text.as_deref() != Some(row.segment.text.as_str()) {
+                row.segment.text.clear();
+                row.metadata.spans.clear();
+                row.metadata.partial_text = None;
+            }
+        } else {
+            row.metadata.partial_text = None;
         }
         if let Some(previous) = old.get(row.metadata.utterance_id.as_str()) {
             if previous.source_id != row.metadata.source_id {
@@ -966,6 +1041,13 @@ pub(crate) fn refresh_for_update(
             }
         }
         row.metadata.refresh_fingerprints(&row.segment);
+        if row.metadata.automatic_name.as_ref().is_some_and(|proof| {
+            row.metadata.manual.is_some()
+                || proof.source_fingerprint != row.metadata.source_fingerprint
+                || proof.attribution_revision != row.metadata.attribution_revision
+        }) {
+            row.metadata.automatic_name = None;
+        }
     }
     preserve_manual_work(previous, rows)
 }
@@ -983,7 +1065,14 @@ pub(crate) fn prepare_metadata(
     let mut descriptors = Vec::new();
     let mut sources = HashSet::new();
     for row in rows {
-        if !ids.insert(row.metadata.utterance_id.clone()) || !validate_row(row) {
+        if !ids.insert(row.metadata.utterance_id.clone())
+            || !validate_row(row)
+            || row
+                .metadata
+                .automatic_name
+                .as_ref()
+                .is_some_and(|proof| proof.binding.recording_uid != uid)
+        {
             return Err(PennelError::storage(
                 "The timed transcript metadata is invalid.",
             ));
@@ -1031,14 +1120,31 @@ pub(crate) fn prepare_metadata(
         ));
     }
     let manifest = serde_json::to_vec(&MetadataManifest {
-        schema_version: match (
-            rows.iter().any(|row| row.metadata.recovery_audio.is_some()),
-            rows.iter().any(|row| row.metadata.attribution.provisional),
-        ) {
-            (true, true) => 4,
-            (true, false) => 3,
-            (false, true) => 2,
-            (false, false) => 1,
+        schema_version: if rows.iter().any(|row| {
+            row.metadata.automatic_name.is_some()
+                || row.metadata.partial_text.is_some()
+                || row
+                    .metadata
+                    .manual
+                    .as_ref()
+                    .is_some_and(|manual| manual.self_voice)
+                || row
+                    .metadata
+                    .unresolved_manual
+                    .iter()
+                    .any(|manual| manual.self_voice)
+        }) {
+            5
+        } else {
+            match (
+                rows.iter().any(|row| row.metadata.recovery_audio.is_some()),
+                rows.iter().any(|row| row.metadata.attribution.provisional),
+            ) {
+                (true, true) => 4,
+                (true, false) => 3,
+                (false, true) => 2,
+                (false, false) => 1,
+            }
         },
         meeting_uid: uid.into(),
         transcript_sha256: digest(text),
@@ -1811,6 +1917,7 @@ mod tests {
             voice: Some(3),
             source_fingerprint: row.metadata.source_fingerprint.clone(),
             review_required: false,
+            self_voice: false,
         });
         let saved = store
             .write_transcript_snapshot(&id, Some(1), &[row])
@@ -1835,6 +1942,7 @@ mod tests {
             voice: Some(2),
             source_fingerprint: original.metadata.source_fingerprint.clone(),
             review_required: false,
+            self_voice: false,
         });
         store
             .write_transcript_snapshot(&id, Some(0), &[original])
@@ -1993,7 +2101,7 @@ mod tests {
         assert_eq!(manifest["schema_version"], 3);
         assert_eq!(saved.metadata_status, TranscriptMetadataStatus::Valid);
         let text = fs::read(root.join("transcript.md")).unwrap();
-        for version in [5, 9_000] {
+        for version in [6, 9_000] {
             let mut future = manifest.clone();
             future["schema_version"] = version.into();
             let bytes = serde_json::to_vec(&future).unwrap();

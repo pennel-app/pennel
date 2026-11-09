@@ -1030,8 +1030,8 @@ impl MeetingStore {
             Some(rows) => rows.to_vec(),
             None => meeting_utterances::reconcile(&previous, &sorted)?,
         };
-        rows.sort_by_key(|row| row.segment.start_ms);
         preserve_completion_markers(&previous, &mut rows);
+        rows.sort_by_key(|row| row.segment.start_ms);
         meeting_utterances::refresh_for_update(&previous, &mut rows)?;
         sorted = rows.iter().map(|row| row.segment.clone()).collect();
         let replacement_transcript = render_transcript(&sorted);
@@ -1728,6 +1728,7 @@ impl MeetingStore {
                         voice: Some(voice),
                         source_fingerprint: row.metadata.source_fingerprint.clone(),
                         review_required: false,
+                        self_voice: false,
                     });
                     row.metadata.attribution_revision =
                         row.metadata.attribution_revision.saturating_add(1);
@@ -2861,6 +2862,53 @@ mod tests {
         assert!(reopened.read_transcript(&id).is_empty());
         assert_eq!(reopened.cleanup_committed_audio(&id).unwrap(), 1);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn speaker_replacement_keeps_private_completion_markers_chronological() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store
+            .create("Owned sorted completion marker", start())
+            .unwrap();
+        let (path, mut empty) = proven_row(&store, &id, Speaker::Me, 0, false);
+        empty.segment.text.clear();
+        empty.metadata.refresh_fingerprints(&empty.segment);
+        let spoken = MeetingUtterance::new(
+            seg(2_000, Speaker::Others, "A later spoken passage."),
+            Some("system_audio".into()),
+        );
+        store
+            .write_transcript_snapshot(&id, None, &[empty, spoken])
+            .unwrap();
+        let visible = store.read_transcript_snapshot(&id).unwrap();
+        assert_eq!(visible.utterances.len(), 1);
+
+        store
+            .replace_speaker_utterances(
+                &id,
+                &visible.utterances,
+                &[],
+                &[Speaker::Me, Speaker::Others],
+            )
+            .unwrap();
+        store.finish_retranscription(&id).unwrap();
+
+        let committed = store.read_committed_transcript_snapshot(&id).unwrap();
+        assert_eq!(
+            committed
+                .utterances
+                .iter()
+                .map(|row| row.segment.start_ms)
+                .collect::<Vec<_>>(),
+            [0, 2_000]
+        );
+        assert_eq!(store.read_transcript(&id).len(), 1);
+        assert_eq!(store.cleanup_committed_audio(&id).unwrap(), 1);
+        assert!(
+            !path.exists(),
+            "the hidden completion proof must survive replacement"
+        );
     }
 
     #[test]

@@ -155,7 +155,7 @@ struct AppleSpeechResultBuilder {
 
     func finish(audioDurationMS: UInt64) -> SpeechTranscript {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let plain = SpeechTranscript(text: trimmed, spans: [], timingKind: .untimed)
+        let plain = SpeechTranscript(text: trimmed, spans: [], timingKind: .untimed, complete: true)
         guard reliable, !trimmed.isEmpty, !spans.isEmpty,
               let selected = text.range(of: trimmed) else { return plain }
         var cursor: UInt32 = 0
@@ -176,7 +176,7 @@ struct AppleSpeechResultBuilder {
             guard end > start else { return nil }
             return SpeechTextSpan(startByte: UInt32(start - left), endByte: UInt32(end - left), startMs: span.startMs, endMs: span.endMs)
         }
-        return SpeechTranscript(text: trimmed, spans: trimmedSpans, timingKind: attributed ? .attributed : .segment)
+        return SpeechTranscript(text: trimmed, spans: trimmedSpans, timingKind: attributed ? .attributed : .segment, complete: true)
     }
 
     private static func milliseconds(_ range: CMTimeRange) -> (UInt64, UInt64)? {

@@ -1540,6 +1540,7 @@ mod tests {
             let mut snapshot = store.read_transcript_snapshot(&id).unwrap();
             let row = &mut snapshot.utterances[0];
             row.metadata.manual = Some(crate::meeting_utterances::ManualCorrection {
+                self_voice: false,
                 name: Some("User correction".into()),
                 voice: Some(4),
                 source_fingerprint: row.metadata.source_fingerprint.clone(),

@@ -13,8 +13,8 @@ pub use pipeline::{Diarizer, Embedder, Models, Options, diarize, embed};
 
 pub const SAMPLE_RATE: u32 = 16_000;
 
-/// Distance at which the diarizer stops merging clusters within one recording. Measured on Dutch and
-/// English synthetic voices and public Mandarin test speech: same speaker ≥ 0.67, others ≤ 0.46 cosine.
+/// Native complete-link cosine-distance cutoff (1 - similarity). This is not a similarity threshold
+/// like the identity thresholds below. Retain the existing default until real-call qualification.
 pub const CLUSTER_THRESHOLD: f32 = 0.6;
 /// Cosine similarity from which a meeting voice is the user. Enrollment is clean read speech and
 /// meetings are not, so this sits below the threshold for other known voices.
@@ -22,11 +22,14 @@ pub const ME_THRESHOLD: f32 = 0.5;
 pub const KNOWN_THRESHOLD: f32 = 0.55;
 /// Joining the per-chunk clusters of one meeting: the same voice in another chunk.
 pub const MERGE_THRESHOLD: f32 = 0.55;
+/// Same-track reconciliation is stricter than matching a remembered voice. It also requires
+/// independent clean turns and forbids merging speakers that overlap in the source.
+pub const FRAGMENT_THRESHOLD: f32 = 0.85;
 /// Shorter enrollment audio gives an unstable voiceprint.
 pub const MIN_ENROLLMENT_MS: u64 = 10_000;
-/// Turns shorter than this make noisy embeddings and are skipped when a longer turn exists.
+/// Shorter clean spans do not provide stable identity evidence.
 pub const MIN_VOICEPRINT_TURN_MS: u64 = 1_000;
-/// Speech per speaker used for its voiceprint; more adds time, not accuracy.
+/// Maximum clean speech used for one voiceprint.
 pub const VOICEPRINT_BUDGET_MS: u64 = 60_000;
 /// A known voiceprint keeps learning, but one meeting may not overwrite it.
 const MAX_BLEND_WEIGHT: u32 = 10;
@@ -156,34 +159,203 @@ fn renumber_labels(raw: impl IntoIterator<Item = (u64, u64, i64)>) -> (Vec<Turn>
     (turns, labels)
 }
 
-/// The spans of a speaker to build its voiceprint from: its longest turns, at most `budget_ms` in
-/// total, preferring turns of at least [`MIN_VOICEPRINT_TURN_MS`].
-pub fn voiceprint_spans(turns: &[Turn], speaker: u32, budget_ms: u64) -> Vec<(u64, u64)> {
-    let mut own: Vec<(u64, u64)> = turns
-        .iter()
-        .filter(|t| t.speaker == speaker && t.end_ms > t.start_ms)
-        .map(|t| (t.start_ms, t.end_ms))
-        .collect();
-    own.sort_by_key(|(start, end)| (std::cmp::Reverse(end - start), *start));
-    if own
-        .iter()
-        .any(|(start, end)| end - start >= MIN_VOICEPRINT_TURN_MS)
-    {
-        own.retain(|(start, end)| end - start >= MIN_VOICEPRINT_TURN_MS);
-    } else {
-        own.truncate(1);
+fn union_spans(mut spans: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+    spans.retain(|(start, end)| end > start);
+    spans.sort_unstable();
+    let mut joined: Vec<(u64, u64)> = Vec::new();
+    for (start, end) in spans {
+        if let Some(previous) = joined.last_mut()
+            && start <= previous.1
+        {
+            previous.1 = previous.1.max(end);
+        } else {
+            joined.push((start, end));
+        }
     }
+    joined
+}
+
+fn clean_voice_spans(turns: &[Turn], speaker: u32) -> Vec<(u64, u64)> {
+    let own = union_spans(
+        turns
+            .iter()
+            .filter(|turn| turn.speaker == speaker)
+            .map(|turn| (turn.start_ms, turn.end_ms))
+            .collect(),
+    );
+    let others = union_spans(
+        turns
+            .iter()
+            .filter(|turn| turn.speaker != speaker)
+            .map(|turn| (turn.start_ms, turn.end_ms))
+            .collect(),
+    );
+    let mut clean = Vec::new();
+    for (start, end) in own {
+        let mut cursor = start;
+        for &(other_start, other_end) in &others {
+            if other_end <= cursor {
+                continue;
+            }
+            if other_start >= end {
+                break;
+            }
+            if other_start > cursor {
+                clean.push((cursor, other_start.min(end)));
+            }
+            cursor = cursor.max(other_end);
+            if cursor >= end {
+                break;
+            }
+        }
+        if cursor < end {
+            clean.push((cursor, end));
+        }
+    }
+    clean
+}
+
+/// The longest clean spans for a voiceprint, at most `budget_ms` in total. Overlapping people and
+/// sub-second fragments never become identity evidence, even when no longer turn is available.
+pub fn voiceprint_spans(turns: &[Turn], speaker: u32, budget_ms: u64) -> Vec<(u64, u64)> {
+    let mut own = clean_voice_spans(turns, speaker);
+    own.retain(|(start, end)| end - start >= MIN_VOICEPRINT_TURN_MS);
+    own.sort_by_key(|(start, end)| (std::cmp::Reverse(end - start), *start));
     let mut spans = Vec::new();
     let mut left = budget_ms;
     for (start, end) in own {
         if left == 0 {
             break;
         }
-        let end = end.min(start + left);
+        let end = end.min(start.saturating_add(left));
         left -= end - start;
         spans.push((start, end));
     }
     spans
+}
+
+/// Reconciles fragments using complete-link voiceprint evidence, without forcing a speaker count.
+/// Each original cluster needs two independent clean spans totalling at least three seconds. Raw
+/// overlap is a cannot-link constraint; an ambiguous short response is retained, never guessed.
+pub fn reconcile_fragments(diarization: Diarization, threshold: f32) -> Diarization {
+    if diarization.speakers.len() < 2 || !threshold.is_finite() || !(0.0..=1.0).contains(&threshold)
+    {
+        return diarization;
+    }
+    let mut groups: Vec<Vec<u32>> = Vec::new();
+    for speaker in &diarization.speakers {
+        if !groups.iter().any(|group| group.contains(&speaker.speaker)) {
+            groups.push(vec![speaker.speaker]);
+        }
+    }
+    for turn in &diarization.turns {
+        if !groups.iter().any(|group| group.contains(&turn.speaker)) {
+            groups.push(vec![turn.speaker]);
+        }
+    }
+    let clean: std::collections::HashMap<_, _> = groups
+        .iter()
+        .flatten()
+        .map(|&id| {
+            let spans = voiceprint_spans(&diarization.turns, id, VOICEPRINT_BUDGET_MS);
+            let duration = spans.iter().map(|(start, end)| end - start).sum::<u64>();
+            (id, (duration, spans.len() >= 2 && duration >= 3_000))
+        })
+        .collect();
+    let embedding = |id: u32| {
+        diarization
+            .speakers
+            .iter()
+            .find(|speaker| speaker.speaker == id)
+            .map_or(&[][..], |speaker| speaker.embedding.as_slice())
+    };
+    let mut links = std::collections::HashMap::new();
+    for a in 0..groups.len() {
+        for b in a + 1..groups.len() {
+            let left = groups[a][0];
+            let right = groups[b][0];
+            if !clean[&left].1
+                || !clean[&right].1
+                || embedding(left).is_empty()
+                || embedding(right).is_empty()
+            {
+                continue;
+            }
+            let similarity = cosine(embedding(left), embedding(right));
+            if !similarity.is_finite() || similarity < threshold {
+                continue;
+            }
+            let overlaps = diarization
+                .turns
+                .iter()
+                .filter(|turn| turn.speaker == left)
+                .any(|a| {
+                    diarization
+                        .turns
+                        .iter()
+                        .filter(|turn| turn.speaker == right)
+                        .any(|b| a.start_ms < b.end_ms && b.start_ms < a.end_ms)
+                });
+            if !overlaps {
+                links.insert((left.min(right), left.max(right)), similarity);
+            }
+        }
+    }
+    loop {
+        let mut best: Option<(usize, usize, f32)> = None;
+        for a in 0..groups.len() {
+            for b in a + 1..groups.len() {
+                let mut score = 1.0f32;
+                let mut supported = true;
+                for &left in &groups[a] {
+                    for &right in &groups[b] {
+                        let Some(similarity) = links.get(&(left.min(right), left.max(right)))
+                        else {
+                            supported = false;
+                            break;
+                        };
+                        score = score.min(*similarity);
+                    }
+                    if !supported {
+                        break;
+                    }
+                }
+                if supported && best.is_none_or(|(_, _, previous)| score > previous) {
+                    best = Some((a, b, score));
+                }
+            }
+        }
+        let Some((a, b, _)) = best else {
+            break;
+        };
+        let members = groups.remove(b);
+        groups[a].extend(members);
+    }
+    let group_of = |speaker| {
+        groups
+            .iter()
+            .position(|group| group.contains(&speaker))
+            .unwrap()
+    };
+    let (turns, order) = renumber_labels(
+        diarization
+            .turns
+            .iter()
+            .map(|turn| (turn.start_ms, turn.end_ms, group_of(turn.speaker) as i64)),
+    );
+    let speakers = order
+        .iter()
+        .enumerate()
+        .map(|(index, group)| Speaker {
+            speaker: index as u32,
+            speech_ms: speech_ms(&turns, index as u32),
+            embedding: weighted_mean(groups[*group as usize].iter().map(|&id| {
+                let clean_ms = clean[&id].0;
+                (embedding(id), clean_ms.max(1) as f32)
+            })),
+        })
+        .collect();
+    Diarization { turns, speakers }
 }
 
 /// Total speech per speaker, counting overlapping turns of the same speaker once.
@@ -449,11 +621,98 @@ mod tests {
             voiceprint_spans(&turns, 0, 4_000),
             vec![(1_000, 4_000), (5_000, 6_000)]
         );
-        assert_eq!(
-            voiceprint_spans(&[turn(0, 400, 0), turn(500, 800, 0)], 0, 60_000),
-            vec![(0, 400)]
-        );
+        assert!(voiceprint_spans(&[turn(0, 400, 0), turn(500, 800, 0)], 0, 60_000).is_empty());
         assert!(voiceprint_spans(&turns, 3, 60_000).is_empty());
+    }
+
+    #[test]
+    fn voiceprints_exclude_other_speakers_and_do_not_repeat_own_overlap() {
+        let turns = [
+            turn(0, 5_000, 0),
+            turn(3_000, 7_000, 0),
+            turn(1_000, 2_000, 1),
+            turn(4_000, 6_500, 2),
+        ];
+        assert_eq!(
+            voiceprint_spans(&turns, 0, 60_000),
+            vec![(2_000, 4_000), (0, 1_000)]
+        );
+        assert!(voiceprint_spans(&[turn(0, 4_000, 0), turn(0, 4_000, 1)], 0, 60_000).is_empty());
+    }
+
+    fn fragmented() -> Diarization {
+        Diarization {
+            turns: vec![
+                turn(0, 2_000, 0),
+                turn(3_000, 5_000, 0),
+                turn(6_000, 8_000, 1),
+                turn(9_000, 11_000, 1),
+                turn(12_000, 16_000, 2),
+            ],
+            speakers: vec![
+                speaker(0, &[1.0, 0.0]),
+                speaker(1, &[1.0, 0.1]),
+                speaker(2, &[0.0, 1.0]),
+            ],
+        }
+    }
+
+    #[test]
+    fn reconciles_well_supported_clean_fragments_without_changing_turn_times() {
+        let before = fragmented();
+        let after = reconcile_fragments(before.clone(), 0.85);
+        assert_eq!(after.speakers.len(), 2);
+        assert_eq!(
+            after
+                .turns
+                .iter()
+                .map(|t| (t.start_ms, t.end_ms))
+                .collect::<Vec<_>>(),
+            before
+                .turns
+                .iter()
+                .map(|t| (t.start_ms, t.end_ms))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            after.turns.iter().map(|t| t.speaker).collect::<Vec<_>>(),
+            [0, 0, 0, 0, 1]
+        );
+        assert_eq!(after.speakers[0].speech_ms, 8_000);
+    }
+
+    #[test]
+    fn fragment_reconciliation_keeps_real_overlap_and_brief_voices_distinct() {
+        let mut overlap = fragmented();
+        overlap.turns.push(turn(500, 1_500, 1));
+        assert_eq!(reconcile_fragments(overlap, 0.85).speakers.len(), 3);
+
+        let mut brief = fragmented();
+        brief.turns.retain(|t| t.speaker != 1);
+        brief.turns.push(turn(6_000, 6_300, 1));
+        assert_eq!(reconcile_fragments(brief, 0.85).speakers.len(), 3);
+
+        let mut missing = fragmented();
+        missing.speakers[1].embedding.clear();
+        assert_eq!(reconcile_fragments(missing, 0.85).speakers.len(), 3);
+    }
+
+    #[test]
+    fn fragment_reconciliation_requires_complete_link_evidence() {
+        let mut source = fragmented();
+        source.turns = vec![
+            turn(0, 2_000, 0),
+            turn(3_000, 5_000, 0),
+            turn(6_000, 8_000, 1),
+            turn(9_000, 11_000, 1),
+            turn(12_000, 14_000, 2),
+            turn(15_000, 17_000, 2),
+        ];
+        source.speakers[0].embedding = unit(&[1.0, 0.0]);
+        source.speakers[1].embedding = unit(&[0.93, 0.367]);
+        source.speakers[2].embedding = unit(&[0.731, 0.682]);
+        // Adjacent pairs pass, but the first and last do not. A chain cannot merge all three.
+        assert_eq!(reconcile_fragments(source, 0.85).speakers.len(), 2);
     }
 
     #[test]

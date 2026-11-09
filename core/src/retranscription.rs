@@ -714,6 +714,11 @@ pub(crate) fn stage_audio_timed(
         let mut recognize = |chunk: crate::chunker::Chunk| -> Result<(), PennelError> {
             let end_ms = chunk.start_ms + chunk.samples.len() as u64 / 16;
             let transcript = transcribe(&chunk.samples)?;
+            if !transcript.complete {
+                return Err(PennelError::InvalidResponse {
+                    message: "Recognition stopped before the saved audio ended. The previous transcript has not been changed.".into(),
+                });
+            }
             let transcript = crate::SpeechTranscript::validated(
                 transcript.text,
                 transcript.spans,
@@ -848,6 +853,23 @@ mod tests {
     }
 
     #[test]
+    fn replacement_staging_rejects_incomplete_recognition_before_promoting_its_text() {
+        let tracks = [(Speaker::Me, PathBuf::from("audio/microphone.m4a"))];
+        let result = stage_audio_timed(
+            &tracks,
+            &[],
+            |_| {
+                Ok((0..2 * 16_000)
+                    .map(|sample| (sample as f32 * 0.05).sin() * 0.2)
+                    .collect())
+            },
+            |_| Ok(crate::SpeechTranscript::plain("Only the beginning.").with_complete(false)),
+            |_| {},
+        );
+        assert!(matches!(result, Err(PennelError::InvalidResponse { .. })));
+    }
+
+    #[test]
     fn invalid_retranscription_timing_preserves_every_authoritative_word() {
         use crate::{SpeechTextSpan, SpeechTimingKind, SpeechTranscript};
         let tracks = vec![(Speaker::Me, PathBuf::from("audio/microphone.m4a"))];
@@ -869,6 +891,7 @@ mod tests {
                         end_ms: 1_000,
                     }],
                     timing_kind: SpeechTimingKind::Word,
+                    complete: true,
                 })
             },
             |_| {},
@@ -890,6 +913,7 @@ mod tests {
             voice: Some(4),
             source_fingerprint: old.metadata.source_fingerprint.clone(),
             review_required: false,
+            self_voice: false,
         });
         let mut new = vec![MeetingUtterance::new(
             old.segment.clone(),
@@ -915,6 +939,7 @@ mod tests {
             voice: Some(4),
             source_fingerprint: old.metadata.source_fingerprint.clone(),
             review_required: false,
+            self_voice: false,
         });
         let mut new = vec![MeetingUtterance::new(
             segment(Speaker::Others, "Changed words."),

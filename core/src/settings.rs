@@ -34,6 +34,15 @@ pub enum SpeakerRecognitionMode {
     Cloud,
 }
 
+/// Reading a meeting app never silently authorizes applying its name estimates.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingAppNamePolicy {
+    #[default]
+    Suggest,
+    Automatic,
+}
+
 /// A deliberate owner choice; upgrading must never authorize model work.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
@@ -197,6 +206,8 @@ pub struct Settings {
     #[serde(default)]
     pub meeting_app_speakers: bool,
     #[serde(default)]
+    pub meeting_app_name_policy: MeetingAppNamePolicy,
+    #[serde(default)]
     pub speaker_recognition: SpeakerRecognitionMode,
     #[serde(default)]
     pub cloud_sync: bool,
@@ -285,6 +296,7 @@ pub fn default_settings() -> Settings {
         auto_detect: true,
         diarization: false,
         meeting_app_speakers: false,
+        meeting_app_name_policy: MeetingAppNamePolicy::Suggest,
         speaker_recognition: SpeakerRecognitionMode::Local,
         cloud_sync: false,
         claude_access: false,
@@ -856,6 +868,26 @@ mod tests {
             !serde_json::from_value::<Settings>(value)
                 .unwrap()
                 .live_text_enabled
+        );
+    }
+
+    #[test]
+    fn upgrading_meeting_app_evidence_never_authorizes_automatic_names() {
+        let mut value = serde_json::to_value(default_settings()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("meeting_app_name_policy");
+        value["meeting_app_speakers"] = true.into();
+        let settings: Settings = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            settings.meeting_app_name_policy,
+            MeetingAppNamePolicy::Suggest
+        );
+        assert!(settings.meeting_app_speakers);
+        assert_eq!(
+            default_settings().meeting_app_name_policy,
+            MeetingAppNamePolicy::Suggest
         );
     }
 }

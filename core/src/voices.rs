@@ -299,7 +299,7 @@ impl VoiceStore {
     ) -> Result<(), PennelError> {
         let path = self.meeting_path(meeting);
         if voices.is_empty() {
-            return self.forget_meeting(meeting);
+            return remove_if_present(&path);
         }
         std::fs::create_dir_all(path.parent().expect("meetings folder"))
             .map_err(PennelError::storage)?;
@@ -335,7 +335,12 @@ impl VoiceStore {
         evidence: &AppSpeakerEvidence,
     ) -> Result<(), PennelError> {
         let path = self.app_evidence_path(meeting);
-        if evidence.samples.is_empty() {
+        if evidence.samples.is_empty()
+            && evidence.binding.is_none()
+            && evidence.unavailable_reason.is_none()
+            && evidence.availability
+                == crate::meeting_app_evidence::AppEvidenceAvailability::Unavailable
+        {
             return remove_if_present(&path);
         }
         std::fs::create_dir_all(path.parent().expect("evidence folder"))
@@ -480,5 +485,25 @@ mod tests {
                 .meeting_voiceprints("meeting", Some("replacement"))
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn unreadable_app_evidence_keeps_its_reason_and_empty_voice_cache_does_not_delete_it() {
+        let (_directory, store) = store();
+        let evidence = AppSpeakerEvidence {
+            app_id: "com.microsoft.teams2".into(),
+            availability: crate::AppEvidenceAvailability::PermissionDenied,
+            unavailable_reason: Some("accessibility_permission_denied".into()),
+            ..AppSpeakerEvidence::default()
+        };
+        store
+            .set_app_speaker_evidence("meeting", &evidence)
+            .unwrap();
+        store
+            .set_meeting_voiceprints("meeting", Vec::new(), None)
+            .unwrap();
+        assert_eq!(store.app_speaker_evidence("meeting"), Some(evidence));
+        store.forget_meeting("meeting").unwrap();
+        assert!(store.app_speaker_evidence("meeting").is_none());
     }
 }

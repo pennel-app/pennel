@@ -7,8 +7,8 @@ use sherpa_onnx::{
 };
 
 use crate::{
-    CLUSTER_THRESHOLD, Diarization, Error, SAMPLE_RATE, Speaker, VOICEPRINT_BUDGET_MS, normalized,
-    renumber, speech_ms, voiceprint_spans,
+    CLUSTER_THRESHOLD, Diarization, Error, FRAGMENT_THRESHOLD, SAMPLE_RATE, Speaker,
+    VOICEPRINT_BUDGET_MS, normalized, reconcile_fragments, renumber, speech_ms, voiceprint_spans,
 };
 
 pub struct Models<'a> {
@@ -22,8 +22,8 @@ pub struct Models<'a> {
 pub struct Options {
     pub threads: i32,
     pub cluster_threshold: f32,
-    /// Step of the 10 s segmentation window, as a fraction of it. 0.25 is four times faster than the
-    /// default 0.1 and found the same speakers on the reference recordings.
+    /// Step of the segmentation window, as a fraction of it. Smaller shifts require more compute;
+    /// real-call evaluation compares the existing 0.25 setting with the upstream 0.1 setting.
     pub window_shift: f32,
 }
 
@@ -140,6 +140,13 @@ impl Diarizer {
     }
 
     pub fn process(&self, samples: &[f32]) -> Result<Diarization, Error> {
+        self.process_unreconciled(samples)
+            .map(|diarization| reconcile_fragments(diarization, FRAGMENT_THRESHOLD))
+    }
+
+    /// Same inference and clean voiceprints as production, before fragment reconciliation. Offline
+    /// evaluation can compare both results without a second model run or different audio input.
+    pub fn process_unreconciled(&self, samples: &[f32]) -> Result<Diarization, Error> {
         if samples.len() < SAMPLE_RATE as usize {
             return Ok(Diarization::default());
         }
@@ -226,6 +233,13 @@ mod tests {
             result.turns.len()
         );
         assert!(result.speakers.len() >= 2);
-        assert!(result.speakers.iter().all(|s| !s.embedding.is_empty()));
+        assert!(
+            result
+                .speakers
+                .iter()
+                .filter(|s| !s.embedding.is_empty())
+                .count()
+                >= 2
+        );
     }
 }

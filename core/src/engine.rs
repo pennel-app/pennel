@@ -1364,6 +1364,7 @@ impl PennelEngine {
         }
         let mut rows = snapshot.utterances;
         let mut recovered = 0;
+        let mut retained_partial = false;
         let mut unverified = false;
         // Keep corrupt chunks for review without blocking independent retained audio.
         let mut batch_error = None;
@@ -1423,13 +1424,24 @@ impl PennelEngine {
                     .saturating_add(samples.len() as u64 * 1_000 / u64::from(rate.max(1)));
             }
             let retained = !is_hallucination(&transcript.text);
+            if !transcript.complete && (!retained || transcript.text.len() < segment.text.len()) {
+                batch_error = Some(PennelError::InvalidResponse {
+                    message: "Recognition stopped before the passage ended. The previous text and original audio remain available for retry.".into(),
+                });
+                break;
+            }
             segment.text = if !retained {
                 String::new()
             } else {
                 transcript.text
             };
-            segment.failed = false;
-            proof.disposition = crate::meeting_utterances::RecoveryAudioDisposition::Complete;
+            segment.failed = !transcript.complete;
+            proof.disposition = if transcript.complete {
+                crate::meeting_utterances::RecoveryAudioDisposition::Complete
+            } else {
+                crate::meeting_utterances::RecoveryAudioDisposition::Pending
+            };
+            row.metadata.partial_text = (!transcript.complete).then(|| segment.text.clone());
             row.metadata.recovery_audio = Some(proof);
             row.metadata.spans = if retained {
                 transcript
@@ -1453,9 +1465,18 @@ impl PennelEngine {
             {
                 manual.review_required = true;
             }
-            recovered += 1;
+            if transcript.complete {
+                recovered += 1;
+            } else {
+                retained_partial = true;
+                batch_error = Some(PennelError::InvalidResponse {
+                    message: "Recognition stopped before the passage ended. The partial text and original audio remain available for retry.".into(),
+                });
+                break;
+            }
         }
         if recovered == 0
+            && !retained_partial
             && let Some(error) = batch_error
         {
             return Err(error);
@@ -2913,6 +2934,22 @@ impl PennelEngine {
         })
     }
 
+    pub(crate) fn speaker_commit_policy_guard(
+        &self,
+        expected: (bool, crate::settings::MeetingAppNamePolicy),
+    ) -> Result<std::sync::MutexGuard<'_, ()>, PennelError> {
+        let guard = self.meeting_gate.lock().unwrap();
+        let settings = self.settings();
+        if (
+            settings.meeting_app_speakers,
+            settings.meeting_app_name_policy,
+        ) != expected
+        {
+            return Err(PennelError::Cancelled);
+        }
+        Ok(guard)
+    }
+
     /// Serialize the final automatic write with consent and inference-configuration changes.
     pub(crate) fn automatic_summary_policy_guard(
         &self,
@@ -3186,7 +3223,8 @@ impl PennelEngine {
                     result.timing_kind,
                     duration,
                 )
-                .trimmed());
+                .trimmed()
+                .with_complete(result.complete));
             }
         }
         self.stt(settings, &settings.meeting_stt, wav, keys)

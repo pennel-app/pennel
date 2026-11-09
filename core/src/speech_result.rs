@@ -22,6 +22,14 @@ pub struct SpeechTranscript {
     pub text: String,
     pub spans: Vec<SpeechTextSpan>,
     pub timing_kind: SpeechTimingKind,
+    /// False when recognition stopped before the input ended; text is a retained prefix, not a
+    /// successful completion and its original audio must remain eligible for recovery.
+    #[serde(default = "complete_by_default")]
+    pub complete: bool,
+}
+
+fn complete_by_default() -> bool {
+    true
 }
 
 impl SpeechTranscript {
@@ -30,7 +38,13 @@ impl SpeechTranscript {
             text: text.into(),
             spans: Vec::new(),
             timing_kind: SpeechTimingKind::Untimed,
+            complete: true,
         }
+    }
+
+    pub(crate) fn with_complete(mut self, complete: bool) -> Self {
+        self.complete = complete;
+        self
     }
 
     /// Unreliable timing loses its authority, never any of the recognized text.
@@ -69,6 +83,7 @@ impl SpeechTranscript {
             text,
             spans,
             timing_kind,
+            complete: true,
         }
     }
 
@@ -79,7 +94,7 @@ impl SpeechTranscript {
             return self;
         }
         if left >= right {
-            return Self::plain("");
+            return Self::plain("").with_complete(self.complete);
         }
         let text = self.text[left..right].to_owned();
         let spans = self
@@ -96,7 +111,7 @@ impl SpeechTranscript {
                 Some(span)
             })
             .collect();
-        Self::validated(text, spans, self.timing_kind, u64::MAX)
+        Self::validated(text, spans, self.timing_kind, u64::MAX).with_complete(self.complete)
     }
 
     #[cfg(any(feature = "local-models", test))]
@@ -147,6 +162,32 @@ impl SpeechTranscript {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_recognition_defaults_to_complete_but_partial_roundtrips_and_trims() {
+        let legacy = r#"{"text":"legacy speech","spans":[],"timing_kind":"untimed"}"#;
+        assert!(
+            serde_json::from_str::<SpeechTranscript>(legacy)
+                .unwrap()
+                .complete
+        );
+        let partial = SpeechTranscript::plain(" retained prefix ")
+            .with_complete(false)
+            .trimmed();
+        assert_eq!(partial.text, "retained prefix");
+        assert!(!partial.complete);
+        assert_eq!(
+            serde_json::from_slice::<SpeechTranscript>(&serde_json::to_vec(&partial).unwrap())
+                .unwrap(),
+            partial
+        );
+        assert!(
+            !SpeechTranscript::plain(" ")
+                .with_complete(false)
+                .trimmed()
+                .complete
+        );
+    }
 
     #[test]
     fn exact_unicode_text_and_real_boundaries_are_conserved() {

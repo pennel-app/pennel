@@ -151,6 +151,14 @@ impl Progress {
             crate::MeetingUtterance::new(segment, Some(physical_source_id(source).into()));
         row.metadata.spans = spans;
         row.metadata.recovery_audio = recovery;
+        if row.segment.failed
+            && !row.segment.text.is_empty()
+            && row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
+                proof.disposition == crate::meeting_utterances::RecoveryAudioDisposition::Pending
+            })
+        {
+            row.metadata.partial_text = Some(row.segment.text.clone());
+        }
         self.utterances.push(row);
         self.utterances.sort_by_key(|row| row.segment.start_ms);
         if self
@@ -950,7 +958,7 @@ fn transcribe_job(
     let mut segment = job.failed();
     let mut spans = Vec::new();
     if let Ok(transcript) = result {
-        segment.failed = false;
+        segment.failed = !transcript.complete;
         segment.text = if is_hallucination(&transcript.text) {
             String::new()
         } else {
@@ -1960,6 +1968,7 @@ mod tests {
                 voice: Some(2),
                 source_fingerprint: row.metadata.source_fingerprint.clone(),
                 review_required: false,
+                self_voice: false,
             });
         }
         session.apply_live_speaker_update(live_update(&session, 2, Speaker::Me, 3));
@@ -2871,6 +2880,99 @@ mod tests {
                 .join("failed/me-0.wav")
                 .exists()
         );
+    }
+
+    #[test]
+    fn incomplete_recognition_retains_prefix_and_audio_until_a_complete_retry() {
+        struct Host(std::sync::atomic::AtomicBool);
+        impl crate::SystemTranscriber for Host {
+            fn transcribe(
+                &self,
+                _: Vec<f32>,
+                _: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> Result<String, PennelError> {
+                unreachable!("the timed host must be used");
+            }
+        }
+        impl crate::TimedSystemTranscriber for Host {
+            fn transcribe_timed(
+                &self,
+                _: Vec<f32>,
+                _: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> Result<crate::SpeechTranscript, PennelError> {
+                let complete = self.0.load(Ordering::SeqCst);
+                Ok(crate::SpeechTranscript::plain(if complete {
+                    "The complete passage."
+                } else {
+                    "The retained beginning."
+                })
+                .with_complete(complete))
+            }
+        }
+        let (dir, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = engine(&dir, &server);
+        let mut settings = engine.settings();
+        let account =
+            crate::new_account(crate::ProviderKind::AppleSpeech, settings.providers.clone());
+        settings.meeting_stt = crate::ModelChoice {
+            provider_id: account.id.clone(),
+            model: "dictation".into(),
+        };
+        settings.providers.push(account);
+        engine.update_settings(settings).unwrap();
+        let host = Arc::new(Host(std::sync::atomic::AtomicBool::new(false)));
+        engine.set_system_transcriber(host.clone());
+        engine.set_timed_system_transcriber(host.clone());
+        let session = engine
+            .clone()
+            .start_meeting("Owned partial ASR fixture".into(), keys())
+            .unwrap();
+        session.push_audio(Speaker::Me, tone(3.0));
+        session.stop().unwrap();
+        let id = session.id();
+        let audio = failed_path(Path::new(&session.dir()), Speaker::Me, 0);
+        let current = engine.meeting_transcript(id.clone());
+        assert!(current[0].failed);
+        assert_eq!(current[0].text, "The retained beginning.");
+        assert!(audio.exists());
+        assert!(
+            crate::summary::transcript_text(&current, &[]).is_empty(),
+            "partial speech cannot become final summary evidence"
+        );
+        assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
+        let reopened = engine
+            .meeting_store()
+            .read_transcript_snapshot(&id)
+            .unwrap();
+        assert_eq!(
+            reopened.metadata_status,
+            crate::TranscriptMetadataStatus::Valid
+        );
+        assert_eq!(
+            reopened.utterances[0].metadata.partial_text.as_deref(),
+            Some("The retained beginning.")
+        );
+        assert_eq!(
+            reopened.utterances[0].segment.text,
+            "The retained beginning."
+        );
+        assert!(reopened.utterances[0].segment.failed);
+        assert!(audio.exists());
+
+        host.0.store(true, Ordering::SeqCst);
+        assert_eq!(engine.retranscribe_failed(id.clone(), keys()).unwrap(), 1);
+        let complete = engine
+            .meeting_store()
+            .read_transcript_snapshot(&id)
+            .unwrap();
+        assert!(!complete.utterances[0].segment.failed);
+        assert_eq!(complete.utterances[0].segment.text, "The complete passage.");
+        assert!(complete.utterances[0].metadata.partial_text.is_none());
+        assert!(!audio.exists());
     }
 
     #[test]

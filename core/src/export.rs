@@ -432,6 +432,7 @@ mod tests {
         rows[2].metadata.attribution.kind = crate::AttributionKind::Overlap;
         rows[2].metadata.attribution.voices = vec![1, 2];
         rows[3].metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("Me".into()),
             voice: Some(3),
             source_fingerprint: rows[3].metadata.source_fingerprint.clone(),
@@ -478,6 +479,7 @@ mod tests {
         assert!(english.contains("Speaker 1 (Provisional):** Finalized speech"));
         assert!(dutch.contains("Anderen 1 (Voorlopig):** Finalized speech"));
         row.metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("Ada".into()),
             voice: None,
             source_fingerprint: row.metadata.source_fingerprint.clone(),

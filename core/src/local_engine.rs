@@ -24,6 +24,7 @@ struct Loaded {
     languages: Vec<String>,
     supports_vocabulary: bool,
     supports_context: bool,
+    max_timestamp_kind: transcribe_cpp::TimestampKind,
     last_used: Instant,
 }
 
@@ -90,7 +91,8 @@ fn loaded_model<'a>(
         static LOGGING: std::sync::Once = std::sync::Once::new();
         LOGGING.call_once(transcribe_cpp::init_logging);
         let model = Model::load(path).map_err(engine_error)?;
-        let languages = model.capabilities().map_err(engine_error)?.languages;
+        let capabilities = model.capabilities().map_err(engine_error)?;
+        let languages = capabilities.languages;
         let supports_vocabulary = model.supports(Feature::Vocabulary);
         let supports_context = model.supports(Feature::ContextPrompt);
         let session = model.session().map_err(engine_error)?;
@@ -100,6 +102,7 @@ fn loaded_model<'a>(
             languages,
             supports_vocabulary,
             supports_context,
+            max_timestamp_kind: capabilities.max_timestamp_kind,
             last_used: Instant::now(),
         });
     }
@@ -118,13 +121,14 @@ fn run(
     if cancel.is_some_and(CancelToken::is_cancelled) {
         return Err(PennelError::Cancelled);
     }
-    let options = run_options(
+    let mut options = run_options(
         language,
         &model.languages,
         vocabulary,
         model.supports_vocabulary,
         model.supports_context,
     );
+    options.timestamps = model.max_timestamp_kind;
     if let Some(cancel) = cancel {
         model.session.set_cancel_token(cancel);
     }
@@ -161,7 +165,7 @@ fn transcript_result(
         Ok(transcript) => Ok(retain_timing(&transcript, audio_duration_ms)),
         Err(error) => match error.partial() {
             Some(partial) if !require_complete && !partial.text.trim().is_empty() => {
-                Ok(retain_timing(partial, audio_duration_ms))
+                Ok(retain_timing(partial, audio_duration_ms).with_complete(false))
             }
             _ => Err(engine_error(error)),
         },
@@ -668,6 +672,28 @@ mod tests {
         assert_eq!(
             transcript_result(Err(error()), false, 1000).unwrap().text,
             "café"
+        );
+    }
+
+    #[cfg(feature = "local-models")]
+    #[test]
+    fn salvaged_meeting_text_is_explicitly_incomplete() {
+        let result = transcript_result(
+            Err(transcribe_cpp::Error::OutputTruncated {
+                message: "truncated".into(),
+                partial: Some(Box::new(transcribe_cpp::Transcript {
+                    text: "The retained beginning.".into(),
+                    ..Default::default()
+                })),
+            }),
+            false,
+            1000,
+        )
+        .unwrap();
+        assert_eq!(result.text, "The retained beginning.");
+        assert_eq!(
+            serde_json::to_value(result).unwrap().get("complete"),
+            Some(&serde_json::Value::Bool(false))
         );
     }
 
