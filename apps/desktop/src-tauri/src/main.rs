@@ -1237,7 +1237,7 @@ fn main() {
             commands::forget_known_voice,
             commands::forget_all_voices,
             commands::meeting_voices,
-            commands::meeting_voice_suggestions,
+            commands::meeting_voice_naming,
             commands::remember_speaker,
             commands::export_meeting,
             commands::save_meeting_notes,

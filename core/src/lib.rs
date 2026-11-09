@@ -115,7 +115,9 @@ pub use localization::{
     InterfaceLanguage, InterfaceLanguagePreference, localize_ui_text, resolve_interface_language,
     ui_text,
 };
-pub use meeting_app_evidence::{AppSpeakerEvidence, NameSuggestion, SpeakingSample};
+pub use meeting_app_evidence::{
+    AppSpeakerEvidence, CandidateSource, NameCandidate, NameSuggestion, SpeakingSample, VoiceNaming,
+};
 pub use meeting_chat::{ChatTurn, Citation, MeetingAnswer};
 pub use meeting_evidence::{
     MeetingEvidence, MeetingSourceAnchor, evidence_revision, segment_evidence_revision,

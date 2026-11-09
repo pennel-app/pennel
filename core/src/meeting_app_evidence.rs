@@ -18,6 +18,9 @@ use crate::meetings::Speaker;
 pub struct AppSpeakerEvidence {
     pub app_id: String,
     pub samples: Vec<SpeakingSample>,
+    /// Everyone the app showed during the call, including people who never spoke.
+    #[serde(default)]
+    pub participants: Vec<String>,
 }
 
 /// One sample of the meeting app's interface on the recording timeline.
@@ -47,6 +50,31 @@ pub struct NameSuggestion {
     pub agreement: f32,
     /// Share of this voice's speech covered by attributable evidence.
     pub coverage: f32,
+    /// The highlighted participant is a room or a device several people spoke through, so the name
+    /// identifies where the voice came from, not who it is.
+    pub shared_device: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateSource {
+    Invited,
+    MeetingApp,
+    KnownVoice,
+}
+
+/// A name the user can pick for a voice: who was invited, who the meeting app showed, or a
+/// remembered voice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NameCandidate {
+    pub name: String,
+    pub source: CandidateSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VoiceNaming {
+    pub suggestions: Vec<NameSuggestion>,
+    pub candidates: Vec<NameCandidate>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -127,6 +155,7 @@ pub fn suggest_names(
                     app_id: String::new(),
                     agreement,
                     coverage,
+                    shared_device: false,
                 })
         })
         .collect();
@@ -172,18 +201,36 @@ impl PennelEngine {
             .set_app_speaker_evidence(&self.meeting_key(id), &evidence)
     }
 
-    /// Names a meeting app suggests for voices the user has not named yet.
-    pub fn meeting_voice_suggestions(&self, id: &str) -> Vec<NameSuggestion> {
-        let Some(evidence) = self
-            .voice_store()
-            .app_speaker_evidence(&self.meeting_key(id))
-        else {
-            return Vec::new();
-        };
+    /// Name suggestions for unnamed voices plus every name the user can choose from.
+    pub fn meeting_voice_naming(&self, id: &str) -> VoiceNaming {
+        let key = self.meeting_key(id);
+        let evidence = self.voice_store().app_speaker_evidence(&key);
+        let people = self.meeting_people_for_voices(id);
         let store = self.meeting_store();
+        let mut invited = store.attendees(id);
+        invited.extend(people.names);
+        let candidates = name_candidates(
+            &invited,
+            evidence.as_ref().map_or(&[][..], |e| &e.participants),
+            &self
+                .known_voices()
+                .into_iter()
+                .map(|voice| voice.name)
+                .collect::<Vec<_>>(),
+            &people.rooms,
+        );
+        let Some(evidence) = evidence else {
+            return VoiceNaming {
+                suggestions: Vec::new(),
+                candidates,
+            };
+        };
         let named: Vec<u32> = store.speaker_names(id).iter().map(|n| n.voice).collect();
         let Ok(snapshot) = store.read_transcript_snapshot(id) else {
-            return Vec::new();
+            return VoiceNaming {
+                suggestions: Vec::new(),
+                candidates,
+            };
         };
         let turns: Vec<VoiceTurn> = snapshot
             .utterances
@@ -198,7 +245,13 @@ impl PennelEngine {
                 })
             })
             .collect();
-        suggest_names(&turns, &evidence.samples, FusionPolicy::default())
+        let prints: Vec<(u32, Vec<f32>)> = self
+            .voice_store()
+            .meeting_voiceprints(&key, Some(&snapshot.transcript_digest))
+            .into_iter()
+            .map(|print| (print.voice, print.embedding))
+            .collect();
+        let suggestions = suggest_names(&turns, &evidence.samples, FusionPolicy::default())
             .into_iter()
             .map(|suggestion| NameSuggestion {
                 name: crate::voices::clean_name(&suggestion.name),
@@ -206,8 +259,90 @@ impl PennelEngine {
                 ..suggestion
             })
             .filter(|suggestion| !suggestion.name.is_empty())
-            .collect()
+            .collect();
+        VoiceNaming {
+            suggestions: mark_shared_devices(suggestions, &prints, &people.rooms),
+            candidates,
+        }
     }
+}
+
+/// One participant name on several voices is either one person split by diarization or several
+/// people behind one device. Voiceprints decide: clearly different voices mean a shared device.
+/// Without voiceprints to compare, the safe reading is a shared device.
+fn mark_shared_devices(
+    mut suggestions: Vec<NameSuggestion>,
+    prints: &[(u32, Vec<f32>)],
+    rooms: &[String],
+) -> Vec<NameSuggestion> {
+    let print = |voice: u32| {
+        prints
+            .iter()
+            .find(|(v, embedding)| *v == voice && !embedding.is_empty())
+            .map(|(_, embedding)| embedding.as_slice())
+    };
+    let shared: Vec<String> = suggestions
+        .iter()
+        .map(|suggestion| suggestion.name.clone())
+        .filter(|name| {
+            if rooms.iter().any(|room| same_name(room, name)) {
+                return true;
+            }
+            let voices: Vec<u32> = suggestions
+                .iter()
+                .filter(|s| same_name(&s.name, name))
+                .map(|s| s.voice)
+                .collect();
+            voices.iter().enumerate().any(|(i, a)| {
+                voices[i + 1..]
+                    .iter()
+                    .any(|b| match (print(*a), print(*b)) {
+                        (Some(a), Some(b)) => {
+                            pennel_speakers::cosine(a, b) < pennel_speakers::MERGE_THRESHOLD
+                        }
+                        _ => true,
+                    })
+            })
+        })
+        .collect();
+    for suggestion in &mut suggestions {
+        suggestion.shared_device = shared.iter().any(|name| same_name(name, &suggestion.name));
+    }
+    suggestions
+}
+
+fn name_candidates(
+    invited: &[String],
+    meeting_app: &[String],
+    known_voices: &[String],
+    rooms: &[String],
+) -> Vec<NameCandidate> {
+    let mut candidates: Vec<NameCandidate> = Vec::new();
+    let sources = [
+        (invited, CandidateSource::Invited),
+        (meeting_app, CandidateSource::MeetingApp),
+        (known_voices, CandidateSource::KnownVoice),
+    ];
+    for (names, source) in sources {
+        for name in names {
+            let name = crate::voices::clean_name(name);
+            if name.is_empty()
+                || rooms.iter().any(|room| same_name(room, &name))
+                || candidates.iter().any(|c| same_name(&c.name, &name))
+            {
+                continue;
+            }
+            candidates.push(NameCandidate {
+                name,
+                source: source.clone(),
+            });
+        }
+    }
+    candidates
+}
+
+fn same_name(a: &str, b: &str) -> bool {
+    a.trim().to_lowercase() == b.trim().to_lowercase()
 }
 
 fn overlap_ms(a_start: u64, a_end: u64, b_start: u64, b_end: u64) -> u64 {
@@ -341,6 +476,111 @@ mod tests {
 
         assert_eq!(suggestions[0].name, "Ann");
         assert!(suggestions[0].agreement > 0.85);
+    }
+
+    fn suggestion(voice: u32, name: &str) -> NameSuggestion {
+        NameSuggestion {
+            voice,
+            name: name.into(),
+            app_id: "com.microsoft.teams2".into(),
+            agreement: 1.0,
+            coverage: 1.0,
+            shared_device: false,
+        }
+    }
+
+    fn shared(suggestions: &[NameSuggestion]) -> Vec<(u32, bool)> {
+        suggestions
+            .iter()
+            .map(|s| (s.voice, s.shared_device))
+            .collect()
+    }
+
+    #[test]
+    fn different_voices_behind_one_participant_are_a_shared_device() {
+        let prints = [
+            (1, vec![1.0, 0.0]),
+            (2, vec![0.0, 1.0]),
+            (3, vec![0.6, 0.8]),
+        ];
+        let marked = mark_shared_devices(
+            vec![
+                suggestion(1, "Ann"),
+                suggestion(2, "Ann"),
+                suggestion(3, "Bert"),
+            ],
+            &prints,
+            &[],
+        );
+
+        assert_eq!(shared(&marked), [(1, true), (2, true), (3, false)]);
+    }
+
+    #[test]
+    fn one_person_split_into_similar_voices_keeps_the_name() {
+        let prints = [(1, vec![1.0, 0.1]), (2, vec![0.95, 0.15])];
+        let marked = mark_shared_devices(
+            vec![suggestion(1, "Ann"), suggestion(2, "ann ")],
+            &prints,
+            &[],
+        );
+
+        assert_eq!(shared(&marked), [(1, false), (2, false)]);
+    }
+
+    #[test]
+    fn repeated_names_without_voiceprints_are_treated_as_shared() {
+        let marked =
+            mark_shared_devices(vec![suggestion(1, "Ann"), suggestion(2, "Ann")], &[], &[]);
+
+        assert_eq!(shared(&marked), [(1, true), (2, true)]);
+    }
+
+    #[test]
+    fn a_calendar_room_is_never_a_person_even_with_one_voice() {
+        let marked = mark_shared_devices(
+            vec![suggestion(1, "Meeting room 0.7")],
+            &[(1, vec![1.0])],
+            &["Meeting room 0.7".into()],
+        );
+
+        assert_eq!(shared(&marked), [(1, true)]);
+    }
+
+    #[test]
+    fn candidates_combine_invitees_meeting_participants_and_known_voices_without_rooms() {
+        let candidates = name_candidates(
+            &[
+                "Ann Peeters".into(),
+                "Meeting room 0.7".into(),
+                "ann peeters".into(),
+            ],
+            &[
+                "Bert Jacobs".into(),
+                "Ann Peeters".into(),
+                "Meeting room 0.7".into(),
+            ],
+            &["Cas".into()],
+            &["Meeting room 0.7".into()],
+        );
+
+        assert_eq!(
+            candidates,
+            [
+                NameCandidate {
+                    name: "Ann Peeters".into(),
+                    source: CandidateSource::Invited
+                },
+                NameCandidate {
+                    name: "Bert Jacobs".into(),
+                    source: CandidateSource::MeetingApp
+                },
+                NameCandidate {
+                    name: "Cas".into(),
+                    source: CandidateSource::KnownVoice
+                },
+            ]
+        );
     }
 
     #[test]

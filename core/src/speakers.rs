@@ -1120,9 +1120,8 @@ mod tests {
     }
 
     #[test]
-    fn meeting_app_evidence_suggests_names_only_for_unnamed_voices_and_is_forgotten_with_the_meeting()
-     {
-        use crate::meeting_app_evidence::{AppSpeakerEvidence, SpeakingSample};
+    fn meeting_app_naming_marks_rooms_lists_candidates_and_is_forgotten() {
+        use crate::meeting_app_evidence::{AppSpeakerEvidence, CandidateSource, SpeakingSample};
         let dir = tempfile::tempdir().unwrap();
         let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
         let store = engine.meeting_store();
@@ -1136,11 +1135,31 @@ mod tests {
             .write_owned_transcript(&id, &[voiced(0, 1), voiced(6_000, 2), voiced(12_000, 3)])
             .unwrap();
         store.rename_speaker(&id, 3, "Cas").unwrap();
+        store
+            .set_attendees(
+                &id,
+                &["Ann".into(), "Dirk Invited".into(), "Room 0.7".into()],
+            )
+            .unwrap();
+        engine
+            .set_meeting_calendar_context_json(
+                id.clone(),
+                serde_json::json!({
+                    "source": "eventkit", "source_id": "s", "calendar_id": "c", "event_id": "e",
+                    "source_revision": "r1",
+                    "participants": [
+                        {"source_id": "mailto:dirk@example.com", "name": "Dirk Invited", "is_self": false, "kind": "person"},
+                        {"source_id": "mailto:room@example.com", "name": "Room 0.7", "is_self": false, "kind": "room"}
+                    ]
+                })
+                .to_string(),
+            )
+            .unwrap();
         let samples = (0..72)
             .map(|step| SpeakingSample {
                 at_ms: step * 250,
                 available: true,
-                speaking: vec![["Ann", "Bert", "Cas Wouters"][(step / 24) as usize].into()],
+                speaking: vec![["Ann", "Room 0.7", "Cas Wouters"][(step / 24) as usize].into()],
             })
             .collect();
         engine
@@ -1149,23 +1168,27 @@ mod tests {
                 AppSpeakerEvidence {
                     app_id: "com.microsoft.teams2".into(),
                     samples,
+                    participants: vec!["Ann".into(), "Eva Silent".into(), "Room 0.7".into()],
                 },
             )
             .unwrap();
 
-        let suggestions: Vec<_> = engine
-            .meeting_voice_suggestions(&id)
-            .into_iter()
-            .map(|s| (s.voice, s.name, s.app_id))
-            .collect();
+        let naming = engine.meeting_voice_naming(&id);
 
-        assert_eq!(
-            suggestions,
-            [
-                (1, "Ann".to_owned(), "com.microsoft.teams2".to_owned()),
-                (2, "Bert".to_owned(), "com.microsoft.teams2".to_owned()),
-            ]
-        );
+        let suggestions: Vec<_> = naming
+            .suggestions
+            .iter()
+            .map(|s| (s.voice, s.name.as_str(), s.shared_device))
+            .collect();
+        assert_eq!(suggestions, [(1, "Ann", false), (2, "Room 0.7", true)]);
+        let candidates: Vec<_> = naming
+            .candidates
+            .iter()
+            .map(|c| (c.name.as_str(), c.source.clone()))
+            .collect();
+        assert!(candidates.contains(&("Dirk Invited", CandidateSource::Invited)));
+        assert!(candidates.contains(&("Eva Silent", CandidateSource::MeetingApp)));
+        assert!(!candidates.iter().any(|(name, _)| *name == "Room 0.7"));
         let key = engine.meeting_key(&id);
         assert!(engine.voice_store().app_speaker_evidence(&key).is_some());
         engine.delete_meeting(id.clone()).unwrap();

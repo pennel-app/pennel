@@ -718,6 +718,17 @@ export interface VoiceNameSuggestion {
   app_id: string;
   agreement: number;
   coverage: number;
+  shared_device: boolean;
+}
+
+export interface VoiceNameCandidate {
+  name: string;
+  source: "invited" | "meeting_app" | "known_voice";
+}
+
+export interface VoiceNaming {
+  suggestions: VoiceNameSuggestion[];
+  candidates: VoiceNameCandidate[];
 }
 
 export interface SpeakerSetup {
@@ -980,7 +991,7 @@ export const api = {
   renameSpeaker: (id: string, voice: number, name: string) => invoke<void>("rename_speaker", { id, voice, name }),
   recognizeSpeakers: (id: string) => invoke<SpeakerRecognition>("diarize_meeting", { id }),
   meetingVoices: (id: string) => invoke<MeetingVoice[]>("meeting_voices", { id }),
-  meetingVoiceSuggestions: (id: string) => invoke<VoiceNameSuggestion[]>("meeting_voice_suggestions", { id }),
+  meetingVoiceNaming: (id: string) => invoke<VoiceNaming>("meeting_voice_naming", { id }),
   rememberSpeaker: (id: string, voice: number, name: string) => invoke<void>("remember_speaker", { id, voice, name }),
   speakerSetup: () => invoke<SpeakerSetup>("speaker_setup"),
   startVoiceEnrollment: () => invoke<void>("start_voice_enrollment"),

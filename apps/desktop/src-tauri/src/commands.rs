@@ -1627,14 +1627,14 @@ pub async fn forget_all_voices(shared: State<'_, Arc<Shared>>) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn meeting_voice_suggestions(
+pub async fn meeting_voice_naming(
     id: String,
     shared: State<'_, Arc<Shared>>,
-) -> Result<Vec<pennel_core::NameSuggestion>> {
+) -> Result<pennel_core::VoiceNaming> {
     let shared = shared.inner().clone();
-    off_main("meeting_voice_suggestions", move || {
+    off_main("meeting_voice_naming", move || {
         checked_meeting_dir(&shared.engine, &id)?;
-        Ok(shared.engine.meeting_voice_suggestions(&id))
+        Ok(shared.engine.meeting_voice_naming(&id))
     })
     .await
 }

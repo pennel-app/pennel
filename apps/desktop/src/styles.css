@@ -910,3 +910,5 @@ button.btn.primary:active:not(:disabled) { opacity: .82; }
   .sidebar-resize { display: none; }
   :root[data-platform="macos"] .settings-categories { padding-top: var(--space-2); }
 }
+
+.name-choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; max-height: 160px; overflow-y: auto; }

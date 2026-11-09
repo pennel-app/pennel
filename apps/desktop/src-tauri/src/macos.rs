@@ -511,6 +511,8 @@ pub fn call_snapshot(
 #[derive(Debug, Default, Deserialize)]
 pub struct MeetingSpeakers {
     pub available: bool,
+    #[serde(default)]
+    pub participants: Vec<String>,
     pub speaking: Vec<String>,
 }
 

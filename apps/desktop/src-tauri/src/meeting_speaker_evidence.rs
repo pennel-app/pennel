@@ -13,8 +13,17 @@ const INTERVAL: Duration = Duration::from_millis(500);
 pub struct EvidenceSampler {
     app_id: String,
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<Vec<SpeakingSample>>>,
+    thread: Option<JoinHandle<Sampled>>,
 }
+
+#[derive(Default)]
+struct Sampled {
+    samples: Vec<SpeakingSample>,
+    participants: Vec<String>,
+}
+
+/// One reading of the meeting app: whether it was readable, who it showed and who was speaking.
+type Reading = (bool, Vec<String>, Vec<String>);
 
 /// A recording that ends without `finish` (discarded, failed) still stops sampling.
 impl Drop for EvidenceSampler {
@@ -29,7 +38,7 @@ impl EvidenceSampler {
     pub fn start(started: Instant) -> Option<Self> {
         Self::spawn(TEAMS, started, || {
             let snapshot = crate::macos::meeting_speakers_snapshot(TEAMS);
-            (snapshot.available, snapshot.speaking)
+            (snapshot.available, snapshot.participants, snapshot.speaking)
         })
     }
 
@@ -41,7 +50,7 @@ impl EvidenceSampler {
     fn spawn(
         app_id: &str,
         started: Instant,
-        read: impl Fn() -> (bool, Vec<String>) + Send + 'static,
+        read: impl Fn() -> Reading + Send + 'static,
     ) -> Option<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let thread = std::thread::Builder::new()
@@ -61,19 +70,24 @@ impl EvidenceSampler {
     /// Evidence without a single readable sample is empty, which stores nothing.
     pub fn finish(mut self) -> AppSpeakerEvidence {
         self.stop.store(true, Ordering::SeqCst);
-        let samples = self
+        let sampled = self
             .thread
             .take()
             .and_then(|thread| thread.join().ok())
             .unwrap_or_default();
-        let samples = if samples.iter().any(|sample| sample.available) {
-            samples
-        } else {
-            Vec::new()
-        };
+        let readable = sampled.samples.iter().any(|sample| sample.available);
         AppSpeakerEvidence {
             app_id: std::mem::take(&mut self.app_id),
-            samples,
+            samples: if readable {
+                sampled.samples
+            } else {
+                Vec::new()
+            },
+            participants: if readable {
+                sampled.participants
+            } else {
+                Vec::new()
+            },
         }
     }
 }
@@ -82,20 +96,25 @@ fn sample_until(
     stop: &AtomicBool,
     started: Instant,
     interval: Duration,
-    read: impl Fn() -> (bool, Vec<String>),
-) -> Vec<SpeakingSample> {
-    let mut samples = Vec::new();
+    read: impl Fn() -> Reading,
+) -> Sampled {
+    let mut sampled = Sampled::default();
     while !stop.load(Ordering::SeqCst) {
         let at = Instant::now();
-        let (available, speaking) = read();
-        samples.push(SpeakingSample {
+        let (available, participants, speaking) = read();
+        for name in participants {
+            if !sampled.participants.contains(&name) {
+                sampled.participants.push(name);
+            }
+        }
+        sampled.samples.push(SpeakingSample {
             at_ms: at.saturating_duration_since(started).as_millis() as u64,
             available,
             speaking,
         });
         std::thread::sleep(interval.saturating_sub(at.elapsed()));
     }
-    samples
+    sampled
 }
 
 #[cfg(test)]
@@ -105,8 +124,10 @@ mod tests {
     #[test]
     fn samples_on_the_recording_timeline_until_stopped() {
         let started = Instant::now() - Duration::from_secs(10);
-        let sampler =
-            EvidenceSampler::spawn(TEAMS, started, || (true, vec!["Ann".into()])).unwrap();
+        let sampler = EvidenceSampler::spawn(TEAMS, started, || {
+            (true, vec!["Ann".into(), "Bert".into()], vec!["Ann".into()])
+        })
+        .unwrap();
         std::thread::sleep(Duration::from_millis(50));
 
         let evidence = sampler.finish();
@@ -115,14 +136,18 @@ mod tests {
         assert!(!evidence.samples.is_empty());
         assert!(evidence.samples[0].at_ms >= 10_000);
         assert_eq!(evidence.samples[0].speaking, ["Ann"]);
+        assert_eq!(evidence.participants, ["Ann", "Bert"]);
     }
 
     #[test]
     fn a_meeting_app_that_was_never_readable_leaves_no_evidence() {
         let sampler =
-            EvidenceSampler::spawn(TEAMS, Instant::now(), || (false, Vec::new())).unwrap();
+            EvidenceSampler::spawn(TEAMS, Instant::now(), || (false, Vec::new(), Vec::new()))
+                .unwrap();
         std::thread::sleep(Duration::from_millis(20));
 
-        assert!(sampler.finish().samples.is_empty());
+        let evidence = sampler.finish();
+        assert!(evidence.samples.is_empty());
+        assert!(evidence.participants.is_empty());
     }
 }

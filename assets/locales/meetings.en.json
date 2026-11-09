@@ -541,5 +541,9 @@
   "meetings.failed_recovery_outcome_none": "No passages were recovered. The transcript is still incomplete.",
   "meetings.failed_recovery_meeting_changed": "This meeting changed before recovery. Reopen the meeting and try again.",
   "meetings.voice_suggestion": "Teams suggests {name}",
-  "meetings.voice_use_suggestion": "Use name"
+  "meetings.voice_use_suggestion": "Use name",
+  "meetings.voice_shared_device": "Via {name} (shared device)",
+  "meetings.voice_candidate_invited": "Invited to this meeting",
+  "meetings.voice_candidate_meeting_app": "Shown in Teams during the meeting",
+  "meetings.voice_candidate_known_voice": "A voice you remembered"
 }

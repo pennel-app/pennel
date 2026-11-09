@@ -278,7 +278,38 @@ pub fn start(
     detected_app: Option<String>,
     attendees: Vec<String>,
 ) -> Result<String, String> {
-    start_with_calendar(shared, title, detected_app, attendees, None)
+    // A manual start still records who was invited, so voices can be named after them later.
+    let (attendees, calendar_context) =
+        if attendees.is_empty() && shared.settings().calendar_enabled {
+            current_invitees(&crate::call_detection::calendar())
+        } else {
+            (attendees, None)
+        };
+    start_with_calendar(shared, title, detected_app, attendees, calendar_context)
+}
+
+fn current_invitees(calendar: &serde_json::Value) -> (Vec<String>, Option<serde_json::Value>) {
+    let Some(event) = calendar
+        .get("current_event")
+        .filter(|event| event.is_object())
+    else {
+        return (Vec::new(), None);
+    };
+    let attendees = event
+        .get("attendees")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    let context = event
+        .get("calendar_context")
+        .filter(|value| value.is_object())
+        .cloned();
+    (attendees, context)
 }
 
 pub fn start_with_calendar(
@@ -953,6 +984,26 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicUsize};
+
+    #[test]
+    fn manual_start_takes_invitees_and_context_from_the_current_event() {
+        let calendar = serde_json::json!({
+            "current_event": {
+                "title": "Weekly",
+                "attendees": ["Ann", "Bert"],
+                "calendar_context": { "source": "eventkit", "participants": [] }
+            }
+        });
+
+        let (attendees, context) = super::current_invitees(&calendar);
+
+        assert_eq!(attendees, ["Ann", "Bert"]);
+        assert!(context.is_some());
+        assert_eq!(
+            super::current_invitees(&serde_json::json!({ "current_event": null })),
+            (Vec::new(), None)
+        );
+    }
 
     #[test]
     fn live_speaker_controls_reject_stale_and_stopping_sessions_without_changing_settings() {

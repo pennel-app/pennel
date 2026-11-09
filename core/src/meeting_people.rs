@@ -81,6 +81,12 @@ struct MentionRecord {
     notes_revision: String,
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct MeetingPeopleNames {
+    pub names: Vec<String>,
+    pub rooms: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CalendarParticipant {
     #[serde(default)]
@@ -93,6 +99,9 @@ struct CalendarParticipant {
     response: Option<String>,
     #[serde(default)]
     is_self: Option<bool>,
+    /// `person`, `room`, `resource` or `group`; absent in contexts saved before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CalendarContext {
@@ -948,6 +957,43 @@ impl PennelEngine {
         let owner: PeopleSnapshot = serde_json::from_str(&self.meeting_people_snapshot_json(id)?)
             .map_err(PennelError::storage)?;
         serde_json::to_string(&serde_json::json!({"schema_version":VERSION,"mentions":owner.mentions.iter().filter(|m|m.state=="linked").map(|m|serde_json::json!({"visible_name":m.visible_name,"start_byte":m.start_byte,"end_byte":m.end_byte})).collect::<Vec<_>>()})).map_err(PennelError::storage)
+    }
+}
+
+impl PennelEngine {
+    /// People linked to a meeting and the calendar rooms or resources it booked. Read-only; an
+    /// unreadable people store yields nothing rather than blocking speaker naming.
+    pub(crate) fn meeting_people_for_voices(&self, id: &str) -> MeetingPeopleNames {
+        let store = self.meeting_store();
+        let read_document = || -> Option<Document> {
+            let meeting = store.uid_of(id)?;
+            let library = library(&store).ok()?;
+            let connection = open(&self.data_dir()).ok()?;
+            read(&connection, &library, &meeting, vec![]).ok()
+        };
+        let Some(document) = read_document() else {
+            return MeetingPeopleNames::default();
+        };
+        let participants = document.calendar.iter().flat_map(|c| &c.participants);
+        let rooms: Vec<String> = participants
+            .clone()
+            .filter(|p| matches!(p.kind.as_deref(), Some("room" | "resource")))
+            .filter_map(|p| p.name.clone())
+            .collect();
+        let names = document
+            .people
+            .iter()
+            .map(|person| person.display_name.clone())
+            .chain(
+                participants
+                    .filter(|p| {
+                        p.is_self != Some(true)
+                            && !matches!(p.kind.as_deref(), Some("room" | "resource" | "group"))
+                    })
+                    .filter_map(|p| p.name.clone()),
+            )
+            .collect();
+        MeetingPeopleNames { names, rooms }
     }
 }
 
