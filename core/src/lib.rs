@@ -33,6 +33,7 @@ mod llm;
 mod local_engine;
 mod localization;
 mod meeting_chat;
+mod meeting_app_evidence;
 mod meeting_evidence;
 mod meeting_index;
 mod meeting_insight_engine;

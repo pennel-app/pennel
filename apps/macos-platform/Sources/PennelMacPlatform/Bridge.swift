@@ -338,6 +338,17 @@ public func callSnapshot(_ rawApps: UnsafePointer<CChar>?, _ rawBrowsers: Unsafe
     }
 }
 
+/// Runs on the caller's thread: a Teams scan takes tens of milliseconds and must not block the UI.
+@_cdecl("pennel_mac_meeting_speakers_snapshot")
+public func meetingSpeakersSnapshot(_ rawAppId: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    let snapshot = MeetingSpeakerObserver.snapshot(appId: decodeString(rawAppId) ?? "")
+    return bridgeJSON([
+        "available": snapshot.available,
+        "participants": snapshot.participants,
+        "speaking": snapshot.speaking,
+    ] as [String: Any])
+}
+
 private var calendarProvider: CalendarProvider?
 
 @_cdecl("pennel_mac_calendar_snapshot")
