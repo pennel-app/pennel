@@ -79,6 +79,21 @@ fn utterance_speaker_identity(
     }
 }
 
+/// A single settled identity; estimates and unresolved source corrections never name a person.
+pub(crate) fn settled_utterance_speaker_label(
+    row: &crate::MeetingUtterance,
+    names: &[crate::SpeakerName],
+) -> Option<String> {
+    (!provisional_speaker_estimate(row)
+        && matches!(
+            utterance_speaker_identity(row, names),
+            UtteranceSpeakerLabel::Name(_)
+                | UtteranceSpeakerLabel::Number(_)
+                | UtteranceSpeakerLabel::SelfVoice
+        ))
+    .then(|| utterance_speaker_label(row, names))
+}
+
 pub(crate) fn utterance_speaker_label(
     row: &crate::MeetingUtterance,
     names: &[crate::SpeakerName],
