@@ -642,7 +642,7 @@ impl Pill {
     pub fn refresh_model(&self, session: &Arc<pennel_core::LiveDictationSession>, switched: bool) {
         let shared = self.app.state::<Arc<crate::state::Shared>>();
         let settings = shared.settings();
-        let models = shared.engine.configured_dictation_models(shared.keys());
+        let models = shared.configured_dictation_models();
         let model = models
             .iter()
             .find(|model| model.choice == session.speech_model())

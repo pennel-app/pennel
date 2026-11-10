@@ -104,6 +104,19 @@ impl Shared {
         self.secrets.keys(&self.engine.settings().providers)
     }
 
+    pub fn refresh_system_speech_availability(&self) {
+        #[cfg(target_os = "macos")]
+        self.engine.set_system_speech_available(
+            crate::capabilities::snapshot(None).apple_speech.status
+                == crate::capabilities::CapabilityStatus::Available,
+        );
+    }
+
+    pub fn configured_dictation_models(&self) -> Vec<pennel_core::ConfiguredDictationModel> {
+        self.refresh_system_speech_availability();
+        self.engine.configured_dictation_models(self.keys())
+    }
+
     pub fn set_meeting_dictating(&self, dictating: bool) {
         if let Some(meeting) = self.meeting.lock().unwrap().as_ref() {
             meeting.set_dictating(dictating);

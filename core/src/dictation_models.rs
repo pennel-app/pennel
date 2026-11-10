@@ -35,7 +35,11 @@ impl PennelEngine {
         settings: &Settings,
         keys: &ApiKeys,
     ) -> Vec<ConfiguredDictationModel> {
-        let local = self.models.local_models(settings.language.as_deref(), true);
+        let local = if crate::cpu_support::local_models_unavailable_reason().is_none() {
+            self.local_models(settings.language.clone(), true)
+        } else {
+            Vec::new()
+        };
         let mut seen = HashSet::new();
         settings
             .dictation_models
@@ -58,7 +62,12 @@ impl PennelEngine {
                         local.iter().find(|entry| entry.id == model)?.name.clone()
                     }
                     ProviderKind::AppleSpeech => {
-                        if model != "dictation" || self.system_stt.read().unwrap().is_none() {
+                        if model != "dictation"
+                            || !self
+                                .system_speech_available
+                                .load(std::sync::atomic::Ordering::SeqCst)
+                            || self.system_stt.read().unwrap().is_none()
+                        {
                             return None;
                         }
                         "Apple dictation".into()
@@ -247,6 +256,76 @@ mod tests {
         assert_eq!(
             engine.next_dictation_model(keys()).unwrap().choice,
             choice("server", "A")
+        );
+    }
+
+    #[cfg(not(feature = "local-models"))]
+    #[test]
+    fn a_local_file_does_not_imply_a_compiled_recognizer() {
+        let (directory, engine) = engine();
+        let model = "whisper-small-q5_1";
+        std::fs::create_dir_all(directory.path().join("models")).unwrap();
+        std::fs::write(
+            directory.path().join("models").join(format!("{model}.bin")),
+            b"synthetic model file; never inferred",
+        )
+        .unwrap();
+        assert_eq!(engine.model_state(model.into()), ModelState::Downloaded);
+        let mut settings = engine.settings();
+        settings.dictation_stt = choice("local", model);
+        engine.update_settings(settings).unwrap();
+        assert!(engine.configured_dictation_models(keys()).is_empty());
+    }
+
+    #[test]
+    fn host_speech_readiness_filters_unsupported_or_denied_system_choices_without_inference() {
+        struct Speech(Arc<std::sync::atomic::AtomicUsize>);
+        impl crate::SystemTranscriber for Speech {
+            fn transcribe(
+                &self,
+                _: Vec<f32>,
+                _: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> Result<String, PennelError> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                panic!("readiness must not infer");
+            }
+        }
+        let (_directory, engine) = engine();
+        let mut settings = engine.settings();
+        settings.providers.push(ProviderAccount {
+            id: "apple".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Apple dictation".into(),
+            base_url: String::new(),
+        });
+        settings.dictation_stt = choice("apple", "dictation");
+        engine.update_settings(settings).unwrap();
+        engine.set_system_speech_available(true);
+        assert!(engine.configured_dictation_models(keys()).is_empty());
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        engine.set_system_transcriber(Arc::new(Speech(calls.clone())));
+        assert_eq!(engine.configured_dictation_models(keys()).len(), 1);
+        engine.set_system_speech_available(false);
+        assert!(engine.configured_dictation_models(keys()).is_empty());
+        assert!(
+            engine
+                .select_dictation_model(choice("apple", "dictation"), keys())
+                .is_err()
+        );
+        assert_eq!(
+            engine.settings().dictation_stt,
+            choice("apple", "dictation")
+        );
+        engine.set_system_speech_available(true);
+        assert_eq!(engine.configured_dictation_models(keys()).len(), 1);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(
+            serde_json::to_value(engine.settings())
+                .unwrap()
+                .get("system_speech_available")
+                .is_none()
         );
     }
 

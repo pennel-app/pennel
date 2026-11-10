@@ -1271,12 +1271,7 @@ impl Controller {
     fn refresh_speech_models(&self) {
         let settings = self.shared.settings();
         let enabled = settings.pill_model_switch_enabled
-            && self
-                .shared
-                .engine
-                .configured_dictation_models(self.shared.keys())
-                .len()
-                > 1;
+            && self.shared.configured_dictation_models().len() > 1;
         let listener = self
             .shared
             .hotkey
@@ -1305,6 +1300,7 @@ impl Controller {
         &mut self,
         choice: Option<pennel_core::ModelChoice>,
     ) -> Result<(), String> {
+        self.shared.refresh_system_speech_availability();
         let keys = self.shared.keys();
         if let Some(session) = self
             .recording_session
