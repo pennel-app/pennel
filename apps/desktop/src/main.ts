@@ -67,7 +67,7 @@ interface Mounted {
 }
 
 const tabs: [string, TranslationKey, View][] = [
-  ["dictation", "navigation.dictation", dictationSettings], ["dictionary", "navigation.dictionary", dictionaryView], ["meeting-settings", "navigation.meetings", meetingTaskSettings],
+  ["dictation", "navigation.dictation", dictationSettings], ["meeting-settings", "navigation.meetings", meetingTaskSettings],
   ["appearance", "navigation.appearance", appearanceView], ["account", "navigation.sync_account", accountView],
   ["advanced", "navigation.advanced", advancedSettings],
 ];
@@ -430,7 +430,7 @@ function restoreSettingsFocus() {
 
 function contextFor(target: Mounted, reportError: (error: unknown) => void = report): Context {
   const route = navigation.current;
-  const taskPreferences = route.section === "settings" && ["dictation", "meeting-settings"].includes(settingsCategory(route.tab));
+  const taskPreferences = route.section === "settings" && settingsCategory(route.tab) === "meeting-settings";
   return {
     get info() { return visibleInfo(); },
     save: (change) => {
@@ -657,8 +657,12 @@ function settingsDisclosure(title: TranslationKey, child: HTMLElement, id: strin
 
 function dictationSettings(ctx: Context): HTMLElement {
   const tab = navigation.current.tab;
-  return h("div", { class: "task-settings dictation-task-settings" }, settingsTaskRows(ctx, ["dictation_stt", "llm"]), dictationView(ctx),
-    settingsDisclosure("navigation.styles", stylesView(ctx), "styles", tab === "styles"));
+  if (tab === "dictionary" || tab === "styles") {
+    return h("div", { class: "dictation-settings-subpage" },
+      h("button", { class: "text-button", "data-dictation-settings-back": true, onclick: () => ctx.navigate("dictation") }, icon("arrowLeft"), l("dictation.settings.back")),
+      tab === "dictionary" ? dictionaryView(ctx) : stylesView(ctx));
+  }
+  return h("div", { class: "task-settings dictation-task-settings" }, dictationView(ctx));
 }
 
 async function meetingTaskSettings(ctx: Context): Promise<HTMLElement> {
@@ -1018,7 +1022,7 @@ async function boot() {
 }
 
 content.addEventListener("focusout", () => { window.setTimeout(() => {
-  const taskPreferences = navigation.current.section === "settings" && ["dictation", "meeting-settings"].includes(settingsCategory(navigation.current.tab));
+  const taskPreferences = navigation.current.section === "settings" && settingsCategory(navigation.current.tab) === "meeting-settings";
   if (needsRefresh && !editing() && (!mounted?.info.length || taskPreferences)) void render();
 }, 0); });
 window.addEventListener("unhandledrejection", (event) => { event.preventDefault(); report(event.reason); });
