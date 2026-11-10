@@ -76,6 +76,7 @@ export function meetingExportPreview(initial: Context, host: { id(): string; tem
     showStatus(t("meetings.export_preparing")); update();
     try {
       await host.flush();
+      if (request !== epoch) return;
       const output = await api.previewMeetingExport(host.id(), requestScope, includeTranscript);
       if (request !== epoch) return;
       prepared = Object.freeze({ ...output }); body.value = prepared.markdown;
