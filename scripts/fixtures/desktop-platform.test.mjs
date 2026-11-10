@@ -1425,3 +1425,24 @@ test("summary consent fixture direct create saves only the expected empty unedit
   assert.equal((await api.invoke("meeting_summary", { id })).markdown, saved.markdown);
   assert.equal((await api.invoke("app_info")).settings.summary_automation, "unanswered");
 });
+
+test("suggestion consent fixture previews language without policy, credential or provider effects", async () => {
+  const context=fixture("meeting-document-minimum",{suggestion_configured:true,insight_qualified:true,insight_recorded_language:"auto"}),api=context.__PENNEL_PLATFORM__,id=context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before=await api.invoke("app_info");
+  assert.equal((await api.invoke("automatic_insights_availability",{id})).available,false);
+  const preview=await api.invoke("automatic_insights_availability",{id,languagePolicy:"nl"});assert.equal(preview.available,true);assert.equal(preview.resolved_language,"nl");
+  assert.deepEqual((await api.invoke("app_info")).settings,before.settings);
+  const unsupported=fixture("meeting-document-minimum",{suggestion_configured:true,insight_qualified:true,insight_recorded_language:"fr"}).__PENNEL_PLATFORM__;
+  assert.equal((await unsupported.invoke("automatic_insights_availability",{id,languagePolicy:"en"})).available,false);
+  assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command=>["save_settings","begin_insights_analysis","test_inference","set_key"].includes(command)));
+});
+test("suggestion dismissal fixture stays durable and independent of summary dismissal and global consent", async()=>{
+ const storage=reviewStorage(),options={owner_review:true,profile:"suggestion-consent-A",summary_empty:true,suggestion_configured:true,insight_qualified:true};
+ const context=fixture("meeting-document-minimum",options,storage),api=context.__PENNEL_PLATFORM__,id=context.__PENNEL_FIXTURE__.options.meeting_id,before=await api.invoke("meeting_summary",{id});
+ assert.equal(await api.invoke("meeting_suggestion_prompt_dismissed",{id}),false);
+ const saved=await api.invoke("dismiss_meeting_suggestion_prompt",{id,expectedRevision:before.revision,expectedSourceRevision:before.source_revision});assert.equal(saved.markdown,before.markdown);assert.notEqual(saved.revision,before.revision);
+ assert.equal(await api.invoke("meeting_summary_prompt_dismissed",{id}),false);assert.equal((await api.invoke("app_info")).settings.suggestion_automation,"unanswered");
+ assert.equal(await fixture("meeting-document-minimum",options,storage).__PENNEL_PLATFORM__.invoke("meeting_suggestion_prompt_dismissed",{id}),true);
+ assert.equal(await fixture("meeting-document-minimum",{...options,profile:"suggestion-consent-B"},storage).__PENNEL_PLATFORM__.invoke("meeting_suggestion_prompt_dismissed",{id}),false);
+ assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command=>["save_settings","begin_insights_analysis"].includes(command)));
+});

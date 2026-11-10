@@ -53,7 +53,7 @@
 .meeting-summary-version > .markdown { padding: 8px 0; max-height: 180px; overflow-y: auto; }
 .meeting-summary-automation { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .meeting-summary-automation .row { flex-wrap: wrap; }
-.meeting-summary-automation .btn[aria-pressed="true"] { background: var(--selection); }
+.meeting-summary-automation .btn[aria-pressed="true"], .meeting-suggestion-settings .btn[aria-pressed="true"] { background: var(--selection); }
 .meeting-summary-automation .help { margin: 0; max-width: 75ch; }
 .meeting-automation-nudge { flex-shrink: 0; }
 .meeting-failed-recovery { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--subtle); }
@@ -197,3 +197,10 @@
 .meeting-notes-first .live-save-status { margin-right: auto; }
 .meeting-notes-first .live-formatting .btn { color: var(--muted); border: 0; background: transparent; box-shadow: none; }
 .meeting-notes-first .live-formatting .btn:hover { color: var(--foreground); background: var(--hover); }
+.suggestion-consent { margin-block: 2px 8px; }
+.suggestion-consent .summary-consent-card { padding: 16px; }
+.suggestion-consent-language { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.suggestion-consent-status { line-height: 1.6; }
+.meeting-suggestion-settings { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.meeting-suggestion-settings .row { flex-wrap: wrap; }
+.suggestion-settings-language { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

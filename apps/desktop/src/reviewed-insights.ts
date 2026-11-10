@@ -3,6 +3,8 @@ import { bindLocalization, l, t, type TranslationKey } from "./i18n.ts";
 import { controlButton, formatClock, h, select } from "./dom";
 import { icon } from "./icons";
 import { VisibilityPoll } from "./window-lifecycle";
+import { meetingSuggestionConsent } from "./meeting-suggestion-consent";
+import { meetingPostprocess } from "./meeting-postprocess-state";
 import { insightService } from "./insight-service";
 import { InsightReviewModel, InsightUiError, type InsightNoteHost } from "../../../assets/contracts/insight-review-model.ts";
 import { insightReceipt, insightText, insightsWritable, safeInsightDestination, sourceCandidates } from "../../../assets/contracts/meeting-insights.ts";
@@ -17,7 +19,7 @@ export interface InsightReviewHost {
   promptBlockedReason(): string;
   openSource(source: InsightSource, origin: HTMLElement, restore: () => void): Promise<boolean>;
 }
-interface ReviewView { root: HTMLElement; model: InsightReviewModel; bind(ctx: Context, host: InsightReviewHost): void; refresh(): Promise<void>; flush(): Promise<boolean> }
+interface ReviewView { readiness(): void; root: HTMLElement; model: InsightReviewModel; bind(ctx: Context, host: InsightReviewHost): void; refresh(): Promise<void>; flush(): Promise<boolean> }
 const retained = new Map<string, ReviewView>();
 export async function flushReviewedInsights() {
   for (const view of retained.values()) if (!await view.flush()) throw new Error(t("insights.unsaved_edit"));
@@ -42,11 +44,12 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   let ctx = initialContext, host = initialHost, bound: Context | null = null, binding = 0, focusEpoch = 0;
   let showDismissed = false;
   const model = new InsightReviewModel(host.id, host.meetingUid, insightService);
-  const root = h("section", { class: "insight-review", "data-insights-meeting": host.meetingUid });
+  let consent: ReturnType<typeof meetingSuggestionConsent> | null = null, languageInitialized = false;
+  const root = h("section", { class: "insight-review", tabindex: -1, "data-insights-meeting": host.meetingUid });
   const language = select([["unknown", l("insights.language_unknown")], ["en", l("insights.language_en")], ["nl", l("insights.language_nl")], ["mixed", l("insights.language_mixed")]], "unknown",
     value => { void model.choosePolicy(value as "unknown" | "en" | "nl" | "mixed"); }, "menu");
   language.setAttribute("aria-label", t("insights.language"));
-  const find = controlButton({ class: "btn primary insight-find", onclick: () => { void model.analyze(); } }, l("insights.find"));
+  const find = controlButton({ class: "btn primary insight-find", onclick: () => { void consent?.findOnce(); } }, l("insights.find"));
   const cancel = controlButton({ class: "btn insight-cancel", hidden: true, onclick: () => { void model.cancel(); } }, l("insights.cancel_analysis"));
   const refresh = controlButton({ class: "text-button", onclick: () => { void Promise.all([model.load(), model.choosePolicy(model.getSnapshot().policy)]); } }, l("insights.refresh"));
   const setup = controlButton({ class: "text-button insight-connection-settings", hidden: true, onclick: () => ctx.navigate("providers") }, l("insights.connection_settings"));
@@ -66,9 +69,21 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   const storeWarning = h("p", { class: "help insight-store-status", role: "status", hidden: true });
   const analysisDetails = h("details", { class: "insight-analysis-details" }, h("summary", {}, l("insights.analysis_options")), h("p", { class: "help" }, l("insights.description")),
     h("div", { class: "insight-toolbar" }, h("label", { class: "insight-language" }, l("insights.language"), language), find, cancel, refresh, setup), destination, availability, coverage);
-  let optionsInitialized = false, previouslyHadItems = false;
+  let optionsInitialized = false, previouslyHadItems = false, previousConsentMode = "";
   scrolling.append(intro, analysisDetails, progress, error, storeWarning, notice, dismissed, empty, list);
   root.append(scrolling, h("footer", { class: "insight-review-footer" }, exportItems));
+  consent = meetingSuggestionConsent(ctx, { id: () => host.id, uid: host.meetingUid, snapshot: () => model.getSnapshot().snapshot, language: () => model.getSnapshot().policy,
+    analysisBusy: () => !!model.analysisBusy, canAnalyze: () => !!model.canAnalyze, chooseLanguage: async language => { await model.choosePolicy(language); }, start: () => model.analyze(),
+    dismiss: () => host.dismissSuggestionPrompt(), canDismiss: () => host.canDismissPrompt(), blockedReason: () => host.promptBlockedReason(),
+    reason: suggestionReason, changed: render, focusTarget: root, languageControlVisible: () => analysisDetails.open });
+  analysisDetails.addEventListener("toggle", () => consent?.refresh());
+  scrolling.insertBefore(consent.root, analysisDetails);
+  function suggestionReason(code: string): string {
+    if (code === "language_unknown") return t("insights.reason_unknown_language");
+    if (code === "source_changed") return t("insights.automatic_stale");
+    if (["not_run", "interrupted", "attempt_unavailable", "foreground_impact_unaccepted", "missing_api_key", "not_signed_in", "provider_failed", "save_failed", "invalid_output", "insufficient_evidence"].includes(code)) return t(`insights.reason_${code}` as TranslationKey);
+    return t(insightReasonKey(code));
+  }
   const text = (element: HTMLElement, value: string) => { if (element.textContent !== value) element.textContent = value; };
 
   function createCard(initial: InsightItem) {
@@ -221,8 +236,11 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   function render() {
     const state = model.getSnapshot(), snapshot = state.snapshot;
     language.value = state.policy; language.disabled = !!model.analysisBusy; language.setAttribute("aria-label", t("insights.language"));
-    find.disabled = !model.canAnalyze; cancel.hidden = !model.analysisBusy; cancel.disabled = state.busy.has("cancel");
-    setup.hidden = !["unconfigured", "invalid_configuration", "configuration_changed", "identity_changed"].includes(state.availability?.reason_code ?? "");
+    consent?.refresh();
+    find.disabled = !model.canAnalyze || !!consent?.blocksAnalysis; language.disabled ||= !!consent?.blocksAnalysis; find.hidden = !!consent?.ownsFind;
+    find.classList.toggle("primary", !snapshot?.automatic_attempt);
+    cancel.hidden = !state.job || !model.analysisBusy || state.busy.has("analysis"); cancel.disabled = state.busy.has("cancel");
+    setup.hidden = false;
     const destinationInfo = safeInsightDestination(state.availability?.endpoint);
     text(destination, t("insights.destination", { destination: destinationInfo.host ? destinationInfo.on_device ? t("insights.this_device", { host: destinationInfo.host }) : destinationInfo.host : t("insights.none"), model: state.availability?.model ?? t("insights.none") }));
     text(availability, t(state.edits.size ? "insights.finish_edit" : state.availability?.available ? "insights.qualified" : insightReasonKey(state.availability?.reason_code)));
@@ -233,14 +251,19 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
       exportItems.disabled = !insightsWritable(snapshot) || !snapshot?.items.some(item => item.review_state === "accepted") || state.busy.has("export") || state.busy.has("write") || model.dirty;
     text(dismissed, t(showDismissed ? "insights.hide_dismissed" : "insights.show_dismissed"));
     const items = model.items().filter(item => showDismissed || item.review_state !== "dismissed" || state.edits.has(item.id));
-    empty.hidden = items.length > 0; dismissed.hidden = !snapshot?.items.some(item => item.review_state === "dismissed");
+    intro.hidden = !snapshot?.items.length;
+    empty.hidden = items.length > 0 || !!consent?.ownsFind || consent?.mode === "done_empty" || consent?.mode === "running" || consent?.mode === "waiting_summary"; dismissed.hidden = !snapshot?.items.some(item => item.review_state === "dismissed");
     storeWarning.hidden = !snapshot || insightsWritable(snapshot);
     if (!storeWarning.hidden) text(storeWarning, t(`insights.store_${snapshot!.status}` as TranslationKey));
     if (snapshot && (!optionsInitialized || previouslyHadItems && !items.length)) { analysisDetails.open = !items.length; optionsInitialized = true; }
+    const consentMode = consent?.mode ?? "";
+    if (consentMode === "consent" && previousConsentMode !== "consent" && !analysisDetails.contains(document.activeElement)) analysisDetails.open = false;
+    previousConsentMode = consentMode;
     previouslyHadItems = items.length > 0;
     const openCount = model.items().filter(item => item.review_state === "proposed").length;
     text(intro, t(!openCount && snapshot?.items.length ? snapshot.items.some(item => item.review_state === "accepted") ? "insights.all_reviewed" : "insights.review_complete" : "insights.review_intro"));
     host.changed?.(openCount);
+    if (snapshot && !languageInitialized) { languageInitialized = true; if (snapshot.resolved_language && state.policy === "unknown") void model.choosePolicy(snapshot.resolved_language); }
     const keep = new Set(items.map(item => item.id));
     for (const [id, row] of rows) if (!keep.has(id)) { row.element.remove(); rows.delete(id); }
     let before = list.firstElementChild;
@@ -251,9 +274,9 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   }
   model.subscribe(render); bindLocalization(root, render); render();
   const view: ReviewView = {
-    root, model, refresh: () => model.load(), flush: () => model.flush(),
+    root, model, readiness: render, refresh: () => model.load(), flush: () => model.flush(),
     bind(nextContext, nextHost) {
-      ctx = nextContext; host = nextHost; model.id = host.id;
+      ctx = nextContext; host = nextHost; model.id = host.id; consent?.bind(ctx);
       if (bound === ctx) { void model.load(); return; } bound = ctx; const mine = ++binding;
       const interacted = () => { ++focusEpoch; };
       for (const event of ["pointerdown", "keydown", "input"]) document.addEventListener(event, interacted, true);
@@ -264,11 +287,12 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
         if (payload.job_id) { if (payload.revision > (model.getSnapshot().job?.revision ?? 0)) void model.poll(); }
         else if (payload.revision > (model.getSnapshot().snapshot?.revision ?? 0)) void model.load();
       });
+      const progressEvents = meetingPostprocess.subscribe(() => { if (mine === binding && root.isConnected) void model.load(); });
       const sourceEvents = listenToWindow<string>("meeting-updated", ({ payload }) => { if (mine === binding && payload === host.id && root.isConnected) void model.load(); });
       const libraryEvents = listenToWindow<unknown>("library-changed", () => { if (mine === binding && root.isConnected) void model.load(); });
       ctx.onFlush(async () => { if (!await model.flush()) throw new Error(t("insights.unsaved_edit")); });
       ctx.beforeLeave(async () => { if (!await model.flush()) throw new Error(t("insights.unsaved_edit")); });
-      ctx.onDispose(() => { poll.dispose(); for (const event of ["pointerdown", "keydown", "input"]) document.removeEventListener(event, interacted, true); void events.then(stop => stop()); void sourceEvents.then(stop => stop()); void libraryEvents.then(stop => stop());
+      ctx.onDispose(() => { poll.dispose(); progressEvents(); for (const event of ["pointerdown", "keydown", "input"]) document.removeEventListener(event, interacted, true); void events.then(stop => stop()); void sourceEvents.then(stop => stop()); void libraryEvents.then(stop => stop());
         if (mine === binding && !model.dirty && !model.analysisBusy && !model.getSnapshot().edits.size && !model.getSnapshot().busy.has("write")) retained.delete(host.meetingUid); });
       void Promise.all([model.load(), model.choosePolicy(model.getSnapshot().policy)]);
     },

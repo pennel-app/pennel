@@ -130,12 +130,16 @@
     providers, dictation_stt: { provider_id: selectedProvider, model }, meeting_stt: { provider_id: "local", model: "whisper-large-v3-turbo" },
     llm: { provider_id: "groq", model: "llama-3.3-70b-versatile" }, decision: null, reranking: null, cleanup_verification_enabled: Boolean(options.cleanup_verification_enabled), mode: options.mode || "fast", language: "nl", ui_language: options.ui_language || "system", dictionary: ["Pennel", "Studio Noord"],
     style_rules: [{ bundle_id: "com.tinyspeck.slackmacgap", style: "casual" }, { bundle_id: "com.apple.MobileSMS", style: "casual" }, { bundle_id: "com.apple.mail", style: "formal" }, { bundle_id: "com.microsoft.Word", style: "formal" }, { bundle_id: "com.apple.Terminal", style: "literal" }, { bundle_id: "com.microsoft.VSCode", style: "literal" }], history_retention_days: 30, hotkey: "fn", local_unload_minutes: 5,
-    meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", summary_automation: options.summary_automation || "unanswered", meeting_audio_retention_days: 30,
+    meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", summary_automation: options.summary_automation || "unanswered", suggestion_automation: options.suggestion_automation || "unanswered", suggestion_language: options.suggestion_language || null, meeting_audio_retention_days: 30,
     app_rules: [], calendar_rules: [], event_rules: [], calendar_enabled: false, echo_cancellation: true,
     record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), meeting_app_speakers: Boolean(options.meeting_app_speakers), meeting_app_name_policy: options.meeting_app_name_policy || "suggest", speaker_recognition: options.speaker_mode || "local",
     appearance: options.appearance, dictation_pad_auto_paste: false, live_text_enabled: options.live_text_enabled !== false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
     onboarding: { version: 1, status: options.onboarding_status || (options.window === "onboarding" ? "pending" : options.shortcut_denied ? "skipped" : "completed"), resume_step: options.step || "welcome", goal: options.goal || "dictation" },
   };
+  if (options.suggestion_configured) {
+    settings.providers.push({ id: "owned-ui", kind: "custom", name: "Owned synthetic decision fixture", base_url: "https://decision.example.invalid/v1" });
+    settings.decision = { provider_id: "owned-ui", protocol: "perplexity", model: "owned-ui-fixture", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 3 };
+  }
   if (options.cleanup_connection) {
     settings.providers.push({ id: "qa-verifier", kind: "custom", name: "Synthetic verifier", base_url: "https://verifier.example.invalid/v1" });
     settings.decision = { provider_id: "qa-verifier", protocol: "perplexity", model: "synthetic-unqualified", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 3 };
@@ -440,6 +444,7 @@
   };
   const summaryDocuments = new Map();
   const dismissedSummaryPrompts = new Set();
+  const dismissedSuggestionPrompts = new Set();
   let summaryOperation = 0;
   const summaryHistories = new Map();
   const shareableSummaries = new Map();
@@ -465,7 +470,7 @@
     const workspace = options.window === "onboarding" && latest?.version === 1 ? latest : { version: 1,
       history: history.filter(entry => entry.status !== "unsaved"), library, pad, notes, transcript, sessionCounter,
       activeMeetingId, meetingUid, liveSession, meeting: clone(meeting), meetingSequence, ownerRecording, recordingStopped,
-      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries], dismissedSummaryPrompts: [...dismissedSummaryPrompts] };
+      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries], dismissedSummaryPrompts: [...dismissedSummaryPrompts], dismissedSuggestionPrompts: [...dismissedSuggestionPrompts] };
     globalThis.localStorage.setItem(ownerStateKey, JSON.stringify({ ...workspace, ...services }));
     restoreReviewServices(services);
   };
@@ -488,6 +493,7 @@
       Object.assign(meeting, saved.meeting); meetingSequence = saved.meetingSequence; ownerRecording = saved.ownerRecording; recordingStopped = saved.recordingStopped;
       restoreReviewServices(saved);
       for (const uid of saved.dismissedSummaryPrompts || []) dismissedSummaryPrompts.add(uid);
+      for (const uid of saved.dismissedSuggestionPrompts || []) dismissedSuggestionPrompts.add(uid);
       for (const [target, entries] of [[retainedMeetings, saved.retainedMeetings], [libraryUids, saved.libraryUids], [summaryDocuments, saved.summaryDocuments], [summaryHistories, saved.summaryHistories], [shareableSummaries, saved.shareableSummaries]])
         for (const [key, value] of entries || []) target.set(key, value);
     }
@@ -889,8 +895,17 @@
     }
     return insightStores.get(uid);
   };
+  const resolvedSuggestionLanguage = fallback => ["en", "nl"].includes(options.insight_recorded_language) ? options.insight_recorded_language
+    : options.insight_recorded_language && options.insight_recorded_language !== "auto" ? null : ["en", "nl", "mixed"].includes(fallback) ? fallback : null;
   const insightRead = id => {
     const value = clone(insightStore(id));
+    value.resolved_language = resolvedSuggestionLanguage(settings.suggestion_language);
+    const outcome = options.suggestion_attempt;
+    value.automatic_attempt = outcome ? { schema_version: 1, meeting_uid: value.meeting_uid, transcript_digest: "a".repeat(64), language_policy: value.resolved_language || "en", admitted_at: "2026-10-24T09:26:00Z",
+      ...(outcome !== "interrupted" ? { outcome, error_code: outcome === "completed" ? undefined : options.suggestion_attempt_error || "deadline_exceeded", items_found: value.items.length, finished_at: "2026-10-24T09:27:00Z" } : {}) } : null;
+    value.automatic_attempt_stale = !!options.suggestion_attempt_stale;
+    value.automatic_attempt_reason_code = options.suggestion_attempt_reason || null;
+    value.analysis_job = clone([...insightJobs.values()].filter(entry => entry.job.meeting_uid === value.meeting_uid).at(-1)?.job || null);
     if (!["missing", "ready"].includes(value.status)) { value.items = []; return value; }
     for (const item of value.items) item.source_state = item.sources.some(source => !transcript.some(row => row.utterance_id === source.utterance_id)) ? "missing"
       : item.sources.some(source => !transcript.some(row => row.utterance_id === source.utterance_id && row.source_fingerprint === source.source_fingerprint && row.text.includes(source.quote))) ? "stale" : "current";
@@ -909,9 +924,15 @@
   async function insightCommand(command, args) {
     const request = args.request || {};
     if (command === "insights_snapshot") return insightRead(args.id);
-    if (command === "insights_availability") return { configured: !!options.insights_seeded, available: !!options.insight_qualified && args.languagePolicy !== "unknown", qualified: !!options.insight_qualified && args.languagePolicy !== "unknown",
-      reason_code: args.languagePolicy === "unknown" ? "unknown_language" : options.insight_qualified ? "" : "unqualified", provider_id: options.insights_seeded ? "owned-ui" : null,
-      model: options.insights_seeded ? "owned-ui-fixture" : null, endpoint: options.insights_seeded ? "https://decision.example.invalid/v1" : null, language_policy: args.languagePolicy, task: "meeting_suggestions_v1", use_case: "manual_finished_suggestions", qualification_id: options.insight_qualified ? "owned-ui-only" : null };
+    if (command === "automatic_insights_availability") {
+      const resolved = resolvedSuggestionLanguage(args.languagePolicy ?? settings.suggestion_language), writable = ["ready", "missing"].includes(insightStore(args.id).status);
+      const configured = !!options.suggestion_configured || !!options.insights_seeded, qualified = !!options.insight_qualified && !!resolved;
+      const reason = !resolved ? "language_unknown" : !configured ? "unconfigured" : !qualified ? "unqualified" : options.suggestion_foreground_accepted === false ? "foreground_impact_unaccepted" : !writable ? "source_unavailable" : "";
+      return { configured, qualified, available: !reason, reason_code: reason, provider_id: configured ? "owned-ui" : null, model: configured ? "owned-ui-fixture" : null, endpoint: configured ? "https://decision.example.invalid/v1" : null, language_policy: resolved || "unknown", resolved_language: resolved, task: "meeting_suggestions_v1", use_case: "automatic_finished_suggestions", qualification_id: qualified ? "owned-ui-only" : null };
+    }
+    if (command === "insights_availability") return { configured: !!options.insights_seeded || !!options.suggestion_configured, available: !!options.insight_qualified && args.languagePolicy !== "unknown", qualified: !!options.insight_qualified && args.languagePolicy !== "unknown",
+      reason_code: args.languagePolicy === "unknown" ? "unknown_language" : options.insight_qualified ? "" : "unqualified", provider_id: options.insights_seeded || options.suggestion_configured ? "owned-ui" : null,
+      model: options.insights_seeded || options.suggestion_configured ? "owned-ui-fixture" : null, endpoint: options.insights_seeded || options.suggestion_configured ? "https://decision.example.invalid/v1" : null, language_policy: args.languagePolicy, task: "meeting_suggestions_v1", use_case: "manual_finished_suggestions", qualification_id: options.insight_qualified ? "owned-ui-only" : null };
     if (command === "claim_insight_edit" || command === "review_insight") {
       if (options.insight_write_fail) throw Error("Synthetic review storage unavailable.");
       if (options.insight_review_delay_ms) await new Promise(resolve => setTimeout(resolve, options.insight_review_delay_ms));
@@ -1027,7 +1048,7 @@
       if (contactDelay) await new Promise(resolve => setTimeout(resolve, contactDelay));
       return options.platform && options.platform !== "macos" ? { status: "unavailable", reason: "System contact selection is unavailable on this platform." } : clone(contactResult);
     }
-    if (["insights_snapshot", "insights_availability", "claim_insight_edit", "review_insight", "insights_export", "insight_markdown",
+    if (["insights_snapshot", "insights_availability", "automatic_insights_availability", "claim_insight_edit", "review_insight", "insights_export", "insight_markdown",
       "prepare_insight_insertion", "reconcile_insight_insertions", "resolve_insight_insertion", "reassociate_insight_source",
       "begin_insights_analysis", "insights_job", "cancel_insights_analysis"].includes(command)) return insightCommand(command, args);
     switch (command) {
@@ -1488,6 +1509,21 @@
         const info = library.find(info => info.id === args.id); if (info) info.has_summary = true;
         persistOwnerReview(); emit("meeting-updated", args.id); return markdown;
       });
+      case "meeting_suggestion_prompt_dismissed": {
+        const uid = uidFor(args.id); if (!uid || deletedMeetingUids.has(uid)) throw Error("This meeting is no longer available.");
+        return dismissedSuggestionPrompts.has(uid);
+      }
+      case "dismiss_meeting_suggestion_prompt": {
+        const before = await summaryDocument(args.id);
+        if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision) throw Error("The summary or its sources changed. Reload before saving.");
+        if (saveFailure || options.suggestion_prompt_error) throw Error(options.suggestion_prompt_error || "Synthetic suggestion metadata unavailable.");
+        if (!dismissedSuggestionPrompts.has(before.meeting_uid)) {
+          dismissedSuggestionPrompts.add(before.meeting_uid);
+          summaryDocuments.set(before.meeting_uid, { ...before, revision: await fingerprint(JSON.stringify([before.revision, "suggestion-prompt-dismissed"])) });
+          persistOwnerReview(); emit("meeting-updated", args.id);
+        }
+        return clone(await summaryDocument(args.id));
+      }
       case "meeting_summary_prompt_dismissed": {
         const uid = uidFor(args.id); if (!uid || deletedMeetingUids.has(uid)) throw Error("This meeting is no longer available.");
         return dismissedSummaryPrompts.has(uid);

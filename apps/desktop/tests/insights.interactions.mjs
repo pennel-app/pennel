@@ -14,7 +14,9 @@ async function owned() {
 }
 async function store(api) { return api.invoke("insights_snapshot", { id: window.__PENNEL_FIXTURE__.options.meeting_id }); }
 async function choose(root, key) {
-  const { t } = await import("/src/i18n.ts"); root.querySelector(".insight-language .choice").click();
+  const { t } = await import("/src/i18n.ts");
+  await until(() => !root.querySelector(".insight-analysis-details .insight-language .choice").disabled, "The visible content-language control did not become ready.");
+  root.querySelector(".insight-analysis-details .insight-language .choice").click();
   await until(() => [...document.querySelectorAll('[role="option"]')].some(option => option.textContent === t(key)), "The explicit content-language choices did not open.");
   [...document.querySelectorAll('[role="option"]')].find(option => option.textContent === t(key)).click();
   await pause(50);
