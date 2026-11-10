@@ -239,3 +239,7 @@ T11b then only wires the next-model action and enables its row. It needs no hook
 4. Downgrade values. Recommendation: a custom Record binding writes `record_shortcut_enabled: false`, so an older build leaves ⌘⇧R alone, and a custom or cleared Dictate writes the platform key to `hotkey`, since an older build must have one.
 5. What Cancel covers. Recommendation: it cancels while the pill listens, in a hold and in hands-free, and does not stop a dictation that is already being processed. Stopping queued work touches the paste queue and can follow later.
 6. The Meetings toggle "Use ⌘⇧R to start or stop recording". Recommendation: keep the row, show the real keys, let off clear the shortcut and on restore the default, and add a link to the Shortcuts page.
+
+## T10e implementation safety gap
+
+The table above is the accepted target. The pinned X11 registration dependency cannot acknowledge a completed ungrab or recover the original grabbed keycode after a keyboard-map change. The implementation therefore disables X11 keyed globals in this version, with a localized reason, instead of installing a grab that might remain outside its scope. Modifier-only dictation/listening, in-app shortcuts and the existing button/tray/CLI paths remain. Re-enabling keyed X11 shortcuts requires an owned, tested release boundary; no new dependency was introduced. See the implementation gap in `docs/desktop.md`. The accepted Windows/X11 layout-named `code` contract and per-machine storage remain unchanged.

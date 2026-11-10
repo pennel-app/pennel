@@ -1,7 +1,7 @@
-//! XRecord observes modifiers/capture. The plugin owns swallowing X11 grabs; Wayland stays explicit.
+//! XRecord observes modifier-only dictation/listening and focused capture. Keyed global grabs stay disabled.
 use super::{
-    CaptureSlot, HotkeyEvent, INJECTING, Key, TriggerBinding, TriggerTracker, capture_callback,
-    publish, route_shared,
+    CaptureSlot, HotkeyEvent, INJECTING, Key, TriggerTracker, capture_callback, publish,
+    route_shared,
 };
 use crate::gesture::KeyEdge;
 use pennel_core::{Settings, ShortcutPlatform};
@@ -109,7 +109,7 @@ impl Hook {
                 let (capturing, mods) = { let state = tracker.lock().unwrap_or_else(|p| p.into_inner()); (state.capture_active(), state.capture_modifiers()) };
                 if capturing && !repeated { capture_callback(&capture, serde_json::json!({"mods":mods,"code":code,"key":logical,"down":down,"modifier":!matches!(key,Key::Other(_))})); }
                 for event in routed.events {
-                    // Keyed actions come from the X11 grab. The tracker still recognizes them to avoid interrupts.
+                    // XRecord cannot withhold a key; never dispatch a keyed action without a safe owned grab backend.
                     if matches!(key, Key::Other(_)) && matches!(event, HotkeyEvent::Action(_)) { continue; }
                     let _ = sender.send(event);
                 }
@@ -142,7 +142,6 @@ impl Hook {
                 .send(HotkeyEvent::Edge(KeyEdge::Up, super::now()));
         }
     }
-    pub fn set_registered_bindings(&self, _bindings: Vec<(u32, TriggerBinding)>) {}
     pub fn set_listening(&self, listening: bool) -> Result<(), String> {
         self.tracker
             .lock()

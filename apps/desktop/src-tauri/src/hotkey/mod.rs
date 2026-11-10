@@ -547,7 +547,7 @@ impl Listener {
             Err("Shortcuts are unavailable on this platform".into())
         }
     }
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(windows)]
     pub fn configure_portable_bindings(
         &self,
         settings: &pennel_core::Settings,
