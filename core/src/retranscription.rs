@@ -703,7 +703,7 @@ pub(crate) fn stage_audio_timed(
                 samples[first..last].fill(0.0);
             }
         }
-        let total = samples.len() as u64 / 16;
+        let total = crate::wav::sample_duration_ms(samples.len() as u64, 16_000);
         progress(RetranscriptionProgress {
             phase: RetranscriptionPhase::Transcribing,
             speaker: Some(*speaker),
@@ -712,7 +712,12 @@ pub(crate) fn stage_audio_timed(
         });
         let mut chunker = Chunker::new(16_000);
         let mut recognize = |chunk: crate::chunker::Chunk| -> Result<(), PennelError> {
-            let end_ms = chunk.start_ms + chunk.samples.len() as u64 / 16;
+            let end_ms = chunk
+                .start_ms
+                .saturating_add(crate::wav::sample_duration_ms(
+                    chunk.samples.len() as u64,
+                    16_000,
+                ));
             let transcript = transcribe(&chunk.samples)?;
             if !transcript.complete {
                 return Err(PennelError::InvalidResponse {
@@ -804,6 +809,37 @@ mod tests {
             failed: false,
             voice: None,
         }
+    }
+
+    #[test]
+    fn fractional_tail_archive_retranscription_retains_the_final_timed_span() {
+        let rows = stage_audio_timed(
+            &[(Speaker::Me, PathBuf::from("audio/microphone.m4a"))],
+            &[],
+            |_| Ok(vec![0.2; 122_229]),
+            |_| {
+                Ok(crate::SpeechTranscript::validated(
+                    "Owned tail.".into(),
+                    vec![crate::SpeechTextSpan {
+                        start_byte: 0,
+                        end_byte: 11,
+                        start_ms: 0,
+                        end_ms: 7_640,
+                    }],
+                    crate::SpeechTimingKind::Segment,
+                    7_640,
+                ))
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].segment.text, "Owned tail.");
+        assert_eq!(rows[0].segment.end_ms, 7_640);
+        assert_eq!(
+            rows[0].metadata.spans,
+            [crate::TimedTextSpan(0, 11, 0, 7_640)]
+        );
     }
 
     #[test]

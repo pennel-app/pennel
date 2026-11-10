@@ -141,9 +141,7 @@ fn run(
     transcript_result(
         result,
         require_complete,
-        (samples.len() as u64)
-            .saturating_mul(1_000)
-            .div_ceil(16_000),
+        crate::wav::sample_duration_ms(samples.len() as u64, 16_000),
     )
 }
 

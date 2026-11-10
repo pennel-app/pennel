@@ -1409,26 +1409,28 @@ impl PennelEngine {
                     break;
                 }
             };
-            if !crate::meetings::recovery_provenance(&path, proof.disposition)
-                .is_some_and(|actual| proof.same_audio(&actual))
-            {
+            let actual = crate::meetings::recovery_provenance(&path, proof.disposition);
+            if !actual.as_ref().is_some_and(|actual| {
+                crate::meetings::recovery_audio_matches(&path, &proof, actual)
+            }) {
                 batch_error = Some(PennelError::storage(
                     "The recovery audio changed during recognition.",
                 ));
                 continue;
             }
+            proof.end_ms = actual.expect("verified recovery audio").end_ms;
             let segment = &mut row.segment;
-            if let Some((samples, rate)) = decode_wav(&wav) {
-                segment.end_ms = segment
-                    .start_ms
-                    .saturating_add(samples.len() as u64 * 1_000 / u64::from(rate.max(1)));
-            }
             let retained = !is_hallucination(&transcript.text);
             if !transcript.complete && (!retained || transcript.text.len() < segment.text.len()) {
                 batch_error = Some(PennelError::InvalidResponse {
                     message: "Recognition stopped before the passage ended. The previous text and original audio remain available for retry.".into(),
                 });
                 break;
+            }
+            if let Some((samples, rate)) = decode_wav(&wav) {
+                segment.end_ms = segment
+                    .start_ms
+                    .saturating_add(crate::wav::sample_duration_ms(samples.len() as u64, rate));
             }
             segment.text = if !retained {
                 String::new()
@@ -3210,7 +3212,7 @@ impl PennelEngine {
                 let (samples, rate) = decode_wav(wav).ok_or(PennelError::InvalidResponse {
                     message: "bad audio".into(),
                 })?;
-                let duration = samples.len() as u64 * 1_000 / u64::from(rate.max(1));
+                let duration = crate::wav::sample_duration_ms(samples.len() as u64, rate);
                 let result = transcriber.transcribe_timed(
                     samples,
                     rate,

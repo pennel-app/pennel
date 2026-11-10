@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -302,6 +303,10 @@ pub(crate) fn durable_write_checked(
 }
 
 fn recovery_audio(path: &Path) -> Option<Segment> {
+    recovery_audio_bounds(path).map(|(segment, _legacy_end)| segment)
+}
+
+fn recovery_audio_bounds(path: &Path) -> Option<(Segment, u64)> {
     let stem = path.file_stem()?.to_str()?;
     let (speaker, stamp) = if let Some(stamp) = stem.strip_prefix("me-") {
         (Speaker::Me, stamp)
@@ -338,14 +343,104 @@ fn recovery_audio(path: &Path) -> Option<Segment> {
     {
         return None;
     }
-    Some(Segment {
-        start_ms,
-        end_ms: start_ms.saturating_add(data_length / 2 * 1000 / u64::from(rate)),
-        speaker,
-        text: String::new(),
-        failed: true,
-        voice: None,
-    })
+    let legacy_end = start_ms.saturating_add(data_length / 2 * 1000 / u64::from(rate));
+    Some((
+        Segment {
+            start_ms,
+            end_ms: start_ms.saturating_add(crate::wav::sample_duration_ms(data_length / 2, rate)),
+            speaker,
+            text: String::new(),
+            failed: true,
+            voice: None,
+        },
+        legacy_end,
+    ))
+}
+
+pub(crate) fn recovery_chunk_matches(
+    path: &Path,
+    proof: &crate::meeting_utterances::RecoveryAudioProvenance,
+    actual: &crate::meeting_utterances::RecoveryAudioProvenance,
+) -> bool {
+    if proof.same_chunk(actual) {
+        return true;
+    }
+    let Some((audio, legacy_end)) = recovery_audio_bounds(path) else {
+        return false;
+    };
+    // Only the exact former rounding of these validated PCM samples is a compatible old bound.
+    let mut legacy = actual.clone();
+    legacy.end_ms = legacy_end;
+    actual.start_ms == audio.start_ms && actual.end_ms == audio.end_ms && proof.same_chunk(&legacy)
+}
+
+pub(crate) fn recovery_audio_matches(
+    path: &Path,
+    proof: &crate::meeting_utterances::RecoveryAudioProvenance,
+    actual: &crate::meeting_utterances::RecoveryAudioProvenance,
+) -> bool {
+    !proof.sha256.is_empty()
+        && proof.sha256 == actual.sha256
+        && recovery_chunk_matches(path, proof, actual)
+}
+
+fn verified_legacy_recovery_end_upgrade(
+    root: &Path,
+    previous: &MeetingTranscriptSnapshot,
+    rows: &[MeetingUtterance],
+) -> Option<MeetingTranscriptSnapshot> {
+    use crate::meeting_utterances::RecoveryAudioDisposition;
+    let directory = root.join("failed");
+    if !fs::symlink_metadata(&directory)
+        .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+    {
+        return None;
+    }
+    let old_rows: HashMap<_, _> = previous
+        .utterances
+        .iter()
+        .enumerate()
+        .map(|(index, row)| (row.metadata.utterance_id.as_str(), index))
+        .collect();
+    let mut normalized: Option<MeetingTranscriptSnapshot> = None;
+    for row in rows {
+        let Some(current) = row.metadata.recovery_audio.as_ref() else {
+            continue;
+        };
+        let Some(&index) = old_rows.get(row.metadata.utterance_id.as_str()) else {
+            continue;
+        };
+        let Some(old) = previous.utterances[index].metadata.recovery_audio.as_ref() else {
+            continue;
+        };
+        if old.disposition != RecoveryAudioDisposition::Pending
+            || current.disposition == RecoveryAudioDisposition::Unverified
+            || old.same_chunk(current)
+        {
+            continue;
+        }
+        let path = directory.join(&old.file_name);
+        let Some(actual) = recovery_provenance(&path, RecoveryAudioDisposition::Pending) else {
+            continue;
+        };
+        let original_matches = if old.sha256.is_empty() {
+            recovery_chunk_matches(&path, old, &actual)
+        } else {
+            recovery_audio_matches(&path, old, &actual)
+        };
+        if original_matches && current.same_audio(&actual) {
+            // Normalize only this comparison copy after proving the unchanged PCM. The writer's
+            // ordinary source, manual-correction and strict metadata guards still govern the edit.
+            let snapshot = normalized.get_or_insert_with(|| previous.clone());
+            snapshot.utterances[index]
+                .metadata
+                .recovery_audio
+                .as_mut()
+                .unwrap()
+                .end_ms = actual.end_ms;
+        }
+    }
+    normalized
 }
 
 #[cfg(test)]
@@ -433,7 +528,7 @@ fn completed_recovery(
             !row.segment.failed
                 && row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
                     proof.disposition == RecoveryAudioDisposition::Complete
-                        && proof.same_chunk(audio)
+                        && recovery_chunk_matches(path, proof, audio)
                 })
         })
         && !snapshot.utterances.iter().any(|row| {
@@ -449,7 +544,7 @@ fn completed_recovery(
                 !row.segment.failed
                     && row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
                         proof.disposition == RecoveryAudioDisposition::Complete
-                            && proof.same_audio(&actual)
+                            && recovery_audio_matches(path, proof, &actual)
                     })
             })
         })
@@ -1273,6 +1368,8 @@ impl MeetingStore {
         }
         // Empty successful rows can contain private filtered text dispositions. Their origin's
         // unsynced PCM may still exist even when this device has no recovery directory.
+        let normalized = verified_legacy_recovery_end_upgrade(&root, previous, &rows);
+        let previous = normalized.as_ref().unwrap_or(previous);
         preserve_completion_markers(previous, &mut rows);
         meeting_utterances::refresh_for_update(previous, &mut rows)?;
         rows.sort_by_key(|row| row.segment.start_ms);
@@ -1344,11 +1441,11 @@ impl MeetingStore {
                                 .track
                                 .accepts_source(row.metadata.source_id.as_deref())
                             && row.metadata.start_ms < proof.end_ms
-                            && row.metadata.end_ms >= proof.start_ms
+                            && row.metadata.end_ms > proof.start_ms
                     });
                 let row = &mut snapshot.utterances[index];
                 if let Some(old) = &row.metadata.recovery_audio {
-                    if !old.same_chunk(&proof)
+                    if !recovery_chunk_matches(path, old, &proof)
                         || old.disposition
                             == crate::meeting_utterances::RecoveryAudioDisposition::Unverified
                     {
@@ -1357,6 +1454,7 @@ impl MeetingStore {
                             crate::meeting_utterances::RecoveryAudioDisposition::Unverified;
                     } else {
                         proof.sha256 = old.sha256.clone();
+                        proof.end_ms = old.end_ms;
                     }
                 } else {
                     row.segment.end_ms = recovered.end_ms;
@@ -1382,7 +1480,7 @@ impl MeetingStore {
                         .track
                         .accepts_source(row.metadata.source_id.as_deref())
                     && row.metadata.start_ms < proof.end_ms
-                    && row.metadata.end_ms >= proof.start_ms
+                    && row.metadata.end_ms > proof.start_ms
             }) {
                 proof.disposition = crate::meeting_utterances::RecoveryAudioDisposition::Unverified;
             }
@@ -1491,7 +1589,7 @@ impl MeetingStore {
             return Err(Reason::UnreadableAudio);
         }
         let actual = recovery_header_provenance(&path).ok_or(Reason::UnreadableAudio)?;
-        if !proof.same_chunk(&actual) {
+        if !recovery_chunk_matches(&path, proof, &actual) {
             return Err(Reason::AudioChanged);
         }
         Ok(path)
@@ -1502,7 +1600,8 @@ impl MeetingStore {
         let path = self.recovery_audio_candidate(id, row).ok()?;
         let proof = row.metadata.recovery_audio.as_ref()?;
         let actual = recovery_provenance(&path, proof.disposition)?;
-        (proof.same_chunk(&actual) && (proof.sha256.is_empty() || proof.sha256 == actual.sha256))
+        (recovery_chunk_matches(&path, proof, &actual)
+            && (proof.sha256.is_empty() || proof.sha256 == actual.sha256))
             .then_some(path)
     }
 
@@ -2677,6 +2776,196 @@ mod tests {
                 );
                 assert_eq!(store.recovery_audio_path(&id, failed), Some(path));
             }
+        }
+    }
+
+    #[test]
+    fn fractional_tail_recovery_adjacency_is_distinct_from_real_overlap() {
+        for previous_source in [Speaker::Me, Speaker::Others] {
+            for overlap_ms in [0, 1] {
+                let directory = tempfile::tempdir().unwrap();
+                let store = MeetingStore::new(directory.path());
+                let id = store
+                    .create("Owned adjacent recovery tail", start())
+                    .unwrap();
+                let previous_end = 451_100 + overlap_ms;
+                let previous_path = store
+                    .write_recovery(
+                        &id,
+                        previous_source,
+                        435_700,
+                        &crate::wav::encode_wav(
+                            &vec![0.2; (15_400 + overlap_ms) as usize * 16],
+                            16_000,
+                        ),
+                    )
+                    .unwrap();
+                let mut previous = MeetingUtterance::new(
+                    Segment {
+                        start_ms: 435_700,
+                        end_ms: previous_end,
+                        speaker: previous_source,
+                        text: "Previously completed speech.".into(),
+                        failed: false,
+                        voice: None,
+                    },
+                    Some(
+                        if previous_source == Speaker::Me {
+                            "microphone"
+                        } else {
+                            "system_audio"
+                        }
+                        .into(),
+                    ),
+                );
+                previous.metadata.recovery_audio =
+                    recovery_provenance(&previous_path, crate::RecoveryAudioDisposition::Complete);
+                store
+                    .write_transcript_snapshot(&id, None, &[previous])
+                    .unwrap();
+                store
+                    .write_recovery(
+                        &id,
+                        Speaker::Me,
+                        451_100,
+                        &crate::wav::encode_wav(&vec![0.2; 122_229], 16_000),
+                    )
+                    .unwrap();
+                let opened = store.read_transcript_snapshot(&id).unwrap();
+                let tail = opened
+                    .utterances
+                    .iter()
+                    .find(|row| row.segment.failed)
+                    .unwrap();
+                let blocked = overlap_ms != 0 && previous_source == Speaker::Me;
+                let expected = if !blocked {
+                    crate::RecoveryAudioDisposition::Pending
+                } else {
+                    crate::RecoveryAudioDisposition::Unverified
+                };
+                assert_eq!(
+                    tail.metadata.recovery_audio.as_ref().unwrap().disposition,
+                    expected
+                );
+                assert_eq!(
+                    store.failed_recovery_plan(&id, &opened).retryable_count,
+                    Some(u32::from(!blocked))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fractional_tail_complete_floor_proof_keeps_manual_identity_and_cleanup_authority() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(directory.path());
+        let id = store.create("Owned old complete tail", start()).unwrap();
+        let path = store
+            .write_recovery(
+                &id,
+                Speaker::Me,
+                451_100,
+                &crate::wav::encode_wav(&vec![0.2; 122_229], 16_000),
+            )
+            .unwrap();
+        let mut row = MeetingUtterance::new(
+            Segment {
+                start_ms: 451_100,
+                end_ms: 458_739,
+                speaker: Speaker::Me,
+                text: "Existing corrected speech.".into(),
+                failed: false,
+                voice: None,
+            },
+            Some("microphone".into()),
+        );
+        let mut proof =
+            recovery_provenance(&path, crate::RecoveryAudioDisposition::Complete).unwrap();
+        proof.end_ms = 458_739;
+        row.metadata.recovery_audio = Some(proof);
+        row.metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
+            name: Some("Explicit person".into()),
+            voice: None,
+            source_fingerprint: row.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        store
+            .write_transcript_snapshot(&id, None, std::slice::from_ref(&row))
+            .unwrap();
+        let before = ["transcript.md", "transcript.meta.json"]
+            .map(|name| fs::read(store.dir_of(&id).join(name)).unwrap());
+        let opened = store.read_transcript_snapshot(&id).unwrap();
+        assert_eq!(opened.utterances, [row]);
+        assert_eq!(store.cleanup_committed_audio(&id).unwrap(), 1);
+        assert!(!path.exists());
+        assert_eq!(
+            ["transcript.md", "transcript.meta.json"]
+                .map(|name| fs::read(store.dir_of(&id).join(name)).unwrap()),
+            before
+        );
+    }
+
+    #[test]
+    fn fractional_tail_legacy_bound_changes_require_original_samples_hash_and_pending_state() {
+        for change in ["missing", "bytes", "samples", "extra_time", "unverified"] {
+            let directory = tempfile::tempdir().unwrap();
+            let store = MeetingStore::new(directory.path());
+            let id = store.create("Owned legacy tail refusal", start()).unwrap();
+            let wav = crate::wav::encode_wav(&vec![0.2; 122_229], 16_000);
+            let path = store
+                .write_recovery(&id, Speaker::Me, 451_100, &wav)
+                .unwrap();
+            let mut row = MeetingUtterance::new(
+                Segment {
+                    start_ms: 451_100,
+                    end_ms: 458_739,
+                    speaker: Speaker::Me,
+                    text: String::new(),
+                    failed: true,
+                    voice: None,
+                },
+                Some("microphone".into()),
+            );
+            let mut proof =
+                recovery_provenance(&path, crate::RecoveryAudioDisposition::Pending).unwrap();
+            proof.end_ms = 458_739;
+            if change == "unverified" {
+                proof.disposition = crate::RecoveryAudioDisposition::Unverified;
+            }
+            row.metadata.recovery_audio = Some(proof);
+            let before = store
+                .write_transcript_snapshot(&id, None, std::slice::from_ref(&row))
+                .unwrap();
+            let old_manifest = fs::read(store.dir_of(&id).join("transcript.meta.json")).unwrap();
+            match change {
+                "missing" => fs::remove_file(&path).unwrap(),
+                "bytes" => {
+                    let mut changed = wav;
+                    changed[44] ^= 1;
+                    fs::write(&path, changed).unwrap();
+                }
+                "samples" => {
+                    fs::write(&path, crate::wav::encode_wav(&vec![0.2; 122_245], 16_000)).unwrap()
+                }
+                _ => {}
+            }
+            row.segment.end_ms = if change == "extra_time" {
+                458_741
+            } else {
+                458_740
+            };
+            row.metadata.recovery_audio.as_mut().unwrap().end_ms = row.segment.end_ms;
+            assert!(
+                store
+                    .write_transcript_snapshot(&id, Some(before.revision), &[row])
+                    .is_err(),
+                "{change}"
+            );
+            assert_eq!(
+                fs::read(store.dir_of(&id).join("transcript.meta.json")).unwrap(),
+                old_manifest
+            );
         }
     }
 
