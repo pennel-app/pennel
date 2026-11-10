@@ -1981,6 +1981,82 @@ mod tests {
     }
 
     #[test]
+    fn scoped_cancel_covers_every_owned_kind_and_leaves_processing_alone() {
+        for kind in [
+            None,
+            Some(SessionKind::Pad),
+            Some(SessionKind::HomePractice),
+            Some(SessionKind::Practice),
+        ] {
+            let (_directory, engine) = pending_engine();
+            let settings = engine.settings();
+            let practice = kind.is_some_and(SessionKind::onboarding_practice);
+            let observer = Arc::new(PendingObserver::default());
+            let request = || DictationRequest {
+                samples: vec![0.1; 16_000],
+                sample_rate: 16_000,
+                app_bundle_id: None,
+                keys: pennel_core::ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            };
+            let cancelled = engine
+                .clone()
+                .begin_dictation_session(observer.clone(), practice);
+            let mut gesture = HotkeyGesture::default();
+            let start = if kind.is_some() {
+                gesture.manual_toggle(0.0)
+            } else {
+                gesture.handle(crate::gesture::KeyEdge::Down, 0.0)
+            };
+            assert_eq!(start, [GestureAction::Start], "{kind:?}");
+            assert_eq!(gesture.cancel(), [GestureAction::Cancel], "{kind:?}");
+            cancelled.cancel();
+            assert_eq!(
+                cancelled.finish(request()),
+                Err(PennelError::Cancelled),
+                "{kind:?}"
+            );
+            cancelled.update_system_preview("discarded cancelled input".into());
+            assert!(observer.0.lock().unwrap().is_empty());
+            assert!(engine.history(10).unwrap().is_empty());
+
+            let (entered, ready) = mpsc::channel();
+            let (release, waiting) = mpsc::channel();
+            engine.set_system_transcriber(Arc::new(PendingSpeech {
+                entered,
+                release: std::sync::Mutex::new(waiting),
+            }));
+            let processing = engine.clone().begin_dictation_session(observer, practice);
+            let capture_id = processing.id();
+            let mut gesture = HotkeyGesture::default();
+            if kind.is_some() {
+                gesture.manual_toggle(0.0);
+                assert_eq!(gesture.manual_toggle(1.0), [GestureAction::Submit]);
+            } else {
+                gesture.handle(crate::gesture::KeyEdge::Down, 0.0);
+                assert_eq!(
+                    gesture.handle(crate::gesture::KeyEdge::Up, 1.0),
+                    [GestureAction::Submit]
+                );
+            }
+            let worker_session = processing.clone();
+            let work = request();
+            let worker = std::thread::spawn(move || worker_session.finish(work));
+            ready.recv_timeout(Duration::from_secs(5)).unwrap();
+            // The controller has no recorder in this phase, and a completed gesture emits no Cancel.
+            assert!(gesture.cancel().is_empty(), "{kind:?}");
+            assert_eq!(processing.id(), capture_id);
+            release.send(()).unwrap();
+            let result = worker.join().unwrap().unwrap();
+            assert_eq!(result.text, "Een laat resultaat");
+            assert!(result.history_saved);
+            assert_eq!(engine.history(10).unwrap()[0].text, result.text);
+            assert_eq!(engine.settings(), settings);
+        }
+    }
+
+    #[test]
     fn home_practice_uses_saved_result_and_history_without_changing_onboarding_or_retention() {
         for retention in [0, 7, 30, 90] {
             for mode in [
