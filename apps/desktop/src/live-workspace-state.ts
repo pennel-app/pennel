@@ -10,21 +10,28 @@ export class LivePaneState {
   wide = false;
   ratio = 60;
   private finished = false;
+  private companionChosen = false;
   setFinished(finished: boolean) { this.finished = finished; }
   select(pane: LivePane) {
     this.selected = pane;
-    if (pane === "notes" || pane === "summary") this.primary = pane;
-    else { this.companion = pane; this.companionOpen = true; }
+    if (pane === "notes" || pane === "summary") {
+      this.primary = pane;
+      if (!this.wide) this.companionOpen = false;
+    } else { this.companionChosen = true; this.companion = pane; this.companionOpen = true; }
   }
-  closeCompanion() { this.companionOpen = false; this.selected = this.primary; }
+  closeCompanion() { this.companionChosen = true; this.companionOpen = false; this.selected = this.primary; }
   toggleCompanion(pane: CompanionPane) {
-    if (this.companionOpen && this.companion === pane && (this.wide || this.selected === pane)) this.closeCompanion();
+    if (this.companionOpen && this.companion === pane) this.closeCompanion();
     else this.select(pane);
   }
-  resize(width: number) { this.wide = width >= 800; }
+  resize(width: number) {
+    this.wide = width >= 1100;
+    if (!this.companionChosen) { this.companionOpen = this.wide; this.companion = "transcript"; this.selected = this.primary; }
+  }
   shown(pane: LivePane) {
-    if (this.finished && (pane === "notes" || pane === "summary")) return this.wide || this.selected === "notes" || this.selected === "summary";
-    return this.wide ? pane === this.primary || this.companionOpen && pane === this.companion : pane === this.selected; }
+    if (pane === "notes" || pane === "summary") return this.finished || pane === this.primary;
+    return this.companionOpen && pane === this.companion;
+  }
 }
 
 export function formatSelection(value: string, start: number, end: number, format: "heading" | "bold" | "list" | "task") {

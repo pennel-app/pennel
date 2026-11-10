@@ -240,7 +240,7 @@ export async function checkMeetingFlow() {
 
     selectMeetingPane(article, "questions");
     await until(() => article.querySelector(".chat-setup"), "Questions does not expose contextual setup.");
-    assert(visible(article.querySelector(".chat-setup")) && (article.classList.contains("live-wide") || !visible(setup)), "Question setup or the narrow companion is unavailable.");
+    assert(visible(article.querySelector(".chat-setup")) && (article.classList.contains("live-wide") || article.querySelector(".meeting-primary-column")?.inert || !visible(setup)), "Question setup or the narrow companion is unavailable.");
     selectMeetingPane(article, "summary");
     click(opener);
     await until(() => dialog()?.querySelector('input[type="password"]'), "Summary setup did not reveal the service key repair.");

@@ -5,9 +5,9 @@ async function until(check, message) {
 }
 
 export function selectMeetingPane(root, pane) {
-  if (root.dataset.documentLayout === "continuous" && (pane === "notes" || pane === "summary")) {
+  if (root.querySelector(".meeting-document") && (pane === "notes" || pane === "summary")) {
     const document = root.querySelector(".meeting-document"), section = root.querySelector(`[data-live-pane="${pane}"]`);
-    if (document.hidden) root.querySelector(".meeting-companion-close").click();
+    if (document.hidden || root.classList.contains("live-overlay")) root.querySelector(".meeting-companion-close").click();
     assert(section && !section.hidden && !document.hidden, `The ${pane} document section is unavailable.`);
     document.scrollTop += section.getBoundingClientRect().top - document.getBoundingClientRect().top;
     return;
@@ -20,6 +20,7 @@ export function selectMeetingPane(root, pane) {
 
 export async function openMeetingMore(root, key) {
   const { t } = await import("/src/i18n.ts");
+  if (root.classList.contains("live-overlay")) root.querySelector(".meeting-companion-close").click();
   const trigger = root.querySelector(".meeting-workspace-more");
   assert(trigger?.getClientRects().length, "The meeting More control is not visible.");
   trigger.click();

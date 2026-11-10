@@ -195,6 +195,10 @@ if (options.serve) {
             }
             if (!ready) throw Error(`${item.name}: the owned fixture did not reopen after reload`);
             await send("Runtime.evaluate", { expression: "(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));})()", awaitPromise: true });
+          } else if (step.viewport) {
+            const [width, height] = step.viewport;
+            if (![width, height].every(value => Number.isInteger(value) && value >= 240 && value <= 10000)) throw Error("Invalid owned fixture viewport");
+            await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: item.scale ?? 1, mobile: false });
           } else if (step.pointer) {
             // Real pointer input, so :hover and :active apply: { pointer: "<selector>", action: "move" | "press" | "release" }.
             const target = await send("Runtime.evaluate", { expression: `(()=>{const r=document.querySelector(${JSON.stringify(step.pointer)})?.getBoundingClientRect();return r&&{x:r.x+r.width/2,y:r.y+r.height/2}})()`, returnByValue: true });

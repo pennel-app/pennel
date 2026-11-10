@@ -104,6 +104,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   let observedSelection = "";
   let insertionReceipt: { text: string; attempt: string } | null = null;
   const panes = new LivePaneState();
+  panes.resize(window.innerWidth);
   if (finalized && initialSummary) panes.select("summary");
   const fixturePane = fixtureClient()?.fixture?.meeting_tab;
   if (["transcript", "ask", "insights", "summary"].includes(String(fixturePane))) panes.select(fixturePane === "ask" ? "questions" : fixturePane === "insights" ? "suggestions" : fixturePane as LivePane);
@@ -163,7 +164,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const sourceBack = h("button", { class: "text-button live-source-back", hidden: true, onclick: () => returnToAnswer() }, l("meetings.workspace_back_answer"));
   const sourceNotice = h("div", { class: "live-source-notice", hidden: true });
   const writingTabs = h("div", { class: "meeting-writing-tabs", role: "tablist", "aria-label": l("meetings.workspace_notes") });
-  const companionTabs = h("div", { class: "meeting-companion-tabs", role: "tablist", "aria-label": l("meetings.workspace_tools") });
+  const companionTabs = h("div", { class: "meeting-companion-tabs segmented", role: "tablist", "aria-label": l("meetings.workspace_tools") });
   const closeCompanion = h("button", { class: "btn compact meeting-companion-close", hidden: true, title: l("meetings.workspace_close_companion"), "aria-label": l("meetings.workspace_close_companion"), onclick: () => returnToDocument() }, icon("close"));
   const more = h("button", { class: "btn compact meeting-workspace-more", "aria-haspopup": "menu", onclick: () => {
     showPopupMenu(more, [
@@ -180,14 +181,18 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     ], { report: showSaveError });
   } }, l("meetings.workspace_more"), icon("more"));
   headerActions.append(more);
-  const tabList = h("nav", { class: "meeting-workspace-nav" }, writingTabs, h("span", { class: "grow" }), companionTabs, closeCompanion);
-  const paneNames: [LivePane, TranslationKey][] = [["notes", "meetings.your_notes"], ["summary", "meetings.workspace_summary"], ["transcript", "meetings.workspace_transcript"], ["questions", "meetings.workspace_questions"], ["suggestions", "meetings.workspace_suggestions"], ["tools", "meetings.workspace_tools"]];
+  const tabList = h("nav", { class: "meeting-workspace-nav" }, writingTabs, h("span", { class: "grow" }));
+  const paneNames: [LivePane, TranslationKey][] = [["notes", "meetings.your_notes"], ["summary", "meetings.workspace_summary"], ["transcript", "meetings.workspace_transcript"], ["questions", "meetings.companion_ask"], ["suggestions", "meetings.workspace_suggestions"], ["tools", "meetings.workspace_tools"]];
   const tabButtons = new Map<LivePane, HTMLButtonElement>();
   const panels = new Map<LivePane, HTMLElement>();
   for (const [pane, key] of paneNames) {
     const button = h("button", { class: "tab", role: "tab", id: `live-${session}-${pane}-tab`, "data-live-tab": pane, "aria-controls": `live-${session}-${pane}`, onclick: () => {
       if (pane === "notes" || pane === "summary") selectPane(pane);
-      else { ++sourceNavigation; panes.toggleCompanion(pane); updatePanes(); }
+      else {
+        ++sourceNavigation;
+        if (panes.companionOpen && panes.companion === pane) { returnToDocument(); return; }
+        rememberDocument(); button.focus({ preventScroll: true }); panes.toggleCompanion(pane); updatePanes();
+      }
     } }, l(key));
     button.addEventListener("keydown", event => {
       const available = paneNames.filter(([name]) => !tabButtons.get(name)?.hidden && (pane === "notes" || pane === "summary" ? name === "notes" || name === "summary" : name === "transcript" || name === "questions")).map(([name]) => name);
@@ -252,11 +257,12 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     const body = h("div", { class: "live-caption-copy", "data-preview-source": source });
     const element = h("div", { class: "live-caption", "data-caption-source": source },
       h("div", { class: "live-caption-heading" }, h("span", {}, l(source === "me" ? "meetings.captions_microphone" : "meetings.captions_system")),
-        h("span", { class: "live-caption-interim" }, l("meetings.captions_interim"))), state, body);
+        h("span", { class: "live-caption-interim" }, l("meetings.live_label"))), state, body);
     captionRows.set(source, { element, state, body });
     captionOutput.append(element);
   }
-  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, follow), attributionNotice, transcriptOutput, captionOutput);
+  transcriptOutput.append(captionOutput);
+  panels.get("transcript")!.append(h("div", { class: "live-transcript-heading" }, follow), attributionNotice, transcriptOutput);
   const questions = conversationPanel(ctx, {
     scope: { kind: "meeting", meeting_uid: uid, meeting_id: initial.id! }, live: true,
     canAsk: () => !composing,
@@ -301,23 +307,33 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   documentSurface.addEventListener("focusin", event => { if (event.target instanceof HTMLElement) lastDocumentFocus = event.target; });
   const rememberDocument = () => { if (!documentSurface.hidden) documentReturn = { scroll: documentSurface.scrollTop, focus: lastDocumentFocus }; };
   const summaryHeading = summary.root.querySelector("h2")!; summaryHeading.id = `live-${session}-summary-heading`;
-  const content = h("div", { class: "live-workspace-panes" }, documentSurface, separator, panels.get("transcript")!, panels.get("questions")!, panels.get("suggestions")!, panels.get("tools")!);
-  root.append(band, warning, recovery, failedRecoveryNotice, sourceBack, sourceNotice, tabList, automationNudge, content);
+  const companionHeader = h("div", { class: "meeting-companion-header" }, companionTabs, closeCompanion);
+  const companion = h("aside", { class: "meeting-companion", "aria-label": l("meetings.workspace_tools"), hidden: true }, companionHeader, panels.get("transcript")!, panels.get("questions")!, panels.get("suggestions")!, panels.get("tools")!);
+  const primaryColumn = h("div", { class: "meeting-primary-column" }, band, warning, recovery, failedRecoveryNotice, tabList, automationNudge, documentSurface);
+  const backdrop = h("div", { class: "meeting-companion-backdrop", hidden: true, "aria-hidden": "true", onclick: () => returnToDocument() });
+  const content = h("div", { class: "live-workspace-panes" }, primaryColumn, separator, backdrop, companion);
+  root.append(sourceBack, sourceNotice, content);
+  root.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !event.isComposing && !event.defaultPrevented && !panes.wide && panes.companionOpen) {
+      event.preventDefault(); event.stopPropagation(); returnToDocument();
+    }
+  });
   let resizeFrame = 0;
+  let splitAdjusted = false;
   const resize = new ResizeObserver(entries => {
     const width = entries[0]?.contentRect.width ?? 0;
     cancelAnimationFrame(resizeFrame);
     if (!root.isConnected || width <= 0) return;
-    resizeFrame = requestAnimationFrame(() => { if (root.isConnected) { panes.resize(width); updatePanes(); } });
+    resizeFrame = requestAnimationFrame(() => { if (root.isConnected) { panes.resize(window.innerWidth); updatePanes(); } });
   });
   resize.observe(content);
   separator.addEventListener("keydown", event => {
     const next = event.key === "ArrowLeft" ? panes.ratio - 5 : event.key === "ArrowRight" ? panes.ratio + 5 : event.key === "Home" ? 35 : event.key === "End" ? 75 : null;
-    if (next !== null) { event.preventDefault(); panes.ratio = Math.max(35, Math.min(75, next)); updatePanes(); }
+    if (next !== null) { event.preventDefault(); splitAdjusted = true; panes.ratio = Math.max(35, Math.min(75, next)); updatePanes(); }
   });
   separator.addEventListener("pointerdown", event => {
     separator.setPointerCapture(event.pointerId);
-    const move = (event: PointerEvent) => { const bounds = content.getBoundingClientRect(); panes.ratio = Math.max(35, Math.min(75, (event.clientX - bounds.left) / bounds.width * 100)); updatePanes(); };
+    const move = (event: PointerEvent) => { const bounds = content.getBoundingClientRect(); splitAdjusted = true; panes.ratio = Math.max(35, Math.min(75, (event.clientX - bounds.left) / bounds.width * 100)); updatePanes(); };
     const end = () => { separator.removeEventListener("pointermove", move); separator.removeEventListener("pointerup", end); separator.removeEventListener("pointercancel", end); };
     separator.addEventListener("pointermove", move);
     separator.addEventListener("pointerup", end);
@@ -375,7 +391,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       }).catch(() => undefined);
       updateReadiness();
       if (finalized) void loadReview().catch(showSaveError);
-      requestAnimationFrame(() => { if (mine === binding) { panes.resize(content.getBoundingClientRect().width); updatePanes(); void openRequestedSource(); } });
+      requestAnimationFrame(() => { if (mine === binding) { panes.resize(window.innerWidth); updatePanes(); void openRequestedSource(); } });
       return root;
     },
     flush,
@@ -403,11 +419,26 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     root.dataset.documentLayout = finalized ? "continuous" : "notes";
     root.classList.toggle("meeting-finished-document", finalized);
     documentSurface.hidden = !panes.shown("notes") && !panes.shown("summary");
-    writingTabs.hidden = finalized;
+    writingTabs.hidden = true;
+    tabList.hidden = true;
+    primaryColumn.inert = false;
+    const controlsHost = panes.companionOpen ? companionHeader : headerActions;
+    if (companionTabs.parentElement !== controlsHost) {
+      const focused = companionTabs.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+      controlsHost.insertBefore(companionTabs, controlsHost.firstChild);
+      focused?.focus({ preventScroll: true });
+    }
+    companion.hidden = !panes.companionOpen;
+    const overlay = !panes.wide && panes.companionOpen;
+    root.classList.toggle("live-overlay", overlay);
+    root.dataset.splitCustom = String(splitAdjusted);
+    primaryColumn.inert = overlay;
+    backdrop.hidden = !overlay;
     notesSectionHeading.hidden = !finalized;
     root.classList.toggle("live-wide", panes.wide);
     root.classList.toggle("live-companion-open", panes.companionOpen);
-    automationNudge.hidden = !finalized || panes.companionOpen;
+    if (!splitAdjusted && panes.wide && panes.companionOpen && root.isConnected) panes.ratio = Math.round(primaryColumn.getBoundingClientRect().width / Math.max(1, content.clientWidth - 28) * 100);
+    automationNudge.hidden = !finalized;
     root.classList.toggle("live-enlarged", parseFloat(getComputedStyle(tabList).fontSize) >= 20);
     content.style.setProperty("--live-notes-ratio", String(panes.ratio / 100));
     root.style.setProperty("--live-notes-ratio", String(panes.ratio / 100));
@@ -419,15 +450,18 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       const button = tabButtons.get(pane)!;
       const writing = pane === "notes" || pane === "summary";
       if (writing) { panel.setAttribute("role", finalized ? "region" : "tabpanel"); panel.setAttribute("aria-labelledby", finalized ? pane === "notes" ? notesTitle.id : summaryHeading.id : button.id); }
-      button.hidden = pane === "tools" || pane === "suggestions" || finalized && writing || pane === "summary" && !finalized;
+      button.hidden = pane === "tools" || pane === "suggestions" || writing;
       const selected = pane === "notes" || pane === "summary" ? pane === panes.primary && (panes.wide || pane === panes.selected)
         : panes.companionOpen && pane === panes.companion && (panes.wide || pane === panes.selected);
       button.setAttribute("aria-selected", String(selected));
-      button.tabIndex = selected || pane === panes.primary ? 0 : -1;
+      const closedTab = ["transcript", "questions"].includes(panes.companion) ? panes.companion : "transcript";
+      button.tabIndex = selected || !panes.companionOpen && pane === closedTab ? 0 : -1;
+      if (!writing) button.setAttribute("aria-expanded", String(panes.companionOpen && pane === panes.companion));
     }
     sizeNotes();
     if (keepNotesVisible) documentSurface.scrollTop += editor.getBoundingClientRect().top - documentSurface.getBoundingClientRect().top + previousNotesScroll;
     restoreReading();
+    if (following && panes.shown("transcript") && root.isConnected) scrollLive();
   }
   function suspendReading() {
     if (!root.isConnected) return;
@@ -466,6 +500,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   }
   function selectPane(pane: LivePane, openingSource = false) {
     if (!openingSource) ++sourceNavigation;
+    if (pane !== "notes" && pane !== "summary") rememberDocument();
     panes.select(pane); updatePanes();
     if (finalized && (pane === "notes" || pane === "summary")) scrollDocumentSection(pane);
   }

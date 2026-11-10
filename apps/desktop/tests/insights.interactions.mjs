@@ -16,7 +16,7 @@ async function choose(root, key) {
   await pause(50);
 }
 function tab(name) {
-  const workspace = document.querySelector('.live-workspace[data-document-layout="continuous"]');
+  const workspace = document.querySelector(".live-workspace:has(.meeting-document)");
   if (workspace && (name === "notes" || name === "summary")) { selectMeetingPane(workspace, name); return; }
   const button = document.querySelector(`[data-live-tab="${name === "ask" ? "questions" : name === "insights" ? "suggestions" : name}"]`) || document.querySelector(`.detail-tabs [data-tab="${name}"]`);
   if (button?.getAttribute("aria-selected") !== "true") button?.click();

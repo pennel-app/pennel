@@ -12,7 +12,7 @@ function edit(input, text) {
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
 function tab(name) {
-  const workspace = document.querySelector('.live-workspace[data-document-layout="continuous"]');
+  const workspace = document.querySelector(".live-workspace:has(.meeting-document)");
   if (workspace && (name === "notes" || name === "summary")) { selectMeetingPane(workspace, name); return; }
   const button = document.querySelector(`[data-live-tab="${name}"]`) || document.querySelector(`.detail-tabs [data-tab="${name}"]`);
   if (button?.getAttribute("aria-selected") !== "true") button?.click();

@@ -1,4 +1,6 @@
 {
+  "meetings.companion_ask": "Ask",
+  "meetings.live_label": "Live",
   "meetings.notes_private_share": "Private · left out when you share",
   "meetings.document_label": "Meeting document",
   "meetings.transcript_provenance": "Transcript · {destination}",
