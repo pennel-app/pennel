@@ -40,6 +40,16 @@ export class SummaryDraft {
     return !!this.document?.outdated && !!this.document.markdown.trim() && !this.dirty && !this.pending && !this.remote
       && this.value === this.document.markdown;
   }
+  acknowledgeMetadata(document: SummaryDocument): boolean {
+    const before = this.document;
+    if (!before || this.remote || document.meeting_uid !== before.meeting_uid || document.markdown !== before.markdown || document.source_revision !== before.source_revision) return false;
+    this.document = document;
+    this.dirty = this.value !== document.markdown;
+    if (this.candidate?.meeting_uid === before.meeting_uid && this.candidate.revision === before.revision && this.candidate.source_revision === before.source_revision) {
+      this.candidate = { ...this.candidate, revision: document.revision };
+    }
+    return true;
+  }
   acknowledge(document: SummaryDocument, target: string) {
     this.document = document; this.error = null; this.remote = null;
     this.dirty = this.value !== target;

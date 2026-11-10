@@ -81,3 +81,19 @@ test("manual review is available only for the exact clean saved outdated summary
   draft.acknowledge(document("Saved summary", "r1", "changed-notes-or-transcript"), "Saved summary");
   assert.equal(draft.canMarkReviewed, false);
 });
+
+test("our metadata-only acknowledgement preserves a reviewable candidate and newer typing", () => {
+  const draft = new SummaryDraft(); draft.receive(document()); draft.stage(document("Candidate"), draft.editRevision); draft.error = "Earlier generation failed";
+  assert.equal(draft.acknowledgeMetadata(document("Saved summary", "r2")), true);
+  assert.equal(draft.value, "Saved summary"); assert.equal(draft.candidate.revision, "r2"); assert.equal(draft.canAccept, true); assert.equal(draft.error, "Earlier generation failed");
+  draft.edit("Later writer text"); const revision = draft.editRevision;
+  assert.equal(draft.acknowledgeMetadata(document("Saved summary", "r3")), true);
+  assert.equal(draft.value, "Later writer text"); assert.equal(draft.dirty, true); assert.equal(draft.editRevision, revision); assert.equal(draft.canAccept, false);
+});
+test("metadata acknowledgement cannot rebase changed content, sources or meeting identity", () => {
+  for (const changed of [{ ...document("Saved summary", "r2"), meeting_uid: "other" }, document("Different body", "r2"), document("Saved summary", "r2", "s2")]) {
+    const draft = new SummaryDraft(); draft.receive(document()); draft.edit("Keep my typing");
+    assert.equal(draft.acknowledgeMetadata(changed), false);
+    assert.equal(draft.document.revision, "r1"); assert.equal(draft.value, "Keep my typing"); assert.equal(draft.dirty, true);
+  }
+});

@@ -1,4 +1,13 @@
 {
+  "meetings.summary_consent_question": "Summarise this meeting?",
+  "meetings.summary_consent_destination": "Processing: {destination}. Includes your notes and the finalized transcript.",
+  "meetings.summary_consent_automatic": "Do this after every meeting",
+  "meetings.summary_consent_not_now": "Not now",
+  "meetings.summary_consent_quiet": "You can create a summary whenever you choose.",
+  "meetings.summary_consent_reading": "Checking summary options…",
+  "meetings.summary_preparing": "Preparing summary…",
+  "meetings.summary_processing_failed": "The summary could not be created. You can try again.",
+  "meetings.summary_processing_cancelled": "Summary stopped. You can try again.",
   "meetings.companion_ask": "Ask",
   "meetings.live_label": "Live",
   "meetings.notes_private_share": "Private · left out when you share",

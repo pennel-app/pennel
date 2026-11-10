@@ -1373,3 +1373,26 @@ test("denied microphone fixture keeps recording repair reachable until access re
   await api.invoke("request_permission", { kind: "microphone" });
   assert.equal((await api.invoke("app_info")).capabilities.microphone.status, "available");
 });
+
+test("summary consent fixture mirrors durable per-meeting dismissal without changing global policy", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "summary-consent-A", summary_empty: true, summary_automation: "unanswered" };
+  const context = fixture("meeting-document-minimum", options, storage), api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  assert.equal(await api.invoke("meeting_summary_prompt_dismissed", { id }), false);
+  const before = await api.invoke("meeting_summary", { id });
+  const saved = await api.invoke("dismiss_meeting_summary_prompt", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision });
+  assert.equal(saved.markdown, before.markdown); assert.notEqual(saved.revision, before.revision);
+  assert.equal((await api.invoke("app_info")).settings.summary_automation, "unanswered");
+  assert.equal(await fixture("meeting-document-minimum", options, storage).__PENNEL_PLATFORM__.invoke("meeting_summary_prompt_dismissed", { id }), true);
+  assert.equal(await fixture("meeting-document-minimum", { ...options, profile: "summary-consent-B" }, storage).__PENNEL_PLATFORM__.invoke("meeting_summary_prompt_dismissed", { id }), false);
+  assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command => ["summarize_meeting", "generate_meeting_summary", "save_settings"].includes(command)));
+});
+
+test("summary consent fixture direct create saves only the expected empty unedited body", async () => {
+  const context = fixture("meeting-document-minimum", { owner_review: true, summary_empty: true, summary_automation: "unanswered" }), api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_summary", { id }); assert.equal(before.edited, false);
+  await api.invoke("summarize_meeting", { id, templateId: "algemeen", expectedRevision: before.revision, expectedSourceRevision: before.source_revision });
+  const saved = await api.invoke("meeting_summary", { id }); assert.ok(saved.markdown.trim()); assert.equal(saved.edited, false);
+  await assert.rejects(api.invoke("summarize_meeting", { id, templateId: "algemeen", expectedRevision: saved.revision, expectedSourceRevision: saved.source_revision }));
+  assert.equal((await api.invoke("meeting_summary", { id })).markdown, saved.markdown);
+  assert.equal((await api.invoke("app_info")).settings.summary_automation, "unanswered");
+});

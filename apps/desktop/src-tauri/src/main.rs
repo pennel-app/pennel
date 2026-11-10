@@ -38,6 +38,7 @@ mod macos;
 mod macos_tray;
 mod meeting;
 mod meeting_level;
+mod meeting_postprocess;
 mod meeting_runtime;
 mod meeting_speaker_evidence;
 mod owned_dictation;
@@ -1224,6 +1225,8 @@ fn main() {
             commands::meeting_templates,
             commands::summarize_meeting,
             summaries::meeting_summary,
+            summaries::meeting_summary_prompt_dismissed,
+            summaries::dismiss_meeting_summary_prompt,
             summaries::meeting_speaker_timeline,
             summaries::meeting_transcript_provenance,
             summaries::save_meeting_summary,

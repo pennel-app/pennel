@@ -35,10 +35,12 @@ export async function checkSummaryContextAndConsent() {
     "Routine notices displaced all summary content below the reading viewport.");
   const outdated = surface.querySelector(".meeting-summary-outdated");
   if (fixture.options.summary_outdated) assert(visible(outdated) && !details.contains(outdated), "The stale-source warning was hidden inside routine details.");
-  const choose = root.querySelector(".meeting-automation-choose");
-  assert(fixture.info().settings.summary_automation === "unanswered" && visible(choose), "The unanswered automation choice is not visible and nonblocking.");
+  await until(() => root.querySelector('.summary-consent[data-mode="question"]'), "The unanswered summary question did not load.");
+  const choice = root.querySelector(".summary-consent");
+  assert(fixture.info().settings.summary_automation === "unanswered" && visible(choice)
+    && !choice.querySelector("input[type=checkbox]").checked, "The unanswered automation choice is not visible and explicit.");
   const before = fixture.calls.length;
-  choose.click();
+  await openMeetingTools(root, "automation");
   await until(() => visible(root.querySelector('[data-meeting-tool="automation"]')), "The automation choice did not open its focused tool.");
   const tool = root.querySelector('[data-meeting-tool="automation"]');
   assert(visible(tool.querySelector('[data-summary-automation="automatic"]')) && visible(tool.querySelector('[data-summary-automation="manual"]')),

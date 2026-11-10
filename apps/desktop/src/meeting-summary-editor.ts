@@ -1,10 +1,12 @@
 import { api } from "./api";
+import { LatestRequest } from "./async";
 import type { Context } from "./main";
 import { bindLocalization, l, t } from "./i18n";
 import { controlButton, errorText, h, markdown } from "./dom";
 import { languageModelConfigured } from "./presentation";
 import { SummaryDraft } from "./meeting-summary-state";
 import { summaryDestination } from "./meeting-summary-automation";
+import { meetingPostprocess } from "./meeting-postprocess-state";
 import { sourceRange } from "./source-navigation";
 
 export function meetingSummaryEditor(initial: Context, host: {
@@ -14,12 +16,17 @@ export function meetingSummaryEditor(initial: Context, host: {
   template(): string;
   processing?(): boolean;
   canReview?(): boolean;
+  meetingUid?(): string;
+  changed?(): void;
 }) {
-  let ctx = initial, composing = false, generating = false, loaded = false, loading = false, editing = false, renderedValue: string | null = null;
+  let ctx = initial, composing = false, generating = false, directCreating = false, loaded = false, loading = false, editing = false, renderedValue: string | null = null, revealPending = false;
+  let progressCleanup: (() => void) | null = null;
   let timer: number | undefined, saving: Promise<void> | null = null, reading: Promise<void> | null = null;
   const draft = new SummaryDraft();
+  const summaryReads = new LatestRequest();
   const editor = h("textarea", { class: "meeting-summary-editor", hidden: true, "aria-label": l("meetings.summary_editor_label"),
     placeholder: l("meetings.summary_editor_placeholder"), spellcheck: "true" });
+  const placeholders = h("div", { class: "summary-placeholders", hidden: true, role: "status", "aria-label": l("meetings.summary_preparing") }, ...[1, 2, 3, 4].map(() => h("div", { "aria-hidden": "true" })));
   const rendered = h("div", { class: "meeting-summary-rendered", tabindex: 0, "aria-label": l("meetings.workspace_summary") });
   const editSummary = controlButton({ class: "btn compact meeting-summary-edit", "aria-pressed": "false", onclick: () => {
     if (editing) {
@@ -58,35 +65,53 @@ export function meetingSummaryEditor(initial: Context, host: {
   const historyList = h("div", { class: "meeting-summary-history-list" });
   const history = h("details", { class: "meeting-summary-history" }, h("summary", {}, l("meetings.summary_history")), historyList);
   history.addEventListener("toggle", () => { if (history.open) void loadHistory().catch(report); });
-  const root = h("section", { class: "meeting-summary-surface" },
+  const root = h("section", { class: "meeting-summary-surface", tabindex: -1, "aria-label": l("meetings.workspace_summary") },
     h("div", { class: "meeting-summary-heading" }, h("h2", {}, l("meetings.workspace_summary")), h("span", { class: "grow" }), status, editSummary),
     h("div", { class: "meeting-summary-context" }, details, h("div", { class: "meeting-summary-setup row" }, setupReason, setup)),
-    outdatedNotice, recovery, error, h("div", { class: "row meeting-summary-recovery-actions" }, retry, recover), editor, rendered,
+    outdatedNotice, recovery, error, h("div", { class: "row meeting-summary-recovery-actions" }, retry, recover), editor, placeholders, rendered,
     h("div", { class: "row meeting-summary-actions" }, generate), candidate, history);
 
+  function progress() { const uid = draft.document?.meeting_uid ?? host.meetingUid?.(); return uid ? meetingPostprocess.get(uid, "summary") : null; }
+  function working() { return generating || progress()?.state === "started"; }
+  function blockedReason(): string {
+    if (!host.finished()) return t("meetings.summary_finished_only");
+    if (!loaded) return t("meetings.summary_loading");
+    if (composing) return t("meetings.workspace_composing");
+    if (draft.remote) return t("meetings.summary_changed_saved");
+    if (draft.pending) return t("meetings.workspace_saving");
+    if (working() || host.processing?.()) return t("meetings.summary_preparing");
+    return languageModelConfigured(ctx.info) ? "" : t("meetings.summary_setup_short");
+  }
   function report(failure: unknown) { draft.error = errorText(failure); update(); }
   function update() {
-    const ready = languageModelConfigured(ctx.info), finished = host.finished();
-    root.dataset.summaryState = generating ? "generating" : draft.pending ? "saving" : draft.error ? "error" : draft.dirty ? "unsaved" : loaded ? "saved" : "loading";
-    status.textContent = generating ? t("meetings.summary_generating") : draft.pending ? t("meetings.workspace_saving")
-      : draft.error ? t("meetings.summary_not_saved") : draft.dirty ? t("meetings.workspace_unsaved")
-      : loaded ? t("meetings.workspace_saved") : t("meetings.summary_loading");
-    editor.disabled = !finished || !loaded;
-    editor.hidden = !editing; rendered.hidden = editing;
-    editSummary.disabled = !finished || !loaded || composing || draft.pending;
+    const ready = languageModelConfigured(ctx.info), finished = host.finished(), active = working(), remote = progress();
+    const remoteError = !generating && !draft.value.trim() && remote?.state === "failed" ? t("meetings.summary_processing_failed") : "";
+    if (active && !draft.value.trim()) revealPending = true;
+    if (!active && (draft.error || remote?.state === "failed" || remote?.state === "cancelled")) revealPending = false;
+    root.dataset.summaryState = active ? "generating" : draft.pending ? "saving" : draft.error || remoteError ? "error" : draft.dirty ? "unsaved" : loaded ? "saved" : "loading";
+    status.textContent = active ? t(generating ? "meetings.summary_generating" : "meetings.summary_preparing") : draft.pending ? t("meetings.workspace_saving")
+      : draft.error || remoteError ? t("meetings.summary_not_saved") : draft.dirty ? t("meetings.workspace_unsaved")
+      : loaded ? draft.value.trim() || draft.document?.edited ? t("meetings.workspace_saved") : "" : t("meetings.summary_loading");
+    editor.disabled = !finished || !loaded || directCreating;
+    editor.hidden = !editing; rendered.hidden = editing || active && !draft.value.trim();
+    rendered.dataset.empty = String(!draft.value.trim());
+    placeholders.hidden = !active || !!draft.value.trim() || editing;
+    editSummary.disabled = !finished || !loaded || composing || draft.pending || directCreating;
     editSummary.textContent = t(editing ? "meetings.summary_done" : "meetings.summary_edit");
     editSummary.setAttribute("aria-pressed", String(editing));
     if (!editing && renderedValue !== draft.value) {
+      rendered.classList.toggle("summary-reveal", revealPending && !!draft.value.trim());
+      if (draft.value.trim()) revealPending = false;
       rendered.replaceChildren(draft.value ? markdown(draft.value) : h("p", { class: "help" }, l("meetings.summary_empty")));
       renderedValue = draft.value;
     }
-    generate.disabled = !finished || !ready || generating || draft.pending || !loaded || composing || !!draft.remote || !!host.processing?.();
+    generate.disabled = !finished || !ready || active || draft.pending || !loaded || composing || !!draft.remote || !!host.processing?.();
     generate.textContent = t(generating ? "meetings.summary_generating" : draft.document?.markdown ? "meetings.summary_generate_again" : "meetings.summary_generate");
     generate.title = !finished ? t("meetings.summary_finished_only") : host.processing?.() ? t("meetings.working") : !ready ? t("meetings.summary_setup_help") : "";
     setup.hidden = ready;
     setupReason.hidden = ready;
     destination.textContent = !finished ? t("meetings.summary_finished_only") : !ready ? t("meetings.summary_setup_help") : summaryDestination(ctx);
-    error.textContent = draft.error ?? ""; error.hidden = !draft.error;
+    error.textContent = draft.error ?? remoteError; error.hidden = !error.textContent;
     outdated.hidden = !draft.document?.outdated && !draft.remote?.outdated;
     markReviewed.hidden = !draft.document?.outdated || !draft.document.markdown.trim();
     markReviewed.disabled = !draft.canMarkReviewed || composing || generating || loading || !finished || !loaded || !!host.processing?.() || host.canReview?.() === false;
@@ -98,6 +123,7 @@ export function meetingSummaryEditor(initial: Context, host: {
     accept.disabled = !draft.canAccept || composing;
     candidateReason.textContent = t(draft.canAccept ? "meetings.summary_candidate_help" : "meetings.summary_candidate_stale");
     history.hidden = !finished;
+    host.changed?.();
   }
   function schedule() { clearTimeout(timer); if (!composing) timer = window.setTimeout(() => { void flush().catch(report); }, 600); }
   editor.addEventListener("input", () => { draft.edit(editor.value); update(); schedule(); });
@@ -111,56 +137,81 @@ export function meetingSummaryEditor(initial: Context, host: {
     if (!draft.dirty || !draft.document || !host.finished()) return;
     if (draft.remote) throw new Error(t("meetings.summary_changed_saved"));
     const target = draft.value, base = draft.document;
-    draft.pending = true; update();
+    invalidateReads(); draft.pending = true; update();
     saving = api.saveMeetingSummary(host.id(), base.revision, base.source_revision, target).then(document => {
-      draft.acknowledge(document, target);
+      invalidateReads(); draft.acknowledge(document, target);
     }).catch(failure => { report(failure); throw failure; }).finally(() => { saving = null; draft.pending = false; update(); });
     await saving;
   }
+  function invalidateReads() { summaryReads.cancel(); reading = null; loading = false; }
   async function refresh(force = false) {
     if (reading) return reading;
     if (!host.finished() || draft.pending || (!force && draft.dirty)) return;
     loading = true; update();
-    reading = api.meetingSummary(host.id()).then(document => {
+    const id = host.id();
+    const request: Promise<void> = summaryReads.run(() => api.meetingSummary(id), document => {
+      if (host.id() !== id) return;
       loaded = true;
       const changed = draft.receive(document, composing || editing || documentActive() || renderedSelection());
       if (changed && editor.value !== draft.value) editor.value = draft.value;
-    }).catch(failure => { report(failure); throw failure; }).finally(() => { reading = null; loading = false; update(); });
-    await reading;
+    }).then(() => undefined).catch(failure => {
+      if (host.id() !== id) return;
+      report(failure); throw failure;
+    }).finally(() => { if (reading === request) { reading = null; loading = false; update(); } });
+    reading = request; await request;
   }
   function documentActive() { return document.activeElement === editor; }
   function renderedSelection() {
     const selection = window.getSelection();
     return !!selection && !selection.isCollapsed && Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index)).some(range => range.intersectsNode(rendered));
   }
-  async function generateDraft() {
+  async function generateDraft(allowDirect = true) {
     if (generate.disabled) return;
-    generating = true; draft.error = null; update();
+    generating = true; draft.error = null;
+    const uid = draft.document?.meeting_uid ?? host.meetingUid?.(); if (uid) meetingPostprocess.clearTerminal(uid, "summary");
+    update();
     try {
-      await host.flushNotes(); await flush(); await refresh();
-      const revision = draft.editRevision;
-      const result = await api.generateMeetingSummary(host.id(), host.template());
-      draft.stage(result, revision);
-      candidateBody.replaceChildren(markdown(result.markdown));
+      await host.flushNotes(); invalidateReads(); await flush(); await refresh();
+      const revision = draft.editRevision, before = draft.document;
+      if (allowDirect && before?.edited === false && !before.markdown.trim() && !draft.dirty && !draft.remote && !editing && !composing) {
+        directCreating = true; update();
+        invalidateReads(); await api.summarizeMeeting(host.id(), host.template(), before);
+        invalidateReads(); await refresh(true);
+      } else {
+        const result = await api.generateMeetingSummary(host.id(), host.template());
+        draft.stage(result, revision);
+        candidateBody.replaceChildren(markdown(result.markdown));
+      }
     } catch (failure) { report(failure); }
-    finally { generating = false; update(); }
+    finally { generating = false; directCreating = false; update(); }
+  }
+  async function dismissPrompt() {
+    if (!loaded || composing || draft.pending || draft.remote || working()) return;
+    await host.flushNotes(); invalidateReads(); await flush(); await refresh();
+    const before = draft.document; if (!before) throw new Error(t("meetings.summary_loading"));
+    invalidateReads(); draft.pending = true; update();
+    saving = api.dismissMeetingSummaryPrompt(host.id(), before.revision, before.source_revision).then(document => {
+      invalidateReads();
+      if (!draft.acknowledgeMetadata(document)) throw new Error(t("meetings.summary_changed_saved"));
+    }).finally(() => { saving = null; draft.pending = false; update(); });
+    await saving;
   }
   async function acceptCandidate() {
     if (!draft.canAccept || composing || !draft.candidate) return;
     const selected = draft.candidate, revision = draft.editRevision;
-    draft.pending = true; update();
+    invalidateReads(); draft.pending = true; update();
     saving = api.acceptMeetingSummary(host.id(), selected.revision, selected.source_revision, selected.markdown).then(result => {
       if (draft.editRevision === revision) { draft.value = result.markdown; editor.value = draft.value; }
-      draft.acknowledge(result, result.markdown); draft.candidate = null;
+      invalidateReads(); draft.acknowledge(result, result.markdown); draft.candidate = null;
     }).finally(() => { saving = null; draft.pending = false; update(); });
     await saving;
   }
   async function markAsReviewed() {
     if (markReviewed.disabled || !draft.document) return;
     const reviewed = draft.document;
-    draft.pending = true; update();
+    invalidateReads(); draft.pending = true; update();
     saving = api.acceptMeetingSummary(host.id(), reviewed.revision, reviewed.source_revision, reviewed.markdown).then(result => {
-      draft.acknowledge(result, reviewed.markdown);
+      invalidateReads(); draft.acknowledge(result, reviewed.markdown);
     }).finally(() => { saving = null; draft.pending = false; update(); });
     await saving;
   }
@@ -173,10 +224,10 @@ export function meetingSummaryEditor(initial: Context, host: {
           await flush(); await refresh();
           if (!draft.document || draft.remote) return;
           const revision = draft.editRevision;
-          draft.pending = true; update();
+          invalidateReads(); draft.pending = true; update();
           saving = api.restoreMeetingSummary(host.id(), entry.revision, draft.document.revision, draft.document.source_revision).then(result => {
             if (revision === draft.editRevision) { draft.value = result.markdown; editor.value = draft.value; ++draft.editRevision; }
-            draft.candidate = null; draft.acknowledge(result, result.markdown);
+            draft.candidate = null; invalidateReads(); draft.acknowledge(result, result.markdown);
           }).finally(() => { saving = null; draft.pending = false; update(); });
           await saving; await loadHistory();
         } catch (failure) { report(failure); }
@@ -184,7 +235,17 @@ export function meetingSummaryEditor(initial: Context, host: {
     if (!entries.length) historyList.append(h("p", { class: "help" }, l("meetings.summary_history_empty")));
   }
   bindLocalization(root, update); update();
-  return { root, editor, flush, refresh, readiness: update, bind(next: Context) { ctx = next; next.onInfoChange(update); update(); },
+  return { root, editor, flush, refresh, readiness: update, working, blockedReason,
+    canGenerate: () => !generate.disabled,
+    canDismiss: () => loaded && !composing && !draft.pending && !draft.remote && !working(),
+    generate: () => generateDraft(true), dismissPrompt,
+    bind(next: Context) {
+      ctx = next; next.onInfoChange(update); progressCleanup?.();
+      const cleanup = meetingPostprocess.subscribe(() => { update(); const state = progress(); if (state && state.state !== "started" && host.finished()) void refresh().catch(report); });
+      progressCleanup = cleanup;
+      next.onDispose(() => { cleanup(); if (progressCleanup === cleanup) progressCleanup = null; });
+      update();
+    },
     editing: () => editing,
     restorePresentation(wasEditing: boolean) { if (!draft.dirty && !composing) { editing = wasEditing; update(); } },
     focusSource(text: string) {

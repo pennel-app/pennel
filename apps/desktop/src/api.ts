@@ -5,6 +5,7 @@ import type { ClaudeStatus } from "./claude-access";
 import type { LoginPoll } from "./cloud-login";
 export type { ClaudeStatus };
 import type { WorkspaceRoute } from "./workspace-state";
+import type { MeetingPostprocessEvent } from "./meeting-postprocess-state";
 import { meetingLevels, RecordingStopGate } from "./recording-control-state";
 import { localizeUiResponse } from "./ui-response.ts";
 import type { DesktopCommandState, DesktopEnvironment } from "./desktop-chrome-state.ts";
@@ -1043,11 +1044,14 @@ export const api = {
   saveTemplate: (id: string | null, name: string, body: string) =>
     invoke<string>("save_template", { id, name, body }),
   deleteTemplate: (id: string) => invoke<void>("delete_template", { id }),
-  summarizeMeeting: (id: string, templateId: string) =>
-    invoke<string>("summarize_meeting", { id, templateId }),
+  summarizeMeeting: (id: string, templateId: string, expected?: Pick<MeetingSummaryDocument, "revision" | "source_revision">) =>
+    invoke<string>("summarize_meeting", { id, templateId, ...expected ? { expectedRevision: expected.revision, expectedSourceRevision: expected.source_revision } : {} }),
   meetingTranscriptProvenance: (id: string) => invoke<MeetingTranscriptProvenance | null>("meeting_transcript_provenance", { id }),
   meetingSpeakerTimeline: (id: string) => invoke<MeetingSpeakerTimeline>("meeting_speaker_timeline", { id }),
   meetingSummary: (id: string) => invoke<MeetingSummaryDocument>("meeting_summary", { id }),
+  meetingSummaryPromptDismissed: (id: string) => invoke<boolean>("meeting_summary_prompt_dismissed", { id }),
+  dismissMeetingSummaryPrompt: (id: string, expectedRevision: string, expectedSourceRevision: string) =>
+    invoke<MeetingSummaryDocument>("dismiss_meeting_summary_prompt", { id, expectedRevision, expectedSourceRevision }),
   saveMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
     invoke<MeetingSummaryDocument>("save_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
   acceptMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string, record?: MeetingSummaryRecord | null) =>
@@ -1128,6 +1132,8 @@ export const api = {
   setClaudeAccess: (enabled: boolean) => invoke<ClaudeAccessView>("set_claude_access", { enabled }),
   onClaudeAccessChanged: (handler: (status: ClaudeStatus) => void): Promise<() => void> =>
     listen<ClaudeStatus>("claude-access-changed", (event) => handler(event.payload)),
+  onMeetingPostprocess: (handler: (event: MeetingPostprocessEvent) => void): Promise<() => void> =>
+    listenToWindow<MeetingPostprocessEvent>("meeting-postprocess", (event) => handler(event.payload)),
   onMeetingLevel: (handler: (level: MeetingLevel) => void): Promise<() => void> =>
     listen<MeetingLevel>("meeting-level", (event) => handler(event.payload)),
   onSyncChanged: (handler: (report: SyncReport) => void): Promise<() => void> =>

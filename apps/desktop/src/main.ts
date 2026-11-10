@@ -10,6 +10,7 @@ import { displayedMeetingSession, finishMeetingDrafts, flushMeetingDrafts, meeti
 import { FrontendBarrier, canShowFinished, type FrontendBarrierKind } from "./session-events";
 import { deliveredRouteApplies, historyEntryId, historyRoute, legacyWorkspaceRoute, parseWorkspaceRoute, resumesOtherCapture, routeKey, samePadRoute, settingTabs, settingsCategory, WorkspaceNavigation, windowForSection, windowMode, windowTitles, workspaceRoute, type WorkspaceRoute, type MeetingSourceTarget } from "./workspace-state";
 import { LibrarySidebar } from "./views/library";
+import { meetingPostprocess } from "./meeting-postprocess-state";
 import { RecordingActionGate, meetingLevels } from "./recording-control-state";
 import { recordingEntry } from "./voice-flow-state";
 import { PadNavigationBlocked } from "./dictation-session-state";
@@ -943,6 +944,7 @@ async function boot() {
   document.body.dataset.platform = info.platform;
   await initializeDesktopChrome();
   windowVisible = !!fixtureClient() || info.platform !== "macos" || mode === "prompt";
+  if (mode === "workspace") chromeCleanup.push(await api.onMeetingPostprocess(event => { meetingPostprocess.accept(event); }));
   if (mode === "workspace") workspaceShell(); else app.replaceChildren(...(mode === "prompt" ? [] : [titlebarDragRegion(), recoveryBanner]), banner, content);
   if (mode !== "prompt") app.append(navigationStatus);
   if (mode !== "prompt") showRecovery();
