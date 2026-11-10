@@ -196,3 +196,16 @@ export async function checkPillMotion({ reduced = false } = {}) {
   await finishAnimations(pill);
   return { reduced, arrivalDurationMs: reduced ? 120 : 220, arrivalOffsetPx: reduced ? 0 : 8, departureDurationMs: reduced ? 120 : 140, opacityRetained: true, syntheticOnly: true };
 }
+
+export async function checkConfiguredCancelHint() {
+  const { fixture } = await ready();
+  fixture.emit('pill-state', { state: 'hands_free', cancel_shortcut: { keycaps: ['Ctrl', 'X'], text: 'Ctrl+X' } });
+  const hint = document.getElementById('hint');
+  assert(hint.textContent.includes('Ctrl+X') && !hint.textContent.includes('Esc'), 'Cancel hint ignored its actual native label.');
+  fixture.emit('pill-state', { state: 'hands_free' });
+  assert(!hint.textContent.includes('Ctrl+X'), 'An unavailable Cancel hint remained visible.');
+  fixture.emit('pill-state', { state: 'working' });
+  assert(!hint.textContent.includes('Ctrl+X'), 'Processing retained a listening-only Cancel hint.');
+  fixture.emit('pill-state', { state: 'hands_free', cancel_shortcut: { keycaps: ['Ctrl', 'X'], text: 'Ctrl+X' } });
+  return { actualCancelLabel: true, unavailableHintsHidden: true, processingHintCleared: true, syntheticOnly: true };
+}

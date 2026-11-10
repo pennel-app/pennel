@@ -193,5 +193,6 @@
   "dictation.settings.pad_target": "The destination app is captured when you start recording in Write in Pennel. The actual target is shown there; your words always stay in Pennel.",
   "dictation.settings.permission_unavailable": "Unavailable",
   "dictation.settings.permission_needed": "Access needed",
-  "dictation.settings.back": "Back to Dictation"
+  "dictation.settings.back": "Back to Dictation",
+  "dictation.pill.cancel": "cancel"
 }

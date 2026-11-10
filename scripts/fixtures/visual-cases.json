@@ -470,5 +470,6 @@
   {"name":"t10g-shortcuts-enlarged","window":"settings","section":"settings","tab":"shortcuts","size":[760,520],"reduced_motion":true,"steps":[{"eval":"['--font-body','--font-label','--font-content'].forEach(name=>document.documentElement.style.setProperty(name,'18px'));"}]},
   {"name":"t10g-shortcuts-interaction","window":"workspace","section":"settings","tab":"shortcuts","size":[1280,860],"steps":[{"eval":"import('/tests/shortcuts-settings.interactions.mjs').then(m=>m.checkShortcutsSettings())"}]},
   {"name":"t10g-shortcuts-conflict","window":"workspace","section":"settings","tab":"shortcuts","size":[760,520],"steps":[{"eval":"import('/tests/shortcuts-settings.interactions.mjs').then(m=>m.showShortcutConflict())"}]},
-  {"name":"t10g-shortcuts-wayland","window":"workspace","section":"settings","tab":"shortcuts","platform":"linux","wayland":true,"size":[760,520],"steps":[{"eval":"import('/tests/shortcuts-settings.interactions.mjs').then(m=>m.checkUnavailableShortcuts())"}]}
+  {"name":"t10g-shortcuts-wayland","window":"workspace","section":"settings","tab":"shortcuts","platform":"linux","wayland":true,"size":[760,520],"steps":[{"eval":"import('/tests/shortcuts-settings.interactions.mjs').then(m=>m.checkUnavailableShortcuts())"}]},
+  {"name":"t10f-pill-cancel-hint","window":"pill","pill_state":"hands_free","steps":[{"eval":"import('/tests/pill.interactions.mjs').then(m=>m.checkConfiguredCancelHint())"}]}
 ]

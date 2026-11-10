@@ -37,7 +37,10 @@ function keycap(text: string): HTMLElement {
 function content(state: PillState): { text: string; detail?: string; hint?: (string | Node)[] } {
   switch (state.state) {
     case "listening": return { text: t("dictation.pill.listening") };
-    case "hands_free": return { text: t("dictation.pill.hands_free"), hint: doneKey ? [keycap(doneKey), t("dictation.pill.done")] : [] };
+    case "hands_free": return { text: t("dictation.pill.hands_free"), hint: [
+      ...doneKey ? [keycap(doneKey), t("dictation.pill.done")] : [],
+      ...state.cancel_shortcut?.text ? [...doneKey ? ["·"] : [], keycap(state.cancel_shortcut.text), t("dictation.pill.cancel")] : [],
+    ] };
     case "command": return { text: t("dictation.pill.command"), hint: [t("dictation.pill.command_hint")] };
     case "no_sound": return { text: t("dictation.pill.no_sound"), hint: [t("dictation.pill.no_sound_hint")] };
     case "working": return { text: t("dictation.pill.working") };

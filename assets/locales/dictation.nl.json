@@ -193,5 +193,6 @@
   "dictation.settings.pad_target": "De doelapp wordt vastgelegd wanneer je in Schrijf in Pennel begint met opnemen. Daar zie je het echte doel; je woorden blijven altijd in Pennel.",
   "dictation.settings.permission_unavailable": "Niet beschikbaar",
   "dictation.settings.permission_needed": "Toegang nodig",
-  "dictation.settings.back": "Terug naar Dicteren"
+  "dictation.settings.back": "Terug naar Dicteren",
+  "dictation.pill.cancel": "annuleren"
 }
