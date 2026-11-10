@@ -6,7 +6,7 @@ import { OwnedDictationSession } from "../dictation-session";
 import { HomePracticeDraft, PadDraftState, PadNavigationBlocked } from "../dictation-session-state";
 import { icon } from "../icons";
 import type { Context } from "../main";
-import { hotkeyLabel } from "../presentation";
+import { shortcutRow, shortcutText as effectiveShortcutText } from "../shortcut-presentation";
 import { shortcutAccessHint } from "../pad-shortcut-state";
 import { processingSummary } from "../processing-state";
 import { cleanupVerificationCurrent } from "../cleanup-verification-state.ts";
@@ -48,7 +48,7 @@ export async function padView(ctx: Context): Promise<HTMLElement> {
   const shortcutText = h("span");
   const shortcutRecovery = h("button", { class: "text-button", onclick: () => api.showWindow("onboarding", "dictation-permissions") }, l("dictation.access.check"));
   const shortcutHelp = h("div", { class: "pad-setup pad-shortcut-help", hidden: true, role: "status", "aria-live": "polite" }, icon("warning"), shortcutText, shortcutRecovery);
-  const shortcutKey = h("kbd", {}, hotkeyLabel(ctx.info.settings.hotkey, ctx.info.platform));
+  const shortcutKey = h("kbd", {}, effectiveShortcutText(ctx.info, "dictate"));
   const shortcutInstruction = h("span", {}, l("dictation.pad.shortcut_help"));
   const processing = h("dl", { class: "help processing-path compact-processing", "aria-label": l("dictation.processing.title") });
   const currentVerification = h("p", { class: "help", role: "status", hidden: true });
@@ -102,8 +102,9 @@ export async function padView(ctx: Context): Promise<HTMLElement> {
       shortcutHelp.hidden = shortcut === null;
       shortcutText.textContent = shortcut?.message ?? "";
       shortcutRecovery.hidden = !shortcut?.recoverable;
-      shortcutKey.textContent = hotkeyLabel(ctx.info.settings.hotkey, ctx.info.platform);
-      shortcutInstruction.textContent = result.can_use_shortcut ? t("dictation.pad.shortcut_help") : t("dictation.pad.button_help");
+      shortcutKey.textContent = effectiveShortcutText(ctx.info, "dictate");
+      shortcutKey.hidden = !shortcutRow(ctx.info, "dictate")?.binding;
+      shortcutInstruction.textContent = result.can_use_shortcut && !shortcutKey.hidden ? t("dictation.pad.shortcut_help") : t("dictation.pad.button_help");
       if (session.state.snapshot) apply(session.state.snapshot);
     } catch (error) { showError(error); }
   };
@@ -176,7 +177,7 @@ function dictationHome(ctx: Context): HTMLElement {
     const timer = window.setTimeout(() => { timers.delete(timer); if (!disposed) action(); }, delay);
     timers.add(timer); return timer;
   };
-  const key = h("kbd", {}, hotkeyLabel(ctx.info.settings.hotkey, ctx.info.platform));
+  const key = h("kbd", {}, effectiveShortcutText(ctx.info, "dictate"));
   const instructionLead = h("span", {}, l("dictation.home.hold"));
   const instructionTail = h("span", {}, l("dictation.home.and_speak"));
   const instruction = h("h1", { class: "dictation-home-instruction" }, instructionLead, key, instructionTail);
@@ -342,7 +343,8 @@ function dictationHome(ctx: Context): HTMLElement {
   void api.dictationState().then((value) => { if (!disposed) { activeDictation = value; updateVerification(); } }).catch(ctx.report);
   const refresh = async () => {
     const mine = ++revision;
-    key.textContent = hotkeyLabel(ctx.info.settings.hotkey, ctx.info.platform);
+    key.textContent = effectiveShortcutText(ctx.info, "dictate");
+    const hasShortcut = !!shortcutRow(ctx.info, "dictate")?.binding;
     textarea.lang = ctx.info.settings.language ?? "";
     updateChips(); updateVerification();
     try {
@@ -350,7 +352,7 @@ function dictationHome(ctx: Context): HTMLElement {
       if (disposed || mine !== revision) return;
       latestReadiness = ready;
       const shortcut = shortcutAccessHint(ready, ctx.info.capabilities.global_hotkey);
-      const anywhere = ready.can_record && ready.can_use_shortcut && ready.can_paste_externally;
+      const anywhere = hasShortcut && ready.can_record && ready.can_use_shortcut && ready.can_paste_externally;
       const speech = ctx.info.settings.dictation_stt;
       const account = ctx.info.settings.providers.find(provider => provider.id === speech.provider_id);
       const provider = ctx.info.kinds.find(kind => kind.kind === account?.kind);
@@ -361,11 +363,11 @@ function dictationHome(ctx: Context): HTMLElement {
       readiness.replaceChildren(icon(ready.can_record ? "check" : "warning"), readinessText);
       readinessText.textContent = t(ready.can_record ? anywhere ? "dictation.home.ready" : "dictation.home.ready_here" : "dictation.home.needs_setup");
       readiness.classList.toggle("success", ready.can_record); readiness.classList.toggle("error", !ready.can_record);
-      instructionLead.textContent = t(!ready.can_record && !ready.configured ? download ? "dictation.home.download_title" : "dictation.home.setup_title" : "dictation.home.hold");
-      key.hidden = !ready.can_record && !ready.configured; instructionTail.hidden = key.hidden;
+      instructionLead.textContent = t(!ready.can_record && !ready.configured ? download ? "dictation.home.download_title" : "dictation.home.setup_title" : hasShortcut ? "dictation.home.hold" : "shortcuts.button");
+      key.hidden = !hasShortcut || !ready.can_record && !ready.configured; instructionTail.hidden = key.hidden;
       introduction.textContent = !ready.can_record ? download ? t(recommendedSize ? "dictation.home.download_intro" : "dictation.home.download_intro_unknown", { size: recommendedSize ?? "" })
         : ready.reason ? localizeBackendText(ready.reason) : t("dictation.home.speech_setup")
-        : t(!ready.can_paste_externally ? "dictation.home.copy_intro" : ready.can_use_shortcut ? "dictation.home.release_help" : "dictation.home.ready_intro");
+        : t(!ready.can_paste_externally ? "dictation.home.copy_intro" : ready.can_use_shortcut && hasShortcut ? "dictation.home.release_help" : "dictation.home.ready_intro");
       detail.textContent = ready.can_record ? shortcut?.message ?? "" : download && ready.reason ? localizeBackendText(ready.reason) : t("dictation.home.finish_to_try");
       detail.hidden = !detail.textContent;
       repair.hidden = ready.can_record && !shortcut?.recoverable;

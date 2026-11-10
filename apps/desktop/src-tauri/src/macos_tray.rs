@@ -90,6 +90,7 @@ struct Snapshot {
     hint: String,
     dark: bool,
     recording: bool,
+    accelerators: [Option<String>; 3],
 }
 
 fn snapshot(app: &AppHandle, shared: &Shared) -> Snapshot {
@@ -142,6 +143,14 @@ fn snapshot(app: &AppHandle, shared: &Shared) -> Snapshot {
         hint: pennel_core::localize_ui_text(shared.interface_language(), &hint),
         dark,
         recording: phase == RecordingPhase::Recording,
+        accelerators: ["record", "open_pennel", "settings"].map(|id| {
+            if crate::shortcut_capture::capturing() {
+                return None;
+            }
+            pennel_core::effective_shortcut(&shared.settings(), id, crate::shortcuts::platform())
+                .as_ref()
+                .and_then(pennel_core::menu_accelerator)
+        }),
     }
 }
 
@@ -149,9 +158,19 @@ struct Items {
     status: MenuItem<tauri::Wry>,
     meeting: MenuItem<tauri::Wry>,
     hint: MenuItem<tauri::Wry>,
+    open: MenuItem<tauri::Wry>,
+    settings: MenuItem<tauri::Wry>,
 }
 
 fn apply(app: &AppHandle, items: &Items, current: &Snapshot, previous: Option<&Snapshot>) {
+    if previous.is_none_or(|previous| previous.accelerators != current.accelerators) {
+        for (item, accelerator) in [&items.meeting, &items.open, &items.settings]
+            .into_iter()
+            .zip(&current.accelerators)
+        {
+            let _ = item.set_accelerator(accelerator.as_deref());
+        }
+    }
     if previous.is_none_or(|previous| previous.meeting != current.meeting) {
         let _ = items.status.set_text(&current.meeting.status);
         let _ = items.status.set_enabled(current.recording);
@@ -199,9 +218,23 @@ pub fn build(app: &AppHandle, shared: &Shared) -> tauri::Result<()> {
         "meeting",
         &initial.meeting.action,
         initial.meeting.action_enabled,
-        Some("CmdOrCtrl+Shift+R"),
+        initial.accelerators[0].as_deref(),
     )?;
     let hint = MenuItem::with_id(app, "hint", &initial.hint, false, None::<&str>)?;
+    let open = MenuItem::with_id(
+        app,
+        "open",
+        crate::ui::message("Open Pennel"),
+        true,
+        initial.accelerators[1].as_deref(),
+    )?;
+    let settings = MenuItem::with_id(
+        app,
+        "settings",
+        crate::ui::message("Settings…"),
+        true,
+        initial.accelerators[2].as_deref(),
+    )?;
     let menu = Menu::with_items(
         app,
         &[
@@ -217,13 +250,7 @@ pub fn build(app: &AppHandle, shared: &Shared) -> tauri::Result<()> {
                 None::<&str>,
             )?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(
-                app,
-                "open",
-                crate::ui::message("Open Pennel"),
-                true,
-                Some("CmdOrCtrl+O"),
-            )?,
+            &open,
             &MenuItem::with_id(
                 app,
                 "history",
@@ -231,13 +258,7 @@ pub fn build(app: &AppHandle, shared: &Shared) -> tauri::Result<()> {
                 true,
                 None::<&str>,
             )?,
-            &MenuItem::with_id(
-                app,
-                "settings",
-                crate::ui::message("Settings…"),
-                true,
-                Some("CmdOrCtrl+,"),
-            )?,
+            &settings,
             &MenuItem::with_id(
                 app,
                 "log",
@@ -302,6 +323,8 @@ pub fn build(app: &AppHandle, shared: &Shared) -> tauri::Result<()> {
         status,
         meeting,
         hint,
+        open,
+        settings,
     };
     apply(app, &items, &initial, None);
     let (sender, receiver) = mpsc::sync_channel(1);

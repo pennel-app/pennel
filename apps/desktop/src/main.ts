@@ -24,6 +24,7 @@ import { onboardingView } from "./views/onboarding";
 import { padView } from "./views/pad";
 import { openTaskSetupDialog, settingsTaskRows, type TaskSetupDialog } from "./views/setup";
 import type { SetupTask } from "./task-setup-state";
+import { shortcutCaptureActive } from "./shortcut-capture-state";
 import { appInfoContentEqual } from "./presentation";
 import { VisibilityPoll } from "./window-lifecycle";
 import { bindLocalization, l, liveText, localizeBackendText, refreshLocalization, setInterfaceLanguage, t, type InterfaceLanguagePreference, type TranslationKey } from "./i18n.ts";
@@ -218,6 +219,7 @@ function publishDesktopCommands() {
 }
 
 async function runDesktopCommand(command: DesktopCommand) {
+  if (shortcutCaptureActive()) return;
   if (!desktopCommands()[command]) return;
   if (command === "toggle_sidebar") { setSidebarVisible(!sidebar.visible); return; }
   if (command === "new_recording") { toolbarRecording?.click(); return; }
@@ -903,6 +905,7 @@ function focusChanged(focused: boolean) {
 
 function windowShortcuts() {
   window.addEventListener("keydown", (event) => {
+    if (shortcutCaptureActive()) return;
     if (fixtureClient() || info.platform !== "macos") {
       const command = desktopShortcut(event, info.platform, info.shortcuts);
       if (command) { event.preventDefault(); void runDesktopCommand(command).catch(report); return; }

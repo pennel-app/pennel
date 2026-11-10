@@ -1,3 +1,4 @@
+import { shortcutRow, shortcutText } from "../shortcut-presentation";
 import { bindLocalization, getInterfaceLanguage, l, t, formatNumber, formatDateTime } from "../i18n.ts";
 import { api, type AppInfo, type MeetingInfo, type MeetingRuntimeStatus, type Passage } from "../api";
 import { LatestRequest, SerialQueue } from "../async";
@@ -145,6 +146,8 @@ export class LibrarySidebar {
     const searchLabel = t(task === "dictation" ? "dictation.history.search" : "meetings.search_label");
     this.search.placeholder = searchLabel;
     this.search.setAttribute("aria-label", searchLabel);
+    const shortcut = shortcutRow(this.host.info(), "find");
+    this.search.title = shortcut?.binding ? `${searchLabel} (${shortcutText(this.host.info(), "find")})` : searchLabel;
     if (this.status) this.showLive(this.status); else this.live.hidden = task !== "meetings";
   }
 

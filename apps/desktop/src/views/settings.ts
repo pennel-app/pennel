@@ -1,3 +1,4 @@
+import { shortcutRow, shortcutText, shortcutReason, shortcutName } from "../shortcut-presentation";
 import { liveText, bindLocalization, l, t, formatNumber } from "../i18n.ts";
 import { templateDisplayName, recordActionOptions } from "../settings-presentation.ts";
 import { api, type Capability, type KnownVoice, type MeetingTemplate, type SpeakerRecognitionMode, type SpeakerSetup } from "../api";
@@ -210,6 +211,21 @@ export async function meetingSettingsView(ctx: Context): Promise<HTMLElement> {
 export async function recordingSettingsView(ctx: Context): Promise<HTMLElement> {
   const { settings, capabilities, platform } = ctx.info;
   const snapshot = await api.calendar();
+  const shortcutError = h("p", { class: "error", role: "status", hidden: true });
+  const shortcutToggle = toggle(l("settings.recording.shortcut", () => ({ shortcut: shortcutText(ctx.info, "record") })), !!shortcutRow(ctx.info, "record")?.binding,
+    async value => {
+      await ctx.mutate(async () => {
+        try { return value ? await api.resetShortcut("record") : await api.setShortcut("record", null); }
+        catch (error) {
+          const issue = error as { kind?: string; action?: string; reason?: string };
+          shortcutError.textContent = issue.kind === "conflict" ? t("shortcuts.conflict", { action: shortcutName(issue.action ?? "") }) : issue.reason ? shortcutReason(issue.reason) : errorText(error);
+          shortcutError.hidden = false;
+          shortcutToggle.querySelector<HTMLInputElement>("input")!.checked = !!shortcutRow(ctx.info, "record")?.binding;
+          return ctx.info;
+        }
+      });
+    }, capabilities.record_shortcut);
+  ctx.onInfoChange(() => { shortcutToggle.querySelector<HTMLInputElement>("input")!.checked = !!shortcutRow(ctx.info, "record")?.binding; });
   const names = new Map(apps);
   const appIds = new Map((ctx.info.recording_app_ids ?? apps.map(([id]) => id)).map((id) => [id, names.get(id) ?? id]));
   settings.app_rules.forEach((rule) => { if (!appIds.has(rule.bundle_id)) appIds.set(rule.bundle_id, rule.bundle_id); });
@@ -223,8 +239,8 @@ export async function recordingSettingsView(ctx: Context): Promise<HTMLElement> 
   return h("div", { class: "settings-pane" },
     section(l("settings.recording.detect_title"), l("settings.recording.detect_help"),
       toggle(l("settings.recording.auto_detect"), settings.auto_detect, (value) => ctx.save((next) => { next.auto_detect = value; }), capabilities.call_detection),
-      toggle(l("settings.recording.shortcut", () => ({ shortcut: platform === "macos" ? "⌘⇧R" : "Ctrl+Shift+R" })), settings.record_shortcut_enabled,
-        (value) => ctx.save((next) => { next.record_shortcut_enabled = value; }), capabilities.record_shortcut),
+      shortcutToggle, shortcutError,
+      h("button", { class: "text-button", onclick: () => ctx.navigate("shortcuts") }, l("shortcuts.all")),
       toggle(l("settings.recording.echo"), settings.echo_cancellation,
         (value) => ctx.save((next) => { next.echo_cancellation = value; }), capabilities.echo_cancellation),
       toggle(l("settings.recording.consent"), settings.consent_enabled,

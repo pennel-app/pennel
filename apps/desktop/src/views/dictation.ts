@@ -1,18 +1,14 @@
 import { bindLocalization, l, localizeBackendText, t, type UiText } from "../i18n.ts";
-import { api, type HotkeyTrigger, type ModelChoice, type PermissionInfo, type PermissionKind, type Style } from "../api";
+import { api, type ModelChoice, type PermissionInfo, type PermissionKind, type Style } from "../api";
 import { controlButton, textField, errorText, h, section, select, showPopupMenu, toggle } from "../dom";
 import type { Context } from "../main";
 import { icon } from "../icons";
 import { appBadge } from "../app-icon";
 import { settingsTaskRows } from "./setup";
-import { applicationLabel, hotkeyLabel } from "../presentation";
+import { applicationLabel } from "../presentation";
+import { shortcutRecorder } from "../shortcut-recorder";
 import { cleanupVerificationControl, cleanupVerificationDestination, cleanupVerificationReason } from "../cleanup-verification-state.ts";
 
-function hotkeys(platform: string): [HotkeyTrigger, UiText][] {
-  return platform === "macos"
-    ? [["fn", "fn"], ["right_option", l("dictation.shortcut.option.right_option")], ["right_command", l("dictation.shortcut.option.right_command")], ["right_control", l("dictation.shortcut.option.right_control")]]
-    : [["right_control", l("dictation.shortcut.option.right_control")], ["right_option", l("dictation.shortcut.option.right_alt")], ["control_super", platform === "windows" ? "Ctrl + Windows" : "Ctrl + Super"]];
-}
 
 function styleOptions(): [Style, UiText][] { return [
   ["neutral", l("dictation.style.neutral")],
@@ -32,11 +28,11 @@ export function dictationView(ctx: Context): HTMLElement {
   const save = (change: Parameters<Context["save"]>[0]) => { void ctx.save(change).catch(ctx.report); };
   const mode = select([["clean", l("dictation.settings.cleaned")], ["fast", l("dictation.settings.spoken")]], ctx.info.settings.mode, value => save(settings => { settings.mode = value; }), "segmented");
   mode.setAttribute("aria-label", t("dictation.settings.result"));
-  const shortcut = select(hotkeys(ctx.info.platform), ctx.info.settings.hotkey, value => save(settings => { settings.hotkey = value; }), "segmented");
-  shortcut.setAttribute("aria-label", t("dictation.shortcut.title"));
-  const key = h("kbd", {}, hotkeyLabel(ctx.info.settings.hotkey, ctx.info.platform));
-  const shortcutReason = h("p", { class: "help", role: "status", hidden: true });
-  const shortcutError = h("p", { class: "error", role: "status", hidden: true });
+  const presetChoices: [string, UiText][] = ctx.info.platform === "macos" ? [
+    ["fn", "fn"], ["right_alt", l("dictation.shortcut.option.right_option")], ["right_meta", l("dictation.shortcut.option.right_command")], ["right_ctrl", l("dictation.shortcut.option.right_control")],
+  ] : [["right_ctrl", l("dictation.shortcut.option.right_control")], ["right_alt", l("dictation.shortcut.option.right_alt")], ["ctrl,meta", ctx.info.platform === "windows" ? "Ctrl + Windows" : "Ctrl + Super"]];
+  const presets = presetChoices.map(([mods, label]) => ({ label, binding: { mods: mods.split(","), code: null, key: null } }));
+  const shortcut = shortcutRecorder(ctx, "dictate", { presets, recordLabel: true });
   const language = select([["", l("common.automatic")], ["nl", l("dictation.language.dutch")], ["en", l("dictation.language.english")], ["fr", l("dictation.language.french")], ["de", l("dictation.language.german")]], ctx.info.settings.language ?? "", value => save(settings => { settings.language = value || null; }), "menu");
   language.setAttribute("aria-label", t("dictation.language.title"));
   const live = toggle(l("settings.live_text.enabled"), ctx.info.settings.live_text_enabled !== false, value => save(settings => { settings.live_text_enabled = value; }));
@@ -121,7 +117,7 @@ export function dictationView(ctx: Context): HTMLElement {
     group("processing", l("dictation.settings.processing"), taskRows),
     group("during", l("dictation.settings.during"),
       preference(l("dictation.settings.result"), l("dictation.settings.result_help"), mode, "result"),
-      preference(l("dictation.shortcut.title"), l("dictation.shortcut.help"), h("div", { class: "dictation-shortcut-controls" }, key, shortcut, shortcutReason, shortcutError), "shortcut"),
+      preference(l("dictation.shortcut.title"), l("dictation.shortcut.help"), h("div", { class: "dictation-shortcut-controls" }, shortcut, h("button", { class: "text-button", onclick: () => ctx.navigate("shortcuts") }, l("shortcuts.all"))), "shortcut"),
       preference(l("dictation.language.title"), null, language, "language"),
       preference(l("settings.live_text.title"), l("settings.live_text.help"), live, "live-text"),
       preference(l("dictation.verification.title"), l("dictation.verification.help"), h("div", { "data-cleanup-verification": true }, verify, verificationState, verificationDestination, h("button", { class: "text-button", onclick: () => ctx.navigate("models") }, l("navigation.models"))), "verification"),
@@ -132,11 +128,9 @@ export function dictationView(ctx: Context): HTMLElement {
   const refresh = () => {
     const settings = ctx.info.settings, verification = ctx.info.cleanup_verification;
     mode.setAttribute("aria-label", t("dictation.settings.result"));
-    shortcut.setAttribute("aria-label", t("dictation.shortcut.title"));
     language.setAttribute("aria-label", t("dictation.language.title"));
     retention.setAttribute("aria-label", t("dictation.history.retention"));
-    mode.value = settings.mode; shortcut.value = settings.hotkey; language.value = settings.language ?? ""; retention.value = String(settings.history_retention_days);
-    key.textContent = hotkeyLabel(settings.hotkey, ctx.info.platform);
+    mode.value = settings.mode; language.value = settings.language ?? ""; retention.value = String(settings.history_retention_days);
     live.querySelector<HTMLInputElement>("input")!.checked = settings.live_text_enabled !== false;
     const control = cleanupVerificationControl(settings, verification);
     const input = verify.querySelector<HTMLInputElement>("input")!; input.checked = control.enabled; input.disabled = control.disabled;
@@ -145,8 +139,6 @@ export function dictationView(ctx: Context): HTMLElement {
     const external = ctx.info.capabilities.pad_external_paste, pasteInput = paste.querySelector<HTMLInputElement>("input")!;
     pasteInput.checked = settings.dictation_pad_auto_paste; pasteInput.disabled = ["unsupported", "unavailable"].includes(external.status);
     pasteReason.textContent = external.reason ? localizeBackendText(external.reason) : ""; pasteReason.hidden = !pasteReason.textContent;
-    shortcutReason.textContent = ctx.info.capabilities.global_hotkey.reason ? localizeBackendText(ctx.info.capabilities.global_hotkey.reason) : ""; shortcutReason.hidden = !shortcutReason.textContent;
-    shortcutError.textContent = ctx.info.hotkey_error ? localizeBackendText(ctx.info.hotkey_error) : ""; shortcutError.hidden = !shortcutError.textContent;
     modelSwitch.querySelector<HTMLInputElement>("input")!.checked = settings.pill_model_switch_enabled !== false;
     refreshModels();
     updatePermissions(); refreshPermissions();

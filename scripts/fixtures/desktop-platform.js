@@ -264,7 +264,39 @@
         && (account.kind !== "local" || models.some(model => model.id === choice.model && model.state.kind === "downloaded"));
     }).map(choice => ({ choice: clone(choice), label: choice.model === "dictation" ? "Apple dictation" : models.find(model => model.id === choice.model)?.name || `${choice.model} · ${settings.providers.find(provider => provider.id === choice.provider_id).name}` }));
   };
-  const info = () => ({ shortcuts: options.shortcuts || [{ id: "next_model", scope: "listening", binding: { mods: ["left_alt"], key: null }, default_binding: { mods: ["left_alt"], key: null }, label: { keycaps: ["⌥"], text: "⌥" }, editable: true, capability: { available: true, reason: null }, changed: false }], interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+  const shortcutPlatform = options.platform || "macos";
+  const primary = shortcutPlatform === "macos" ? "meta" : "ctrl";
+  const shortcutBinding = (mods, code = null, key = null) => ({ mods, code, key });
+  const shortcutDefaults = {
+    dictate: shortcutBinding([shortcutPlatform === "macos" ? "fn" : "right_ctrl"]),
+    cancel: shortcutBinding([], "Escape", "Escape"), next_model: shortcutPlatform === "macos" ? shortcutBinding(["left_alt"]) : null,
+    record: shortcutBinding(["shift", primary], "KeyR", "r"), open_pennel: null,
+    new_recording: shortcutBinding([primary], "KeyN", "n"), find: shortcutBinding([primary], "KeyF", "f"),
+    dictation: shortcutBinding([primary], "Digit1", "1"), meetings: shortcutBinding([primary], "Digit2", "2"), history: shortcutBinding([primary], "Digit3", "3"),
+    toggle_sidebar: shortcutBinding(shortcutPlatform === "macos" ? ["ctrl", "meta"] : ["ctrl", "shift"], "KeyS", "s"), settings: shortcutBinding([primary], "Comma", ","),
+  };
+  if (options.shortcut_bindings) settings.shortcuts = clone(options.shortcut_bindings);
+  const shortcutLabel = binding => {
+    if (!binding) return { keycaps: [], text: interfaceLanguage() === "nl" ? "Geen" : "None" };
+    const names = shortcutPlatform === "macos" ? { ctrl: "⌃", alt: "⌥", shift: "⇧", meta: "⌘", fn: "fn" } : { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: shortcutPlatform === "windows" ? "Win" : "Super" };
+    const caps = binding.mods.map(mod => {
+      const side = mod.startsWith("right_") ? interfaceLanguage() === "nl" ? "rechts " : "right " : mod.startsWith("left_") ? interfaceLanguage() === "nl" ? "links " : "left " : "";
+      return side + (names[mod.replace(/^(left|right)_/, "")] || mod);
+    });
+    if (binding.key) caps.push(binding.key === "Escape" ? "Esc" : binding.key === "Space" ? interfaceLanguage() === "nl" ? "Spatie" : "Space" : binding.key.toUpperCase());
+    return { keycaps: caps, text: caps.join(shortcutPlatform === "macos" ? "" : "+") };
+  };
+  const shortcutRows = () => Object.entries(shortcutDefaults).map(([id, default_binding]) => {
+    const preset = { fn: shortcutDefaults.dictate, right_control: shortcutBinding(["right_ctrl"]), right_option: shortcutBinding(["right_alt"]), right_command: shortcutBinding(["right_meta"]), control_super: shortcutBinding(["ctrl", "meta"]) };
+    const binding = Object.hasOwn(settings.shortcuts || {}, id) ? settings.shortcuts[id] : id === "dictate" ? preset[settings.hotkey] || default_binding : id === "record" && !settings.record_shortcut_enabled ? null : default_binding;
+    const scope = id === "dictate" ? "global_hold" : ["cancel", "next_model"].includes(id) ? "listening" : ["record", "open_pennel"].includes(id) ? "global" : "application";
+    const reason = scope !== "application" && options.wayland ? id === "dictate" ? "wayland_toggle_dictation" : id === "record" ? "wayland_toggle_meeting" : id === "open_pennel" ? "wayland_open_pennel" : "wayland_global_shortcuts" : scope !== "application" && shortcutDenied() ? "accessibility_required" : id === "next_model" ? settings.pill_model_switch_enabled === false ? "next_model_switch_disabled" : configuredSpeechModels().length < 2 ? "next_model_second_model_required" : !binding ? "next_model_shortcut_cleared" : null : null;
+    const row = {id,scope,binding:clone(binding),default_binding:clone(default_binding),label:shortcutLabel(binding),editable:true,capability:{available:!reason,reason},changed:JSON.stringify(binding)!==JSON.stringify(default_binding)};
+    return clone(options.shortcuts?.find(value => value.id === id) || row);
+  });
+  let shortcutCapture = null, shortcutGeneration = 0;
+  const info = () => ({ shortcuts: shortcutRows(), interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+
     unsaved_history_count: history.filter(entry => entry.status === "unsaved").length,
     kinds: clone(kinds), platform: options.platform || "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
     log_path: options.preview === false ? "/QA/Pennel/pennel.log" : "/QA/Pennel Preview/pennel.log", data_dir: options.preview === false ? "/QA/Pennel" : "/QA/Pennel Preview", capabilities: clone(capabilities), recording_app_ids: options.recording_app_ids || [], diarizer_model_id: diarizer.id, preview: options.preview !== false, migration_warning: null });
@@ -1020,6 +1052,31 @@
       };
       case "set_desktop_command_state": globalThis.__PENNEL_DESKTOP_COMMAND_STATE__ = clone(args.state); return null;
       case "app_info": if (options.app_info_fail) throw new Error("Synthetic startup failure"); if (options.app_info_delay_ms) await new Promise(resolve => setTimeout(resolve, options.app_info_delay_ms)); return info();
+      case "shortcut_capture_start": {
+        if (shortcutCapture) throw Error("A shortcut is already being recorded");
+        const row = shortcutRows().find(row => row.id === args.action);
+        const native = options.shortcut_native !== false && !options.wayland && !shortcutDenied();
+        if (!native && row.scope !== "application") throw Error("Native shortcut capture is unavailable on this system");
+        shortcutCapture = { action: args.action, generation: ++shortcutGeneration, native, reason: native ? null : "native_capture_unavailable" };
+        return clone(shortcutCapture);
+      }
+      case "shortcut_capture_stop": shortcutCapture = null; return null;
+      case "reset_all_shortcuts": settings.shortcuts = {}; settings.hotkey = shortcutPlatform === "macos" ? "fn" : "right_control"; settings.record_shortcut_enabled = true; emit("settings-changed", null); return info();
+      case "reset_shortcut":
+      case "set_shortcut": {
+        const row = shortcutRows().find(row => row.id === args.action);
+        const binding = command === "reset_shortcut" ? row.default_binding : args.binding;
+        if (binding?.mods.some(mod => mod.includes("shift")) && args.action === "dictate") throw {kind:"not_allowed",reason:"shift_is_command",action:null};
+        if (binding) {
+          const signature = value => JSON.stringify([value.mods.map(mod=>value.key ? mod.replace(/^(left|right)_/, "") : mod).sort(), value.key?.toLowerCase() || null]);
+          const other = shortcutRows().find(other => other.id !== args.action && other.binding && signature(binding) === signature(other.binding));
+          if (other && !args.replace) throw {kind:"conflict",reason:"already_assigned",action:other.id};
+          if (other) { settings.shortcuts ||= {}; settings.shortcuts[other.id] = null; }
+        }
+        settings.shortcuts ||= {}; settings.shortcuts[args.action] = clone(binding);
+        if (args.action === "record") settings.record_shortcut_enabled = JSON.stringify(binding) === JSON.stringify(row.default_binding);
+        emit("settings-changed", null); return info();
+      }
       case "save_settings": {
         if (options.settings_save_error) throw new Error(options.settings_save_error);
         settings = clone(args.settings);
@@ -1072,7 +1129,7 @@
           : permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
         const configured = Boolean(account && (!options.owner_review || definition?.availability.status === "available") && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
         const accessibility = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility && !options.copy_only, can_paste_externally: accessibility && !options.copy_only, reason: options.home_setup_reason || (denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning."), resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
+        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility && !options.copy_only && !!shortcutRows().find(row => row.id === "dictate").binding, can_paste_externally: accessibility && !options.copy_only, reason: options.home_setup_reason || (denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning."), resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
       }
       case "pad_text": return pad;
       case "save_pad_text": {
@@ -1621,7 +1678,7 @@
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
-  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
+  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, shortcutCapture: () => clone(shortcutCapture), completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
     recovery: { mode: value => { if (!["success", "zero", "partial_error"].includes(value)) throw Error("Unknown recovery fixture mode"); failedRecoveryMode = value; },
       plan: value => { failedRecoveryOverride = clone(value); }, error: value => { failedRecoveryError = value; },
       delay: value => { failedRecoveryDelay = value; }, pending: () => failedRecoveryPending },
