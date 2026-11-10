@@ -809,5 +809,6 @@
   "backend.next_model_shortcut_cleared": "Neem een sneltoets voor het volgende spraakmodel op.",
   "backend.next_model_hook_unavailable": "De sneltoets voor het volgende model is niet beschikbaar. Controleer de toetsenbordtoegang.",
   "backend.speech_model_switch_current_unavailable": "Dit spraakmodel is niet beschikbaar. Je huidige dictaat is ongewijzigd.",
-  "backend.speech_model_switch_setup_required": "Dit spraakmodel is niet beschikbaar. Stel eerst spraakherkenning in."
+  "backend.speech_model_switch_setup_required": "Dit spraakmodel is niet beschikbaar. Stel eerst spraakherkenning in.",
+  "backend.x11_keyed_shortcuts_unavailable": "Globale sneltoetsen met een gewone toets kunnen op X11 nog niet veilig worden vrijgegeven. Gebruik de knoppen in Pennel of de sneltoetsinstellingen van je desktop."
 }

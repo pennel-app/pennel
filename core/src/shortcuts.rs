@@ -638,6 +638,13 @@ pub fn shortcut_capability(
         && b.is_some_and(|b| b.code.is_some())
     {
         Some("x11_dictate_modifier_only")
+    } else if platform == ShortcutPlatform::LinuxX11
+        && (scope == Some(ShortcutScope::Global)
+            || (scope == Some(ShortcutScope::Listening)
+                && b.is_some_and(|binding| binding.code.is_some())))
+    {
+        // The pinned X11 plugin cannot acknowledge ungrab or recover its original keycode after map changes.
+        Some("x11_keyed_shortcuts_unavailable")
     } else {
         None
     };
@@ -727,7 +734,15 @@ pub fn shortcut_rows(
                         keycaps: Vec::new(),
                         text: String::new(),
                     }),
-                capability: shortcut_capability(id, binding.as_ref(), platform),
+                capability: shortcut_capability(
+                    id,
+                    settings
+                        .shortcuts
+                        .get(*id)
+                        .and_then(Option::as_ref)
+                        .or(binding.as_ref()),
+                    platform,
+                ),
                 changed: binding != default_binding,
                 binding,
                 default_binding,
@@ -971,6 +986,51 @@ mod tests {
             &modifier(&["left_alt"]),
             &modifier(&["right_alt"])
         ));
+    }
+
+    #[test]
+    fn x11_keyed_globals_fail_closed_without_affecting_safe_scopes_or_other_platforms() {
+        let settings = default_settings();
+        for id in ["record", "open_pennel", "cancel", "next_model"] {
+            let binding = if id == "open_pennel" {
+                binding(&["ctrl"], "KeyO", "o")
+            } else if id == "next_model" {
+                binding(&[], "F5", "F5")
+            } else {
+                default_shortcut(id, ShortcutPlatform::LinuxX11).unwrap()
+            };
+            let capability = shortcut_capability(id, Some(&binding), ShortcutPlatform::LinuxX11);
+            assert!(!capability.available);
+            assert_eq!(
+                capability.reason.as_deref(),
+                Some("x11_keyed_shortcuts_unavailable")
+            );
+            assert_eq!(
+                validate_shortcut(&settings, id, &binding, ShortcutPlatform::LinuxX11)
+                    .unwrap_err()
+                    .kind,
+                "unsupported"
+            );
+            assert!(shortcut_capability(id, Some(&binding), ShortcutPlatform::Windows).available);
+        }
+        let bare = ShortcutBinding {
+            mods: vec!["left_alt".into()],
+            code: None,
+            key: None,
+        };
+        assert!(shortcut_capability("cancel", Some(&bare), ShortcutPlatform::LinuxX11).available);
+        assert!(
+            shortcut_capability("next_model", Some(&bare), ShortcutPlatform::LinuxX11).available
+        );
+        assert!(shortcut_capability("dictate", None, ShortcutPlatform::LinuxX11).available);
+        assert!(shortcut_capability("find", None, ShortcutPlatform::LinuxX11).available);
+        assert!(!shortcut_capability("record", None, ShortcutPlatform::LinuxX11).available);
+        let reason = crate::localize_ui_text(
+            crate::InterfaceLanguage::Dutch,
+            "x11_keyed_shortcuts_unavailable",
+        );
+        assert!(reason.contains("X11"));
+        assert_ne!(reason, "x11_keyed_shortcuts_unavailable");
     }
 
     #[test]
