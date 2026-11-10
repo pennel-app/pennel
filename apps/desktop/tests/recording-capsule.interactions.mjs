@@ -133,3 +133,99 @@ export async function checkRecordingStartBarrier() {
   assert((await api.padText()).includes("Synthetic draft preserved"), "Starting capture lost the durable pad draft.");
   return { ownedSessionBarrier: true, explicitCancelUnblocksStart: true, draftRetained: true, syntheticOnly: true };
 }
+
+/** Hold an actual shell status read while a later sidebar navigation wins ownership. */
+export async function checkRecordingStatusSupersession() {
+  const fixture = window.__PENNEL_FIXTURE__, client = window.__PENNEL_PLATFORM__;
+  const { t } = await import("/src/i18n.ts");
+  const { api } = await import("/src/api.ts");
+  await until(() => window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready && !document.querySelector(".toolbar-recording").disabled, "The toolbar did not become ready.");
+  const invoke = client.invoke.bind(client), read = api.meetingRuntimeStatus;
+  let reads = 0, release, starts = 0, holding = true;
+  api.meetingRuntimeStatus = async () => {
+    const shellRead = new Error().stack.split("\n")[2]?.includes("/src/main.ts:");
+    const snapshot = await read();
+    if (holding && shellRead && ++reads === fixture.options.recording_hold_read) {
+      holding = false;
+      await new Promise(resolve => { release = resolve; });
+    }
+    return snapshot;
+  };
+  client.invoke = async (command, args) => { if (command === "start_meeting") starts++; return invoke(command, args); };
+  try {
+    document.querySelector(".toolbar-recording").click();
+    await until(() => release, "The requested recording status read was not held.");
+    document.querySelector(".library-settings").click();
+    await until(() => document.querySelector(".settings-categories") && !document.querySelector("#content").inert, "The later sidebar navigation did not finish.");
+    release();
+    await until(() => window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready && !document.querySelector(".toolbar-recording").disabled, "The superseded recording action did not release admission.");
+    assert(starts === (fixture.options.recording_hold_read === 3 ? 1 : 0), "A superseded status response started capture after navigation moved on.");
+    assert(document.querySelector(".settings-categories") && window.__PENNEL_DESKTOP_COMMAND_STATE__.find === false, "A superseded status response changed the current route back to recording.");
+    document.querySelector('[data-command="toggle_sidebar"]').click();
+    assert(document.querySelector(".toolbar-section").textContent === t("window.settings"), "The toolbar context lost the later Settings route.");
+    return { heldRead: fixture.options.recording_hold_read, staleStartRejected: true, newerRouteRetained: true, syntheticOnly: true };
+  } finally { release?.(); api.meetingRuntimeStatus = read; client.invoke = invoke; }
+}
+
+export async function checkRecordingRetryAfterStatusFailure() {
+  const client = window.__PENNEL_PLATFORM__;
+  const { api } = await import("/src/api.ts");
+  await until(() => window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The toolbar did not become ready.");
+  const invoke = client.invoke.bind(client), read = api.meetingRuntimeStatus;
+  let rejectStart = true, rejectRead = false, starts = 0;
+  client.invoke = async (command, args) => {
+    if (command === "start_meeting") { starts++; if (rejectStart) throw Error("Synthetic startup blocked."); }
+    return invoke(command, args);
+  };
+  api.meetingRuntimeStatus = async () => { if (rejectRead) { rejectRead = false; throw Error("Synthetic status temporarily unavailable."); } return read(); };
+  try {
+    document.querySelector(".toolbar-recording").click();
+    await until(() => document.querySelector(".recording-view input") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "Startup did not open its recovery form.");
+    const form = document.querySelector(".recording-view"), retry = form.querySelector(".btn.primary");
+    form.querySelector("input").value = "Retained retry title";
+    rejectStart = false; rejectRead = true;
+    retry.click();
+    await until(() => document.querySelector(".notice-banner:not([hidden])")?.textContent.includes("Synthetic status temporarily unavailable."), "The retry lost its actual transient status-read reason.");
+    assert(retry.isConnected && !retry.disabled, "The shared startup failure left the recovery Retry button disabled.");
+    assert(starts === 1 && form.querySelector("input").value === "Retained retry title", "The failed status read started capture or lost the recovery title.");
+    retry.click();
+    await until(() => document.querySelector(".live-notes") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "Retry did not recover after the status read became available.");
+    assert(starts === 2 && (await api.meetingRuntimeStatus()).title === "Retained retry title", "The successful retry duplicated capture or lost its title.");
+    assert(!document.querySelector(".notice-banner:not([hidden])"), "Successful retry kept the resolved startup failure visible.");
+    return { retryReleased: true, errorRetained: true, nextRetryStartsOnce: true, syntheticOnly: true };
+  } finally { api.meetingRuntimeStatus = read; client.invoke = invoke; }
+}
+
+export async function checkRecordingRetiredStatusIdentity() {
+  const fixture = window.__PENNEL_FIXTURE__, client = window.__PENNEL_PLATFORM__;
+  const { api } = await import("/src/api.ts");
+  const read = api.meetingRuntimeStatus, invoke = client.invoke.bind(client);
+  await until(() => window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The toolbar did not become ready.");
+  const begin = async () => {
+    document.querySelector(".toolbar-recording").click();
+    await until(() => document.querySelector(".toolbar-capture.is-recording") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready && !document.querySelector(".toolbar-recording").disabled, "The next recording did not start.");
+    return read();
+  };
+  const stop = async session => {
+    await api.stopMeeting(session.session_id);
+    await until(() => document.querySelector('.toolbar-recording[data-phase="new"]') && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The previous recording did not finish.");
+  };
+  const first = await begin(); await stop(first);
+  const second = await begin(); await stop(second);
+  const current = await begin();
+  let stoppedSession;
+  try {
+    api.meetingRuntimeStatus = async () => first;
+    fixture.emit("library-changed", null);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    api.meetingRuntimeStatus = read;
+    fixture.emit("meeting-level", { session_id: current.session_id, level: .8 }); await settle();
+    assert(document.querySelector(".recording-levels i").style.height !== "3px", "A retired status stole the current recording's bar identity.");
+    client.invoke = async (command, args) => { if (command === "stop_meeting") stoppedSession = args.sessionId; return invoke(command, args); };
+    document.querySelector(".toolbar-capture-stop").click();
+    await until(() => stoppedSession, "The current recording Stop did not reach the backend.");
+    assert(stoppedSession === current.session_id, "A retired status changed the recording targeted by Stop.");
+    await until(() => !document.querySelector(".toolbar-capture.is-recording"), "The current recording did not stop.");
+    return { retiredAAfterBRejected: true, currentMeterRetained: true, stopIdentityRetained: true, syntheticOnly: true };
+  } finally { api.meetingRuntimeStatus = read; client.invoke = invoke; }
+}

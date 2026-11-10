@@ -9,6 +9,7 @@ import { badgeFor, resolveOpenMeeting, syncActive, type SyncItemState } from "..
 import { historyRoute, workspaceRoute, workspaceTask, type WorkspaceRoute, type WorkspaceTask } from "../workspace-state";
 import { TaskSearchQueries } from "../workspace-search-state";
 import { matchingDictations } from "../dictation-home-state";
+import { meetingLevels } from "../recording-control-state";
 import { recordingEntry } from "../voice-flow-state";
 import { ListTypeahead, listKeyIndex, reconcileChildren } from "../library-list.ts";
 
@@ -267,6 +268,7 @@ export class LibrarySidebar {
   }
 
   private showLive(status: MeetingRuntimeStatus) {
+    if (!meetingLevels.observe(status)) return;
     this.status = status;
     const entry = recordingEntry(status);
     const label = status.recording ? t("meetings.recording_clock", { time: formatClock(status.elapsed_secs) }) : t(entry.kind === "new" ? "meetings.new_recording" : entry.kind === "recovery" ? "meetings.recording_needs_attention"

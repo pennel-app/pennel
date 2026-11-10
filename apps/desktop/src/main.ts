@@ -688,9 +688,10 @@ function updateSettingsRecording() {
 async function openRecording(title = "") {
   await recordingStart.run(async () => {
     publishDesktopCommands();
-    let mine: number | null = null;
+    let mine = navigationGeneration;
     try {
       const status = await api.meetingRuntimeStatus();
+      if (mine !== navigationGeneration || barrier.locked) return;
       currentMeetingStatus = status; updateSettingsRecording();
       if (recordingEntry(status).kind !== "new") { await go(workspaceRoute("recording", null, recordingEntry(status).meetingId)); return; }
       mine = ++navigationGeneration; ++generation;
@@ -699,20 +700,22 @@ async function openRecording(title = "") {
       await flushForNavigation(); await persistAll(mounted?.leave ?? []);
       if (mine !== navigationGeneration || barrier.locked) return;
       const latest = await api.meetingRuntimeStatus();
+      if (mine !== navigationGeneration || barrier.locked) return;
       recordingStartError = null;
       if (recordingEntry(latest).kind === "new") {
-        try { await api.startMeeting(title); }
+        try { await api.startMeeting(title); banner.hidden = true; }
         catch (error) { recordingStartError = errorText(error); }
       }
-      if (mine !== navigationGeneration) return;
+      if (mine !== navigationGeneration || barrier.locked) return;
       const current = await api.meetingRuntimeStatus();
+      if (mine !== navigationGeneration || barrier.locked) return;
       currentMeetingStatus = current; updateSettingsRecording();
       navigation.set(workspaceRoute("recording", null, recordingEntry(current).meetingId));
       await render(() => mine === navigationGeneration, mine);
       await library?.refreshLive();
-    } catch (error) { if (!(error instanceof PadNavigationBlocked)) report(error); }
+    } catch (error) { if (mine === navigationGeneration && !(error instanceof PadNavigationBlocked)) report(error); }
     finally {
-      if (mine === null || mine === navigationGeneration) { content.inert = false; showPendingNavigation(null); }
+      if (mine === navigationGeneration) { content.inert = false; showPendingNavigation(null); }
     }
   });
   publishDesktopCommands();

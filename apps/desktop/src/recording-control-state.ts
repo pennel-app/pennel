@@ -12,20 +12,25 @@ export class RecordingActionGate {
 export class RecordingLevels {
   level = 0;
   private session: string | null = null;
-  private stopped: string | null = null;
+  private readonly retired = new Set<string>();
   private readonly listeners = new Set<(level: number) => void>();
   subscribe(listener: (level: number) => void): () => void {
     this.listeners.add(listener); return () => { this.listeners.delete(listener); };
   }
   private set(level: number): void { this.level = level; this.listeners.forEach(listener => listener(level)); }
-  observe(status: { session_id: string | null; recording: boolean; phase: string }): void {
-    if (this.stopped && this.session && status.session_id === this.stopped) return;
-    const session = status.recording && status.phase === "recording" && status.session_id !== this.stopped ? status.session_id : null;
-    if (session !== this.session) { this.session = session; this.set(0); }
+  observe(status: { session_id: string | null; recording: boolean; phase: string }): boolean {
+    if (status.session_id && this.retired.has(status.session_id) && (this.session !== null || status.recording)) return false;
+    const session = status.recording && status.phase === "recording" ? status.session_id : null;
+    if (session !== this.session) {
+      if (this.session) this.retired.add(this.session);
+      this.session = session; this.set(0);
+    }
+    return true;
   }
   stop(session: string): void {
+    this.retired.add(session);
     if (session !== this.session) return;
-    this.stopped = session; this.session = null; this.set(0);
+    this.session = null; this.set(0);
   }
   accept(event: { session_id: string; level: number }): boolean {
     if (!this.session || event.session_id !== this.session || !Number.isFinite(event.level)) return false;

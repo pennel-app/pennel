@@ -67,3 +67,17 @@ test("idle runtime without a session clears the last capture level", () => {
   assert.equal(levels.level, 0);
   assert.equal(levels.accept({ session_id: "current", level: 1 }), false);
 });
+
+test("retired capture identities remain rejected across multiple later recordings", () => {
+  const levels = new RecordingLevels();
+  levels.observe(active("A")); levels.stop("A");
+  levels.observe(active("B")); levels.stop("B");
+  levels.observe(active("C")); levels.accept({ session_id: "C", level: .6 });
+  levels.observe(active("A"));
+  assert.equal(levels.level, .6);
+  assert.equal(levels.accept({ session_id: "A", level: 1 }), false);
+  assert.equal(levels.accept({ session_id: "C", level: .8 }), true);
+  levels.observe(active("B"));
+  assert.equal(levels.accept({ session_id: "B", level: 1 }), false);
+  assert.equal(levels.accept({ session_id: "C", level: .7 }), true);
+});

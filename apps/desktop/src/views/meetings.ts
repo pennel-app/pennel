@@ -164,7 +164,8 @@ export async function meetingView(ctx: Context): Promise<HTMLElement> {
     start.addEventListener("click", async () => {
       start.disabled = true;
       try { if (ctx.startRecording) await ctx.startRecording(title.value); else { await api.startMeeting(title.value); ctx.rerender(); } }
-      catch (error) { status.textContent = errorText(error); start.disabled = false; await ctx.refresh().catch(ctx.report); }
+      catch (error) { status.textContent = errorText(error); await ctx.refresh().catch(ctx.report); }
+      finally { if (start.isConnected) start.disabled = false; }
     });
     return h("div", { class: "recording-view" }, h("h1", {}, l("meetings.new_meeting")),
       h("p", { class: "muted" }, l("meetings.recording_tracks_help")),
