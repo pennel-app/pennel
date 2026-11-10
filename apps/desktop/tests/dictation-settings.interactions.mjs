@@ -16,6 +16,17 @@ export async function checkDictationSettings() {
   mode.querySelector('[data-value="clean"]').click();
   await until(()=>window.__PENNEL_FIXTURE__.info().settings.mode==='clean','Result did not save.');await settle();
   assert(mode.isConnected && mode.value==='clean','Saving Result replaced its control.');
+  const {t}=await import('/src/i18n.ts');
+  const controls=[['result','dictation.settings.result'],['shortcut','dictation.shortcut.title'],['language','dictation.language.title'],['history','dictation.history.retention']].map(([name,key])=>({control:root.querySelector(`[data-preference="${name}"] .choice`),key}));
+  const values=controls.map(({control})=>control.value), originalLanguage=document.documentElement.lang;
+  for(const language of [originalLanguage==='en'?'nl':'en',originalLanguage]) {
+    const info=await api.info();await api.saveSettings({...info.settings,ui_language:language});
+    await until(()=>document.documentElement.lang===language,'Interface language did not switch.');await settle();
+    controls.forEach(({control,key},index)=>{
+      assert(control.isConnected && control.value===values[index],'Language switching replaced a preference or changed its value.');
+      assert(control.getAttribute('aria-label')?.startsWith(t(key)),'Retained Dictation preference has a stale accessible label.');
+    });
+  }
   root.querySelector('[data-open-dictation="dictionary"]').click();
   await until(()=>document.querySelector('.dictionary-settings'),'Dictionary row did not open the complete page.');
   await checkDictationSubpageDraft('dictionary');
