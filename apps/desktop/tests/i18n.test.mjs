@@ -87,6 +87,24 @@ test("recovery diagnostics follow the interface language while provider response
   } finally { setInterfaceLanguage("en"); }
 });
 
+test("microphone-owner refusals follow the interface without rewriting meeting content", () => {
+  const refusals = [
+    ["This meeting has no attributable personal microphone speech.", "Deze vergadering bevat geen bruikbare spraak van je eigen microfoon."],
+    ["Review the microphone's existing manual speaker assignments before confirming its owner.", "Controleer eerst de bestaande handmatige sprekerstoewijzingen voor deze microfoon voordat je de eigenaar bevestigt."],
+  ];
+  try {
+    for (const language of ["en", "nl"]) {
+      setInterfaceLanguage(language);
+      for (const [english, dutch] of refusals) {
+        assert.equal(localizeBackendText(english), language === "nl" ? dutch : english);
+        assert.equal(localizeBackendText(dutch), language === "nl" ? dutch : english);
+        const note = `Meeting note: ${english}`;
+        assert.equal(localizeBackendText(note), note);
+      }
+    }
+  } finally { setInterfaceLanguage("en"); }
+});
+
 
 test("a view that finishes mounting after a language change catches up without rebuilding", () => {
   setInterfaceLanguage("en");
