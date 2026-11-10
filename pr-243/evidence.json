@@ -380,5 +380,16 @@
       "file": "receipts/t4-review.md",
       "sha256": "b052a79cc2098501424d3b3024747673c2a5b0c5b3eca96d07738bfcafcdbb80"
     }
-  ]
+  ],
+  "head": "13dd5ffcfde6c2d8cdb5410a721ef9a3366429f1",
+  "normalization": {
+    "commit": "13dd5ffcfde6c2d8cdb5410a721ef9a3366429f1",
+    "old_bytes": 14929,
+    "new_bytes": 14928,
+    "sha256": "981ae28ca158ae6266fcdc9986bc6539e08ac02e80e5758b4ace6c6a5c796a30",
+    "full_installed_notices_verified": 12,
+    "changed_bytes": "One surplus terminal newline removed; all copyright/permission text unchanged",
+    "range_whitespace_check": "passed without suppression",
+    "build": "not repeated; public-to-dist byte equality remains required on next normal build"
+  }
 }
