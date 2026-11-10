@@ -1,4 +1,4 @@
-import { Compartment, EditorState, Prec, StateEffect, StateField, Transaction, type Range } from "@codemirror/state";
+import { Compartment, EditorState, Prec, StateEffect, StateField, Transaction, type Range, type SelectionRange } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap, placeholder, type DecorationSet } from "@codemirror/view";
 import { historyKeymap, isolateHistory, redo, standardKeymap, undo } from "@codemirror/commands";
 import { bindLocalization, type UiText } from "./i18n.ts";
@@ -97,6 +97,8 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
   const element = document.createElement("div") as InlineNotesSurface;
   element.className = `inline-notes-editor ${options.className ?? ""}`.trim();
   let disabled = false, readOnly = false, composing = false, destroyed = false, direction: Direction | null = null, language = options.language ?? "";
+  let revealGeneration = 0;
+  let pendingReveal: { generation: number; range: SelectionRange; top: number; left: number } | null = null;
   const behavior = new Compartment();
   const configuration = () => [EditorState.readOnly.of(disabled || readOnly), EditorView.editable.of(!disabled && !readOnly),
     EditorView.contentAttributes.of({ "aria-label": String(options.label), "aria-disabled": String(disabled), tabindex: disabled ? "-1" : "0", lang: language, spellcheck: "true" }),
@@ -104,6 +106,13 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
   const view = new EditorView({ parent: element,
     state: inlineNoteState(options.value ?? "", [noteDecorations, EditorView.lineWrapping, behavior.of(configuration()),
       EditorView.focusChangeEffect.of((_state, focused) => noteFocus.of(focused)),
+      EditorView.scrollHandler.of((view, range, options) => {
+        const reveal = pendingReveal; pendingReveal = null;
+        // A source reveal may outlive its selection until CodeMirror's next measure pass.
+        // Read the actual offset too: native scroll events can arrive after that pass.
+        return !!reveal && options.y === "center" && range.eq(reveal.range)
+          && (reveal.generation !== revealGeneration || Math.abs(view.scrollDOM.scrollTop - reveal.top) > 1 || Math.abs(view.scrollDOM.scrollLeft - reveal.left) > 1);
+      }),
       Prec.highest(EditorView.domEventHandlers({
         keydown: event => options.deferKey?.(event) === true,
         input: event => { event.stopPropagation(); return false; },
@@ -113,12 +122,17 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
       })), keymap.of([...historyKeymap, ...standardKeymap])]),
     dispatchTransactions(transactions, target) {
       const before = target.state.selection;
+      for (const transaction of transactions) {
+        if (transaction.docChanged && pendingReveal) pendingReveal.range = pendingReveal.range.map(transaction.changes);
+        if (transaction.docChanged || transaction.selection) ++revealGeneration;
+      }
       target.update(transactions);
       if (!before.eq(target.state.selection)) { direction = null; element.dispatchEvent(new Event("select")); }
       const changes = transactions.filter(transaction => transaction.docChanged && !transaction.annotation(quietNoteChange));
       if (changes.length) element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: changes.some(transaction => transaction.isUserEvent("undo")) ? "historyUndo" : changes.some(transaction => transaction.isUserEvent("redo")) ? "historyRedo" : "insertText", isComposing: composing || target.composing }));
     },
   });
+  view.scrollDOM.addEventListener("scroll", () => { ++revealGeneration; }, true);
   function reconfigure() { if (!destroyed) view.dispatch({ effects: behavior.reconfigure(configuration()), annotations: quietNoteChange.of(true) }); }
   function setRange(start: number, end: number, next: Direction = "none") {
     view.dispatch({ selection: noteSelection(start, end, next, view.state.doc.length), annotations: Transaction.addToHistory.of(false) });
@@ -130,7 +144,10 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
     const previous = direction;
     view.dispatch(change); direction = previous;
   }
-  function revealSelection() { view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main, { y: "center" }), annotations: Transaction.addToHistory.of(false) }); }
+  function revealSelection() {
+    pendingReveal = { generation: ++revealGeneration, range: view.state.selection.main, top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft };
+    view.dispatch({ effects: EditorView.scrollIntoView(pendingReveal.range, { y: "center" }), annotations: Transaction.addToHistory.of(false) });
+  }
   Object.defineProperties(element, {
     value: { get: () => view.state.doc.toString(), set: assign },
     contentDOM: { value: view.contentDOM }, scrollDOM: { value: view.scrollDOM },
@@ -143,8 +160,8 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
     lang: { get: () => language, set: (value: string) => { if (language !== value) { language = value; reconfigure(); } } },
     focus: { value: () => { if (!disabled) view.focus(); } },
     blur: { value: () => view.contentDOM.blur() },
-    scrollTop: { get: () => view.scrollDOM.scrollTop, set: (value: number) => { view.scrollDOM.scrollTop = value; } },
-    scrollLeft: { get: () => view.scrollDOM.scrollLeft, set: (value: number) => { view.scrollDOM.scrollLeft = value; } },
+    scrollTop: { get: () => view.scrollDOM.scrollTop, set: (value: number) => { ++revealGeneration; view.scrollDOM.scrollTop = value; } },
+    scrollLeft: { get: () => view.scrollDOM.scrollLeft, set: (value: number) => { ++revealGeneration; view.scrollDOM.scrollLeft = value; } },
     scrollHeight: { get: () => view.scrollDOM.scrollHeight },
     setSelectionRange: { value: setRange }, revealSelection: { value: revealSelection },
     applyUserChange: { value: (value: string, selection?: { start: number; end: number; direction?: Direction }) => {
