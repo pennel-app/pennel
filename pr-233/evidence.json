@@ -1,0 +1,490 @@
+{
+  "task": "T8 explicit first use",
+  "mock": true,
+  "source": "Owned synthetic headless fixture; no user screen",
+  "before_ref": "ffb6d9df4d73eaa0a263b0f7bb3b01ca87078555",
+  "after_ref": "8ab7da3889dc34e4c47220aa7739426d50a93a8d",
+  "keyboard_correction": "bbdd0428 changes disclosure opening before keyboard focus, 4 separate focused green receipts",
+  "rows": [
+    {
+      "phase": "before",
+      "case": "en/dark/t8-engine-zoom.png",
+      "file": "before-en-dark-t8-engine-zoom.png",
+      "sha256": "5b54ea4c5402f7c8134000eb750d11632e01dd5b16fbb3776852746f89fdb394"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/t8-engine.png",
+      "file": "before-en-dark-t8-engine.png",
+      "sha256": "37fd25fa26215dc3ae76b5d8d9802a5b749b29c0cc28d074bea96c87dbb100a3"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/t8-welcome-min.png",
+      "file": "before-en-dark-t8-welcome-min.png",
+      "sha256": "cf81d76b3e5ea2477b032c10be1ff9e5440e2c967a27fccbf7a7cdba16c6073b"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/t8-welcome.png",
+      "file": "before-en-dark-t8-welcome.png",
+      "sha256": "3882de9a9e2b830df427b914dfb5fa4d360da52ac54afde72747364ef9153fca"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t8-engine-zoom.png",
+      "file": "before-en-light-t8-engine-zoom.png",
+      "sha256": "ef2d6c1091584d818b260c754e33a6c0cdc2f591600591341008c1ce7af3a23f"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t8-engine.png",
+      "file": "before-en-light-t8-engine.png",
+      "sha256": "232796e5becb572c0319b5f5428a95a0a3a3f4a320a9f0bcf5e0660ca11b0d8e"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t8-welcome-min.png",
+      "file": "before-en-light-t8-welcome-min.png",
+      "sha256": "1feb1f8b27c259d2377fde213ced9b0a21eb52f84f50f65ecd76b78e31275184"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t8-welcome.png",
+      "file": "before-en-light-t8-welcome.png",
+      "sha256": "3dc753e06784728a93f9cea14411bfe5afc0ccc816a5b6f5cbf37766c35d53ce"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t8-engine-zoom.png",
+      "file": "before-nl-dark-t8-engine-zoom.png",
+      "sha256": "29600dc0a4e023b1ebc05c380b96e06da68473d15e6e29428ee90ca55fadedea"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t8-engine.png",
+      "file": "before-nl-dark-t8-engine.png",
+      "sha256": "2f00bbb1bc746ff37fd0a678f587d08f79dc1941d3553012454031516dbe5eb5"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t8-welcome-min.png",
+      "file": "before-nl-dark-t8-welcome-min.png",
+      "sha256": "b88cc96a9bb0d5efc186ad9142844de07330dcd1f5c2125f33b52248e88f8122"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t8-welcome.png",
+      "file": "before-nl-dark-t8-welcome.png",
+      "sha256": "d4291fa05d8670ae65eb3c41e5a3e04033c07384c8008b54fb4097c3b33fb2c2"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t8-engine-zoom.png",
+      "file": "before-nl-light-t8-engine-zoom.png",
+      "sha256": "f8f217dc60e9450d122c57a1e39c46996796447ec798c09c24830a07c2418754"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t8-engine.png",
+      "file": "before-nl-light-t8-engine.png",
+      "sha256": "236b7cc6fec4fc08aa2e03ba9dd33071e8c09fe657b72c97f138b5875cad9daf"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t8-welcome-min.png",
+      "file": "before-nl-light-t8-welcome-min.png",
+      "sha256": "6e9ef8b497ee4922e7e59d89059b6e551a48fb899bb8ce6ed948bb7557f0702d"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t8-welcome.png",
+      "file": "before-nl-light-t8-welcome.png",
+      "sha256": "fdaca51b3adcfb81517e0e0ff830593e1f6e038a817bb16da2cbe162a38934a0"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/t8-options.png",
+      "file": "before-en-dark-t8-options.png",
+      "sha256": "c5469941bfc2a2a36bd831f92eaf9bbfb1e8b0cd7bba2ba1e3961d16594c4f6a"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/t8-progress.png",
+      "file": "before-en-dark-t8-progress.png",
+      "sha256": "ad70f33386ffbe391a51c2930f75beb8c49512ad4a3f01ad30193692a421014c"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t8-options.png",
+      "file": "before-en-light-t8-options.png",
+      "sha256": "11c0bc1702bd804cc52259c4bdf77f7ffa762229f0a6ec0740b255723fa08bf9"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t8-progress.png",
+      "file": "before-en-light-t8-progress.png",
+      "sha256": "ac42cec9e3a83a11de8b79ff9c9258f6bbfc92237418a0f7f0f787ae7349af38"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t8-options.png",
+      "file": "before-nl-dark-t8-options.png",
+      "sha256": "2b6406ee4fa0c2b6c9684ed5904233bcb19a1e76a9baf15f7942bcd87fff175a"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t8-progress.png",
+      "file": "before-nl-dark-t8-progress.png",
+      "sha256": "0c872f6159be0de98baac2c1e824f36ace26908ad44d2e5f606559f82086afa5"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t8-options.png",
+      "file": "before-nl-light-t8-options.png",
+      "sha256": "c67cb36176b0d1cf34c3429c313bb2db797cae2580b7b82d0ae2970a43bf42c1"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t8-progress.png",
+      "file": "before-nl-light-t8-progress.png",
+      "sha256": "b63d3d0f9078865a9ddb6258c2fcc54e863949faa1a34d7183537c348b857009"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-download-failure.png",
+      "file": "after-en-dark-t8-download-failure.png",
+      "sha256": "dfd5ea513cfd92dc6b2218e868541e05d58e671506fe7777d086f8cec05ada68"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-download-interaction.png",
+      "file": "after-en-dark-t8-download-interaction.png",
+      "sha256": "dfd5ea513cfd92dc6b2218e868541e05d58e671506fe7777d086f8cec05ada68"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-download-leave.png",
+      "file": "after-en-dark-t8-download-leave.png",
+      "sha256": "571fd080f159b4e0b2afef0008a09b217a3ebe08e1e7054cc72804cf97b28194"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-download-resume.png",
+      "file": "after-en-dark-t8-download-resume.png",
+      "sha256": "dfd5ea513cfd92dc6b2218e868541e05d58e671506fe7777d086f8cec05ada68"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-engine-zoom.png",
+      "file": "after-en-dark-t8-engine-zoom.png",
+      "sha256": "7c7f2628eb485fdd4a4809d906613477f34789ba192a3f4977b768d412a10c51"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-engine.png",
+      "file": "after-en-dark-t8-engine.png",
+      "sha256": "28299246f6d0dbca4f97ccca66cd53d38976f1332d485f1c5a5bded736138941"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-goal-interaction.png",
+      "file": "after-en-dark-t8-goal-interaction.png",
+      "sha256": "d91017a70392d9de60142eba3ce54a493a515c2de2b8a8cc671ae6c9468a33fd"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-welcome-min.png",
+      "file": "after-en-dark-t8-welcome-min.png",
+      "sha256": "348b2b52312a6cfda6e29ae02544cf142f898948b57dd308704d539a6985fc8e"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t8-welcome.png",
+      "file": "after-en-dark-t8-welcome.png",
+      "sha256": "98bf41f47d3718bf24179c9025c8e32e38fe874aa32cfeafdc7f38386a6dfb64"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-download-failure.png",
+      "file": "after-en-light-t8-download-failure.png",
+      "sha256": "851d35861b46372fcc8dc6a038a34ffc4159a8bd9864a3cb84a051efe02cd95e"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-download-interaction.png",
+      "file": "after-en-light-t8-download-interaction.png",
+      "sha256": "851d35861b46372fcc8dc6a038a34ffc4159a8bd9864a3cb84a051efe02cd95e"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-download-leave.png",
+      "file": "after-en-light-t8-download-leave.png",
+      "sha256": "13d9c07bf4f519c365c19b4653847e00316e20cecefed331c66085b54a1a9719"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-download-resume.png",
+      "file": "after-en-light-t8-download-resume.png",
+      "sha256": "851d35861b46372fcc8dc6a038a34ffc4159a8bd9864a3cb84a051efe02cd95e"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-engine-zoom.png",
+      "file": "after-en-light-t8-engine-zoom.png",
+      "sha256": "c2273f34af8fe7cf5107714930279903d016704b2dc8a5381554939d891bac91"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-engine.png",
+      "file": "after-en-light-t8-engine.png",
+      "sha256": "39e84723d7a6b25c54b2175a619065066db5a6525b17b219e4fc0f481d60286b"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-goal-interaction.png",
+      "file": "after-en-light-t8-goal-interaction.png",
+      "sha256": "69e1964147822b01a17748e21dd99d4dd2a91b4f90dccf84027f327a47f10596"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-welcome-min.png",
+      "file": "after-en-light-t8-welcome-min.png",
+      "sha256": "59fb85e9c6f802d0d54f161ebf1a1efd6142eae2a0083085ceed39edfad5b2e1"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t8-welcome.png",
+      "file": "after-en-light-t8-welcome.png",
+      "sha256": "c7e54e722ba0af10714e45aaed9696b6b033b3ce54942ee5573d98fb7855c48e"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-download-failure.png",
+      "file": "after-nl-dark-t8-download-failure.png",
+      "sha256": "6c006a3fd380538e94821c076338aa91d97215e9364b4fb7b5e0f3e730ac735a"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-download-interaction.png",
+      "file": "after-nl-dark-t8-download-interaction.png",
+      "sha256": "6c006a3fd380538e94821c076338aa91d97215e9364b4fb7b5e0f3e730ac735a"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-download-leave.png",
+      "file": "after-nl-dark-t8-download-leave.png",
+      "sha256": "0bb43cf47ffbd800c5b324ca9d0c3c0240eb49ff73fcfcce576cdf476282800d"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-download-resume.png",
+      "file": "after-nl-dark-t8-download-resume.png",
+      "sha256": "6c006a3fd380538e94821c076338aa91d97215e9364b4fb7b5e0f3e730ac735a"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-engine-zoom.png",
+      "file": "after-nl-dark-t8-engine-zoom.png",
+      "sha256": "a6b1aac4fe1d69646d988fb029a8c7293181d59c5e3223e21531b272429290ea"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-engine.png",
+      "file": "after-nl-dark-t8-engine.png",
+      "sha256": "5b704eb72619af40d5a458e60c127aa01c1f6c4df6d5ffd05ee629ad01c4d239"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-goal-interaction.png",
+      "file": "after-nl-dark-t8-goal-interaction.png",
+      "sha256": "e5054b549f99ca8077a5f2d1ebbfee67f97d92463799b6c217a822c51fdc911a"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-welcome-min.png",
+      "file": "after-nl-dark-t8-welcome-min.png",
+      "sha256": "18b0ddc21744d13295af82179aec9e683a00cf185c1366fee87b820ca68256f8"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t8-welcome.png",
+      "file": "after-nl-dark-t8-welcome.png",
+      "sha256": "5ee914dc2a3a829b506c3e8200588f8d67d9b1a5193c87b492a4ea9194502f33"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-download-failure.png",
+      "file": "after-nl-light-t8-download-failure.png",
+      "sha256": "5921c59d413d9acff5c36fc9b62d6c2a5405c24913e2fdd67a82f12763fc54f5"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-download-interaction.png",
+      "file": "after-nl-light-t8-download-interaction.png",
+      "sha256": "5921c59d413d9acff5c36fc9b62d6c2a5405c24913e2fdd67a82f12763fc54f5"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-download-leave.png",
+      "file": "after-nl-light-t8-download-leave.png",
+      "sha256": "f41cf9517054c68a5b7ac3ebb8d12a2ecc40fb77212c6a54205306bbd12e777a"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-download-resume.png",
+      "file": "after-nl-light-t8-download-resume.png",
+      "sha256": "5921c59d413d9acff5c36fc9b62d6c2a5405c24913e2fdd67a82f12763fc54f5"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-engine-zoom.png",
+      "file": "after-nl-light-t8-engine-zoom.png",
+      "sha256": "3cea04285c6da3df824fcd30dd799dfc6bd2ea5b93115fe597108335d5e24baf"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-engine.png",
+      "file": "after-nl-light-t8-engine.png",
+      "sha256": "4568e1e6f11ec6a58706cee658a892eb29cc50b906c32a0f3f28407e410b062b"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-goal-interaction.png",
+      "file": "after-nl-light-t8-goal-interaction.png",
+      "sha256": "949d9ddbeedbe90d342c2f750c2016e6efa2bae80b8ec584e5204d0fe25a65ca"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-welcome-min.png",
+      "file": "after-nl-light-t8-welcome-min.png",
+      "sha256": "fd531eac899513814e3fbc0838f1f6c6254a95bc986eca93a2c593ad361b8c33"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t8-welcome.png",
+      "file": "after-nl-light-t8-welcome.png",
+      "sha256": "a11aa3b0bdb5f188bacc28d94ee9c3b5f954588945b5c15a820245661cf2d7a4"
+    },
+    {
+      "phase": "detail",
+      "case": "en/dark/t8-download-resume.png",
+      "file": "detail-en-dark-t8-download-resume.png",
+      "sha256": "dfd5ea513cfd92dc6b2218e868541e05d58e671506fe7777d086f8cec05ada68"
+    },
+    {
+      "phase": "detail",
+      "case": "en/dark/t8-goal-interaction.png",
+      "file": "detail-en-dark-t8-goal-interaction.png",
+      "sha256": "d91017a70392d9de60142eba3ce54a493a515c2de2b8a8cc671ae6c9468a33fd"
+    },
+    {
+      "phase": "detail",
+      "case": "en/dark/t8-language-compatibility.png",
+      "file": "detail-en-dark-t8-language-compatibility.png",
+      "sha256": "042eb3967ff9a599c89ad6a7eefe17c7f3beaf68ab3ce96b4b74d0f678a1e61e"
+    },
+    {
+      "phase": "detail",
+      "case": "en/dark/t8-options.png",
+      "file": "detail-en-dark-t8-options.png",
+      "sha256": "0a83e28a893e43f058e951ecf0405d79607e6ccad787e61074679449b82d1a3c"
+    },
+    {
+      "phase": "detail",
+      "case": "en/dark/t8-progress.png",
+      "file": "detail-en-dark-t8-progress.png",
+      "sha256": "c9b807d78f89ea5ad01a3264d9fcd22bb548265298d71baf0958b2143b257f3b"
+    },
+    {
+      "phase": "detail",
+      "case": "en/light/t8-download-resume.png",
+      "file": "detail-en-light-t8-download-resume.png",
+      "sha256": "851d35861b46372fcc8dc6a038a34ffc4159a8bd9864a3cb84a051efe02cd95e"
+    },
+    {
+      "phase": "detail",
+      "case": "en/light/t8-goal-interaction.png",
+      "file": "detail-en-light-t8-goal-interaction.png",
+      "sha256": "69e1964147822b01a17748e21dd99d4dd2a91b4f90dccf84027f327a47f10596"
+    },
+    {
+      "phase": "detail",
+      "case": "en/light/t8-language-compatibility.png",
+      "file": "detail-en-light-t8-language-compatibility.png",
+      "sha256": "e62475afd2044b37f757bdd34562ad4dd902ca51a276b2004f3a45e89e162d62"
+    },
+    {
+      "phase": "detail",
+      "case": "en/light/t8-options.png",
+      "file": "detail-en-light-t8-options.png",
+      "sha256": "853d206da8830fc0ba8c36db0b344a71a15e2e1945790dfb1c4164ad270176fb"
+    },
+    {
+      "phase": "detail",
+      "case": "en/light/t8-progress.png",
+      "file": "detail-en-light-t8-progress.png",
+      "sha256": "895b2786241806025039682f91e537e7b7595fa2de8219b08b9b2e12d5aee342"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/dark/t8-download-resume.png",
+      "file": "detail-nl-dark-t8-download-resume.png",
+      "sha256": "6c006a3fd380538e94821c076338aa91d97215e9364b4fb7b5e0f3e730ac735a"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/dark/t8-goal-interaction.png",
+      "file": "detail-nl-dark-t8-goal-interaction.png",
+      "sha256": "e5054b549f99ca8077a5f2d1ebbfee67f97d92463799b6c217a822c51fdc911a"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/dark/t8-language-compatibility.png",
+      "file": "detail-nl-dark-t8-language-compatibility.png",
+      "sha256": "fd1da51e31a2ea0b1dcb28317790ba71cf23df5558ea86c2167f9aa1914d25ab"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/dark/t8-options.png",
+      "file": "detail-nl-dark-t8-options.png",
+      "sha256": "75231d7c7d1cb6119f927b3432954df474e3cdd20c6343ef89661c3c1933ba14"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/dark/t8-progress.png",
+      "file": "detail-nl-dark-t8-progress.png",
+      "sha256": "079fe1fc23218c17bc1036532e46e4a4917b6b6c690eb6b8e919e789d90f2177"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/light/t8-download-resume.png",
+      "file": "detail-nl-light-t8-download-resume.png",
+      "sha256": "5921c59d413d9acff5c36fc9b62d6c2a5405c24913e2fdd67a82f12763fc54f5"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/light/t8-goal-interaction.png",
+      "file": "detail-nl-light-t8-goal-interaction.png",
+      "sha256": "949d9ddbeedbe90d342c2f750c2016e6efa2bae80b8ec584e5204d0fe25a65ca"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/light/t8-language-compatibility.png",
+      "file": "detail-nl-light-t8-language-compatibility.png",
+      "sha256": "9cc8f314879fa57ad2d9e93941710019319d9d5694855612803a340f33e5b595"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/light/t8-options.png",
+      "file": "detail-nl-light-t8-options.png",
+      "sha256": "52ad0a347ea65195d700e88ba85d18dba865b9e75bb5d9252386471af0378578"
+    },
+    {
+      "phase": "detail",
+      "case": "nl/light/t8-progress.png",
+      "file": "detail-nl-light-t8-progress.png",
+      "sha256": "7770ca11e51cfbf36aa71ee109029dcbeb776b7cf7e2de092f2b816e2e9dafc2"
+    }
+  ]
+}
