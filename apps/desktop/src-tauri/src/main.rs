@@ -116,7 +116,8 @@ pub fn show_main(app: &AppHandle, tab: Option<&str>) {
         Some("pad" | "dictation-home") => "dictation",
         Some(
             "settings" | "overview" | "providers" | "models" | "dictation" | "dictionary"
-            | "styles" | "meeting-settings" | "recording" | "appearance" | "account" | "local",
+            | "styles" | "shortcuts" | "meeting-settings" | "recording" | "appearance" | "account"
+            | "local",
         ) => "settings",
         Some("meetings" | "library" | "chat") => "library",
         _ => "workspace",

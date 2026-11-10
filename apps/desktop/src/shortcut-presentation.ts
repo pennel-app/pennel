@@ -23,3 +23,12 @@ export function shortcutReason(reason: string | null | undefined): string {
   };
   return reasons[reason] ? t(reasons[reason]) : localizeBackendText(reason);
 }
+/** Shift is inserted beside the core's canonical modifier keycaps; the base label remains core-owned. */
+export function commandKeycaps(info: AppInfo): string[] {
+  const dictate = shortcutRow(info, 'dictate');
+  if (!dictate?.binding) return [];
+  const keys = [...dictate.label.keycaps];
+  const beforeShift = dictate.binding.mods.filter(mod => ['ctrl','alt'].includes(mod.replace(/^(left|right)_/, ''))).length;
+  keys.splice(beforeShift, 0, info.platform === 'macos' ? '⇧' : 'Shift');
+  return keys;
+}

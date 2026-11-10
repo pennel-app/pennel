@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, fixtureClient, listen, listenToWindow, type AppInfo, type MeetingFinished, type MeetingRuntimeStatus, type Settings, type UpdateInfo } from "./api";
 import { LatestRequest, SerialQueue, afterPaint, fillWhenReady, persistAll } from "./async";
 import { controlButton, errorText, formatClock, h, section, select } from "./dom";
+import { shortcutsView } from "./views/shortcuts";
 import { dictationView, dictionaryView, stylesView } from "./views/dictation";
 import { historyView } from "./views/history";
 import { displayedMeetingSession, finishMeetingDrafts, flushMeetingDrafts, meetingView, meetingsView } from "./views/meetings";
@@ -70,6 +71,7 @@ interface Mounted {
 
 const tabs: [string, TranslationKey, View][] = [
   ["dictation", "navigation.dictation", dictationSettings], ["meeting-settings", "navigation.meetings", meetingTaskSettings],
+  ["shortcuts", "navigation.shortcuts", shortcutsView],
   ["appearance", "navigation.appearance", appearanceView], ["account", "navigation.sync_account", accountView],
   ["advanced", "navigation.advanced", advancedSettings],
 ];

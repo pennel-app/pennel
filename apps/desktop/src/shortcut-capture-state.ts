@@ -12,6 +12,7 @@ interface CaptureClient {
 }
 let owner: ShortcutCapture | null = null;
 export function shortcutCaptureActive(): boolean { return owner !== null; }
+export async function cancelShortcutCapture(): Promise<void> { await owner?.cancel(); }
 /** Owns the native session until even a delayed activation has been stopped. */
 export class ShortcutCapture {
   private client: CaptureClient;

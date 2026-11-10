@@ -482,5 +482,11 @@
   {"name": "t10f-home-cleared", "window": "workspace", "section": "dictation", "size": [760, 520], "shortcut_bindings": {"dictate": null}, "steps": [{"eval": "import('/tests/shortcut-recorder.interactions.mjs').then(m=>m.checkClearedHome())"}]},
   {"name": "t10f-shortcut-static", "window": "workspace", "section": "settings", "tab": "dictation", "size": [1280, 860], "steps": [{"eval": "document.querySelector('[data-preference=shortcut]').scrollIntoView({block:'center'});"}]},
   {"name": "t10f-home-custom", "window": "workspace", "section": "dictation", "size": [1280, 860], "shortcut_bindings": {"dictate": {"mods": ["ctrl", "alt"], "code": "KeyQ", "key": "a"}}},
-  {"name": "t10f-home-cleared-static", "window": "workspace", "section": "dictation", "size": [760, 520], "shortcut_bindings": {"dictate": null}}
+  {"name": "t10f-home-cleared-static", "window": "workspace", "section": "dictation", "size": [760, 520], "shortcut_bindings": {"dictate": null}},
+  {"name": "t10g-shortcuts", "window": "settings", "section": "settings", "tab": "shortcuts", "size": [1280, 860]},
+  {"name": "t10g-shortcuts-minimum", "window": "settings", "section": "settings", "tab": "shortcuts", "size": [760, 520]},
+  {"name": "t10g-shortcuts-enlarged", "window": "settings", "section": "settings", "tab": "shortcuts", "size": [760, 520], "reduced_motion": true, "steps": [{"eval": "['--font-body','--font-label','--font-content'].forEach(name=>document.documentElement.style.setProperty(name,'18px'));"}]},
+  {"name": "t10g-shortcuts-interaction", "window": "workspace", "section": "settings", "tab": "shortcuts", "size": [1280, 860], "steps": [{"eval": "import('/tests/shortcuts-settings.interactions.mjs').then(m=>m.checkShortcutsSettings())"}]},
+  {"name": "t10g-shortcuts-conflict", "window": "workspace", "section": "settings", "tab": "shortcuts", "size": [760, 520], "steps": [{"eval": "import('/tests/shortcuts-settings.interactions.mjs').then(m=>m.showShortcutConflict())"}]},
+  {"name": "t10g-shortcuts-wayland", "window": "workspace", "section": "settings", "tab": "shortcuts", "platform": "linux", "wayland": true, "size": [760, 520], "steps": [{"eval": "import('/tests/shortcuts-settings.interactions.mjs').then(m=>m.checkUnavailableShortcuts())"}]}
 ]
