@@ -1,6 +1,7 @@
 import { api, listenToWindow, type InsightItem, type InsightSource } from "./api";
 import { bindLocalization, l, t, type TranslationKey } from "./i18n.ts";
 import { controlButton, formatClock, h, select } from "./dom";
+import { icon } from "./icons";
 import { VisibilityPoll } from "./window-lifecycle";
 import { insightService } from "./insight-service";
 import { InsightReviewModel, InsightUiError, type InsightNoteHost } from "../../../assets/contracts/insight-review-model.ts";
@@ -9,6 +10,8 @@ import type { Context } from "./main";
 
 export interface InsightReviewHost {
   id: string; meetingUid: string; notes: InsightNoteHost;
+  changed?(openCount: number): void;
+  sourceLabel?(source: InsightSource): string | null;
   openSource(source: InsightSource, origin: HTMLElement, restore: () => void): Promise<boolean>;
 }
 interface ReviewView { root: HTMLElement; model: InsightReviewModel; bind(ctx: Context, host: InsightReviewHost): void; refresh(): Promise<void>; flush(): Promise<boolean> }
@@ -44,7 +47,7 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   const cancel = controlButton({ class: "btn insight-cancel", hidden: true, onclick: () => { void model.cancel(); } }, l("insights.cancel_analysis"));
   const refresh = controlButton({ class: "text-button", onclick: () => { void Promise.all([model.load(), model.choosePolicy(model.getSnapshot().policy)]); } }, l("insights.refresh"));
   const setup = controlButton({ class: "text-button insight-connection-settings", hidden: true, onclick: () => ctx.navigate("providers") }, l("insights.connection_settings"));
-  const exportItems = controlButton({ class: "btn insight-export", onclick: async () => { const value = await model.export(); if (value !== undefined) { await api.copyText(value); notice.textContent = t("insights.copied"); } } }, l("insights.copy_markdown"));
+  const exportItems = controlButton({ class: "btn insight-export", onclick: async () => { const value = await model.export(); if (value !== undefined) { await api.copyText(value); notice.textContent = t("insights.copied"); } } }, l("insights.copy_accepted"));
   const destination = h("p", { class: "help insight-destination" });
   const availability = h("p", { class: "help insight-availability", role: "status" });
   const coverage = h("p", { class: "help insight-coverage" }, l("insights.partial_coverage"));
@@ -55,15 +58,21 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   const list = h("div", { class: "insight-list" });
   const dismissed = h("button", { class: "text-button insight-dismissed-toggle", onclick: () => { showDismissed = !showDismissed; render(); } });
   const rows = new Map<string, { element: HTMLElement; update(item: InsightItem): void }>();
-  root.append(h("h2", {}, l("insights.title")), h("p", { class: "help" }, l("insights.description")),
-    h("div", { class: "insight-toolbar" }, h("label", { class: "insight-language" }, l("insights.language"), language), find, cancel, refresh, setup),
-    destination, availability, coverage, progress, error, notice, h("div", { class: "insight-export-row" }, exportItems, dismissed), empty, list);
+  const intro = h("p", { class: "help insight-review-intro" }, l("insights.review_intro"));
+  const scrolling = h("div", { class: "insight-review-body" });
+  const storeWarning = h("p", { class: "help insight-store-status", role: "status", hidden: true });
+  const analysisDetails = h("details", { class: "insight-analysis-details" }, h("summary", {}, l("insights.analysis_options")), h("p", { class: "help" }, l("insights.description")),
+    h("div", { class: "insight-toolbar" }, h("label", { class: "insight-language" }, l("insights.language"), language), find, cancel, refresh, setup), destination, availability, coverage);
+  let optionsInitialized = false, previouslyHadItems = false;
+  scrolling.append(intro, analysisDetails, progress, error, storeWarning, notice, dismissed, empty, list);
+  root.append(scrolling, h("footer", { class: "insight-review-footer" }, exportItems));
   const text = (element: HTMLElement, value: string) => { if (element.textContent !== value) element.textContent = value; };
 
   function createCard(initial: InsightItem) {
     let item = initial;
     const title = h("p", { class: "insight-kind" });
     const metadata = h("p", { class: "help insight-item-state" });
+    const timeStamp = h("span", { class: "help insight-item-stamp" });
     const scope = h("p", { class: "help insight-extraction-scope" }, l("insights.scope_passage"));
     const body = h("p", { class: "insight-item-text" });
     const editor = h("textarea", { class: "insight-edit", rows: 3, hidden: true, "aria-label": l("insights.edit_label") });
@@ -80,10 +89,11 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
     const insertion = h("p", { class: "help insight-insertion-state", hidden: true });
     const resolution = h("div", { class: "insight-insertion-review", hidden: true });
     const chooseSource = h("div", { class: "insight-reassociate", hidden: true });
-    const accept = controlButton({ class: "btn compact insight-accept", onclick: () => { void model.review(item.id, "accepted"); } }, l("insights.accept"));
-    const dismiss = controlButton({ class: "btn compact insight-dismiss", onclick: () => { void model.review(item.id, "dismissed"); } }, l("insights.dismiss"));
-    const restore = controlButton({ class: "btn compact insight-restore", onclick: () => { void model.review(item.id, "proposed"); } }, l("insights.restore"));
-    const edit = controlButton({ class: "btn compact insight-edit-action", onclick: async () => {
+    const accept = controlButton({ class: "btn compact insight-accept", onclick: () => { void reviewFrom(accept, "accepted"); } }, icon("check"), l("insights.accept"));
+    const dismiss = controlButton({ class: "text-button insight-dismiss", onclick: () => { void reviewFrom(dismiss, "dismissed"); } }, l("insights.dismiss"));
+    const undo = controlButton({ class: "text-button insight-undo", hidden: true, onclick: () => { void reviewFrom(undo, "proposed"); } }, l("insights.undo"));
+    const restore = controlButton({ class: "btn compact insight-restore", onclick: () => { void reviewFrom(restore, "proposed"); } }, l("insights.restore"));
+    const edit = controlButton({ class: "text-button insight-edit-action", onclick: async () => {
       const epoch = focusEpoch; await model.beginEdit(item.id);
       if (epoch === focusEpoch && root.isConnected && !editor.hidden) editor.focus({ preventScroll: true });
     } }, l("insights.edit"));
@@ -129,8 +139,18 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
       chooseSource.replaceChildren(select([["", l("insights.choose_source")], ...item.sources.map((source, index) => [String(index), `${formatClock(source.start_ms / 1000)} · ${source.quote.slice(0, 90)}`] as [string, string])], "",
         value => { if (value !== "") void loadSourceChoice(Number(value)); }, "menu"));
     } }, l("insights.reassociate"));
-    const element = h("article", { class: "insight-card", "data-insight-id": item.id }, title, metadata, scope, body, editor, details, cutoff, processing, related,
-      quotes, linkage, priors, history, sourceNotice, chooseSource, insertion, resolution, h("div", { class: "insight-actions" }, accept, edit, dismiss, restore, save, cancelEdit, copyDraft, add, check, reassociate));
+    const disclosure = h("details", { class: "insight-card-details" }, h("summary", {}, l("insights.card_details")), metadata, scope, details, cutoff, processing, related,
+      quotes, linkage, priors, history, chooseSource, h("div", { class: "insight-actions" }, add, check, reassociate));
+    const element = h("article", { class: "insight-card", "data-insight-id": item.id }, h("div", { class: "insight-card-heading" }, title, timeStamp), body, editor,
+      sourceNotice, insertion, resolution, h("div", { class: "insight-actions insight-primary-actions" }, accept, edit, dismiss, undo, restore, save, cancelEdit, copyDraft), disclosure);
+    async function reviewFrom(control: HTMLButtonElement, state: "proposed" | "accepted" | "dismissed") {
+      const focused = document.activeElement === control, epoch = focusEpoch;
+      const saved = await model.review(item.id, state);
+      if (!saved || !focused || epoch !== focusEpoch || !root.isConnected || ![document.body, control].includes(document.activeElement as HTMLElement)) return;
+      const target = state === "accepted" ? undo : state === "proposed" ? accept : list.querySelector<HTMLButtonElement>(".insight-accept:not([hidden]),.insight-undo:not([hidden])") ?? dismissed;
+      target.focus({ preventScroll: true });
+    }
+    disclosure.addEventListener("toggle", () => { const draft = model.getSnapshot().edits.get(item.id); edit.hidden = !!draft || item.review_state === "accepted" && !disclosure.open; dismiss.hidden = !!draft || item.review_state === "dismissed" || item.review_state === "accepted" && !disclosure.open; });
     editor.addEventListener("input", () => model.edit(item.id, editor.value));
     editor.addEventListener("compositionstart", () => model.compose(item.id, true));
     editor.addEventListener("compositionend", () => { model.edit(item.id, editor.value); model.compose(item.id, false); });
@@ -139,9 +159,9 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
     const drawSources = (sources: InsightSource[], target: HTMLElement) => {
       target.replaceChildren(...sources.map(source => {
         const button = h("button", { class: "text-button insight-source-open", onclick: async () => {
-          const position = root.scrollTop;
+          const position = scrolling.scrollTop;
           let matched = false;
-          try { matched = await host.openSource(source, button, () => { root.scrollTop = position; button.focus({ preventScroll: true }); }); } catch { /* Keep the frozen source visible. */ }
+          try { matched = await host.openSource(source, button, () => { scrolling.scrollTop = position; button.focus({ preventScroll: true }); }); } catch { /* Keep the frozen source visible. */ }
           if (!matched) { sourceErrorRevision = item.revision; text(sourceNotice, t("insights.source_changed")); sourceNotice.hidden = false; }
           else { sourceErrorRevision = -1; sourceNotice.hidden = !item.source_reassociated; if (item.source_reassociated) text(sourceNotice, t("insights.source_link_reviewed")); }
         } }, `${t("insights.open_source")} · ${formatClock(source.start_ms / 1000)}`);
@@ -151,7 +171,10 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
     return { element, update(next: InsightItem) {
       item = next; const state = model.getSnapshot(), draft = state.edits.get(item.id);
       const writable = insightsWritable(state.snapshot) && !state.busy.has("write");
-      text(title, t(`insights.kind_${item.kind}`));
+      element.dataset.reviewState = item.review_state;
+      text(title, t(item.review_state === "accepted" ? `insights.accepted_${item.kind}` : `insights.kind_${item.kind}`));
+      const source = item.sources[0], label = source ? host.sourceLabel?.(source) : null;
+      text(timeStamp, `${label ?? t("insights.unknown")} · ${formatClock((source?.start_ms ?? item.evidence_cutoff_ms) / 1000)}`);
       text(metadata, `${t(`insights.review_${item.review_state}`)} · ${t(`insights.commitment_${item.commitment}`)}${item.edited_text !== null ? ` · ${t("insights.edited")}` : ""}`);
       scope.hidden = item.extraction_scope === "exact_span";
       text(body, insightText(item)); body.hidden = !!draft; editor.hidden = !draft;
@@ -178,8 +201,10 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
       if (item.source_state !== "current" || draft?.conflict) { text(sourceNotice, t(draft?.conflict ? "insights.error_edit_conflict" : "insights.source_changed")); sourceNotice.hidden = false; }
       else if (sourceErrorRevision !== item.revision) { sourceNotice.hidden = !item.source_reassociated; if (item.source_reassociated) text(sourceNotice, t("insights.source_link_reviewed")); }
       accept.hidden = item.review_state !== "proposed" || !!draft; dismiss.hidden = item.review_state === "dismissed" || !!draft;
-      restore.hidden = item.review_state !== "dismissed" || !!draft; edit.hidden = !!draft;
-      for (const button of [accept, dismiss, restore, edit]) button.disabled = !writable;
+      undo.hidden = item.review_state !== "accepted" || !!draft;
+      restore.hidden = item.review_state !== "dismissed" || !!draft; edit.hidden = !!draft || item.review_state === "accepted" && !disclosure.open;
+      dismiss.hidden ||= item.review_state === "accepted" && !disclosure.open;
+      for (const button of [accept, dismiss, restore, edit, undo]) button.disabled = !writable;
       save.hidden = cancelEdit.hidden = !draft; save.disabled = !writable || !!draft?.composing || !draft?.text.trim(); cancelEdit.disabled = !writable;
       copyDraft.hidden = !draft || !draft.conflict && insightsWritable(state.snapshot);
       add.hidden = item.review_state !== "accepted" || !!draft;
@@ -205,7 +230,15 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
       exportItems.disabled = !insightsWritable(snapshot) || !snapshot?.items.some(item => item.review_state === "accepted") || state.busy.has("export") || state.busy.has("write") || model.dirty;
     text(dismissed, t(showDismissed ? "insights.hide_dismissed" : "insights.show_dismissed"));
     const items = model.items().filter(item => showDismissed || item.review_state !== "dismissed" || state.edits.has(item.id));
-    empty.hidden = items.length > 0; const keep = new Set(items.map(item => item.id));
+    empty.hidden = items.length > 0; dismissed.hidden = !snapshot?.items.some(item => item.review_state === "dismissed");
+    storeWarning.hidden = !snapshot || insightsWritable(snapshot);
+    if (!storeWarning.hidden) text(storeWarning, t(`insights.store_${snapshot!.status}` as TranslationKey));
+    if (snapshot && (!optionsInitialized || previouslyHadItems && !items.length)) { analysisDetails.open = !items.length; optionsInitialized = true; }
+    previouslyHadItems = items.length > 0;
+    const openCount = model.items().filter(item => item.review_state === "proposed").length;
+    text(intro, t(!openCount && snapshot?.items.length ? snapshot.items.some(item => item.review_state === "accepted") ? "insights.all_reviewed" : "insights.review_complete" : "insights.review_intro"));
+    host.changed?.(openCount);
+    const keep = new Set(items.map(item => item.id));
     for (const [id, row] of rows) if (!keep.has(id)) { row.element.remove(); rows.delete(id); }
     let before = list.firstElementChild;
     for (const item of items) {

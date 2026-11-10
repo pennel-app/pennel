@@ -84,3 +84,21 @@ test("a finished document keeps Summary and Your notes in one writing surface", 
   panes.resize(700); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("questions"), true);
   panes.closeCompanion(); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
 });
+
+test("finished meetings default to Review while captures keep Transcript", () => {
+  const panes = new LivePaneState(); panes.resize(1280);
+  assert.equal(panes.companion, "transcript");
+  panes.setFinished(true);
+  assert.equal(panes.companion, "suggestions"); assert.equal(panes.companionOpen, true);
+  panes.resize(760); assert.equal(panes.companion, "suggestions"); assert.equal(panes.companionOpen, false);
+  panes.resize(1280); assert.equal(panes.companion, "suggestions"); assert.equal(panes.companionOpen, true);
+});
+
+test("finishing cannot replace an explicit companion or reopen a user's closed companion", () => {
+  const transcript = new LivePaneState(); transcript.resize(1280); transcript.select("transcript"); transcript.setFinished(true);
+  assert.equal(transcript.companion, "transcript"); assert.equal(transcript.companionOpen, true);
+  const closed = new LivePaneState(); closed.resize(1280); closed.closeCompanion(); closed.setFinished(true); closed.resize(1400);
+  assert.equal(closed.companionOpen, false);
+  const questions = new LivePaneState(); questions.resize(760); questions.select("questions"); questions.setFinished(true);
+  assert.equal(questions.companion, "questions"); assert.equal(questions.companionOpen, true);
+});
