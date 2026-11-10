@@ -6,6 +6,46 @@ final class ShortcutMatcherTests: XCTestCase {
     private let option: UInt64 = 0x80000
     private let fn: UInt64 = 0x800000
 
+    func testBareActionAccommodatesAnExistingKeyedDictationHold() {
+        var matcher = ShortcutMatcher(table: ShortcutTable(hold: NativeShortcut(action: 0, code: 49, mods: [control]), always: [], listening: [NativeShortcut(action: 4, code: nil, mods: [0x20])]))
+        matcher.setListening(true)
+        _ = matcher.route(.flags, code: 59, flags: control | 0x1)
+        _ = matcher.route(.down, code: 49, flags: control | 0x1)
+        _ = matcher.route(.flags, code: 58, flags: control | 0x1 | option | 0x20)
+        XCTAssertEqual(matcher.route(.flags, code: 58, flags: control | 0x1).signals, [.action(4)])
+    }
+
+    func testForeignModifiersCannotRearmADirtyBareAction() {
+        for id: UInt32 in [3, 4] {
+            var matcher = ShortcutMatcher(table: ShortcutTable(hold: nil, always: [], listening: [NativeShortcut(action: id, code: nil, mods: [0x20])]))
+            matcher.setListening(true)
+            _ = matcher.route(.flags, code: 58, flags: option | 0x20)
+            _ = matcher.route(.flags, code: 59, flags: option | 0x20 | control | 0x1)
+            _ = matcher.route(.flags, code: 59, flags: option | 0x20)
+            XCTAssertEqual(matcher.route(.flags, code: 58, flags: 0).signals, [])
+            _ = matcher.route(.flags, code: 58, flags: option | 0x20)
+            XCTAssertEqual(matcher.route(.flags, code: 58, flags: 0).signals, [.action(id)])
+        }
+    }
+
+    func testSyntheticFnFlagsOnArrowsAndFunctionKeysDoNotStartDictation() {
+        var matcher = ShortcutMatcher(table: ShortcutTable(hold: NativeShortcut(action: 0, code: nil, mods: [fn]), always: [], listening: []))
+        XCTAssertEqual(matcher.route(.down, code: 126, flags: fn).signals, [])
+        XCTAssertEqual(matcher.route(.up, code: 126, flags: fn).signals, [])
+        XCTAssertEqual(matcher.route(.down, code: 96, flags: fn).signals, [])
+        XCTAssertEqual(matcher.route(.flags, code: 63, flags: fn).signals, [.down])
+        XCTAssertEqual(matcher.route(.flags, code: 63, flags: 0).signals, [.up])
+    }
+    func testRebindingWhileHeldWaitsForARelease() {
+        let table = ShortcutTable(hold: NativeShortcut(action: 0, code: nil, mods: [fn]), always: [], listening: [])
+        var matcher = ShortcutMatcher(table: table)
+        _ = matcher.route(.flags, code: 63, flags: fn)
+        matcher.setTable(table)
+        XCTAssertEqual(matcher.route(.down, code: 0, flags: fn).signals, [])
+        XCTAssertEqual(matcher.route(.flags, code: 63, flags: 0).signals, [])
+        XCTAssertEqual(matcher.route(.flags, code: 63, flags: fn).signals, [.down])
+    }
+
     func testSharedRustSequencesMatchTheNativeMatcher() throws {
         var root = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { root.deleteLastPathComponent() }

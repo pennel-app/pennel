@@ -335,6 +335,8 @@ fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> R
     crate::record_shortcut::refresh(app, shared);
     crate::apply_appearance(app);
     crate::ui::apply(app, shared).map_err(err)?;
+    // Accelerator changes must not depend on interface-language or command-state changes.
+    crate::desktop_commands::refresh(app).map_err(err)?;
     if old_settings.dictation_pad_auto_paste && !shared.settings().dictation_pad_auto_paste {
         crate::owned_dictation::invalidate_external(app);
     }
