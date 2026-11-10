@@ -815,5 +815,7 @@
   "backend.shortcut_native_key_not_supported": "Deze toets kan niet worden ingesteld op dit systeem.",
   "backend.shortcut_native_shortcut_unavailable": "Toetsenbordsneltoetsen zijn op dit systeem niet beschikbaar.",
   "backend.shortcut_wayland_global_shortcuts": "Globale sneltoetsen zijn niet beschikbaar op Wayland.",
-  "backend.shortcut_x11_keyed_shortcuts_unavailable": "Globale sneltoetsen met een gewone toets zijn niet beschikbaar op X11. Gebruik een modificatietoets, de knoppen of een bureaubladopdracht."
+  "backend.shortcut_x11_keyed_shortcuts_unavailable": "Globale sneltoetsen met een gewone toets zijn niet beschikbaar op X11. Gebruik een modificatietoets, de knoppen of een bureaubladopdracht.",
+  "backend.pill_preview_capture_active": "Rond het huidige dictaat af voordat je het pilvoorbeeld toont.",
+  "backend.pill_preview_open_failed": "Het pilvoorbeeld kon niet worden geopend."
 }

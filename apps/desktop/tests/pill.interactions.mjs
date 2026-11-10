@@ -258,6 +258,44 @@ export async function checkConfiguredCancelHint() {
   return { ...result, processingHintCleared: true };
 }
 
+export async function checkPillPreferenceUpdates() {
+  await ready();
+  const { api } = await import('/src/api.ts');
+  const client = window.__PENNEL_PLATFORM__, original = client.invoke;
+  const initial = await api.info();
+  const pending = [];
+  client.invoke = (command, args) => command === 'app_info' ? new Promise(resolve => pending.push(resolve)) : original(command, args);
+  try {
+    window.__PENNEL_FIXTURE__.emit('settings-changed', null);
+    window.__PENNEL_FIXTURE__.emit('settings-changed', null);
+    await pause();
+    assert(pending.length === 2, 'Preference refresh requests did not start.');
+    pending[1]({ ...initial, settings: { ...initial.settings, pill_colour: 'light', pill_size: 'large', pill_position: 'top_centre' } });
+    await pause();
+    pending[0]({ ...initial, settings: { ...initial.settings, pill_colour: 'ink', pill_size: 'compact', pill_position: 'bottom_centre' } });
+    await pause();
+    assert(document.documentElement.dataset.pillColour === 'light' && document.documentElement.dataset.pillSize === 'large' && document.documentElement.dataset.pillPosition === 'top_centre', 'An older settings response overwrote newer pill preferences.');
+  } finally { client.invoke = original; }
+  return { stalePreferencesRejected: true, syntheticOnly: true };
+}
+
+export async function checkPillDemoPrivacy() {
+  for (let attempt = 0; attempt < 100 && !document.getElementById('label')?.textContent; attempt++) await pause();
+  const fixture = window.__PENNEL_FIXTURE__;
+  assert(fixture && !fixture.calls.some(command => /dictation_state|toggle_dictation|copy_|append_dictation/.test(command)), 'The display-only preview fetched or changed capture text.');
+  assert(document.getElementById('pill').dataset.state === 'preview' && document.getElementById('preview').hidden, 'The demo pretended to be a recording or displayed recognition text.');
+  return { previewOnly: true, noCaptureSnapshot: true, noTextOrClipboardMutation: true, syntheticOnly: true };
+}
+
+export async function checkTinyPillRecovery() {
+  const { pill } = await ready();
+  assert(getComputedStyle(document.getElementById('preview')).display === 'none', 'A display too short for captions must keep space for the recovery message.');
+  const rect = pill.getBoundingClientRect();
+  assert(rect.top >= 0 && rect.bottom <= innerHeight, 'The recovery pill is clipped in a tiny work area.');
+  assert(!document.getElementById('detail').hidden && document.getElementById('detail').textContent.trim(), 'The recovery detail disappeared in a tiny work area.');
+  return { recoveryVisible: true, captionSpaceBounded: true, syntheticOnly: true };
+}
+
 export async function checkPillBackToBackModels() {
   const { fixture } = await ready();
   const chip = document.getElementById('model-chip');
@@ -273,4 +311,21 @@ export async function checkPillBackToBackModels() {
   fixture.emit('pill-model', metadata('first-model-capture', 99, 'Obsolete capture model'));
   assert(chip.textContent.includes('Second capture model'), 'An old capture replaced the new model.');
   return { backToBackCapture: true, generationZeroAccepted: true, oldModelCleared: true, lateCaptureRejected: true, syntheticOnly: true };
+}
+
+export async function checkPillFollowingAppearance() {
+  const { pill, fixture } = await ready();
+  assert(fixture.options.app_appearance_opposite_system, 'Use the declared opposite-appearance fixture.');
+  const { api } = await import('/src/api.ts');
+  const info = await api.info();
+  const expected = info.settings.appearance === 'dark' ? 'rgb(42, 39, 35)' : 'rgb(252, 251, 248)';
+  assert(getComputedStyle(pill).backgroundColor === expected, 'The following pill ignored Pennel appearance in favour of the opposite OS query.');
+  await api.saveSettings({ ...info.settings, appearance: 'system' });
+  const systemColour = matchMedia('(prefers-color-scheme: dark)').matches ? 'rgb(42, 39, 35)' : 'rgb(252, 251, 248)';
+  for (let i = 0; i < 100 && getComputedStyle(pill).backgroundColor !== systemColour; i++) await pause();
+  assert(getComputedStyle(pill).backgroundColor === systemColour, 'The pill did not resume OS-following appearance.');
+  await api.saveSettings(info.settings);
+  for (let i = 0; i < 100 && getComputedStyle(pill).backgroundColor !== expected; i++) await pause();
+  assert(getComputedStyle(pill).backgroundColor === expected, 'The following pill did not return to Pennel appearance.');
+  return { forcedAppOppositeSystem: true, sharedAppearanceHierarchy: true, syntheticOnly: true };
 }

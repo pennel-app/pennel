@@ -815,5 +815,7 @@
   "backend.shortcut_native_key_not_supported": "This key cannot be registered on this system.",
   "backend.shortcut_native_shortcut_unavailable": "Keyboard shortcuts are unavailable on this system.",
   "backend.shortcut_wayland_global_shortcuts": "Global shortcuts are unavailable on Wayland.",
-  "backend.shortcut_x11_keyed_shortcuts_unavailable": "Keyed global shortcuts are unavailable on X11. Use a modifier-only shortcut, the buttons or a desktop command."
+  "backend.shortcut_x11_keyed_shortcuts_unavailable": "Keyed global shortcuts are unavailable on X11. Use a modifier-only shortcut, the buttons or a desktop command.",
+  "backend.pill_preview_capture_active": "Finish the current dictation before showing the pill preview.",
+  "backend.pill_preview_open_failed": "The pill preview could not be opened."
 }

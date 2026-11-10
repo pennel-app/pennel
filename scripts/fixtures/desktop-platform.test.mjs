@@ -857,8 +857,12 @@ test("every visual scenario has a unique stable identifier and valid entry", () 
   for (const item of cases) {
     assert.match(item.name, /^[a-z][a-z0-9-]+$/);
     assert.ok(["workspace", "settings", "history", "dictation", "onboarding", "pill"].includes(item.window));
-    if (item.window === "pill") assert.ok(["listening", "hands_free", "command", "no_sound", "working", "inserted", "copied", "problem"].includes(item.pill_state));
-    else assert.ok(item.section || item.step);
+    if (item.window === "pill") {
+      if (item.pill_demo) {
+        assert.equal(item.pill_state, undefined);
+        assert.ok(item.steps?.some(step => step.eval?.includes("checkPillDemoPrivacy")));
+      } else assert.ok(["listening", "hands_free", "command", "no_sound", "working", "inserted", "copied", "problem"].includes(item.pill_state));
+    } else assert.ok(item.section || item.step);
   }
 });
 

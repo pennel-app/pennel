@@ -964,3 +964,14 @@ button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--d
 .speech-model-picker > .ui-icon { width: 12px; height: 12px; flex: 0 0 auto; transform: rotate(90deg); }
 .speech-model-picker .menu-button-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.pill-settings-preview { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 20px; min-height: 110px; padding: 20px 16px; box-sizing: border-box; background: var(--subtle); }
+.pill-sample { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding: 8px 12px; border-radius: var(--radius-pill); background: var(--pill-background); color: var(--pill-text); font: 500 var(--pill-label-size)/1.2 Figtree, sans-serif; box-shadow: 0 4px 12px var(--shadow); }
+.pill-sample > .ui-icon { width: 18px; height: 18px; color: var(--pill-accent); flex: 0 0 auto; }
+.pill-sample-model { min-width: 0; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 7px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--pill-text) 14%, transparent); font-size: var(--pill-caption-size); }
+.pill-sample-model[hidden] { display: none; }
+.pill-display-preview { position: relative; flex: 0 0 70px; width: 70px; height: 54px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
+.pill-position-mark { position: absolute; width: 22px; height: 5px; left: 24px; bottom: 7px; border-radius: var(--radius-pill); background: var(--foreground); }
+.pill-settings-preview[data-position="top_centre"] .pill-position-mark { top: 7px; bottom: auto; }
+.pill-settings-preview[data-position="near_cursor"] .pill-position-mark { top: 30px; left: 40px; bottom: auto; }
+.pill-settings-preview + .dictation-preference { border-top: 1px solid var(--border); }
+[data-preference="pill-colour"] .segmented, [data-preference="pill-size"] .segmented { flex-wrap: wrap; }

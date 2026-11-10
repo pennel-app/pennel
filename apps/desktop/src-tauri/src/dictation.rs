@@ -1291,6 +1291,7 @@ impl Controller {
         }
         // X11 listening grabs are separate from the raw hook's binding table.
         crate::record_shortcut::refresh(&self.app, &self.shared);
+        crate::pill::refresh_preferences(&self.app);
         if let Some(session) = &self.recording_session {
             self.pill.refresh_model(session, false);
         }

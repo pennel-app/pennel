@@ -841,6 +841,23 @@ public func showPanelAtBottom(_ pointer: UnsafeMutableRawPointer?, _ width: Doub
     }
 }
 
+/// Shares logical dimensions with the token-generated desktop metrics and never activates the panel.
+@_cdecl("pennel_mac_show_pill_at_position")
+public func showPillAtPosition(_ pointer: UnsafeMutableRawPointer?, _ width: Double, _ height: Double, _ position: Int32) {
+    guard let pointer else { return }
+    onMain {
+        let window = Unmanaged<NSWindow>.fromOpaque(pointer).takeUnretainedValue()
+        let mouse = NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main,
+           let frame = pillOverlayFrame(visible: screen.visibleFrame, cursor: mouse, width: width, height: height, placement: PillPlacement(rawValue: position) ?? .bottomCentre) {
+            window.setFrame(frame, display: false)
+        }
+        guard let host = overlayHost(window) else { window.orderFrontRegardless(); return }
+        host.panel.setFrame(window.frame, display: false)
+        host.panel.orderFrontRegardless()
+    }
+}
+
 /// Top-right corner of a screen's visible area with a margin, shrunk to fit it.
 func topRightOverlayFrame(visible: NSRect, width: CGFloat, height: CGFloat, margin: CGFloat) -> NSRect {
     let size = NSSize(width: min(max(width, 1), visible.width), height: min(max(height, 1), visible.height))
