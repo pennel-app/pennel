@@ -20,6 +20,11 @@ impl PennelEngine {
             .find(|entry| entry.choice == choice)
             .ok_or(PennelError::NotFound)?;
         let (account, _) = settings.resolve(&choice).ok_or(PennelError::NotFound)?;
+        if !settings.dictation_models.contains(&settings.dictation_stt) {
+            settings
+                .dictation_models
+                .push(settings.dictation_stt.clone());
+        }
         settings.dictation_stt = choice;
         self.persist_settings_locked(settings)?;
         Ok((selected, account))
@@ -126,6 +131,11 @@ impl PennelEngine {
             .position(|entry| entry.choice == settings.dictation_stt)
             .map_or(0, |index| (index + 1) % models.len());
         let selected = models[index].clone();
+        if !settings.dictation_models.contains(&settings.dictation_stt) {
+            settings
+                .dictation_models
+                .push(settings.dictation_stt.clone());
+        }
         settings.dictation_stt = selected.choice.clone();
         self.persist_settings_locked(settings)?;
         Ok(selected)
@@ -205,6 +215,39 @@ mod tests {
             .by_provider
             .insert("groq".into(), "synthetic-key".into());
         assert_eq!(engine.configured_dictation_models(with_key).len(), 3);
+    }
+
+    #[test]
+    fn switching_materializes_the_current_choice_omitted_from_a_partial_saved_list() {
+        let (_directory, engine) = engine();
+        let mut settings = engine.settings();
+        settings.providers.push(ProviderAccount {
+            id: "server".into(),
+            kind: ProviderKind::Custom,
+            name: "Server".into(),
+            base_url: "http://127.0.0.1:1234/v1".into(),
+        });
+        settings.dictation_models = vec![choice("server", "B")];
+        settings.dictation_stt = choice("server", "A");
+        engine.update_settings(settings.clone()).unwrap();
+        assert_eq!(engine.configured_dictation_models(keys()).len(), 2);
+        engine
+            .select_dictation_model(choice("server", "B"), keys())
+            .unwrap();
+        assert_eq!(engine.configured_dictation_models(keys()).len(), 2);
+        assert_eq!(
+            engine.next_dictation_model(keys()).unwrap().choice,
+            choice("server", "A")
+        );
+        engine.update_settings(settings).unwrap();
+        assert_eq!(
+            engine.next_dictation_model(keys()).unwrap().choice,
+            choice("server", "B")
+        );
+        assert_eq!(
+            engine.next_dictation_model(keys()).unwrap().choice,
+            choice("server", "A")
+        );
     }
 
     #[test]

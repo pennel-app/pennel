@@ -426,9 +426,11 @@ impl LiveDictationSession {
             .retain(|provider| provider.id != account.id);
         settings.providers.push(account);
         self.state.generation.fetch_add(1, Ordering::SeqCst);
-        self.state.accepting.store(true, Ordering::SeqCst);
-        self.state.publish("", true)?;
         *recognition = presentation(&self.engine, &settings, &self.state);
+        drop(recognition);
+        // Observers may read session getters. Keep new previews paused until the clear is delivered.
+        self.state.publish("", true)?;
+        self.state.accepting.store(true, Ordering::SeqCst);
         Ok(selected)
     }
 
@@ -710,6 +712,63 @@ mod tests {
         assert_eq!(session.finish(request()).unwrap().text, "Een echt dictaat.");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(session.select_speech_model(next, request().keys).is_err());
+    }
+
+    #[test]
+    fn model_switch_clear_observer_can_read_the_updated_session_without_deadlock() {
+        struct ReadingObserver {
+            session: Mutex<Option<std::sync::Weak<LiveDictationSession>>>,
+            read: std::sync::mpsc::Sender<(DictationPreviewMode, ModelChoice)>,
+        }
+        impl DictationPreviewObserver for ReadingObserver {
+            fn changed(&self, update: DictationPreviewUpdate) {
+                if update.text.is_empty() {
+                    if let Some(session) = self
+                        .session
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(std::sync::Weak::upgrade)
+                    {
+                        self.read
+                            .send((session.mode(), session.speech_model()))
+                            .unwrap();
+                    }
+                }
+            }
+        }
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        settings.providers.push(ProviderAccount {
+            id: "second".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Second".into(),
+            base_url: String::new(),
+        });
+        let next = ModelChoice {
+            provider_id: "second".into(),
+            model: "dictation".into(),
+        };
+        settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
+        engine.update_settings(settings).unwrap();
+        let (read, received) = std::sync::mpsc::channel();
+        let observer = Arc::new(ReadingObserver {
+            session: Mutex::new(None),
+            read,
+        });
+        let session = engine.begin_dictation_session(observer.clone(), false);
+        *observer.session.lock().unwrap() = Some(Arc::downgrade(&session));
+        session.update_system_preview("previous caption".into());
+        let selecting = session.clone();
+        let selected = next.clone();
+        let worker =
+            std::thread::spawn(move || selecting.select_speech_model(selected, request().keys));
+        let observed = received
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("read-only preview observer deadlocked during model switch");
+        assert_eq!(observed, (DictationPreviewMode::System, next));
+        worker.join().unwrap().unwrap();
+        session.cancel();
     }
 
     #[test]
