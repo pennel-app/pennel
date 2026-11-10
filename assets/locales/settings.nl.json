@@ -359,5 +359,6 @@
   "shortcuts.help.record": "Ook beschikbaar via de menubalk.",
   "shortcuts.help.open_pennel": "Brengt het hoofdvenster naar voren.",
   "shortcuts.help.new_recording": "Start een vergaderopname.",
-  "shortcuts.help.find": "Activeert het zoekveld in de zijbalk."
+  "shortcuts.help.find": "Activeert het zoekveld in de zijbalk.",
+  "shortcuts.reason.layout": "Dit systeem kan niet bepalen welke toets je zonder Shift of Alt indrukt. Kies een sneltoets zonder die toetsen of een functietoets."
 }

@@ -1,9 +1,10 @@
-import { api, listen, listenToWindow, type PillState, type ShortcutBinding } from './api';
+import { api, listen, listenToWindow, type PillState, type ShortcutBinding, type ShortcutRow } from './api';
 import { bindLocalization, l, t, type UiText } from './i18n.ts';
 import { controlButton, errorText, h, keycaps } from './dom';
 import { icon } from './icons';
 import type { Context } from './main';
 import { ShortcutCapture, type CaptureEvent, type CaptureState } from './shortcut-capture-state';
+import { domBindingAvailable, keyboardLayout, onShortcutLayoutChange } from './shortcut-layout.ts';
 import { shortcutName, shortcutReason, shortcutRow, shortcutText } from './shortcut-presentation';
 
 interface ShortcutProblem { kind: string; reason: string; action?: string | null }
@@ -18,7 +19,7 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
     if (state.phase === 'listening' || state.phase === 'starting') { void capture.cancel().catch(showError); return; }
     issue = null; failure = null; saved = false;
     const row = shortcutRow(ctx.info, action);
-    if (row?.editable && row.capability.available) void capture.start(action, row.scope);
+    if (row?.editable && canConfigure(row)) void capture.start(action, row.scope);
   } }, display);
   const clear = controlButton({ class: 'button-icon shortcut-clear', 'data-shortcut-clear': action, onclick: () => { void write(null); } }, icon('close'));
   const reset = controlButton({ class: 'button-icon shortcut-reset', 'data-shortcut-reset': action, onclick: () => { void write(undefined); } }, icon('rotate'));
@@ -36,11 +37,15 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
   const capture = new ShortcutCapture({ start: api.shortcutCaptureStart, stop: api.shortcutCaptureStop,
     listen: async handler => listenToWindow<CaptureEvent>('shortcut-capture', event => handler(event.payload)),
     changed: next => { if (!disposed) { state = next; if (next.phase === 'error') failure = next.error; refresh(); } },
-    binding: binding => write(binding),
+    binding: binding => write(binding), layout: keyboardLayout,
   });
   async function write(binding: ShortcutBinding | null | undefined, replaceConflict = false) {
     if (saving || disposed) return;
     try { await capture.cancel(); } catch (error) { showError(error); return; }
+    const row = shortcutRow(ctx.info, action);
+    if (binding && row?.scope === 'application' && ctx.info.platform !== 'macos' && !domBindingAvailable(binding, keyboardLayout())) {
+      showError(new Error('dom_layout_unavailable')); return;
+    }
     saving = true; candidate = binding ?? null; issue = null; failure = null; saved = false; refresh();
     try {
       await ctx.mutate(async () => {
@@ -50,11 +55,14 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
     } catch (error) { failure = error; }
     finally { saving = false; if (!disposed) refresh(); }
   }
+  function canConfigure(row: ShortcutRow): boolean {
+    return row.capability.available || row.capability.reason === 'dom_layout_unavailable'
+      || action === 'next_model' && ['next_model_switch_disabled','next_model_shortcut_cleared'].includes(row.capability.reason ?? '');
+  }
   function refresh() {
     if (disposed) return;
     const row = shortcutRow(ctx.info, action), recording = state.phase === 'starting' || state.phase === 'listening';
-    const configurable = action === 'next_model' && ['next_model_switch_disabled', 'next_model_shortcut_cleared'].includes(row?.capability.reason ?? '');
-    const blocked = listening || !row?.editable || !row.capability.available && !configurable;
+    const blocked = listening || !row?.editable || !canConfigure(row);
     const name = shortcutName(action);
     record.disabled = saving || blocked;
     record.setAttribute('aria-label', `${name}: ${recording ? t('shortcuts.press') : shortcutText(ctx.info, action)}. ${t('shortcuts.record')}`);
@@ -78,10 +86,11 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
   }
   function captureError(error: unknown): string {
     const text = errorText(error);
+    if (text === 'dom_layout_unavailable') return shortcutReason(text);
     if (/Finish dictating/.test(text)) return t('shortcuts.reason.listening');
     if (/Focus|lost focus/.test(text)) return t('shortcuts.reason.focus');
     if (/Native shortcut capture|native_capture_unavailable/.test(text)) return t('shortcuts.reason.native_capture');
-    return text;
+    return shortcutReason(text);
   }
   const keydown = (event: KeyboardEvent) => {
     if (capture.keydown(event)) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -96,6 +105,7 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
   const activity = (pill: PillState) => { if (!disposed) { listening = ['listening', 'hands_free', 'command', 'no_sound'].includes(pill.state); refresh(); } };
   void listen<PillState>('dictation-state', event => { activityEvent = true; activity(event.payload); }).then(unlisten => { if (disposed) unlisten(); else ctx.onDispose(unlisten); }).catch(showError);
   void api.dictationState().then(pill => { if (!activityEvent) activity(pill); }).catch(showError);
+  ctx.onDispose(onShortcutLayoutChange(refresh));
   ctx.onInfoChange(refresh); bindLocalization(root, refresh); refresh();
   return root;
 }

@@ -156,6 +156,7 @@
     const status = options.copy_only ? { status: "unsupported", reason: "Wayland: configure a shortcut for pennel --toggle-dictation in your desktop settings. Pennel copies the text; paste it yourself with Ctrl+V." }
       : granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
     for (const name of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[name] = clone(status);
+    if (options.platform === "linux" && !options.wayland) capabilities.record_shortcut = { status: "unsupported", reason: "x11_keyed_shortcuts_unavailable" };
   };
   updateShortcutCapabilities();
   const keys = { groq: Boolean(options.configured_text_provider), openai: false };
@@ -271,7 +272,8 @@
     const preset = { fn: shortcutDefaults.dictate, right_control: shortcutBinding(["right_ctrl"]), right_option: shortcutBinding(["right_alt"]), right_command: shortcutBinding(["right_meta"]), control_super: shortcutBinding(["ctrl", "meta"]) };
     const binding = Object.hasOwn(settings.shortcuts || {}, id) ? settings.shortcuts[id] : id === "dictate" ? preset[settings.hotkey] || default_binding : id === "record" && !settings.record_shortcut_enabled ? null : default_binding;
     const scope = id === "dictate" ? "global_hold" : ["cancel", "next_model"].includes(id) ? "listening" : ["record", "open_pennel"].includes(id) ? "global" : "application";
-    const reason = scope !== "application" && options.wayland ? id === "dictate" ? "wayland_toggle_dictation" : id === "record" ? "wayland_toggle_meeting" : id === "open_pennel" ? "wayland_open_pennel" : "wayland_global_shortcuts" : scope !== "application" && shortcutDenied() ? "accessibility_required" : id === "next_model" ? "second_model_required" : null;
+    let reason = scope !== "application" && options.wayland ? id === "dictate" ? "wayland_toggle_dictation" : id === "record" ? "wayland_toggle_meeting" : id === "open_pennel" ? "wayland_open_pennel" : "wayland_global_shortcuts" : scope !== "application" && shortcutDenied() ? "accessibility_required" : id === "next_model" ? "second_model_required" : null;
+    if (shortcutPlatform === "linux" && !options.wayland && (["record", "open_pennel"].includes(id) || ["cancel", "next_model"].includes(id) && binding?.code)) reason = "x11_keyed_shortcuts_unavailable";
     return {id,scope,binding:clone(binding),default_binding:clone(default_binding),label:shortcutLabel(binding),editable:true,capability:{available:!reason,reason},changed:JSON.stringify(binding)!==JSON.stringify(default_binding)};
   });
   let shortcutCapture = null, shortcutGeneration = 0;
@@ -996,6 +998,7 @@
       case "shortcut_capture_start": {
         if (shortcutCapture) throw Error("A shortcut is already being recorded");
         const row = shortcutRows().find(row => row.id === args.action);
+        if (!row.capability.available) throw Error(row.capability.reason);
         const native = options.shortcut_native !== false && !options.wayland && !shortcutDenied();
         if (!native && row.scope !== "application") throw Error("Native shortcut capture is unavailable on this system");
         shortcutCapture = { action: args.action, generation: ++shortcutGeneration, native, reason: native ? null : "native_capture_unavailable" };

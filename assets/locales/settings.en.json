@@ -359,5 +359,6 @@
   "shortcuts.help.record": "Also available from the menu bar.",
   "shortcuts.help.open_pennel": "Brings the main window forward.",
   "shortcuts.help.new_recording": "Starts a meeting recording.",
-  "shortcuts.help.find": "Focuses the sidebar search."
+  "shortcuts.help.find": "Focuses the sidebar search.",
+  "shortcuts.reason.layout": "This system cannot identify the unmodified key for a shortcut with Shift or Alt. Choose a shortcut without those modifiers or a function key."
 }
