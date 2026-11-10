@@ -25,6 +25,8 @@ export async function checkPillPreferences() {
   const { t } = await import('/src/i18n.ts');
   const click = (name, value) => { const button = document.querySelector(`[data-preference="${name}"] [data-value="${value}"]`); assert(button, `Missing ${name} ${value}`); button.click(); };
   await until(() => document.querySelector('[data-pill-preview]'), 'The settings preview did not render.');
+  assert(window.__PENNEL_FIXTURE__.calls.filter(command => command === 'dictation_state').length === 1, 'The shortcut recorder must make exactly one initial activity read.');
+  const callsBeforePreferences = window.__PENNEL_FIXTURE__.calls.length;
   document.querySelector('[data-dictation-group="pill"]').scrollIntoView({ block: 'start' });
   click('pill-colour', 'light'); click('pill-size', 'large');
   await until(async () => { const info = await api.info(); return info.settings.pill_colour === 'light' && info.settings.pill_size === 'large'; }, 'Colour and size choices did not persist.');
@@ -41,7 +43,8 @@ export async function checkPillPreferences() {
   assert(getComputedStyle(sample).backgroundColor === expected, 'Match system did not follow the operating-system appearance.');
   document.querySelector('[data-show-pill]').click();
   await until(() => window.__PENNEL_FIXTURE__.calls.includes('show_pill_preview'), 'Show the pill did not call the display-only backend action.');
-  assert(!window.__PENNEL_FIXTURE__.calls.some(command => /toggle_dictation|dictation_state|copy_|append_dictation/.test(command)), 'Pill preferences caused capture or text/clipboard actions.');
+  const calls = window.__PENNEL_FIXTURE__.calls;
+  assert(!calls.some(command => /toggle_dictation|copy_|append_dictation/.test(command)) && !calls.slice(callsBeforePreferences).includes('dictation_state'), 'Pill preferences caused capture or text/clipboard actions.');
   document.querySelector('[data-dictation-group="pill"]').scrollIntoView({ block: 'start' });
   return { preferencesSaved: true, systemAppearance: true, fixedFigtree: true, noCaptureOrClipboard: true, syntheticOnly: true };
 }
@@ -111,6 +114,8 @@ export async function checkPillOppositeSystemPreview() {
   assert(fixture && fixture.options.app_appearance_opposite_system, 'Use the declared forced-app/opposite-system fixture.');
   const { api } = await import('/src/api.ts');
   await until(() => document.querySelector('[data-pill-preview][data-pill-colour="system"]'), 'Match Pennel preview did not load.');
+  assert(fixture.calls.filter(command => command === 'dictation_state').length === 1, 'The shortcut recorder must make exactly one initial activity read.');
+  const callsBeforeAppearance = fixture.calls.length;
   const preview = document.querySelector('[data-pill-preview]'), sample = document.querySelector('.pill-sample');
   const forced = fixture.options.appearance === 'dark' ? 'light' : 'dark';
   const expected = forced === 'dark' ? 'rgb(42, 39, 35)' : 'rgb(252, 251, 248)';
@@ -121,7 +126,7 @@ export async function checkPillOppositeSystemPreview() {
   await until(() => preview.dataset.pillAppearance === 'system' && getComputedStyle(sample).backgroundColor === systemColour, 'System appearance did not restore the OS-following preview.');
   await api.saveSettings({ ...settings, appearance: forced });
   await until(() => preview.dataset.pillAppearance === forced && getComputedStyle(sample).backgroundColor === expected, 'The following preview did not return to the explicit Pennel override.');
-  assert(!fixture.calls.some(command => /dictation_state|toggle_dictation|copy_|append_dictation/.test(command)), 'Appearance resolution caused capture/text side effects.');
+  assert(!fixture.calls.some(command => /toggle_dictation|copy_|append_dictation/.test(command)) && !fixture.calls.slice(callsBeforeAppearance).includes('dictation_state'), 'Appearance resolution caused capture/text side effects.');
   document.querySelector('[data-dictation-group="pill"]').scrollIntoView({ block: 'start' });
   return { forcedAppOppositeSystem: true, globalAppearanceHierarchy: true, noNativeThemeOverride: true, syntheticOnly: true };
 }

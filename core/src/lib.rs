@@ -202,8 +202,8 @@ pub use session::{MeetingHealth, MeetingRecognition, MeetingSession};
 pub use settings::{
     AppearancePreference, DictationMode, HotkeyTrigger, MeetingAppNamePolicy, ModelChoice,
     OnboardingGoal, OnboardingProgress, OnboardingStatus, OnboardingStep, PillColour, PillPosition,
-    PillSize, Settings, SpeakerRecognitionMode, Style, StyleRule, SuggestionAutomation, SummaryAutomation,
-    default_settings,
+    PillSize, Settings, SpeakerRecognitionMode, Style, StyleRule, SuggestionAutomation,
+    SummaryAutomation, default_settings,
 };
 pub use setup::{SetupAccess, SetupFacts, SetupReadiness, dictation_readiness, meeting_readiness};
 pub use shortcuts::{
