@@ -245,3 +245,15 @@ export async function checkPillNativeShortcutHints() {
   assert(!document.getElementById('model-chip').title.includes('Ctrl+M'), 'Cached idle shortcut metadata overrode unavailable live readiness.');
   return { actualCancelLabel: true, unavailableHintsHidden: true, actualNextModelLabel: true, syntheticOnly: true };
 }
+
+export async function checkConfiguredCancelHint() {
+  const result = await checkPillNativeShortcutHints();
+  const { fixture } = await ready();
+  const hint = document.getElementById('hint');
+  fixture.emit('pill-state', { state: 'hands_free', cancel_shortcut: { keycaps: ['Ctrl', 'X'], text: 'Ctrl+X' } });
+  assert(hint.textContent.includes('Ctrl+X'), 'The actual Cancel label did not appear before processing.');
+  fixture.emit('pill-state', { state: 'working' });
+  assert(!hint.textContent.includes('Ctrl+X'), 'Processing retained a listening-only Cancel hint.');
+  fixture.emit('pill-state', { state: 'hands_free', cancel_shortcut: { keycaps: ['Ctrl', 'X'], text: 'Ctrl+X' } });
+  return { ...result, processingHintCleared: true };
+}

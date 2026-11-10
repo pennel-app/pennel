@@ -390,6 +390,28 @@ mod tests {
     }
 
     #[test]
+    fn cancel_hint_is_owned_by_listening_presentation_and_clears_before_processing() {
+        let mut content = listening();
+        content.cancel_shortcut = Some(pennel_core::ShortcutLabel {
+            keycaps: vec!["Ctrl".into(), "X".into()],
+            text: "Ctrl+X".into(),
+        });
+        assert_eq!(
+            serde_json::to_value(&content).unwrap()["cancel_shortcut"]["text"],
+            "Ctrl+X"
+        );
+        content.set_state(PillState::Working);
+        assert!(content.cancel_shortcut.is_none());
+        content.set_state(PillState::Hidden);
+        assert!(
+            serde_json::to_value(&content)
+                .unwrap()
+                .get("cancel_shortcut")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn structured_notices_reach_the_webview_as_named_fields() {
         let mut content = listening();
         content.set_state(PillState::Problem {
