@@ -73,6 +73,9 @@ type Shortcut = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "
 type CommandShortcut = Pick<ShortcutRow, "id" | "binding"> & Partial<Pick<ShortcutRow, "capability">>;
 
 // This fallback is a core-validated contract for browser fixtures; native AppInfo supplies effective rows.
+function logicalShortcutKey(key: string): string {
+  return key === "Space" || key === "Spacebar" || key === " " ? " " : key.toLocaleLowerCase();
+}
 export function desktopShortcut(event: Shortcut, platform: string, rows?: readonly CommandShortcut[], capturing = false): DesktopCommand | null {
   if (capturing || event.isComposing || event.keyCode === 229 || event.repeat || event.key === "Dead" || event.key === "Process") return null;
   const effective = rows ?? defaultShortcuts[platform === "macos" ? "macos" : platform === "windows" ? "windows" : "linux"];
@@ -80,7 +83,7 @@ export function desktopShortcut(event: Shortcut, platform: string, rows?: readon
     const binding = row.binding;
     const command = desktopCommand(row.id);
     if (!command || !binding?.key || ("capability" in row && row.capability?.available === false)) continue;
-    if (binding.key.toLocaleLowerCase() !== event.key.toLocaleLowerCase()) continue;
+    if (logicalShortcutKey(binding.key) !== logicalShortcutKey(event.key)) continue;
     const mods = new Set(binding.mods);
     if (event.metaKey === mods.has("meta") && event.ctrlKey === mods.has("ctrl")
         && event.altKey === mods.has("alt") && event.shiftKey === mods.has("shift")) return command;
