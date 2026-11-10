@@ -32,10 +32,45 @@ struct NativeCaptureClock {
     uncertainty_ms: Option<f64>,
     native_elapsed_ms: Option<f64>,
     status_round_trip_ms: Option<f64>,
+    observation_valid: bool,
+    probe_count: u8,
+    selected_probe: Option<u8>,
 }
 
 #[cfg(any(target_os = "macos", test))]
 impl NativeCaptureClock {
+    fn probe_startup<T>(
+        capture: (Instant, Instant),
+        mut read: impl FnMut() -> ((Instant, Instant), Option<f64>, T),
+    ) -> (Self, T) {
+        let mut best: Option<Self> = None;
+        let mut latest = None;
+        for probe in 1..=3 {
+            let (status, elapsed, value) = read();
+            let mut clock = Self::align(capture, status, elapsed);
+            clock.probe_count = probe;
+            clock.selected_probe = clock.observation_valid.then_some(probe);
+            if clock.verified {
+                return (clock, value);
+            }
+            let preferable = best.as_ref().is_none_or(|previous| {
+                clock.observation_valid
+                    && (!previous.observation_valid
+                        || clock.uncertainty_ms < previous.uncertainty_ms)
+            });
+            if preferable {
+                best = Some(clock);
+            }
+            latest = Some(value);
+        }
+        let mut clock = best.expect("startup clock probing always reads at least once");
+        clock.probe_count = 3;
+        (
+            clock,
+            latest.expect("startup clock probing always reads at least once"),
+        )
+    }
+
     /// Queueing before native startup is not recorded audio. Bound the native origin by the
     /// actual start RPC and the status midpoint; more than 100 ms ambiguity cannot qualify names.
     fn align(
@@ -54,6 +89,9 @@ impl NativeCaptureClock {
             uncertainty_ms,
             native_elapsed_ms: elapsed,
             status_round_trip_ms: round_trip,
+            observation_valid: false,
+            probe_count: 1,
+            selected_probe: None,
         };
         let (Some(span), Some(elapsed), Some(uncertainty_ms)) = (span, elapsed, uncertainty_ms)
         else {
@@ -78,6 +116,8 @@ impl NativeCaptureClock {
             return clock;
         }
         clock.started = started;
+        clock.observation_valid = true;
+        clock.selected_probe = Some(1);
         clock.verified = uncertainty_ms <= 100.0;
         clock
     }
@@ -150,6 +190,9 @@ impl MacCaptureHealth {
             "audio_clock_uncertainty_ms": clock.uncertainty_ms,
             "audio_clock_native_initial_elapsed_ms": clock.native_elapsed_ms,
             "audio_clock_status_rtt_ms": clock.status_round_trip_ms,
+            "audio_clock_probe_count": clock.probe_count,
+            "audio_clock_selected_probe": clock.selected_probe,
+            "audio_clock_valid_observation": clock.observation_valid,
         })
     }
 }
@@ -176,11 +219,14 @@ impl MacCaptureMonitor {
     ) -> Self {
         let capture = native.quiescence();
         let source_integrity = native.app_audio_source();
-        let before = Instant::now();
-        let initial = MacCaptureHealth::from_status(native.status());
-        let after = Instant::now();
-        let clock =
-            NativeCaptureClock::align(capture_bounds, (before, after), initial.audio_elapsed_ms);
+        // A queued AppKit status read can be much wider than the next fresh observation.
+        // Only startup probes may choose an origin; running/stopped clocks stay latched.
+        let (clock, initial) = NativeCaptureClock::probe_startup(capture_bounds, || {
+            let before = Instant::now();
+            let status = MacCaptureHealth::from_status(native.status());
+            let after = Instant::now();
+            ((before, after), status.audio_elapsed_ms, status)
+        });
         let health = Arc::new(Mutex::new(initial));
         let next_health = health.clone();
         let (stop, receiver) = mpsc::sync_channel(1);
@@ -1510,6 +1556,159 @@ mod tests {
         assert!(!clock.verified);
         assert_eq!(clock.uncertainty_ms, Some(201.0));
         assert!(!NativeCaptureClock::align(capture, (status.1, status.0), Some(22.0)).verified);
+    }
+
+    #[test]
+    fn startup_clock_returns_after_first_verified_actual_probe() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, status) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            assert_eq!(calls, 1);
+            (
+                (
+                    origin + std::time::Duration::from_millis(10),
+                    origin + std::time::Duration::from_millis(14),
+                ),
+                Some(12.0),
+                calls,
+            )
+        });
+        assert!(clock.verified);
+        assert_eq!(calls, 1);
+        assert_eq!(status, 1);
+        assert_eq!(clock.probe_count, 1);
+        assert_eq!(clock.selected_probe, Some(1));
+    }
+
+    #[test]
+    fn startup_clock_reprobes_a_wide_bracket_and_accepts_the_next_narrow_one() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, status) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            match calls {
+                1 => (
+                    (
+                        origin + std::time::Duration::from_micros(10_000),
+                        origin + std::time::Duration::from_micros(254_174),
+                    ),
+                    Some(132.087),
+                    calls,
+                ),
+                2 => (
+                    (
+                        origin + std::time::Duration::from_millis(260),
+                        origin + std::time::Duration::from_millis(262),
+                    ),
+                    Some(261.0),
+                    calls,
+                ),
+                _ => panic!("a verified second bracket must stop startup probing"),
+            }
+        });
+        assert_eq!(calls, 2);
+        assert_eq!(status, 2);
+        assert!(clock.verified);
+        assert_eq!(clock.uncertainty_ms, Some(2.0));
+        assert_eq!(clock.started, origin);
+        assert_eq!(clock.probe_count, 2);
+        assert_eq!(clock.selected_probe, Some(2));
+    }
+
+    #[test]
+    fn startup_clock_keeps_the_narrowest_valid_wide_probe_but_fails_closed() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, status) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            let (before, after) = match calls {
+                1 => (10, 310),
+                2 => (320, 600),
+                3 => (610, 830),
+                _ => panic!("three probes is the hard limit"),
+            };
+            (
+                (
+                    origin + std::time::Duration::from_millis(before),
+                    origin + std::time::Duration::from_millis(after),
+                ),
+                Some((before + after) as f64 / 2.0),
+                calls,
+            )
+        });
+        assert_eq!(calls, 3);
+        assert_eq!(status, 3);
+        assert!(!clock.verified);
+        assert_eq!(clock.uncertainty_ms, Some(111.0));
+        assert_eq!(clock.probe_count, 3);
+        assert_eq!(clock.selected_probe, Some(3));
+    }
+
+    #[test]
+    fn startup_clock_never_selects_a_narrow_nonfinite_or_missing_counter() {
+        let origin = Instant::now();
+        for invalid in [None, Some(f64::NAN), Some(f64::INFINITY)] {
+            let mut calls = 0;
+            let (clock, _) = NativeCaptureClock::probe_startup((origin, origin), || {
+                calls += 1;
+                assert!(calls <= 3);
+                (
+                    (
+                        origin + std::time::Duration::from_millis(calls * 10),
+                        origin + std::time::Duration::from_millis(calls * 10 + 2),
+                    ),
+                    invalid,
+                    (),
+                )
+            });
+            assert_eq!(calls, 3);
+            assert!(!clock.verified);
+            assert!(!clock.observation_valid);
+            assert_eq!(clock.probe_count, 3);
+            assert_eq!(clock.selected_probe, None);
+        }
+    }
+
+    #[test]
+    fn startup_clock_does_not_prefer_a_narrow_invalid_probe_to_a_valid_wide_one() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, _) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            match calls {
+                1 => (
+                    (
+                        origin + std::time::Duration::from_millis(10),
+                        origin + std::time::Duration::from_millis(310),
+                    ),
+                    Some(160.0),
+                    (),
+                ),
+                2 => (
+                    (
+                        origin + std::time::Duration::from_millis(320),
+                        origin + std::time::Duration::from_millis(322),
+                    ),
+                    Some(f64::NAN),
+                    (),
+                ),
+                3 => (
+                    (
+                        origin + std::time::Duration::from_millis(330),
+                        origin + std::time::Duration::from_millis(550),
+                    ),
+                    Some(440.0),
+                    (),
+                ),
+                _ => panic!("three probes is the hard limit"),
+            }
+        });
+        assert_eq!(calls, 3);
+        assert!(clock.observation_valid);
+        assert!(!clock.verified);
+        assert_eq!(clock.selected_probe, Some(3));
+        assert_eq!(clock.uncertainty_ms, Some(111.0));
     }
 
     fn preview_audio(source: Speaker, start_ms: u64) -> pennel_core::MeetingPreviewAudio {
