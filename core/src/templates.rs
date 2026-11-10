@@ -208,6 +208,7 @@ impl TemplateStore {
         list
     }
 
+    #[cfg(any(test, feature = "evaluation"))]
     pub fn spec(&self, id: &str) -> TemplateSpec {
         self.resolved_spec(id).1
     }
