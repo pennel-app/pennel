@@ -75,10 +75,7 @@ pub fn rows(shared: &Shared) -> Vec<ShortcutRow> {
         if row.id == "next_model" && row.capability.available {
             let reason = next_model_reason(
                 settings.pill_model_switch_enabled,
-                shared
-                    .engine
-                    .configured_dictation_models(shared.keys())
-                    .len(),
+                shared.configured_dictation_models().len(),
                 row.binding.is_some(),
                 crate::record_shortcut::next_model_enabled()
                     && shared

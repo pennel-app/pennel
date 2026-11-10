@@ -639,7 +639,7 @@ pub async fn configured_dictation_models(
 ) -> Result<Vec<pennel_core::ConfiguredDictationModel>> {
     let shared = shared.inner().clone();
     off_main("configured_dictation_models", move || {
-        Ok(shared.engine.configured_dictation_models(shared.keys()))
+        Ok(shared.configured_dictation_models())
     })
     .await
 }

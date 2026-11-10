@@ -418,6 +418,7 @@ pub struct PennelEngine {
     local: LocalEngine,
     index: Mutex<Option<MeetingIndex>>,
     system_stt: RwLock<Option<Arc<dyn SystemTranscriber>>>,
+    system_speech_available: std::sync::atomic::AtomicBool,
     timed_system_stt: RwLock<Option<Arc<dyn crate::TimedSystemTranscriber>>>,
     system_llm: RwLock<Option<Arc<dyn SystemLanguageModel>>>,
     secrets: RwLock<Option<Arc<dyn SecretStore>>>,
@@ -625,7 +626,16 @@ impl PennelEngine {
     /// Lets the app plug in the OS's on-device recognizer (Apple's dictation model) as a provider.
     pub fn set_system_transcriber(&self, transcriber: Arc<dyn SystemTranscriber>) {
         *self.system_stt.write().unwrap() = Some(transcriber);
+        self.system_speech_available
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         *self.timed_system_stt.write().unwrap() = None;
+    }
+
+    /// Current host capability, refreshed without prompting or changing an active capture.
+    /// Existing hosts retain their installed transcriber's availability until they supply this fact.
+    pub fn set_system_speech_available(&self, available: bool) {
+        self.system_speech_available
+            .store(available, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn set_timed_system_transcriber(
@@ -2879,6 +2889,7 @@ impl PennelEngine {
             local: LocalEngine::default(),
             index: Mutex::new(index),
             system_stt: RwLock::new(None),
+            system_speech_available: std::sync::atomic::AtomicBool::new(false),
             timed_system_stt: RwLock::new(None),
             system_llm: RwLock::new(None),
             secrets: RwLock::new(None),

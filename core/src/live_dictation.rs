@@ -772,41 +772,55 @@ mod tests {
 
     #[test]
     fn switching_from_system_to_batch_sends_the_original_buffer_only_to_the_new_model() {
-        let (_directory, engine, calls) = engine();
-        let mut server = mockito::Server::new();
-        let transcription = server
-            .mock("POST", "/audio/transcriptions")
-            .match_body(mockito::Matcher::Regex(
-                "name=\"model\"[\\r\\n]+new-model".into(),
-            ))
-            .expect(1)
-            .with_body(r#"{"text":"Nieuwe provider."}"#)
-            .create();
-        let mut settings = engine.settings();
-        settings.providers.push(ProviderAccount {
-            id: "batch".into(),
-            kind: ProviderKind::Custom,
-            name: "Batch".into(),
-            base_url: server.url(),
-        });
-        let next = ModelChoice {
-            provider_id: "batch".into(),
-            model: "new-model".into(),
-        };
-        settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
-        engine.update_settings(settings).unwrap();
-        let observer = Arc::new(Observer::default());
-        let session = engine
-            .clone()
-            .begin_dictation_session(observer.clone(), false);
-        let id = session.id();
-        session.feed_audio(vec![0.1; 16_000]);
-        session.select_speech_model(next, request().keys).unwrap();
-        assert_eq!(session.mode(), DictationPreviewMode::AfterRecording);
-        assert_eq!(session.id(), id);
-        assert_eq!(session.finish(request()).unwrap().text, "Nieuwe provider.");
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
-        transcription.assert();
+        for (owner, practice) in [
+            ("global", false),
+            ("pad", false),
+            ("home_practice", false),
+            ("onboarding_practice", true),
+        ] {
+            let (_directory, engine, calls) = engine();
+            let mut server = mockito::Server::new();
+            let transcription = server
+                .mock("POST", "/audio/transcriptions")
+                .match_body(mockito::Matcher::Regex(
+                    "name=\"model\"[\\r\\n]+new-model".into(),
+                ))
+                .expect(1)
+                .with_body(r#"{"text":"Nieuwe provider."}"#)
+                .create();
+            let mut settings = engine.settings();
+            settings.providers.push(ProviderAccount {
+                id: "batch".into(),
+                kind: ProviderKind::Custom,
+                name: "Batch".into(),
+                base_url: server.url(),
+            });
+            let next = ModelChoice {
+                provider_id: "batch".into(),
+                model: "new-model".into(),
+            };
+            settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
+            engine.update_settings(settings).unwrap();
+            let observer = Arc::new(Observer::default());
+            let session = engine
+                .clone()
+                .begin_dictation_session(observer.clone(), practice);
+            let id = session.id();
+            session.feed_audio(vec![0.1; 16_000]);
+            session.select_speech_model(next, request().keys).unwrap();
+            assert_eq!(session.mode(), DictationPreviewMode::AfterRecording);
+            assert_eq!(session.id(), id);
+            let mut final_request = request();
+            final_request.app_bundle_id = Some(format!("synthetic.owner.{owner}"));
+            let target = final_request.app_bundle_id.clone();
+            let result = session.finish(final_request).unwrap();
+            assert_eq!(result.text, "Nieuwe provider.");
+            let history = engine.history(1).unwrap();
+            assert_eq!(history[0].id, result.history_id);
+            assert_eq!(history[0].app_bundle_id, target);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            transcription.assert();
+        }
     }
 
     #[test]
