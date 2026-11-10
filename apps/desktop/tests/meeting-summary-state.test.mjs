@@ -26,6 +26,36 @@ test("record attachment metadata follows a same-body refresh without replacing t
   assert.equal(draft.value, "Saved summary");
 });
 
+test("same-body presentation metadata defers across protected reading and applies after release", () => {
+  for (const attached of [true, false]) {
+    const record = { body_revision: "attached", structure: { lead: "Saved summary" } };
+    const draft = new SummaryDraft();
+    draft.receive({ ...document(), record: attached ? record : null });
+    draft.receive({ ...document(), outdated: true, record: attached ? null : record }, true);
+    assert.deepEqual(draft.document.record, attached ? record : null);
+    assert.equal(draft.document.outdated, true, "Harmless status metadata was not acknowledged.");
+    assert.equal(draft.remote, null, "A presentation-only change became a body conflict.");
+    assert.ok(draft.deferredPresentation);
+    assert.equal(draft.applyPresentation(true), false);
+    assert.equal(draft.applyPresentation(), true);
+    assert.deepEqual(draft.document.record, attached ? null : record);
+    assert.equal(draft.value, "Saved summary");
+    assert.equal(draft.deferredPresentation, null);
+  }
+});
+
+test("an acknowledged write supersedes deferred presentation metadata for its old revision", () => {
+  const draft = new SummaryDraft();
+  draft.receive({ ...document(), record: { body_revision: "attached" } });
+  draft.receive({ ...document(), record: null }, true);
+  assert.ok(draft.deferredPresentation);
+  draft.value = "Acknowledged action state";
+  draft.acknowledge(document(draft.value, "r2"), draft.value);
+  assert.equal(draft.deferredPresentation, null);
+  assert.equal(draft.applyPresentation(), false);
+  assert.equal(draft.document.revision, "r2");
+});
+
 test("source changes never silently advance the expected revision of an active or dirty draft", () => {
   for (const protectedInput of [true, false]) {
     const draft = new SummaryDraft(); draft.receive(document());
