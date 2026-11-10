@@ -1223,7 +1223,9 @@ impl Controller {
                 self.perform(actions);
             }
             HotkeyEvent::Action(4)
-                if self.recorder.is_some() && self.shared.settings().pill_model_switch_enabled =>
+                if self.recorder.is_some()
+                    && self.shared.settings().pill_model_switch_enabled
+                    && crate::record_shortcut::listening_action_ready(&self.shared, 4) =>
             {
                 if self.select_speech_model(None).is_err() {
                     self.refresh_speech_models();
@@ -1273,6 +1275,33 @@ impl Controller {
     }
 
     fn refresh_speech_models(&self) {
+        let settings = self.shared.settings();
+        let enabled = settings.pill_model_switch_enabled
+            && self
+                .shared
+                .engine
+                .configured_dictation_models(self.shared.keys())
+                .len()
+                > 1;
+        let listener = self
+            .shared
+            .hotkey
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        if let Some(listener) = listener {
+            if listener
+                .set_bindings_with_next_model(&settings, enabled)
+                .is_err()
+            {
+                crate::record_shortcut::set_next_model_enabled(false);
+                LOG.error("next-model shortcut registration is unavailable");
+            }
+        } else {
+            crate::record_shortcut::set_next_model_enabled(false);
+        }
+        // X11 listening grabs are separate from the raw hook's binding table.
+        crate::record_shortcut::refresh(&self.app, &self.shared);
         if let Some(session) = &self.recording_session {
             self.pill.refresh_model(session, false);
         }

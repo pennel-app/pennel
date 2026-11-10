@@ -803,5 +803,11 @@
   "backend.original_text_pasted_see_log": "Original text pasted (see log)",
   "backend.original_text_available_see_log": "Original text available (see log)",
   "backend.original_text_pasted": "Original text pasted",
-  "backend.original_text_available": "Original text available"
+  "backend.original_text_available": "Original text available",
+  "backend.next_model_switch_disabled": "Enable speech model switching in Dictation settings.",
+  "backend.next_model_second_model_required": "Set up a second ready speech model to switch while dictating.",
+  "backend.next_model_shortcut_cleared": "Record a shortcut for the next speech model.",
+  "backend.next_model_hook_unavailable": "The next-model shortcut is unavailable. Check keyboard shortcut access.",
+  "backend.speech_model_switch_current_unavailable": "This speech model is unavailable. Your current dictation is unchanged.",
+  "backend.speech_model_switch_setup_required": "This speech model is unavailable. Set up speech recognition first."
 }

@@ -229,3 +229,19 @@ export async function checkPillModelSwitch() {
   await finishAnimations(pill);
   return { actualModel: true, keyboardOnly: true, confirmationMs: 900, duplicateTimerSuppressed: true, oldCapturesRejected: true, workingStatePreserved: true, syntheticOnly: true };
 }
+
+export async function checkPillNativeShortcutHints() {
+  const { fixture } = await ready();
+  fixture.emit('pill-state', { state: 'hands_free', cancel_shortcut: { keycaps: ['Ctrl', 'X'], text: 'Ctrl+X' } });
+  const hint = document.getElementById('hint');
+  assert(hint.textContent.includes('Ctrl+X') && !hint.textContent.includes('Esc'), 'Cancel hint ignored its actual native label.');
+  fixture.emit('pill-state', { state: 'hands_free' });
+  assert(!hint.textContent.includes('Ctrl+X'), 'An unavailable Cancel hint remained visible.');
+  fixture.emit('pill-preview', { session_id: 'live-shortcuts', revision: 0, text: '' });
+  const next = { session_id: 'live-shortcuts', generation: 0, model: { choice: { provider_id: 'local', model: 'synthetic' }, label: 'Actual model' }, available_models: 2, enabled: true, switched: false, next_shortcut: { keycaps: ['Ctrl', 'M'], text: 'Ctrl+M' } };
+  fixture.emit('pill-model', next);
+  assert(document.getElementById('model-chip').title.includes('Ctrl+M'), 'The live next-model label was missing.');
+  fixture.emit('pill-model', { ...next, next_shortcut: null });
+  assert(!document.getElementById('model-chip').title.includes('Ctrl+M'), 'Cached idle shortcut metadata overrode unavailable live readiness.');
+  return { actualCancelLabel: true, unavailableHintsHidden: true, actualNextModelLabel: true, syntheticOnly: true };
+}

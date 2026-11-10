@@ -54,3 +54,11 @@ test('malformed generations and empty model identity never replace presentation'
   for (const value of [event(-1), event(NaN), event(1.1), event(0, { model: model('', 'Missing identity') })]) assert.equal(state.receive(value, 0), false);
   assert.equal(state.chip, null);
 });
+
+test('next-model hint is supplied only by live runtime metadata', () => {
+  const state = new PillModelState(); state.begin('capture');
+  state.receive(event(0, { next_shortcut: { keycaps: ['Ctrl', 'M'], text: 'Ctrl+M' } }), 0);
+  assert.equal(state.nextKey, 'Ctrl+M');
+  state.receive(event(0, { next_shortcut: null }), 1);
+  assert.equal(state.nextKey, '');
+});

@@ -722,18 +722,17 @@ mod tests {
         }
         impl DictationPreviewObserver for ReadingObserver {
             fn changed(&self, update: DictationPreviewUpdate) {
-                if update.text.is_empty() {
-                    if let Some(session) = self
+                if update.text.is_empty()
+                    && let Some(session) = self
                         .session
                         .lock()
                         .unwrap()
                         .as_ref()
                         .and_then(std::sync::Weak::upgrade)
-                    {
-                        self.read
-                            .send((session.mode(), session.speech_model()))
-                            .unwrap();
-                    }
+                {
+                    self.read
+                        .send((session.mode(), session.speech_model()))
+                        .unwrap();
                 }
             }
         }

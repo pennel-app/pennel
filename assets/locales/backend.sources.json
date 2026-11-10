@@ -803,5 +803,11 @@
   "backend.original_text_pasted_see_log": "Original text pasted (see log)",
   "backend.original_text_available_see_log": "Original text available (see log)",
   "backend.original_text_pasted": "Original text pasted",
-  "backend.original_text_available": "Original text available"
+  "backend.original_text_available": "Original text available",
+  "backend.next_model_switch_disabled": "next_model_switch_disabled",
+  "backend.next_model_second_model_required": "next_model_second_model_required",
+  "backend.next_model_shortcut_cleared": "next_model_shortcut_cleared",
+  "backend.next_model_hook_unavailable": "next_model_hook_unavailable",
+  "backend.speech_model_switch_current_unavailable": "This speech model is unavailable. Your current dictation is unchanged.",
+  "backend.speech_model_switch_setup_required": "This speech model is unavailable. Set up speech recognition first."
 }

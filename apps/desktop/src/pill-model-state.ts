@@ -1,4 +1,4 @@
-import type { ModelChoice } from "./api";
+import type { ModelChoice, ShortcutLabel } from "./api";
 
 export interface ConfiguredDictationModel { choice: ModelChoice; label: string }
 export interface PillModelPresentation {
@@ -8,6 +8,7 @@ export interface PillModelPresentation {
   available_models: number;
   enabled: boolean;
   switched: boolean;
+  next_shortcut?: ShortcutLabel | null;
 }
 
 /** Owns model metadata and its brief acknowledgement independently of recognition text. */
@@ -36,6 +37,8 @@ export class PillModelState {
   get chip(): ConfiguredDictationModel | null {
     return this.current?.enabled && this.current.available_models > 1 ? this.current.model : null;
   }
+
+  get nextKey(): string { return this.current?.next_shortcut?.text ?? ""; }
 
   confirmationRemaining(now: number): number { return Math.max(0, this.confirmedUntil - now); }
 

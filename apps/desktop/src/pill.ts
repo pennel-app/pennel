@@ -18,7 +18,6 @@ const preview = document.getElementById("preview")!;
 const modelChip = document.getElementById("model-chip")!;
 const modelState = new PillModelState();
 let modelTimer: ReturnType<typeof setTimeout> | null = null;
-let nextModelKey = "";
 let providers: AppInfo["settings"]["providers"] = [];
 let indicatorKey = "";
 const previewText = document.getElementById("preview-text")!;
@@ -46,7 +45,10 @@ function content(state: PillState): { text: string; detail?: string; hint?: (str
   if (confirmation && listening.includes(state.state)) return { text: t("dictation.pill.model_switched", { model: confirmation }) };
   switch (state.state) {
     case "listening": return { text: t("dictation.pill.listening") };
-    case "hands_free": return { text: t("dictation.pill.hands_free"), hint: doneKey ? [keycap(doneKey), t("dictation.pill.done")] : [] };
+    case "hands_free": return { text: t("dictation.pill.hands_free"), hint: [
+      ...doneKey ? [keycap(doneKey), t("dictation.pill.done")] : [],
+      ...state.cancel_shortcut?.text ? [...doneKey ? ["·"] : [], keycap(state.cancel_shortcut.text), t("dictation.pill.cancel")] : [],
+    ] };
     case "command": return { text: t("dictation.pill.command"), hint: [t("dictation.pill.command_hint")] };
     case "no_sound": return { text: t("dictation.pill.no_sound"), hint: [t("dictation.pill.no_sound_hint")] };
     case "working": return { text: t("dictation.pill.working") };
@@ -168,7 +170,8 @@ function renderModel() {
     const name = document.createElement("span"); name.textContent = model.label;
     modelChip.replaceChildren(icon(kind === "local" || kind === "apple_speech" ? "laptop" : "globe"), name);
   } else modelChip.replaceChildren();
-  modelChip.title = model ? `${model.label}${nextModelKey ? ` · ${t("dictation.pill.switch_key", { shortcut: nextModelKey })}` : ""}` : "";
+  const nextKey = modelState.nextKey;
+  modelChip.title = model ? `${model.label}${nextKey ? ` · ${t("dictation.pill.switch_key", { shortcut: nextKey })}` : ""}` : "";
 }
 
 function receiveModel(next: PillModelPresentation | null) {
@@ -193,7 +196,6 @@ function renderPreview() {
 function applyInfo(info: AppInfo) {
   providers = info.settings.providers;
   doneKey = info.shortcuts?.find(row => row.id === "dictate")?.label.text ?? hotkeyKeyLabel(info.settings.hotkey, info.platform) ?? "";
-  nextModelKey = info.shortcuts?.find(row => row.id === "next_model" && row.binding && row.capability.available)?.label.text ?? "";
   setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
   if (visible && pendingState) render(pendingState);
 }
