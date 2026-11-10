@@ -38,6 +38,7 @@ export interface Settings {
   onboarding: { status: 'pending' | 'skipped' | 'completed'; version: number; goal?: 'dictation' | 'meeting'; resume_step?: 'language' | 'welcome' | 'engine' | 'permissions' | 'practice' | 'voice' };
   providers: ProviderAccount[];
   dictation_stt: ModelChoice;
+  dictation_models?: ModelChoice[];
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;

@@ -167,6 +167,9 @@ pub struct ModelChoice {
 pub struct Settings {
     pub providers: Vec<ProviderAccount>,
     pub dictation_stt: ModelChoice,
+    /// Explicit speech setups; empty preserves the single saved choice on upgrade.
+    #[serde(default)]
+    pub dictation_models: Vec<ModelChoice>,
     pub meeting_stt: ModelChoice,
     pub llm: ModelChoice,
     #[serde(default)]
@@ -282,6 +285,7 @@ pub fn default_settings() -> Settings {
     let local = new_account(ProviderKind::Local, vec![groq.clone()]);
     Settings {
         dictation_stt: choice(&local, ProviderTask::DictationStt),
+        dictation_models: Vec::new(),
         meeting_stt: choice(&local, ProviderTask::MeetingStt),
         llm: choice(&groq, ProviderTask::Llm),
         decision: None,

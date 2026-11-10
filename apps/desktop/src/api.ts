@@ -246,6 +246,7 @@ export interface Settings {
   live_text_enabled: boolean;
   providers: ProviderAccount[];
   dictation_stt: ModelChoice;
+  dictation_models?: ModelChoice[];
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;

@@ -92,8 +92,9 @@ pub use cloud::setup::{CloudSyncSetup, CloudSyncSetupPhase};
 pub use cloud::sync::{MASS_DELETE, MeetingSyncState, SyncItemState, SyncReport, SyncStatus};
 pub use cpu_support::{UNSUPPORTED_PROCESSOR, local_models_unavailable_reason};
 pub use engine::{
-    ApiKeys, CleanupStatus, DictationRequest, DictationResult, LibrarySearch, MeetingQuestionScope,
-    MeetingQuestionSelection, PennelEngine, PreparedMeetingQuestion,
+    ApiKeys, CleanupStatus, ConfiguredDictationModel, DictationRequest, DictationResult,
+    LibrarySearch, MeetingQuestionScope, MeetingQuestionSelection, PennelEngine,
+    PreparedMeetingQuestion,
 };
 pub use error::PennelError;
 pub use export::MeetingExport;

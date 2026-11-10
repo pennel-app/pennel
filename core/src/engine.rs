@@ -40,6 +40,10 @@ use crate::wav::{decode_wav, encode_wav};
 
 const MAX_PROMPT_CHARS: usize = 800;
 
+#[path = "dictation_models.rs"]
+mod dictation_models;
+pub use dictation_models::ConfiguredDictationModel;
+
 #[path = "writing_profile_engine.rs"]
 mod writing_profile_engine;
 
@@ -1862,6 +1866,13 @@ impl PennelEngine {
         if account.kind == ProviderKind::Local && !self.models.downloaded().contains(&choice.model)
         {
             return Err(PennelError::ModelNotDownloaded);
+        }
+        if task == ProviderTask::DictationStt {
+            for configured in [settings.dictation_stt.clone(), choice.clone()] {
+                if !settings.dictation_models.contains(&configured) {
+                    settings.dictation_models.push(configured);
+                }
+            }
         }
         let selected = match task {
             ProviderTask::DictationStt => &mut settings.dictation_stt,
@@ -3702,6 +3713,7 @@ mod tests {
             .apply_task_model_choice(ProviderTask::Llm, text)
             .unwrap();
         assert_eq!(engine.settings(), expected);
+        expected.dictation_models = vec![expected.dictation_stt.clone(), selected.clone()];
         expected.dictation_stt = selected.clone();
         engine
             .apply_task_model_choice(ProviderTask::DictationStt, selected)
@@ -3768,6 +3780,7 @@ mod tests {
             provider_id: "groq".into(),
             model: "synthetic-text-model".into(),
         };
+        expected.dictation_models = vec![expected.dictation_stt.clone(), selected.clone()];
         expected.dictation_stt = selected.clone();
         expected.llm = text.clone();
         let barrier = Arc::new(std::sync::Barrier::new(3));
