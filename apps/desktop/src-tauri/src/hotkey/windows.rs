@@ -49,7 +49,7 @@ fn key_for(vk: u32) -> Key {
         0xA1 => Key::RightShift,
         // Generic Ctrl/Alt/Shift, Caps/Num/Scroll Lock and the mask key itself.
         0x10 | 0x11 | 0x12 | 0x14 | 0x90 | 0x91 | 0xE8 => Key::OtherModifier,
-        _ => Key::Other,
+        _ => Key::Other(vk),
     }
 }
 
