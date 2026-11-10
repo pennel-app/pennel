@@ -1,0 +1,8 @@
+Waiting for core cache lease
+Acquired core cache lease
+Refreshed local crate inputs for active checkout
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Checking pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a65210de8afb33f96/core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.44s

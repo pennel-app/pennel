@@ -1,0 +1,56 @@
+Waiting for core cache lease
+Acquired core cache lease
+   Compiling pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a65210de8afb33f96/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.33s
+     Running unittests src/lib.rs (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-aa92d718182538c4d/core/target/debug/deps/pennel_core-e69b5cc585a030af)
+
+running 46 tests
+test cli_agent::real::real_claude_cleans_up_dictation ... ignored
+test dictation_pad::tests::external_symlinks_are_not_read_and_new_drafts_are_private ... ok
+test dictation_pad::tests::a_failed_write_does_not_replace_the_current_draft ... ok
+test dictation_pad::tests::appending_preserves_manual_spacing_and_punctuation ... ok
+test http::tests::json_errors_cannot_echo_credentials_or_dictation_into_stored_errors ... ok
+test engine::dictation_models::tests::a_local_file_does_not_imply_a_compiled_recognizer ... ok
+test engine::dictation_models::tests::host_speech_readiness_filters_unsupported_or_denied_system_choices_without_inference ... ok
+test engine::tests::ordinary_dictation_cleanup_uses_speech_priority_while_optional_work_is_busy ... ok
+test engine::dictation_models::tests::selecting_an_unconfigured_or_unready_model_does_not_change_the_saved_choice ... ok
+test live_dictation::tests::cancelling_local_work_signals_the_token_and_discards_late_text ... ok
+test engine::dictation_models::tests::configured_models_keep_only_explicit_supported_ready_choices_in_saved_order ... ok
+test engine::dictation_models::tests::switching_materializes_the_current_choice_omitted_from_a_partial_saved_list ... ok
+test engine::dictation_models::tests::upgrade_keeps_the_single_saved_choice_and_never_implies_readiness ... ok
+test engine::tests::apple_intelligence_oversized_cleanup_preserves_the_entire_raw_dictation ... ok
+test live_dictation::tests::local_mailbox_keeps_one_latest_window_with_bounded_finite_audio ... ok
+test live_dictation::tests::local_worker_serializes_decodes_and_coalesces_pending_windows ... ok
+test engine::tests::pennel_cloud_dictation_uses_access_token ... ok
+test live_dictation::tests::a_rejected_switch_preserves_capture_and_does_not_retarget_or_fallback ... ok
+test engine::writing_profile_engine::tests::production_dictation_records_learning_consent_at_capture ... ok
+test engine::tests::dictation_pad_keeps_edited_text_across_engine_restarts ... ok
+test live_dictation::tests::cancellation_during_cleanup_does_not_commit_a_late_result ... ok
+test live_dictation::tests::cancellation_during_recognition_prevents_preview_cleanup_and_history ... ok
+test live_dictation::tests::cancellation_rejects_old_updates_and_finishing_without_side_effects ... ok
+test live_dictation::tests::cloud_preview_makes_no_extra_requests_and_emits_raw_before_cleanup ... ok
+test live_dictation::tests::command_uses_frozen_provider_and_emits_its_raw_instruction_first ... ok
+test retranscription::tests::known_dictation_intervals_are_excluded_from_both_archived_tracks ... ok
+test session::tests::canonical_identity_and_dictation_filter_follow_physical_source_after_person_relabel ... ok
+test live_dictation::tests::explicit_model_switch_uses_current_capture_final_pass_and_rejects_old_previews ... ok
+test session::tests::system_speech_relabelled_as_me_never_becomes_microphone_dictation ... ok
+test retranscription::tests::dictation_exclusions_roundtrip_and_corruption_is_not_silently_ignored ... ok
+test settings::tests::meeting_first_progress_survives_a_restart_and_is_not_completed_by_dictation_practice ... ok
+test settings::tests::old_onboarding_progress_defaults_to_dictation_without_losing_its_step ... ok
+test settings::tests::real_dictation_practice_completes_setup_without_optional_voice_enrollment ... ok
+test transcript_filter::tests::dictation_period_removes_me_segment ... ok
+test transcript_filter::tests::partial_dictation_overlap_keeps_segment ... ok
+test live_dictation::tests::finishing_keeps_the_frozen_provider_language_and_only_inserts_once ... ok
+test live_dictation::tests::model_switch_clear_observer_can_read_the_updated_session_without_deadlock ... ok
+test live_dictation::tests::practice_stays_fast_and_cannot_run_a_command ... ok
+test live_dictation::tests::preview_vocabulary_is_bounded_and_frozen_with_the_recording_settings ... ok
+test live_dictation::tests::previews_only_replace_bounded_text_without_transcribing_or_storing_history ... ok
+test live_dictation::tests::separate_recordings_have_independent_ids_revisions_and_cancel_gates ... ok
+test live_dictation::tests::stopping_preview_keeps_the_caption_and_allows_only_final_raw_updates ... ok
+test live_dictation::tests::switching_drains_in_flight_observers_without_blocking_their_read_only_getters ... ok
+test session::tests::transcript_revision_tracks_content_and_dictation_filters_but_not_notes ... ok
+test session::tests::live_audio_uses_accepted_clock_without_caption_enablement_and_excludes_dictation ... ok
+test live_dictation::tests::switching_from_system_to_batch_sends_the_original_buffer_only_to_the_new_model ... ok
+
+test result: ok. 45 passed; 0 failed; 1 ignored; 0 measured; 1178 filtered out; finished in 1.36s
+

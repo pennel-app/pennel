@@ -1,0 +1,431 @@
+{
+  "pull_request": 244,
+  "kind": "synthetic/headless owned Chromium fixtures, no user screen/profile",
+  "head": "ce0a3e1d455b4a302ba720619f1b597b7e451429",
+  "immutable_base": "62e5ca1de396c2f49372bf50c88c99dd94232970",
+  "reviewed_final_source": "9e3201117526364ed64eabdbaffcaa85618ac0f5",
+  "source_difference": "Only the approved EventTapHealth.swift compiler compatibility prerequisite differs from the reviewed full tree.",
+  "reference": {
+    "handoff": "design-handoff/HANDOFF.md section 3",
+    "screens": [
+      8,
+      25,
+      26
+    ]
+  },
+  "source_checkpoints": {
+    "baseline": "06fdd57bf45a5cc472010606f89163202f1104ba",
+    "presentation": "1afb3ba8519946f1eb7572288afadcf983a991a7",
+    "native_ready_labels": "0c60b6d64d0cf75b84ad158c94095306b58724c2",
+    "engine_readiness": "5d569c8cc0fc8be0aacfe6172d77a812cbe39aaa",
+    "session_reason_corrections": "78caeaaf9c94bdfc91abbb55115e34bfffc7ad63",
+    "observer_drain": "9e3201117526364ed64eabdbaffcaa85618ac0f5"
+  },
+  "capture_provenance": "The earlier supplied t11b-after static milestone is retained for eight exact scenario/viewport matches to before-verified. Latest verified-after has only four identical pill cases in common with baseline; its Settings interaction viewports differ and are not called matched pairs. Settings-final and live-hints document subsequent finishing. Correction-protocol was captured in the author working tree that also held T11c; it establishes the scoped session/reason protocol and is not B appearance/geometry acceptance. Original manifests and baseline_commit=null values are retained.",
+  "sets": [
+    {
+      "directory": "before",
+      "images": 8,
+      "captured_at": "2026-11-10T21:15:55.429Z",
+      "fixture_sha256": "f82616e0a228b1a64c6b2a1d7559775af360f881ed995760be9d986caa7095f6"
+    },
+    {
+      "directory": "matched-milestone-after",
+      "images": 12,
+      "captured_at": "2026-11-10T21:12:05.359Z",
+      "fixture_sha256": "260906e123a6d8a2e660a232380a5700bd482566dc0916d28a12b8d2f77ba4ec"
+    },
+    {
+      "directory": "verified-after",
+      "images": 16,
+      "captured_at": "2026-11-10T21:15:32.266Z",
+      "fixture_sha256": "f82616e0a228b1a64c6b2a1d7559775af360f881ed995760be9d986caa7095f6"
+    },
+    {
+      "directory": "settings-final",
+      "images": 8,
+      "captured_at": "2026-11-10T21:17:47.067Z",
+      "fixture_sha256": "c410c431d04d0b00a07271fc7cae88c5f4c04745818cd9ed34b827daa9d6f7a3"
+    },
+    {
+      "directory": "live-hints",
+      "images": 4,
+      "captured_at": "2026-11-10T21:49:13.728Z",
+      "fixture_sha256": "f75a961166d598c7f6298e6345a698ac0c986b8918eb0f27b0b1df22b9fedafc"
+    },
+    {
+      "directory": "correction-protocol",
+      "images": 8,
+      "captured_at": "2026-11-10T22:31:49.891Z",
+      "fixture_sha256": "1913d797a15c8455e3bbac5d5e4f3449f80f1b527f0fa7a19112a4090d2e1156"
+    }
+  ],
+  "matched_pairs": [
+    {
+      "before": "before/en/light/t11b-pill-model.png",
+      "after": "matched-milestone-after/en/light/t11b-pill-model.png",
+      "case_sha256": "ebf648afbb1f50151c9867d07c57a514ea33a7e0b33b138618f41a29ab2fa4c4",
+      "width": 420,
+      "height": 120
+    },
+    {
+      "before": "before/en/light/t11b-settings-models.png",
+      "after": "matched-milestone-after/en/light/t11b-settings-models.png",
+      "case_sha256": "9641476311d54e0633f759e90e266ebe1a7a821488a18129e0da2b92b812c5e4",
+      "width": 760,
+      "height": 650
+    },
+    {
+      "before": "before/en/dark/t11b-pill-model.png",
+      "after": "matched-milestone-after/en/dark/t11b-pill-model.png",
+      "case_sha256": "ebf648afbb1f50151c9867d07c57a514ea33a7e0b33b138618f41a29ab2fa4c4",
+      "width": 420,
+      "height": 120
+    },
+    {
+      "before": "before/en/dark/t11b-settings-models.png",
+      "after": "matched-milestone-after/en/dark/t11b-settings-models.png",
+      "case_sha256": "9641476311d54e0633f759e90e266ebe1a7a821488a18129e0da2b92b812c5e4",
+      "width": 760,
+      "height": 650
+    },
+    {
+      "before": "before/nl/light/t11b-pill-model.png",
+      "after": "matched-milestone-after/nl/light/t11b-pill-model.png",
+      "case_sha256": "ebf648afbb1f50151c9867d07c57a514ea33a7e0b33b138618f41a29ab2fa4c4",
+      "width": 420,
+      "height": 120
+    },
+    {
+      "before": "before/nl/light/t11b-settings-models.png",
+      "after": "matched-milestone-after/nl/light/t11b-settings-models.png",
+      "case_sha256": "9641476311d54e0633f759e90e266ebe1a7a821488a18129e0da2b92b812c5e4",
+      "width": 760,
+      "height": 650
+    },
+    {
+      "before": "before/nl/dark/t11b-pill-model.png",
+      "after": "matched-milestone-after/nl/dark/t11b-pill-model.png",
+      "case_sha256": "ebf648afbb1f50151c9867d07c57a514ea33a7e0b33b138618f41a29ab2fa4c4",
+      "width": 420,
+      "height": 120
+    },
+    {
+      "before": "before/nl/dark/t11b-settings-models.png",
+      "after": "matched-milestone-after/nl/dark/t11b-settings-models.png",
+      "case_sha256": "9641476311d54e0633f759e90e266ebe1a7a821488a18129e0da2b92b812c5e4",
+      "width": 760,
+      "height": 650
+    }
+  ],
+  "files": [
+    {
+      "file": "before/en/dark/t11b-pill-model.png",
+      "sha256": "018298a709ac0fe5365e0350d60eb294050a57221c6b81a620ec1620489a6731"
+    },
+    {
+      "file": "before/en/dark/t11b-settings-models.png",
+      "sha256": "4892b1f4e49f183f2e083d500f27d4ba2e5378bb945f6c78d6a75458ab4d06ac"
+    },
+    {
+      "file": "before/en/light/t11b-pill-model.png",
+      "sha256": "2cfb5c7e36b6d095f7380125c6d556f5031ba6f70ed2a45e4ec17eb881d817e0"
+    },
+    {
+      "file": "before/en/light/t11b-settings-models.png",
+      "sha256": "5f28074ceacbc87dbc9fb0b45a469c37f8a6fceb9c32fdad767a7cd2e7f72e1c"
+    },
+    {
+      "file": "before/manifest.json",
+      "sha256": "ffc8e950451ddd9fc7240a9a120aad226bade9f335ff36b2d42667495b8acf4c"
+    },
+    {
+      "file": "before/nl/dark/t11b-pill-model.png",
+      "sha256": "e2cf84a3b0eb258f30b975da8d876c65a09cfca8db4005b830d662d3a8fabd3a"
+    },
+    {
+      "file": "before/nl/dark/t11b-settings-models.png",
+      "sha256": "022b8c61ff36d78f0b93a5ddcda95d8839d1265eb47ce60564695b8b1cdc7c1e"
+    },
+    {
+      "file": "before/nl/light/t11b-pill-model.png",
+      "sha256": "5eea9818b8424c855969495e30610e8c8557deab844eb633cb2cd026cbe76dd2"
+    },
+    {
+      "file": "before/nl/light/t11b-settings-models.png",
+      "sha256": "61e878aa8cb69986020d5d6d8a95394b04cb06fdb902ff71b2e16c1ef2580745"
+    },
+    {
+      "file": "correction-protocol/en/dark/t11b-model-unavailable-reasons.png",
+      "sha256": "cca4cdf5dff4797d3ff3687ff25c62c15d1f5a9d50a69a774e5384b256b21b0b"
+    },
+    {
+      "file": "correction-protocol/en/dark/t11b-pill-back-to-back.png",
+      "sha256": "e4abccc53bb8e6e9e00e4d942cad63c3e9fc7a0acbc022bc6ba3a8994ca8479d"
+    },
+    {
+      "file": "correction-protocol/en/light/t11b-model-unavailable-reasons.png",
+      "sha256": "4f52c6457b18f71fdb451777f6f715c70bd2183007e9e676f694ee78fbcc2f7d"
+    },
+    {
+      "file": "correction-protocol/en/light/t11b-pill-back-to-back.png",
+      "sha256": "90475f111a6807a7ee9ddce04f6d064770a4899cbb60bd4b0868b561814fab7e"
+    },
+    {
+      "file": "correction-protocol/manifest.json",
+      "sha256": "571fdd7cba50f01464f29e71f94801b895ed3443d73e7d83f4105150a4aa1e7a"
+    },
+    {
+      "file": "correction-protocol/nl/dark/t11b-model-unavailable-reasons.png",
+      "sha256": "d8ddf8495d94568518a240df4c418f210b5b0a011dda2b84cab218c805a018c0"
+    },
+    {
+      "file": "correction-protocol/nl/dark/t11b-pill-back-to-back.png",
+      "sha256": "6f63361888e35fcff8fef14e13ae3b2d72ec911f4adcac288f5d28d1bc51500e"
+    },
+    {
+      "file": "correction-protocol/nl/light/t11b-model-unavailable-reasons.png",
+      "sha256": "cfb65ec810d196150cd2862b8e2d86476db9238d4d97e37ec07c354262a93b98"
+    },
+    {
+      "file": "correction-protocol/nl/light/t11b-pill-back-to-back.png",
+      "sha256": "5ae8a44988ba42b64c979a00f0a3b40057368d2f515eb2d57c50b42903b0eeaa"
+    },
+    {
+      "file": "live-hints/en/dark/t11b-pill-live-shortcuts.png",
+      "sha256": "d184f3ed293993e42c2103a5626f2f795f17ab21b11a73737d07c573ac1126e4"
+    },
+    {
+      "file": "live-hints/en/light/t11b-pill-live-shortcuts.png",
+      "sha256": "b80825da42c174ccdd8cac5b7c157aa5d9b989d079c8bddcac15a58bfe9c9a4c"
+    },
+    {
+      "file": "live-hints/manifest.json",
+      "sha256": "6ad0f3ebe7a75c64a439976eb416ed39f1163230f623b50cb8e7bd098b453825"
+    },
+    {
+      "file": "live-hints/nl/dark/t11b-pill-live-shortcuts.png",
+      "sha256": "9dbad277dc929dd0fbb121fe9fdde88ab404394c532b9585404dbbcce68c4321"
+    },
+    {
+      "file": "live-hints/nl/light/t11b-pill-live-shortcuts.png",
+      "sha256": "4fa40aad590aca52286424f9fa5a47dc74977dd1f4fc4211a92e6b4dad3aed1c"
+    },
+    {
+      "file": "matched-milestone-after/en/dark/t11b-pill-model-lifecycle.png",
+      "sha256": "018298a709ac0fe5365e0350d60eb294050a57221c6b81a620ec1620489a6731"
+    },
+    {
+      "file": "matched-milestone-after/en/dark/t11b-pill-model.png",
+      "sha256": "02efccc8eb12d118c708492e0ccbf5f0ac9aaa4559023f2a9a1ba117e7dcc836"
+    },
+    {
+      "file": "matched-milestone-after/en/dark/t11b-settings-models.png",
+      "sha256": "639d1c4fff8415e9f486bc8f2d7f254365213e348ca3e4ef14221f1bf0e8475b"
+    },
+    {
+      "file": "matched-milestone-after/en/light/t11b-pill-model-lifecycle.png",
+      "sha256": "2cfb5c7e36b6d095f7380125c6d556f5031ba6f70ed2a45e4ec17eb881d817e0"
+    },
+    {
+      "file": "matched-milestone-after/en/light/t11b-pill-model.png",
+      "sha256": "5328d3414a45622877e548e9e4c541a529ed9c475dd0c548cdb5cc4ec7c242c1"
+    },
+    {
+      "file": "matched-milestone-after/en/light/t11b-settings-models.png",
+      "sha256": "258427ff22835d80428513d35623f74220eb10c23892e98839c31a584e8e86b7"
+    },
+    {
+      "file": "matched-milestone-after/manifest.json",
+      "sha256": "162a63024e27f0fb17af0db1fec260b41440bbf94e5b499f4fb28fd969793643"
+    },
+    {
+      "file": "matched-milestone-after/nl/dark/t11b-pill-model-lifecycle.png",
+      "sha256": "e2cf84a3b0eb258f30b975da8d876c65a09cfca8db4005b830d662d3a8fabd3a"
+    },
+    {
+      "file": "matched-milestone-after/nl/dark/t11b-pill-model.png",
+      "sha256": "d40ea8e79957f646e5f1b1cde8ee528b4288c847271c989c1d0e82e6c8853421"
+    },
+    {
+      "file": "matched-milestone-after/nl/dark/t11b-settings-models.png",
+      "sha256": "832cb3d5a5d9bd7b2b5989353509ec966b8bb3e8d30f36ffcdf4cb146c7b0f7b"
+    },
+    {
+      "file": "matched-milestone-after/nl/light/t11b-pill-model-lifecycle.png",
+      "sha256": "5eea9818b8424c855969495e30610e8c8557deab844eb633cb2cd026cbe76dd2"
+    },
+    {
+      "file": "matched-milestone-after/nl/light/t11b-pill-model.png",
+      "sha256": "2a8bfbf43f5cde16ef3b7a8ecf994413d697f96f5edbdf45acef5c68a2f3a46f"
+    },
+    {
+      "file": "matched-milestone-after/nl/light/t11b-settings-models.png",
+      "sha256": "f51d25d2a3468d5a28c54d408638b3da970646be77c0b8185ca45cb0e3fa4e84"
+    },
+    {
+      "file": "receipts/pennel-pill-core-full-final.log",
+      "sha256": "f6fc4073acffe8508a9554c6958efe2391af542d21473b242642779914bd8cd1"
+    },
+    {
+      "file": "receipts/pennel-pill-observer-drain-build.log",
+      "sha256": "be63cfca15ccf56209bb9da563423fe71a2dfe61a15f765c30f19dbf0390df5c"
+    },
+    {
+      "file": "receipts/pennel-pill-observer-drain-clippy.log",
+      "sha256": "7f9b5835d4867d3705463559b88dc5f6689b3eb4eb543ca6942bbb9130d74efa"
+    },
+    {
+      "file": "receipts/pennel-pill-observer-drain-green.log",
+      "sha256": "a08896964d0b465e60b857f80c933b93244c06a073beed014d43bc52aa0bc49f"
+    },
+    {
+      "file": "receipts/pennel-t11b-final-hook-backend.log",
+      "sha256": "e283b95f9e3523176a8badde686c2f42a7948eb8c29f897147526c1bc10b370a"
+    },
+    {
+      "file": "receipts/pennel-t11b-hook-backend-clippy.log",
+      "sha256": "838ed8442a266d674a01a2276204ad62fbdf13ddb37641e5acafe369d4b8f2da"
+    },
+    {
+      "file": "receipts/pennel-t11b-hook-build.log",
+      "sha256": "c18e8ea5a28488efcc72be9fbeacc274d78c989407257997be99dcda30a6dd19"
+    },
+    {
+      "file": "receipts/pennel-t11b-hook-core-clippy.log",
+      "sha256": "53be149952fc7eaa56afc9603f5a426c43c9f50026dc9d0644af91d25629534c"
+    },
+    {
+      "file": "receipts/pennel-t11b-hook-frontend.log",
+      "sha256": "1733ed2f3f88179493e78a27eb0752a0578951516a5443aefa249da4fb0f9237"
+    },
+    {
+      "file": "receipts/pennel-t11b-readiness-final.log",
+      "sha256": "4e8ffe8518d0510287933a7f575816ad0d4ba46ed156ffa37e42ea7105070d3f"
+    },
+    {
+      "file": "receipts/pennel-t11b-review-browser-final.log",
+      "sha256": "3e2f8d09febd864f85dd2d3c2cd165281af554f3157d687169f4b47667a69fff"
+    },
+    {
+      "file": "receipts/pennel-t11b-review-state-green.log",
+      "sha256": "6b6fc8e8118f5bb8674f8ad08c5b66bc91b2ccc8d76226cde4f33448381a986d"
+    },
+    {
+      "file": "receipts/t11b-fix-review.md",
+      "sha256": "804b4ee310da70ac132e82663074786d3ca38744024ebd84dd1efaada7b0b845"
+    },
+    {
+      "file": "receipts/t11b-observer-drain-review.md",
+      "sha256": "256525e9dfd25dd580399fca0b4326e68ef5dd3e3b4365509f4ed611f541294f"
+    },
+    {
+      "file": "receipts/t11b-report.md",
+      "sha256": "2e532a6728a6649c1182b32598114947b7b2cfd7c5030991c1ebb8a371228e1e"
+    },
+    {
+      "file": "settings-final/en/dark/t11b-settings-model-switch-enlarged.png",
+      "sha256": "25cdf7caf3ee862def8cb85a321b2dfa8e0b68c9bba9669f04a0971e88775848"
+    },
+    {
+      "file": "settings-final/en/dark/t11b-settings-model-switch.png",
+      "sha256": "b06c18b0b06bb783c021cd8b91291d225ee57b31b29375ffd4c5dc18a9aa6f9a"
+    },
+    {
+      "file": "settings-final/en/light/t11b-settings-model-switch-enlarged.png",
+      "sha256": "368b16f11c7b6694d9b18af1a9787f5cad7456d894df1fe81340ad18d0dc001c"
+    },
+    {
+      "file": "settings-final/en/light/t11b-settings-model-switch.png",
+      "sha256": "49ab31ce417c9a77a7b755f0c3a9e98c64dbb628c382671922772873e56103e0"
+    },
+    {
+      "file": "settings-final/manifest.json",
+      "sha256": "95ea3dd0df03470fb495d0fdf3bfea9d38a06dc4683f86424c1a29862a175f27"
+    },
+    {
+      "file": "settings-final/nl/dark/t11b-settings-model-switch-enlarged.png",
+      "sha256": "c1daaca73d51d903fbc8239ba96e1170ab60853b5f58f029f7b552eecb9ba77b"
+    },
+    {
+      "file": "settings-final/nl/dark/t11b-settings-model-switch.png",
+      "sha256": "416a7cef994683ca0102605f6053046ce08c5e0603d0e1e24ad8078f44a4f2ba"
+    },
+    {
+      "file": "settings-final/nl/light/t11b-settings-model-switch-enlarged.png",
+      "sha256": "4268cbdb51ff333b25a894777a6053c53e3a741ac9b0f7d70b1c1e6e55642f8f"
+    },
+    {
+      "file": "settings-final/nl/light/t11b-settings-model-switch.png",
+      "sha256": "1bf0fe8a8b8add7b256af11e7b6815423cd86a4be4bdadd213a03a1f593637a7"
+    },
+    {
+      "file": "verified-after/en/dark/t11b-pill-model-lifecycle.png",
+      "sha256": "018298a709ac0fe5365e0350d60eb294050a57221c6b81a620ec1620489a6731"
+    },
+    {
+      "file": "verified-after/en/dark/t11b-pill-model.png",
+      "sha256": "e04a282481fdf5c408daf1139ef09ef8898d751a6990a04d63b06fd51c3fc7c8"
+    },
+    {
+      "file": "verified-after/en/dark/t11b-settings-model-switch-enlarged.png",
+      "sha256": "f96e7fd5af90956e8339e7ffb02df08d65f2870ea84fa66c08584fae4d0c3218"
+    },
+    {
+      "file": "verified-after/en/dark/t11b-settings-model-switch.png",
+      "sha256": "871eb9d06a7662b43d2906962b97394aef0182a2f13fcf1f152739d2cd3e7fdb"
+    },
+    {
+      "file": "verified-after/en/light/t11b-pill-model-lifecycle.png",
+      "sha256": "2cfb5c7e36b6d095f7380125c6d556f5031ba6f70ed2a45e4ec17eb881d817e0"
+    },
+    {
+      "file": "verified-after/en/light/t11b-pill-model.png",
+      "sha256": "bdc954875e8114854cb39a973cc141e002efcdf033621dfc7e32de190f697caf"
+    },
+    {
+      "file": "verified-after/en/light/t11b-settings-model-switch-enlarged.png",
+      "sha256": "ba22e81a7a5323fe3910b994e043c1b56d37abd9a98b7692d71296159232d841"
+    },
+    {
+      "file": "verified-after/en/light/t11b-settings-model-switch.png",
+      "sha256": "daa83028e1d14c3fce8a074723d44d897ccb36d5d6b47975eacbc22a41cbec2c"
+    },
+    {
+      "file": "verified-after/manifest.json",
+      "sha256": "f1f83b697b5797ff15ec07015e96a15d8d4d48ffc01788be91e1654ef6c9376c"
+    },
+    {
+      "file": "verified-after/nl/dark/t11b-pill-model-lifecycle.png",
+      "sha256": "e2cf84a3b0eb258f30b975da8d876c65a09cfca8db4005b830d662d3a8fabd3a"
+    },
+    {
+      "file": "verified-after/nl/dark/t11b-pill-model.png",
+      "sha256": "816f3b7da2709c80a328179c1e7f1b7603052bb9bc9c194e46a16705c6ea65fa"
+    },
+    {
+      "file": "verified-after/nl/dark/t11b-settings-model-switch-enlarged.png",
+      "sha256": "6dc8c24cb0bf0ce981569a5d0be1af53fec85eacfa7f253d62dd78c032054eac"
+    },
+    {
+      "file": "verified-after/nl/dark/t11b-settings-model-switch.png",
+      "sha256": "89b7349a19b89bcd5e1b2269b97bfbe178986744c3972ee864ad71825249104a"
+    },
+    {
+      "file": "verified-after/nl/light/t11b-pill-model-lifecycle.png",
+      "sha256": "5eea9818b8424c855969495e30610e8c8557deab844eb633cb2cd026cbe76dd2"
+    },
+    {
+      "file": "verified-after/nl/light/t11b-pill-model.png",
+      "sha256": "5a739729441fbc97e9ea5449239b8971778c0ee1fd5904461622df6c0abba696"
+    },
+    {
+      "file": "verified-after/nl/light/t11b-settings-model-switch-enlarged.png",
+      "sha256": "1c2072052028cb7626ddade8ddf73a442ab7a1ef1c1edfee1649af406f8d20e4"
+    },
+    {
+      "file": "verified-after/nl/light/t11b-settings-model-switch.png",
+      "sha256": "1c6f81f75a436eb0314448207729c592eb42da5d296d382d6a9f1b7dec4c4ccc"
+    }
+  ]
+}

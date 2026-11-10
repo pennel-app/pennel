@@ -1,0 +1,155 @@
+{
+  "captured_at": "2026-11-10T21:49:13.728Z",
+  "complete": true,
+  "capture_method": "Owned Chromium headless fixture render via CDP; no user screen/profile",
+  "baseline_commit": null,
+  "fixture_sha256": "f75a961166d598c7f6298e6345a698ac0c986b8918eb0f27b0b1df22b9fedafc",
+  "fixture_clock": "2026-10-25T09:00:00Z",
+  "images": [
+    {
+      "case": "t11b-pill-live-shortcuts",
+      "fixture_case_sha256": "f6be893ca9acad32b2105ea334ef626ee2f727c1df44ad9b88441cb9ae4f87e1",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t11b-pill-live-shortcuts.png",
+      "document_language": "en",
+      "width": 420,
+      "height": 120,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "dictation_state"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": {
+        "text": "",
+        "visible": false,
+        "height": 0
+      },
+      "body": "Hands-free\nActual model\nfn\ndone",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": {
+        "actualCancelLabel": true,
+        "unavailableHintsHidden": true,
+        "actualNextModelLabel": true,
+        "syntheticOnly": true
+      },
+      "runtime_errors": []
+    },
+    {
+      "case": "t11b-pill-live-shortcuts",
+      "fixture_case_sha256": "f6be893ca9acad32b2105ea334ef626ee2f727c1df44ad9b88441cb9ae4f87e1",
+      "locale": "en",
+      "appearance": "dark",
+      "file": "en/dark/t11b-pill-live-shortcuts.png",
+      "document_language": "en",
+      "width": 420,
+      "height": 120,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "dictation_state"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": {
+        "text": "",
+        "visible": false,
+        "height": 0
+      },
+      "body": "Hands-free\nActual model\nfn\ndone",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": {
+        "actualCancelLabel": true,
+        "unavailableHintsHidden": true,
+        "actualNextModelLabel": true,
+        "syntheticOnly": true
+      },
+      "runtime_errors": []
+    },
+    {
+      "case": "t11b-pill-live-shortcuts",
+      "fixture_case_sha256": "f6be893ca9acad32b2105ea334ef626ee2f727c1df44ad9b88441cb9ae4f87e1",
+      "locale": "nl",
+      "appearance": "light",
+      "file": "nl/light/t11b-pill-live-shortcuts.png",
+      "document_language": "nl",
+      "width": 420,
+      "height": 120,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "dictation_state"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": {
+        "text": "",
+        "visible": false,
+        "height": 0
+      },
+      "body": "Handenvrij\nActual model\nfn\nklaar",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": {
+        "actualCancelLabel": true,
+        "unavailableHintsHidden": true,
+        "actualNextModelLabel": true,
+        "syntheticOnly": true
+      },
+      "runtime_errors": []
+    },
+    {
+      "case": "t11b-pill-live-shortcuts",
+      "fixture_case_sha256": "f6be893ca9acad32b2105ea334ef626ee2f727c1df44ad9b88441cb9ae4f87e1",
+      "locale": "nl",
+      "appearance": "dark",
+      "file": "nl/dark/t11b-pill-live-shortcuts.png",
+      "document_language": "nl",
+      "width": 420,
+      "height": 120,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "dictation_state"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": {
+        "text": "",
+        "visible": false,
+        "height": 0
+      },
+      "body": "Handenvrij\nActual model\nfn\nklaar",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": {
+        "actualCancelLabel": true,
+        "unavailableHintsHidden": true,
+        "actualNextModelLabel": true,
+        "syntheticOnly": true
+      },
+      "runtime_errors": []
+    }
+  ],
+  "browser": "chrome-headless-shell"
+}
