@@ -214,12 +214,12 @@ export function meetingSummaryEditor(initial: Context, host: {
     } catch (failure) { report(failure); }
     finally { generating = false; directCreating = false; update(); }
   }
-  async function dismissPrompt() {
+  async function dismissPrompt(kind: "summary" | "suggestions" = "summary") {
     if (!loaded || composing || draft.pending || draft.remote || working()) return;
     await host.flushNotes(); invalidateReads(); await flush(); await refresh();
     const before = draft.document; if (!before) throw new Error(t("meetings.summary_loading"));
     invalidateReads(); draft.pending = true; update();
-    saving = api.dismissMeetingSummaryPrompt(host.id(), before.revision, before.source_revision).then(validated).then(document => {
+    saving = (kind === "summary" ? api.dismissMeetingSummaryPrompt : api.dismissMeetingSuggestionPrompt)(host.id(), before.revision, before.source_revision).then(validated).then(document => {
       invalidateReads();
       if (!draft.acknowledgeMetadata(document)) throw new Error(t("meetings.summary_changed_saved"));
     }).finally(() => { saving = null; draft.pending = false; update(); });
@@ -281,7 +281,7 @@ export function meetingSummaryEditor(initial: Context, host: {
   return { root, editor, provenance: reader.provenance, flush, refresh, readiness: update, working, blockedReason,
     canGenerate: () => !generate.disabled,
     canDismiss: () => loaded && !composing && !draft.pending && !draft.remote && !working(),
-    generate: () => generateDraft(true), dismissPrompt,
+    generate: () => generateDraft(true), dismissPrompt, dismissSuggestionPrompt: () => dismissPrompt("suggestions"),
     bind(next: Context) {
       ctx = next; watchPresentation(next); next.onInfoChange(update); progressCleanup?.();
       const cleanup = meetingPostprocess.subscribe(() => { update(); const state = progress(); if (state && state.state !== "started" && host.finished()) void refresh().catch(report); });

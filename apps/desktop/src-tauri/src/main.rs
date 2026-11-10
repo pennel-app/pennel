@@ -1242,6 +1242,8 @@ fn main() {
             summaries::meeting_summary,
             summaries::meeting_summary_prompt_dismissed,
             summaries::dismiss_meeting_summary_prompt,
+            summaries::meeting_suggestion_prompt_dismissed,
+            summaries::dismiss_meeting_suggestion_prompt,
             summaries::meeting_speaker_timeline,
             summaries::meeting_transcript_provenance,
             summaries::save_meeting_summary,

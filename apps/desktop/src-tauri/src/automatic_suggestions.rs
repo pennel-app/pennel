@@ -345,7 +345,6 @@ fn drive<B: Backend>(
 }
 
 /// Staged for the postprocess owner: call exactly once after automatic summary returns, even on error.
-#[allow(dead_code)] // The T6a/postprocess owner wires this entry point in its separate worktree.
 pub(crate) fn run_after_summary(app: AppHandle, shared: Arc<Shared>, id: String) {
     let stopping =
         || shared.quitting.load(Ordering::SeqCst) || shared.updating.load(Ordering::SeqCst);
@@ -407,13 +406,24 @@ fn read_availability(engine: &PennelEngine, id: &str) -> std::result::Result<Val
 #[tauri::command]
 pub async fn automatic_insights_availability(
     id: String,
+    language_policy: Option<String>,
     shared: State<'_, Arc<Shared>>,
 ) -> std::result::Result<Value, String> {
     let shared = shared.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         crate::commands::checked_meeting_dir(&shared.engine, &id)?;
-        read_availability(&shared.engine, &id)
-            .map_err(|error| crate::commands::localize_error_message(error.to_string()))
+        let result = match language_policy {
+            Some(language) => shared
+                .engine
+                .preview_meeting_automatic_insight_availability_json(id.clone(), Some(language))
+                .and_then(|raw| {
+                    serde_json::from_str(&raw).map_err(|_| PennelError::InvalidResponse {
+                        message: unavailable_setup(),
+                    })
+                }),
+            None => read_availability(&shared.engine, &id),
+        };
+        result.map_err(|error| crate::commands::localize_error_message(error.to_string()))
     })
     .await
     .map_err(|_| unavailable_setup())?

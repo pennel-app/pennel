@@ -12,6 +12,9 @@ export interface InsightReviewHost {
   id: string; meetingUid: string; notes: InsightNoteHost;
   changed?(openCount: number): void;
   sourceLabel?(source: InsightSource): string | null;
+  dismissSuggestionPrompt(): Promise<void>;
+  canDismissPrompt(): boolean;
+  promptBlockedReason(): string;
   openSource(source: InsightSource, origin: HTMLElement, restore: () => void): Promise<boolean>;
 }
 interface ReviewView { root: HTMLElement; model: InsightReviewModel; bind(ctx: Context, host: InsightReviewHost): void; refresh(): Promise<void>; flush(): Promise<boolean> }

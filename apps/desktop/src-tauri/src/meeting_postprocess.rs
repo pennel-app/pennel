@@ -40,6 +40,9 @@ pub(crate) struct SummaryProgress {
 }
 impl SummaryProgress {
     pub(crate) fn start(app: &AppHandle, shared: &Shared, id: &str) -> Option<Self> {
+        Self::start_for(app, shared, id, "summary")
+    }
+    fn start_for(app: &AppHandle, shared: &Shared, id: &str, stage: &'static str) -> Option<Self> {
         let meeting_uid = shared.engine.meeting_uid(id.to_owned())?;
         let progress = Self {
             app: app.clone(),
@@ -47,7 +50,7 @@ impl SummaryProgress {
                 id: id.to_owned(),
                 meeting_uid,
                 operation_id: operation_id(),
-                stage: "summary",
+                stage,
                 state: ProgressState::Started,
             },
             finished: false,
@@ -72,6 +75,21 @@ impl Drop for SummaryProgress {
         if !self.finished {
             self.event.state = ProgressState::Failed;
             self.emit();
+        }
+    }
+}
+
+/// Ends the waiting span even when quitting skips a later phase.
+pub(crate) struct PostprocessProgress(Option<SummaryProgress>);
+impl PostprocessProgress {
+    pub(crate) fn start(app: &AppHandle, shared: &Shared, id: &str) -> Self {
+        Self(SummaryProgress::start_for(app, shared, id, "postprocess"))
+    }
+}
+impl Drop for PostprocessProgress {
+    fn drop(&mut self) {
+        if let Some(progress) = self.0.take() {
+            progress.finish(ProgressState::Finished);
         }
     }
 }

@@ -1,4 +1,4 @@
-export type PostprocessStage = "summary" | "suggestions";
+export type PostprocessStage = "summary" | "suggestions" | "postprocess";
 export type PostprocessPhase = "started" | "finished" | "failed" | "skipped" | "cancelled";
 export interface MeetingPostprocessEvent { id: string; meeting_uid: string; operation_id: string; stage: PostprocessStage; state: PostprocessPhase }
 
@@ -12,7 +12,7 @@ export class MeetingPostprocessState {
     if (!value || typeof value !== "object") return false;
     const event = value as Partial<MeetingPostprocessEvent>;
     if (![event.id, event.meeting_uid, event.operation_id].every(item => typeof item === "string" && item.length > 0)
-      || !["summary", "suggestions"].includes(event.stage ?? "") || !["started", "finished", "failed", "skipped", "cancelled"].includes(event.state ?? "")) return false;
+      || !["summary", "suggestions", "postprocess"].includes(event.stage ?? "") || !["started", "finished", "failed", "skipped", "cancelled"].includes(event.state ?? "")) return false;
     const accepted = event as MeetingPostprocessEvent, key = `${accepted.meeting_uid}:${accepted.stage}`, previous = this.current.get(key);
     if (accepted.state !== "started" && previous?.operation_id !== accepted.operation_id) return false;
     if (previous?.operation_id === accepted.operation_id && previous.state !== "started") return false;

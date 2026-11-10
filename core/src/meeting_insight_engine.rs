@@ -1566,9 +1566,21 @@ impl PennelEngine {
         &self,
         id: String,
     ) -> Result<String, PennelError> {
+        self.preview_meeting_automatic_insight_availability_json(
+            id,
+            self.settings().suggestion_language,
+        )
+    }
+
+    /// Preview only an explicit fallback; frozen supported/unsupported speech language still wins.
+    pub fn preview_meeting_automatic_insight_availability_json(
+        &self,
+        id: String,
+        fallback_language: Option<String>,
+    ) -> Result<String, PennelError> {
         let language = self
             .meeting_store()
-            .suggestion_language(&id, self.settings().suggestion_language.as_deref())?;
+            .suggestion_language(&id, fallback_language.as_deref())?;
         let mut status: serde_json::Value = decode(&self.meeting_insight_availability_json(
             id,
             language.as_deref().unwrap_or("unknown").into(),
@@ -4318,5 +4330,54 @@ mod tests {
         );
         assert_eq!(saved.revision, 1);
         provider.assert();
+    }
+    #[test]
+    fn t6b_automatic_language_preview_is_read_only_and_preserves_frozen_language_guards() {
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        let settings = serde_json::to_string(&engine.settings()).unwrap();
+        let path = engine.meeting_store().dir_of(&id).join("meeting.md");
+        let original = std::fs::read_to_string(&path).unwrap();
+        for (recorded, fallback, expected) in [
+            (None, Some("nl"), Some("nl")),
+            (Some("auto"), Some("mixed"), Some("mixed")),
+            (Some("en"), Some("nl"), Some("en")),
+            (Some("fr"), Some("en"), None),
+            (None, Some("invalid"), None),
+        ] {
+            let raw = recorded.map_or_else(
+                || original.clone(),
+                |language| {
+                    original.replacen(
+                        "---\n",
+                        &format!("---\npennel_stt_language: {language}\n"),
+                        1,
+                    )
+                },
+            );
+            std::fs::write(&path, raw).unwrap();
+            let status: serde_json::Value = serde_json::from_str(
+                &engine
+                    .preview_meeting_automatic_insight_availability_json(
+                        id.clone(),
+                        fallback.map(str::to_owned),
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(status["resolved_language"].as_str(), expected);
+            assert_eq!(status["available"], false);
+            assert_eq!(
+                status["reason_code"],
+                if expected.is_some() {
+                    "unqualified"
+                } else {
+                    "language_unknown"
+                }
+            );
+        }
+        assert_eq!(serde_json::to_string(&engine.settings()).unwrap(), settings);
+        assert!(attempt_files(&engine, &id).is_empty());
+        assert!(automatic_snapshot(&engine, &id)["analysis_job"].is_null());
     }
 }
