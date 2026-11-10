@@ -203,5 +203,6 @@
   "dictation.pill.switch_none": "Stel bij Sneltoetsen een toets voor het volgende model in.",
   "dictation.pill.switch_needs_models": "Stel een tweede spraakmodel in om tijdens het dicteren te wisselen.",
   "dictation.pill.model_setup": "Nog een spraakmodel instellen…",
-  "dictation.pill.model_unavailable": "Er is geen ingesteld spraakmodel klaar."
+  "dictation.pill.model_unavailable": "Er is geen ingesteld spraakmodel klaar.",
+  "dictation.pill.cancel": "annuleren"
 }

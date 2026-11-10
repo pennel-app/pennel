@@ -657,7 +657,7 @@ export type PillState = (
   | { state: "inserted"; app?: string | null }
   | { state: "copied"; paste_key: string }
   | { state: "problem"; title: string; detail?: string | null }
-) & { preview?: PillPreview | null; cleanup_verification?: CleanupVerificationAvailability | null; speech_model?: PillModelPresentation | null };
+) & { preview?: PillPreview | null; cleanup_verification?: CleanupVerificationAvailability | null; speech_model?: PillModelPresentation | null; cancel_shortcut?: ShortcutLabel | null };
 
 export interface UpdateInfo {
   available: boolean;

@@ -22,6 +22,8 @@ pub struct PillModelPresentation {
     pub available_models: usize,
     pub enabled: bool,
     pub switched: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_shortcut: Option<pennel_core::ShortcutLabel>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -36,6 +38,8 @@ pub struct PillSnapshot {
     visibility_generation: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speech_model: Option<PillModelPresentation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_shortcut: Option<pennel_core::ShortcutLabel>,
 }
 
 #[derive(Clone, Serialize)]
@@ -54,6 +58,7 @@ impl Default for PillSnapshot {
             cleanup_verification: None,
             visibility_generation: 0,
             speech_model: None,
+            cancel_shortcut: None,
         }
     }
 }
@@ -76,6 +81,12 @@ impl PillSnapshot {
             self.visibility_generation = self.visibility_generation.wrapping_add(1);
         }
         self.state = state;
+        if !matches!(
+            self.state,
+            PillState::Listening | PillState::HandsFree | PillState::Command | PillState::NoSound
+        ) {
+            self.cancel_shortcut = None;
+        }
         if self.state == PillState::Hidden {
             self.preview = None;
             self.cleanup_verification = None;
@@ -162,10 +173,37 @@ impl Default for Snapshot {
     }
 }
 
+fn live_shortcut(
+    app: &AppHandle,
+    state: &PillState,
+    action: u32,
+) -> Option<pennel_core::ShortcutLabel> {
+    if !matches!(
+        state,
+        PillState::Listening | PillState::HandsFree | PillState::Command | PillState::NoSound
+    ) {
+        return None;
+    }
+    let shared = app.try_state::<Arc<crate::state::Shared>>()?;
+    if !crate::record_shortcut::listening_action_ready(&shared, action) {
+        return None;
+    }
+    let id = match action {
+        3 => "cancel",
+        4 => "next_model",
+        _ => return None,
+    };
+    let platform = crate::shortcuts::platform();
+    pennel_core::effective_shortcut(&shared.settings(), id, platform).map(|binding| {
+        pennel_core::format_shortcut(&binding, platform, shared.interface_language())
+    })
+}
+
 pub fn content_snapshot(app: &AppHandle) -> PillSnapshot {
     app.try_state::<Snapshot>()
         .map(|state| {
             let mut content = state.content.lock().unwrap().clone();
+            content.cancel_shortcut = live_shortcut(app, &content.state, 3);
             let session = state
                 .session
                 .lock()
@@ -308,6 +346,7 @@ mod tests {
             available_models: 2,
             enabled: true,
             switched: true,
+            next_shortcut: None,
         }
     }
 
@@ -326,6 +365,28 @@ mod tests {
         content.set_state(PillState::Hidden);
         assert!(content.speech_model.is_none());
         assert!(!content.update_model(model(4)));
+    }
+
+    #[test]
+    fn cancel_hint_is_owned_by_listening_presentation_and_clears_before_processing() {
+        let mut content = listening();
+        content.cancel_shortcut = Some(pennel_core::ShortcutLabel {
+            keycaps: vec!["Ctrl".into(), "X".into()],
+            text: "Ctrl+X".into(),
+        });
+        assert_eq!(
+            serde_json::to_value(&content).unwrap()["cancel_shortcut"]["text"],
+            "Ctrl+X"
+        );
+        content.set_state(PillState::Working);
+        assert!(content.cancel_shortcut.is_none());
+        content.set_state(PillState::Hidden);
+        assert!(
+            serde_json::to_value(&content)
+                .unwrap()
+                .get("cancel_shortcut")
+                .is_none()
+        );
     }
 
     #[test]
@@ -530,6 +591,7 @@ impl Pill {
             if !content.set_state(state.clone()) {
                 return;
             }
+            content.cancel_shortcut = live_shortcut(&self.app, &content.state, 3);
             if state != PillState::Hidden {
                 let session = self
                     .session
@@ -586,6 +648,11 @@ impl Pill {
             .find(|model| model.choice == session.speech_model())
             .cloned();
         let mut content = self.content.lock().unwrap();
+        let cancel = live_shortcut(&self.app, &content.state, 3);
+        if content.cancel_shortcut != cancel {
+            content.cancel_shortcut = cancel;
+            let _ = self.app.emit_to(LABEL, "pill-state", &*content);
+        }
         if content
             .preview
             .as_ref()
@@ -607,6 +674,7 @@ impl Pill {
             available_models: models.len(),
             enabled: settings.pill_model_switch_enabled,
             switched,
+            next_shortcut: live_shortcut(&self.app, &content.state, 4),
         };
         if content.update_model(next.clone()) || switched {
             let _ = self.app.emit_to(LABEL, "pill-model", next);

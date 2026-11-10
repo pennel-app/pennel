@@ -24,6 +24,25 @@ pub fn platform() -> ShortcutPlatform {
         ShortcutPlatform::LinuxWayland
     }
 }
+fn next_model_reason(
+    enabled: bool,
+    models: usize,
+    bound: bool,
+    handler: bool,
+) -> Option<&'static str> {
+    if !enabled {
+        Some("next_model_switch_disabled")
+    } else if models < 2 {
+        Some("next_model_second_model_required")
+    } else if !bound {
+        Some("next_model_shortcut_cleared")
+    } else if !handler {
+        Some("next_model_hook_unavailable")
+    } else {
+        None
+    }
+}
+
 pub fn rows(shared: &Shared) -> Vec<ShortcutRow> {
     let settings = shared.settings();
     let language = settings
@@ -53,13 +72,25 @@ pub fn rows(shared: &Shared) -> Vec<ShortcutRow> {
             row.capability.available = false;
             row.capability.reason = Some(reason);
         }
-        if row.id == "next_model"
-            && !crate::record_shortcut::next_model_enabled()
-            && row.capability.available
-        {
-            row.capability.available = false;
-            row.capability.reason = Some("next_model_not_ready".into());
-            row.editable = false;
+        if row.id == "next_model" && row.capability.available {
+            let reason = next_model_reason(
+                settings.pill_model_switch_enabled,
+                shared
+                    .engine
+                    .configured_dictation_models(shared.keys())
+                    .len(),
+                row.binding.is_some(),
+                crate::record_shortcut::next_model_enabled()
+                    && shared
+                        .hotkey
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .is_some(),
+            );
+            if let Some(reason) = reason {
+                row.capability.available = false;
+                row.capability.reason = Some(reason.into());
+            }
         }
     }
     #[cfg(target_os = "macos")]
@@ -88,4 +119,29 @@ pub fn rows(shared: &Shared) -> Vec<ShortcutRow> {
         }
     }
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn next_model_readiness_explains_each_missing_requirement_without_enabling_a_fake_handler() {
+        assert_eq!(
+            next_model_reason(false, 2, true, true),
+            Some("next_model_switch_disabled")
+        );
+        assert_eq!(
+            next_model_reason(true, 1, true, true),
+            Some("next_model_second_model_required")
+        );
+        assert_eq!(
+            next_model_reason(true, 2, false, true),
+            Some("next_model_shortcut_cleared")
+        );
+        assert_eq!(
+            next_model_reason(true, 2, true, false),
+            Some("next_model_hook_unavailable")
+        );
+        assert_eq!(next_model_reason(true, 2, true, true), None);
+    }
 }
