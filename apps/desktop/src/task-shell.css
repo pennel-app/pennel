@@ -77,3 +77,45 @@
 .task-setup-other-options { margin: var(--space-4) 0; }
 .task-setup-other-options[open] > .guided-setup { padding-top: var(--space-3); }
 .setup-current-choice { overflow-wrap: anywhere; }
+
+/* Dictation keeps task setup and existing preferences in four shared groups. */
+.dictation-task-settings, .dictation-settings-subpage { width: 100%; max-width: 664px; margin-inline: auto; }
+.settings-pane:has(.dictation-task-settings) > .settings-title { max-width: 664px; margin-inline: auto; }
+.dictation-settings { display: flex; flex-direction: column; gap: 26px; }
+.dictation-settings-group > h2 { margin: 0 0 8px; color: var(--muted); font: 600 var(--font-label)/1.5 var(--ui); }
+.dictation-settings-rows { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-panel); }
+.dictation-preference, .dictation-settings-link, .dictation-permission-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 16px; }
+.dictation-preference + .dictation-preference, .dictation-settings-link + *, .dictation-permission-row + .dictation-permission-row { border-top: 1px solid var(--border); }
+.dictation-preference-copy { flex: 1 1 210px; min-width: 0; }
+.dictation-preference h3, .dictation-permission-row h3 { margin: 0; font-size: var(--font-body); font-weight: 500; }
+.dictation-preference .help, .dictation-permission-row .help { margin: 3px 0 0; font-size: var(--font-label); }
+.dictation-preference > :last-child { max-width: 100%; }
+.dictation-preference [data-cleanup-verification], .dictation-preference[data-preference="pad"] > div:last-child { flex: 1 1 250px; }
+.dictation-shortcut-controls { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dictation-shortcut-controls kbd { display: inline-flex; align-items: center; min-height: 32px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); box-shadow: 0 2px 0 var(--key-shadow); font: 500 var(--font-body)/1.4 var(--ui); }
+.dictation-shortcut-controls .segmented { flex-wrap: wrap; }
+.dictation-shortcut-controls > p { flex-basis: 100%; }
+.dictation-settings-link { width: 100%; border: 0; border-radius: 0; background: transparent; color: var(--foreground); font: inherit; text-align: left; }
+.dictation-settings-link:hover { background: var(--hover); }
+.dictation-settings-link strong, .dictation-settings-link .help { display: block; }
+.dictation-settings-link strong { font-weight: 500; }
+.dictation-settings-link .help { margin-top: 3px; font-size: var(--font-label); }
+.dictation-settings-link > .ui-icon { width: 14px; height: 14px; color: var(--muted); }
+.dictation-task-settings .settings-task-readiness { max-width: none; margin: 0; }
+.dictation-task-settings .settings-task-row { padding: 14px 16px; border: 0; border-radius: 0; }
+.dictation-task-settings .settings-task-row + .settings-task-row { border-top: 1px solid var(--border); }
+.dictation-task-settings .settings-task-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; }
+.dictation-task-settings .settings-task-copy > h3 { flex-basis: 100%; font-weight: 600; }
+.dictation-task-settings .settings-task-selection { order: 2; margin: 0; font-size: var(--font-label); }
+.dictation-task-settings .settings-task-status { order: 3; }
+.dictation-task-settings .settings-task-status:not([role]) { order: 1; padding: 2px 7px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--subtle); }
+.dictation-task-settings .settings-task-status[data-ready="true"] { color: var(--success); }
+.dictation-task-settings .dictation-permission-repair { margin: 8px 16px 12px; color: var(--accent); }
+.dictation-task-settings .dictation-permissions + .error { margin-inline: 16px; }
+.dictation-settings-subpage > [data-dictation-settings-back] { margin-bottom: 16px; color: var(--accent); }
+.dictation-settings-subpage .pane-section { padding: 0; border: 0; }
+.dictation-settings-subpage .pane-section > h2 { font-size: var(--font-section); }
+.dictation-settings-subpage .dictionary-list, .dictation-settings-subpage .style-rules { margin-top: 16px; }
+@media (max-width: 1050px) { .dictation-preference-copy { flex-basis: 100%; } .dictation-preference > .choice { margin-left: 0; } }
+.dictation-task-settings .settings-task-copy > .help:first-of-type { order: 4; flex-basis: 100%; font-size: var(--font-caption); }
+.dictation-preference:is([data-preference="live-text"], [data-preference="verification"], [data-preference="pad"]) { align-items: flex-start; }

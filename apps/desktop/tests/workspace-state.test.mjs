@@ -103,9 +103,12 @@ test("only a verified different active capture may bypass old retained draft per
   assert.equal(resumesOtherCapture(route, "old-session", { ...active, id: null }), false);
 });
 
-test("six settings categories retain every old setup destination", () => {
-  for (const tab of ["dictation", "styles", "overview", null]) assert.equal(settingsCategory(tab), "dictation");
-  assert.equal(settingsCategory("dictionary"), "dictionary");
+test("five settings categories retain Dictionary and Styles as full Dictation subpages", () => {
+  for (const tab of ["dictation", "dictionary", "styles", "overview", null]) assert.equal(settingsCategory(tab), "dictation");
+  for (const tab of ["dictionary", "styles"]) {
+    assert.deepEqual(parseWorkspaceRoute({ section: "settings", tab }), workspaceRoute("settings", tab));
+    assert.deepEqual(legacyWorkspaceRoute("settings", tab), workspaceRoute("settings", tab));
+  }
   for (const tab of ["meeting-settings", "recording", "meetings"]) assert.equal(settingsCategory(tab), "meeting-settings");
   for (const tab of ["models", "providers", "local", "advanced"]) assert.equal(settingsCategory(tab), "advanced");
   assert.equal(settingsCategory("appearance"), "appearance"); assert.equal(settingsCategory("account"), "account");

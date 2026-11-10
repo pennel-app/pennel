@@ -181,5 +181,17 @@
   "dictation.home.cleanup_local": "Tekst op deze computer",
   "dictation.home.cleanup_by": "Tekst via {provider}",
   "dictation.home.setup_title": "Rond het instellen van dicteren af.",
-  "dictation.home.finish_to_try": "Rond het instellen af om hier te dicteren."
+  "dictation.home.finish_to_try": "Rond het instellen af om hier te dicteren.",
+  "dictation.settings.processing": "Waar je woorden worden verwerkt",
+  "dictation.settings.during": "Tijdens het dicteren",
+  "dictation.settings.words": "Jouw woorden",
+  "dictation.settings.result": "Resultaat",
+  "dictation.settings.result_help": "Opgeschoond verwijdert stopwoorden en past je correcties en appstijl toe. Zoals gesproken behoudt de herkende tekst.",
+  "dictation.settings.cleaned": "Opgeschoond",
+  "dictation.settings.spoken": "Zoals gesproken",
+  "dictation.settings.style_help": "Kies een toon per app. Pennel kijkt alleen welke app actief is.",
+  "dictation.settings.pad_target": "De doelapp wordt vastgelegd wanneer je in Schrijf in Pennel begint met opnemen. Daar zie je het echte doel; je woorden blijven altijd in Pennel.",
+  "dictation.settings.permission_unavailable": "Niet beschikbaar",
+  "dictation.settings.permission_needed": "Toegang nodig",
+  "dictation.settings.back": "Terug naar Dicteren"
 }

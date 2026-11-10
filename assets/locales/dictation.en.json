@@ -181,5 +181,17 @@
   "dictation.home.cleanup_local": "Cleanup on this computer",
   "dictation.home.cleanup_by": "Cleanup by {provider}",
   "dictation.home.setup_title": "Finish setting up dictation.",
-  "dictation.home.finish_to_try": "Finish setup to try dictation here."
+  "dictation.home.finish_to_try": "Finish setup to try dictation here.",
+  "dictation.settings.processing": "Where your words are processed",
+  "dictation.settings.during": "While dictating",
+  "dictation.settings.words": "Your words",
+  "dictation.settings.result": "Result",
+  "dictation.settings.result_help": "Cleaned up removes fillers and applies your corrections and app style. As spoken keeps recognition text.",
+  "dictation.settings.cleaned": "Cleaned up",
+  "dictation.settings.spoken": "As spoken",
+  "dictation.settings.style_help": "Pick a tone for each app. Pennel only checks which app is active.",
+  "dictation.settings.pad_target": "The destination app is captured when you start recording in Write in Pennel. The actual target is shown there; your words always stay in Pennel.",
+  "dictation.settings.permission_unavailable": "Unavailable",
+  "dictation.settings.permission_needed": "Access needed",
+  "dictation.settings.back": "Back to Dictation"
 }
