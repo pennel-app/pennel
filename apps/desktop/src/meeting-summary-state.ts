@@ -1,3 +1,5 @@
+import type { MeetingSummaryRecord } from "./api";
+
 export interface SummaryDocument {
   meeting_uid: string;
   markdown: string;
@@ -5,6 +7,7 @@ export interface SummaryDocument {
   source_revision: string;
   edited?: boolean;
   outdated?: boolean;
+  record?: MeetingSummaryRecord | null;
 }
 
 /** The acknowledged document advances independently of text currently being typed. */
@@ -23,7 +26,7 @@ export class SummaryDraft {
       if (this.document.source_revision !== document.source_revision && (this.dirty || this.pending || protectedInput)) {
         this.remote = document; return false;
       }
-      this.document = { ...this.document, source_revision: document.source_revision, outdated: document.outdated };
+      this.document = { ...this.document, source_revision: document.source_revision, outdated: document.outdated, record: document.record ?? null };
       return false;
     }
     if (this.document && (this.dirty || this.pending || protectedInput)) { this.remote = document; return false; }

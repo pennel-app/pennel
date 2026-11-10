@@ -10,6 +10,21 @@ import { createConversationFixture } from "./meeting-conversations.mjs";
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
 
+test("structured summary fixture round-trips candidate records and keeps both action-state fields", async () => {
+  const api = fixture("meeting-document-reference", { summary_structure: "structured", rich_utterances: true }).__PENNEL_PLATFORM__;
+  const id = "2026-10-24 0900 Projectoverleg";
+  const before = await api.invoke("meeting_summary", { id });
+  assert.ok(before.record?.structure?.lead);
+  const changed = await api.invoke("update_meeting_summary_action", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision, actionIndex: 0, done: true, owner: "Sam" });
+  assert.deepEqual(JSON.parse(JSON.stringify(changed.record.structure.actions[0].state)), { done: true, owner: "Sam" });
+  assert.equal(changed.edited, before.edited);
+  const candidate = await api.invoke("generate_meeting_summary", { id });
+  assert.ok(candidate.record);
+  assert.equal((await api.invoke("meeting_summary", { id })).revision, changed.revision, "Generating a candidate wrote the summary.");
+  const accepted = await api.invoke("accept_meeting_summary", { id, expectedRevision: candidate.revision, expectedSourceRevision: candidate.source_revision, markdown: candidate.markdown, record: candidate.record });
+  assert.equal(accepted.record.body_revision, candidate.record.body_revision);
+});
+
 test("failed transcription fixture exposes retained-chunk eligibility separately from a full archive", async () => {
   const context = fixture("meeting-notes", { failed_recovery: true, saved_audio: false });
   const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;

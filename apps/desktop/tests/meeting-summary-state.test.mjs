@@ -18,6 +18,14 @@ test("background summary completion cannot replace typed text or a focused clean
   assert.equal(draft.value, "Generated remotely");
 });
 
+test("record attachment metadata follows a same-body refresh without replacing the acknowledged text", () => {
+  const draft = new SummaryDraft();
+  draft.receive({ ...document(), record: { body_revision: "attached" } });
+  assert.equal(draft.receive({ ...document(), record: null }), false);
+  assert.equal(draft.document.record, null);
+  assert.equal(draft.value, "Saved summary");
+});
+
 test("source changes never silently advance the expected revision of an active or dirty draft", () => {
   for (const protectedInput of [true, false]) {
     const draft = new SummaryDraft(); draft.receive(document());
