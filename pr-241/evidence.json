@@ -1,0 +1,26 @@
+{
+  "pull_request": 241,
+  "base": "e3f1cb9f193e296da59c0dca5826972fc568e284",
+  "head": "e00a0aade3965ceaf92df7352fe7b834ded6f946",
+  "source_commits": [
+    "f5ec040ecd142da584ec3a22b726394ccf4c2f59",
+    "ddb9dc20059ec5d3ef4a2ec13ddca4cdb09f1a31"
+  ],
+  "published_commits": [
+    "ce887e8",
+    "e00a0aa"
+  ],
+  "scope": "T10e and X11 P1 only; excludes d562 owned seam and duplicate integration commits",
+  "visual_change": false,
+  "existing_verification": {
+    "mac_backend": 365,
+    "swift": 213,
+    "p1_core": 14,
+    "p1_catalog": 11,
+    "p1_portable": 6,
+    "p1_capture": 5,
+    "build": true,
+    "strict_lint": true
+  },
+  "native_acceptance": "Not established; keyed X11 globals deliberately unavailable"
+}
