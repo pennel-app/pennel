@@ -11,7 +11,7 @@ export function meetingSummaryConsent(initial: Context, host: {
   id(): string; finished(): boolean; working(): boolean; canGenerate(): boolean; canDismiss(): boolean;
   blockedReason(): string; generate(): Promise<void>; dismiss(): Promise<void>; focusTarget: HTMLElement;
 }) {
-  let ctx = initial, binding = 0, bound = false, pending = false, loading = false, loaded = false, dismissed = false;
+  let ctx = initial, binding = 0, readGeneration = 0, bound = false, pending = false, loading = false, loaded = false, dismissed = false;
   let loadedId = "", lastRead = -Infinity, failure = "", lastPolicy = ctx.info.settings.summary_automation ?? "unanswered";
   const requests = new LatestRequest();
   const automatic = h("input", { type: "checkbox", "data-summary-consent-automatic": true });
@@ -51,14 +51,15 @@ export function meetingSummaryConsent(initial: Context, host: {
     if (mode === "quiet" && heldFocus && question.contains(heldFocus)) quietCreate.focus({ preventScroll: true });
     if (!loading && !failure && !pending && (loadedId !== host.id() || performance.now() - lastRead > 3000)) void load();
   }
+  function invalidateReads() { ++readGeneration; requests.cancel(); loading = false; }
   async function load() {
     if (!bound || !host.finished()) return;
-    const mine = binding, id = host.id(), retryFocus = document.activeElement === retry; loading = true; failure = ""; refresh();
+    const mine = binding, generation = ++readGeneration, id = host.id(), retryFocus = document.activeElement === retry; loading = true; failure = ""; refresh();
     await requests.run(() => api.meetingSummaryPromptDismissed(id), value => {
       if (!bound || mine !== binding || host.id() !== id) return;
       dismissed = value; loaded = true; loadedId = id; lastRead = performance.now();
     }, error => { if (bound && mine === binding && host.id() === id) failure = errorText(error); });
-    if (bound && mine === binding) {
+    if (bound && mine === binding && generation === readGeneration) {
       loading = false; refresh();
       if (retryFocus && !root.hidden && document.activeElement === document.body) (failure ? retry : dismissed ? quietCreate : create).focus({ preventScroll: true });
     }
@@ -66,7 +67,7 @@ export function meetingSummaryConsent(initial: Context, host: {
   async function choose(action: SummaryConsentAction) {
     if (pending) return;
     const hadFocus = root.contains(document.activeElement);
-    pending = true; failure = ""; refresh();
+    invalidateReads(); pending = true; failure = ""; refresh();
     if (hadFocus) host.focusTarget.focus({ preventScroll: true });
     try {
       await performSummaryConsent(action, automatic.checked, {
@@ -76,8 +77,9 @@ export function meetingSummaryConsent(initial: Context, host: {
           return api.saveSettings(settings);
         }),
         generate: host.generate,
-        dismiss: async () => { await host.dismiss(); dismissed = true; loaded = true; loadedId = host.id(); lastRead = performance.now(); },
+        dismiss: async () => { await host.dismiss(); invalidateReads(); dismissed = true; loaded = true; loadedId = host.id(); lastRead = performance.now(); },
       });
+      invalidateReads();
     } catch (error) { failure = errorText(error); }
     finally {
       const restoreFocus = hadFocus && document.activeElement === host.focusTarget;
@@ -87,14 +89,14 @@ export function meetingSummaryConsent(initial: Context, host: {
   }
   bindLocalization(root, refresh);
   return { root, refresh, bind(next: Context) {
-    ctx = next; lastPolicy = ctx.info.settings.summary_automation ?? "unanswered"; const mine = ++binding; bound = true; requests.cancel(); loading = false; loadedId = "";
+    ctx = next; lastPolicy = ctx.info.settings.summary_automation ?? "unanswered"; const mine = ++binding; bound = true; invalidateReads(); loadedId = "";
     next.onInfoChange(() => {
       if (mine !== binding) return;
       const policy = ctx.info.settings.summary_automation ?? "unanswered";
       if (policy !== lastPolicy && policy === "unanswered") { automatic.checked = false; loadedId = ""; }
       lastPolicy = policy; refresh();
     });
-    next.onDispose(() => { if (mine === binding) { bound = false; requests.cancel(); loading = false; } });
+    next.onDispose(() => { if (mine === binding) { bound = false; invalidateReads(); } });
     refresh();
   } };
 }
