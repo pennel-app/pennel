@@ -605,6 +605,20 @@ export interface MeetingSummaryRecord {
   structure: SummaryStructure | null;
 }
 
+export interface SpeakerTimelineSpan { start_ms: number; end_ms: number }
+export interface SpeakerTimelineLane {
+  key: string;
+  speaker: string | null;
+  kind: "person" | "unknown" | "mixed" | "overlap";
+  duration_ms: number;
+  spans: SpeakerTimelineSpan[];
+}
+export interface MeetingSpeakerTimeline {
+  duration_ms: number;
+  duration_is_recorded: boolean;
+  lanes: SpeakerTimelineLane[];
+}
+
 export interface MeetingSummaryDocument {
   record?: MeetingSummaryRecord | null;
   meeting_uid: string;
@@ -1024,6 +1038,7 @@ export const api = {
   deleteTemplate: (id: string) => invoke<void>("delete_template", { id }),
   summarizeMeeting: (id: string, templateId: string) =>
     invoke<string>("summarize_meeting", { id, templateId }),
+  meetingSpeakerTimeline: (id: string) => invoke<MeetingSpeakerTimeline>("meeting_speaker_timeline", { id }),
   meetingSummary: (id: string) => invoke<MeetingSummaryDocument>("meeting_summary", { id }),
   saveMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
     invoke<MeetingSummaryDocument>("save_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
