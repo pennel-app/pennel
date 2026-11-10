@@ -167,6 +167,11 @@ struct Tally {
     by_name: HashMap<String, u64>,
 }
 
+/// Keeps observation quarantine aligned with the name-fusion timeline.
+pub fn app_speaker_highlight_latency_ms() -> u64 {
+    FusionPolicy::default().highlight_latency_ms
+}
+
 impl Tally {
     fn evidence_ms(&self) -> u64 {
         self.by_name.values().sum()
@@ -1398,6 +1403,151 @@ mod tests {
         conflicting.extend(sampled(8_000, 20_000, &["Bert"]));
         assert!(automatic_suggestions(&turns, &conflicting).is_empty());
         assert!(automatic_suggestions(&turns, &sampled(0, 4_000, &["Ann"])).is_empty());
+    }
+
+    #[test]
+    fn cached_automatic_names_are_reindexed_when_estimate_rendering_changes() {
+        let (directory, engine, id) = automatic_fixture();
+        engine.apply_meeting_automatic_names(&id).unwrap();
+        let store = engine.meeting_store();
+        let path = directory.path().join("synthetic-index.sqlite");
+        let mut index = crate::meeting_index::MeetingIndex::open(&path).unwrap();
+        index.sync(&store).unwrap();
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let revision: String = conn.query_row(
+            "SELECT source_revision FROM files WHERE meeting_id = ?1 AND name = 'transcript.md'",
+            [&id],
+            |row| row.get(0),
+        ).unwrap();
+        let old_revision = revision.rsplit(':').next().unwrap();
+        conn.execute(
+            "UPDATE chunks SET text = replace(text, 'Ann (Teams estimate):', 'Ann:') WHERE meeting_id = ?1 AND name = 'transcript.md'",
+            [&id],
+        ).unwrap();
+        conn.execute("INSERT INTO passages(passages) VALUES ('rebuild')", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE files SET source_revision = ?1 WHERE meeting_id = ?2 AND name = 'transcript.md'",
+            rusqlite::params![old_revision, id],
+        ).unwrap();
+        let before = index.recent(&store, Some(&id), u32::MAX).unwrap();
+        assert!(
+            before
+                .iter()
+                .any(|passage| passage.text.contains("Ann: Clear speech."))
+        );
+        index.sync(&store).unwrap();
+        let after = index.recent(&store, Some(&id), u32::MAX).unwrap();
+        assert!(
+            after
+                .iter()
+                .any(|passage| passage.text.contains("Ann (Teams estimate): Clear speech."))
+        );
+        assert!(
+            !after
+                .iter()
+                .any(|passage| passage.text.contains("Ann: Clear speech."))
+        );
+        let found = index.search(&store, "speech", Some(&id), u32::MAX).unwrap();
+        assert!(
+            found
+                .iter()
+                .any(|passage| passage.text.contains("Ann (Teams estimate): Clear speech."))
+        );
+        index.sync(&store).unwrap();
+        assert_eq!(index.recent(&store, Some(&id), u32::MAX).unwrap(), after);
+    }
+
+    #[test]
+    fn automatic_names_remain_estimates_in_exports_summary_and_question_evidence() {
+        let (_directory, engine, id) = automatic_fixture();
+        engine.apply_meeting_automatic_names(&id).unwrap();
+        let store = engine.meeting_store();
+        let snapshot = store.read_transcript_snapshot(&id).unwrap();
+        let names = store.speaker_names(&id);
+        let source_text = &snapshot.utterances[0].segment.text;
+        let summary = crate::summary::transcript_snapshot_text(&snapshot, &names);
+        assert!(summary.contains(&format!("Ann (Teams estimate): {source_text}")));
+        assert!(!summary.contains(&format!("Ann: {source_text}")));
+        let evidence = crate::MeetingEvidence::new_with_utterances(
+            &snapshot.meeting_uid,
+            "Synthetic meeting",
+            "",
+            "",
+            &snapshot.utterances,
+            &names,
+        )
+        .unwrap();
+        assert_eq!(
+            evidence.sources[0].text,
+            format!("Ann (Teams estimate): {source_text}")
+        );
+        assert_eq!(evidence.anchors[0].source_text, *source_text);
+        for (language, estimate) in [
+            (crate::InterfaceLanguage::English, "Ann (Teams estimate)"),
+            (crate::InterfaceLanguage::Dutch, "Ann (Teams-inschatting)"),
+        ] {
+            let markdown = crate::export::export_markdown_for_language(&store, &id, true, language)
+                .unwrap()
+                .1;
+            assert!(markdown.contains(&format!("{estimate}:** {source_text}")));
+            assert!(!markdown.contains(&format!("Ann:** {source_text}")));
+            assert_eq!(
+                crate::meeting_evidence::localized_utterance_speaker_label(
+                    &snapshot.utterances[0],
+                    &names,
+                    language
+                ),
+                estimate
+            );
+        }
+        let mut uncertain = snapshot.utterances[0].clone();
+        for (kind, label) in [
+            (AttributionKind::Unknown, "Unknown speaker"),
+            (AttributionKind::Mixed, "Mixed speakers"),
+            (AttributionKind::Overlap, "Overlapping speakers"),
+        ] {
+            uncertain.metadata.attribution.kind = kind;
+            assert_eq!(
+                crate::meeting_evidence::utterance_speaker_label(&uncertain, &names),
+                label
+            );
+        }
+        store.rename_speaker(&id, 1, "Manual {name}").unwrap();
+        let confirmed = store.read_transcript_snapshot(&id).unwrap();
+        let names = store.speaker_names(&id);
+        assert_eq!(names[0].name, "Manual {name}");
+        let summary = crate::summary::transcript_snapshot_text(&confirmed, &names);
+        assert!(summary.contains(&format!("Manual {{name}}: {source_text}")));
+        assert!(!summary.contains("Teams estimate"));
+        let confirmed_evidence = crate::MeetingEvidence::new_with_utterances(
+            &confirmed.meeting_uid,
+            "Synthetic meeting",
+            "",
+            "",
+            &confirmed.utterances,
+            &names,
+        )
+        .unwrap();
+        assert_eq!(
+            confirmed_evidence.sources[0].text,
+            format!("Manual {{name}}: {source_text}")
+        );
+        assert_eq!(
+            evidence.anchors[0].segment_fingerprints,
+            confirmed_evidence.anchors[0].segment_fingerprints
+        );
+        for language in [
+            crate::InterfaceLanguage::English,
+            crate::InterfaceLanguage::Dutch,
+        ] {
+            let markdown = crate::export::export_markdown_for_language(&store, &id, true, language)
+                .unwrap()
+                .1;
+            assert!(markdown.contains(&format!("Manual {{name}}:** {source_text}")));
+            assert!(!markdown.contains("Teams estimate"));
+            assert!(!markdown.contains("Teams-inschatting"));
+        }
     }
 
     #[test]

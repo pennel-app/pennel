@@ -39,15 +39,9 @@ pub(crate) fn rows(utterances: &[MeetingUtterance]) -> Result<Vec<serde_json::Va
                 serde_json::to_value(manual.and_then(|manual| manual.name.as_deref()))
                     .map_err(PennelError::storage)?,
             );
-            let automatic_name = row.metadata.automatic_name.as_ref().filter(|proof| {
-                manual.is_none() && !needs_review
-                    && row.metadata.attribution.kind == crate::AttributionKind::Single
-                    && !row.metadata.attribution.provisional
-                    && proof.source_fingerprint == row.metadata.source_fingerprint
-                    && proof.attribution_revision == row.metadata.attribution_revision
-            });
+            let automatic_name = crate::meeting_evidence::automatic_utterance_speaker_name(row);
             object.insert("automatic_speaker_name".into(),
-                serde_json::to_value(automatic_name.map(|proof| proof.name.as_str())).map_err(PennelError::storage)?);
+                serde_json::to_value(automatic_name).map_err(PennelError::storage)?);
             object.insert(
                 "attribution_revision".into(),
                 row.metadata.attribution_revision.into(),

@@ -118,6 +118,7 @@ pub use localization::{
 pub use meeting_app_evidence::{
     AppEvidenceAvailability, AppEvidenceBinding, AppSpeakerEvidence, AutomaticNameAttribution,
     CandidateSource, NameCandidate, NameSuggestion, SpeakingSample, VoiceNaming, VoiceNamingStatus,
+    app_speaker_highlight_latency_ms,
 };
 pub use meeting_chat::{ChatTurn, Citation, MeetingAnswer};
 pub use meeting_evidence::{

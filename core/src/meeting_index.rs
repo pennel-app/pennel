@@ -10,6 +10,7 @@ use crate::meetings::{MeetingInfo, MeetingStore, SpeakerName, speaker_label};
 
 const PASSAGE_CHARS: usize = 600;
 const SCHEMA_VERSION: i64 = 3;
+const TRANSCRIPT_RENDER_REVISION: &str = "speaker-estimates-v1";
 const FILES: [(&str, PassageKind); 3] = [
     ("notes.md", PassageKind::Notes),
     ("transcript.md", PassageKind::Transcript),
@@ -259,7 +260,13 @@ fn transcript_source_stamp(store: &MeetingStore, id: &str) -> Result<String, Pen
     }
     stamps.sort();
     serde_json::to_string(&stamps)
-        .map(|value| crate::evidence_revision(&value))
+        // A speaker-label change must refresh cached passages even when source files did not change.
+        .map(|value| {
+            format!(
+                "{TRANSCRIPT_RENDER_REVISION}:{}",
+                crate::evidence_revision(&value)
+            )
+        })
         .map_err(PennelError::storage)
 }
 

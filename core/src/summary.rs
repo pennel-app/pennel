@@ -31,7 +31,10 @@ fn notes_section(spec: &TemplateSpec) -> &str {
 
 pub fn summary_messages(spec: &TemplateSpec, notes: &str, transcript: &str) -> Vec<ChatMessage> {
     let notes = notes.trim();
-    let mut system = format!("{SYSTEM_PROMPT}\n{AGREEMENT_RULE}\n{LANGUAGE_RULE}\n");
+    let mut system = format!(
+        "{SYSTEM_PROMPT}\n{}\n{AGREEMENT_RULE}\n{LANGUAGE_RULE}\n",
+        crate::meeting_evidence::AUTOMATIC_NAME_ESTIMATE_RULE
+    );
     if spec.default_sections {
         system.push_str(DEFAULT_SECTION_RULE);
         system.push('\n');
@@ -89,7 +92,10 @@ pub fn chunk_messages(part: &str) -> Vec<ChatMessage> {
     vec![
         ChatMessage {
             role: "system",
-            content: format!("{MAP_PROMPT}\n{AGREEMENT_RULE}"),
+            content: format!(
+                "{MAP_PROMPT}\n{}\n{AGREEMENT_RULE}",
+                crate::meeting_evidence::AUTOMATIC_NAME_ESTIMATE_RULE
+            ),
         },
         ChatMessage {
             role: "user",
@@ -265,6 +271,25 @@ mod tests {
                 .content
                 .contains("<transcript>\n[00:00] Ik: hallo\n</transcript>")
         );
+    }
+
+    #[test]
+    fn both_summary_passes_preserve_automatic_name_qualification_and_unknown_owners() {
+        for source in [
+            "[00:00] Sam (Teams estimate): I will prepare it.",
+            "[00:00] Sam (Teams estimate): Ik zal het voorbereiden.",
+        ] {
+            for messages in [
+                summary_messages(&spec("algemeen"), "", source),
+                chunk_messages(source),
+            ] {
+                assert!(messages[0].content.contains("Names marked Teams estimate are revisable estimates, not confirmed identities or action owners"));
+                assert!(messages[0].content.contains(
+                    "Preserve estimate qualifications in intermediate and final summaries"
+                ));
+                assert!(messages[1].content.contains(source));
+            }
+        }
     }
 
     #[test]

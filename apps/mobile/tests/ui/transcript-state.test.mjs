@@ -30,6 +30,26 @@ test('mobile labels preserve unknown, mixed and overlapping attribution independ
   }
 });
 
+test('mobile automatic names remain Teams estimates and explicit names remain literal in both languages', () => {
+  const automatic = { ...utterance, source_id: 'system_audio', automatic_speaker_name: 'Sam {number}', attribution: { kind: 'single', voices: [2], provisional: false } };
+  const names = [{ voice: 2, name: 'Sam {number}' }];
+  for (const [language, expected] of [['en', 'Sam {number} (Teams estimate)'], ['nl', 'Sam {number} (Teams-inschatting)']]) {
+    const t = (key, args) => translate(language, key, args);
+    assert.equal(transcriptSpeakerLabel(automatic, names, t), expected);
+    assert.equal(transcriptSpeakerLabel(automatic, [], t), expected);
+    assert.equal(transcriptSpeakerLabel({ ...automatic, confirmed_speaker_name: 'Manual {name}' }, names, t), 'Manual {name}');
+    assert.equal(transcriptSpeakerLabel({ ...automatic, automatic_speaker_name: null }, names, t), 'Sam {number}');
+    for (const kind of ['unknown', 'mixed', 'overlap']) {
+      assert.equal(transcriptSpeakerLabel({ ...automatic, attribution: { kind, voices: [] } }, names, t), t(`meetings.attribution_${kind}`));
+    }
+    assert.equal(transcriptSpeakerLabel({ ...automatic, attribution: { kind: 'single', voices: [], self_voice: true } }, names, t), t('meetings.speaker_me'));
+    assert.equal(transcriptSpeakerLabel({ ...automatic, attribution: { ...automatic.attribution, provisional: true } }, names, t), 'Sam {number}');
+    const normalized = meetingDetail({ info: { id: 'meeting' }, transcript: [automatic], speakers: names });
+    assert.equal(normalized.transcript[0].automatic_speaker_name, 'Sam {number}');
+    assert.equal(normalized.transcript[0].text, utterance.text);
+  }
+});
+
 test('mobile durable playback requests a core source resolution rather than the mutable speaker track', () => {
   const detail = { audio_tracks: [{ speaker: 'others', source_id: 'room_microphone', available: true }] };
   assert.deepEqual(transcriptPlayback('meeting', { ...utterance, speaker: 'me' }, detail.audio_tracks),

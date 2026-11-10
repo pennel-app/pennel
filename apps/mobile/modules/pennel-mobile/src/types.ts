@@ -65,6 +65,7 @@ export interface Segment {
   attribution?: SpeakerAttribution | null; attribution_revision?: number;
   correction_review_required?: boolean;
   confirmed_speaker_name?: string | null;
+  automatic_speaker_name?: string | null;
 }
 export interface MeetingInfo { id: string; title: string; start_iso: string; duration_min: number; has_summary: boolean; sync_state?: 'synced' | 'pending' | 'conflict' }
 export interface MeetingVoice { voice: number; name: string | null; remembered: boolean; can_remember: boolean }
