@@ -23,7 +23,7 @@ const visible = node => {
   }
   return getComputedStyle(node).visibility !== "hidden";
 };
-const button = (scope, label) => [...scope.querySelectorAll("button")].find(node => node.textContent.trim() === label);
+const button = (scope, label) => [...scope.querySelectorAll("button")].find(node => node.textContent.trim() === label || node.getAttribute("aria-label") === label);
 const click = node => {
   assert(node && !node.disabled, "Required user action is missing or disabled.");
   for (let parent = node.parentElement; parent; parent = parent.parentElement) {
@@ -125,17 +125,20 @@ export async function checkOnboardingFlow() {
   try {
     assert(visible(button(document, t("onboarding.try_dictation"))) && visible(button(document, t("onboarding.record_meeting"))), "The two first-use jobs are not visible.");
     click(button(document, t("onboarding.record_meeting")));
+    click(document.querySelector(".onboarding-next"));
     await until(() => document.querySelector('.onboarding-shell[data-step="engine"]') && fixture.info().settings.onboarding.goal === "meeting", "Choosing meetings did not retain the task in speech setup.");
     let alternatives = document.querySelector("details.onboarding-other-options");
     assert(alternatives && !alternatives.open, "Technical alternatives are expanded before the first result.");
     assert(!visible(alternatives.querySelector(".engine-model-options")), "The local model catalogue is visible before Other options is opened.");
     click(alternatives.querySelector("summary"));
+    alternatives.querySelector(".onboarding-local-options summary")?.click();
     await until(() => alternatives.open && visible(alternatives.querySelector(".engine-model-options")), "Other options did not reveal the local model controls.");
     assert(alternatives.textContent.includes(t("onboarding.own_provider")), "The advanced provider route was removed.");
     click(alternatives.querySelector("summary"));
     click(button(document, t("onboarding.back")));
     await until(() => document.querySelector('.onboarding-shell[data-step="welcome"]'), "Back did not return to the first task choice.");
     click(button(document, t("onboarding.try_dictation")));
+    click(document.querySelector(".onboarding-next"));
     await until(() => document.querySelector('.onboarding-shell[data-step="engine"]') && fixture.info().settings.onboarding.goal === "dictation", "The dictation choice did not replace the first-use goal.");
     assert(fixture.info().settings.language === before.language && JSON.stringify(fixture.info().settings.providers) === JSON.stringify(before.providers), "Choosing a task changed speech language or provider accounts.");
     assert(!observed.operations.some(operation => ["start_meeting", "open_dictation_session", "download_model", "set_key"].includes(operation.command)), "Choosing a job started capture, downloaded a model or requested credentials automatically.");
