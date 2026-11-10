@@ -5,7 +5,7 @@ import { icon } from "../icons";
 import { defaultModelId, initialEngine, manualPracticeAllowed, modelOptionLabel, onboardingFlow, onboardingProgressChange, onboardingResumeStep, onboardingRouteIntent, onboardingSteps, stepIndex, type Engine } from "../onboarding-state";
 import { trainedLabel } from "../speaker-state";
 import { EnrollmentPanel, SpeakerModels, enrollmentBlocker, enrollmentIntro, speakerDownload } from "./voices";
-import { hotkeyLabel, hotkeyKeyLabel } from "../presentation";
+import { shortcutRow, shortcutText } from "../shortcut-presentation";
 import { workspaceRoute } from "../workspace-state";
 import { recommendedSpeechModel } from "../dictation-home-state";
 import type { Context } from "../main";
@@ -135,6 +135,8 @@ class OnboardingWizard {
       const signature = JSON.stringify(choice);
       if (this.step === "engine" && signature !== this.speechChoiceSignature) { this.preferRecommendation = false; this.configureGoal(this.goal); this.renderEngineDetail(); }
       this.speechChoiceSignature = signature;
+      this.practiceKey?.querySelector("span")?.replaceChildren(this.keyLabel());
+      this.refreshPracticePresentation?.();
       this.updateCommon(); if (this.step === "permissions") void this.refreshPermissions().catch(this.fail);
     });
     ctx.onFocusChange((focused) => {
@@ -278,15 +280,15 @@ class OnboardingWizard {
   }
 
   private hotkey(): string {
-    return hotkeyLabel(this.ctx.info.settings.hotkey, this.ctx.info.platform);
+    return shortcutText(this.ctx.info, "dictate");
   }
 
   private keycap(): HTMLButtonElement {
-    return h("button", { class: "keycap", type: "button", "aria-label": l("onboarding.hold_to_dictate") }, icon("globe"), h("span", {}, this.keyLabel()));
+    return h("button", { class: "keycap", type: "button", "aria-label": l("onboarding.hold_to_dictate") }, icon("globe"), h("span", {}, shortcutRow(this.ctx.info, "dictate")?.binding ? this.keyLabel() : l("onboarding.start_dictation")));
   }
 
   private keyLabel(): string {
-    return hotkeyKeyLabel(this.ctx.info.settings.hotkey, this.ctx.info.platform);
+    return shortcutRow(this.ctx.info, "dictate")?.binding ? shortcutText(this.ctx.info, "dictate") : t("onboarding.start_dictation");
   }
 
   private renderLanguage() {
@@ -616,7 +618,7 @@ class OnboardingWizard {
       if (snapshot.phase === "done") this.practiceText.value = snapshot.text;
       this.refreshPracticePresentation = () => {
         if (!this.practiceStatus || !this.practiceButton || this.step !== "practice") return;
-        this.practiceStatus.textContent = snapshot.error ? localizeBackendText(snapshot.error) : snapshot.phase === "listening" ? t("onboarding.listening_release") : snapshot.phase === "working" ? t("onboarding.writing_words") : snapshot.phase === "done" ? t("onboarding.first_dictation_done") : t("onboarding.practice_gesture_help", { shortcut: this.hotkey() });
+        this.practiceStatus.textContent = snapshot.error ? localizeBackendText(snapshot.error) : snapshot.phase === "listening" ? t("onboarding.listening_release") : snapshot.phase === "working" ? t("onboarding.writing_words") : snapshot.phase === "done" ? t("onboarding.first_dictation_done") : shortcutRow(this.ctx.info, "dictate")?.binding ? t("onboarding.practice_gesture_help", { shortcut: this.hotkey() }) : t("shortcuts.button");
         this.practiceButton.textContent = snapshot.phase === "listening" ? t("onboarding.stop_dictation") : snapshot.phase === "working" ? t("onboarding.processing_text") : t("onboarding.start_dictation");
         if (this.practiceDone) {
           this.body.querySelector("h1")!.textContent = t("onboarding.practice_success_title");
@@ -653,11 +655,11 @@ class OnboardingWizard {
     this.practiceKey.addEventListener("keydown", (event) => { if ([" ", "Enter"].includes(event.key)) { event.preventDefault(); if (!event.repeat) press(); } });
     this.practiceKey.addEventListener("keyup", (event) => { if ([" ", "Enter"].includes(event.key)) { event.preventDefault(); release(); } });
     this.practiceKey.addEventListener("click", (event) => { if (event.detail === 0 && !this.held) void this.practice?.toggle().catch(this.fail); });
-    this.body.replaceChildren(this.title(l("onboarding.practice_title"), l("onboarding.practice_gesture", { shortcut: this.hotkey() })),
+    this.body.replaceChildren(this.title(l("onboarding.practice_title"), shortcutRow(this.ctx.info, "dictate")?.binding ? l("onboarding.practice_gesture", { shortcut: this.hotkey() }) : l("shortcuts.button")),
       h("div", { class: "practice-gesture" }, this.practiceKey, h("div", {}, h("p", { class: "practice-phrase" }, liveText(() => `“${phrases[this.language] ?? phrases[getInterfaceLanguage()]}”`)), h("p", { class: "help" }, l("onboarding.practice_free_speech")))),
       this.practiceText, this.practiceStatus, h("div", { class: "row practice-help" }, this.practiceButton,
-        h("details", {}, h("summary", {}, l("onboarding.shortcut_not_working", { shortcut: this.hotkey() })), h("p", { class: "help" }, this.ctx.info.platform === "macos"
-          ? l("onboarding.mac_shortcut_help")
+        h("details", {}, h("summary", {}, shortcutRow(this.ctx.info, "dictate")?.binding ? l("onboarding.shortcut_not_working", { shortcut: this.hotkey() }) : l("shortcuts.practice_trouble")), h("p", { class: "help" }, this.ctx.info.platform === "macos"
+          ? shortcutRow(this.ctx.info, "dictate")?.binding?.mods.includes("fn") ? l("onboarding.mac_shortcut_help") : l("shortcuts.practice_help")
           : this.ctx.info.capabilities.global_hotkey.reason ? this.ownedStatus(() => this.ctx.info.capabilities.global_hotkey.reason ?? "") : l("onboarding.manual_practice_help")))));
     try { await this.practice.open(); } catch (error) { this.fail(error); }
   }
@@ -831,7 +833,7 @@ class OnboardingWizard {
     if (this.step === "permissions") {
       const manualAllowed = manualPracticeAllowed(this.readiness, this.permissions, this.ctx.info.settings, this.goal);
       disabled ||= !manualAllowed;
-      if (this.goal === "dictation" && manualAllowed && this.ctx.info.platform === "macos" && this.readiness?.can_use_shortcut === false) label = t("onboarding.continue_without_shortcut", { shortcut: this.hotkey() });
+      if (this.goal === "dictation" && manualAllowed && this.ctx.info.platform === "macos" && this.readiness?.can_use_shortcut === false) label = shortcutRow(this.ctx.info, "dictate")?.binding ? t("onboarding.continue_without_shortcut", { shortcut: this.hotkey() }) : t("shortcuts.continue_button");
     }
     if (this.step === "practice") {
       if (this.goal === "meeting") { disabled ||= !this.readiness?.can_record; label = t("onboarding.open_recording"); }

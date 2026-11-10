@@ -265,9 +265,42 @@ pub async fn save_settings(
     .await
 }
 
-fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> Result<AppInfo> {
-    let _inference_mutation = crate::inference::mutation(&shared.engine);
+fn apply_settings(settings: Settings, app: &AppHandle, shared: &Shared) -> Result<AppInfo> {
+    change_settings(app, shared, |next| {
+        *next = settings;
+        Ok(())
+    })
+}
+
+/// Serialize the read, policy validation and durable save for partial settings writers.
+pub(crate) fn change_settings<E: From<String>>(
+    app: &AppHandle,
+    shared: &Shared,
+    change: impl FnOnce(&mut Settings) -> std::result::Result<(), E>,
+) -> std::result::Result<AppInfo, E> {
+    static GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _gate = GATE.lock().unwrap_or_else(|p| p.into_inner());
+    let mut settings = shared.settings();
+    change(&mut settings)?;
+    apply_settings_locked(settings, app, shared).map_err(E::from)
+}
+
+fn apply_settings_locked(
+    mut settings: Settings,
+    app: &AppHandle,
+    shared: &Shared,
+) -> Result<AppInfo> {
     let old_settings = shared.settings();
+    let _shortcut_edit =
+        if crate::shortcut_settings::binding_fields_changed(&old_settings, &settings) {
+            Some(crate::shortcut_settings::editing(
+                &shared.dictation_active,
+                || crate::shortcut_capture::capturing() || crate::hotkey::trigger_held(),
+            )?)
+        } else {
+            None
+        };
+    let _inference_mutation = crate::inference::mutation(&shared.engine);
     crate::cloud::keep_stored_cloud_sync(&mut settings, &old_settings);
     if shared.preview && old_settings.meetings_dir != settings.meetings_dir {
         return Err(

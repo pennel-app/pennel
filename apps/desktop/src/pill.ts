@@ -4,7 +4,7 @@ import { api, listen, listenToWindow, type AppInfo, type PillPreview, type PillS
 import { icon } from "./icons";
 import { PillPreviewState } from "./pill-preview-state";
 import { PILL_METRICS } from "./pill-metrics.generated";
-import { hotkeyKeyLabel } from "./presentation";
+import { shortcutRow, shortcutText } from "./shortcut-presentation";
 import { bindLocalization, getInterfaceLanguage, localizeBackendText, setInterfaceLanguage, t } from "./i18n.ts";
 
 const pill = document.getElementById("pill")!;
@@ -148,7 +148,7 @@ function renderPreview() {
 }
 
 function applyInfo(info: AppInfo) {
-  doneKey = hotkeyKeyLabel(info.settings.hotkey, info.platform) ?? "";
+  doneKey = shortcutRow(info, "dictate")?.binding ? shortcutText(info, "dictate") : "";
   setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
   if (visible && pendingState) render(pendingState);
 }

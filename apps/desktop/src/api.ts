@@ -952,6 +952,11 @@ export const api = {
   desktopEnvironment: () => invoke<DesktopEnvironment>("desktop_environment"),
   setDesktopCommandState: (state: DesktopCommandState) => invoke<void>("set_desktop_command_state", { state }),
   info: () => invoke<AppInfo>("app_info"),
+  setShortcut: (action: string, binding: ShortcutBinding | null, replace = false) => invoke<AppInfo>("set_shortcut", { action, binding, replace }),
+  resetShortcut: (action: string) => invoke<AppInfo>("reset_shortcut", { action }),
+  resetAllShortcuts: () => invoke<AppInfo>("reset_all_shortcuts"),
+  shortcutCaptureStart: (action: string) => invoke<import("./shortcut-capture-state").CaptureStarted>("shortcut_capture_start", { action }),
+  shortcutCaptureStop: () => invoke<void>("shortcut_capture_stop"),
   saveSettings: (settings: Settings) => invoke<AppInfo>("save_settings", { settings }),
   applyTaskModelChoice: (slot: "dictation_stt" | "meeting_stt" | "llm", choice: ModelChoice) =>
     invoke<AppInfo>("apply_task_model_choice", { slot, choice }),

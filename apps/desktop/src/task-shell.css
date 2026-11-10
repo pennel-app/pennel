@@ -119,3 +119,30 @@
 @media (max-width: 1050px) { .dictation-preference-copy { flex-basis: 100%; } .dictation-preference > .choice { margin-left: 0; } }
 .dictation-task-settings .settings-task-copy > .help:first-of-type { order: 4; flex-basis: 100%; font-size: var(--font-caption); }
 .dictation-preference:is([data-preference="live-text"], [data-preference="verification"], [data-preference="pad"]) { align-items: flex-start; }
+
+.shortcut-recorder { min-width: 0; width: 100%; }
+.shortcut-recorder-controls, .shortcut-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.shortcut-presets { margin-top: 10px; }
+.shortcut-record { min-height: 36px; max-width: 100%; gap: 12px; white-space: normal; }
+.shortcut-current, .shortcut-record .keycaps { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.shortcut-record[aria-pressed="true"] { border-color: var(--accent); outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.shortcut-record-label { color: var(--muted); }
+.shortcut-recorder .button-icon { flex: 0 0 32px; padding: 6px; }
+.shortcut-recorder p { margin: 8px 0 0; overflow-wrap: anywhere; }
+.shortcut-conflict { margin-top: 10px; padding: 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); }
+.shortcut-conflict .row { flex-wrap: wrap; margin-top: 10px; }
+.shortcut-recorder [hidden] { display: none; }
+
+.dictation-preference[data-preference="shortcut"] { display: grid; grid-template-columns: minmax(200px, 1fr) auto; }
+.dictation-preference[data-preference="shortcut"] .dictation-shortcut-controls,
+.dictation-preference[data-preference="shortcut"] .shortcut-recorder { display: contents; }
+.dictation-preference[data-preference="shortcut"] .shortcut-recorder-controls { grid-column: 2; }
+.dictation-preference[data-preference="shortcut"] .shortcut-presets { grid-column: 1; grid-row: 2; }
+.dictation-preference[data-preference="shortcut"] .dictation-shortcut-controls > .text-button { grid-column: 2; grid-row: 2; justify-self: end; }
+.dictation-preference[data-preference="shortcut"] :is(.shortcut-status,.shortcut-unavailable,.shortcut-conflict) { grid-column: 1 / -1; }
+.shortcut-presets button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--selection); }
+@media (max-width: 1050px) {
+  .dictation-preference[data-preference="shortcut"] { display: flex; }
+  .dictation-preference[data-preference="shortcut"] .dictation-shortcut-controls { display: flex; }
+  .dictation-preference[data-preference="shortcut"] .shortcut-recorder { display: block; }
+}

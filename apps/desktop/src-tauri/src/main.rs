@@ -54,6 +54,7 @@ mod recording_metadata;
 mod resample;
 mod secrets;
 mod shortcut_capture;
+mod shortcut_settings;
 mod shortcuts;
 mod speakers;
 mod state;
@@ -429,19 +430,6 @@ pub fn apply_appearance(app: &AppHandle) {
     }
 }
 
-fn hotkey_label(trigger: pennel_core::HotkeyTrigger) -> String {
-    use pennel_core::HotkeyTrigger::*;
-    crate::ui::message(match trigger {
-        Fn if cfg!(target_os = "macos") => "fn",
-        RightControl | Fn => "right Ctrl",
-        RightOption if cfg!(target_os = "macos") => "right Option",
-        RightCommand if cfg!(target_os = "macos") => "right Command",
-        RightOption => "right Alt",
-        RightCommand => "right Windows key",
-        ControlSuper => "Ctrl + Windows key",
-    })
-}
-
 pub struct TrayHint(pub MenuItem<tauri::Wry>);
 
 #[derive(Default)]
@@ -743,13 +731,23 @@ pub fn refresh_hotkey(app: &AppHandle, shared: &Arc<Shared>) {
 }
 
 pub fn hotkey_hint(shared: &Shared) -> String {
-    crate::ui::message(match shared.hotkey_error.lock().unwrap().as_ref() {
-        None => format!(
-            "Dictation — hold {}",
-            hotkey_label(shared.settings().hotkey)
-        ),
-        Some(_) => "Shortcut unavailable (see log)".into(),
-    })
+    let settings = shared.settings();
+    let language = shared.interface_language();
+    let binding =
+        pennel_core::effective_shortcut(&settings, "dictate", crate::shortcuts::platform());
+    match binding {
+        Some(binding) => {
+            let label =
+                pennel_core::format_shortcut(&binding, crate::shortcuts::platform(), language).text;
+            if language == pennel_core::InterfaceLanguage::Dutch {
+                format!("Dicteren — houd {label} ingedrukt")
+            } else {
+                format!("Dictation — hold {label}")
+            }
+        }
+        None if language == pennel_core::InterfaceLanguage::Dutch => "Dicteer met de knop.".into(),
+        None => "Dictate with the button.".into(),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1167,6 +1165,9 @@ fn main() {
             desktop_commands::set_desktop_command_state,
             shortcut_capture::shortcut_capture_start,
             shortcut_capture::shortcut_capture_stop,
+            shortcut_settings::set_shortcut,
+            shortcut_settings::reset_shortcut,
+            shortcut_settings::reset_all_shortcuts,
             #[cfg(target_os = "macos")]
             capture::capture_snapshot,
             #[cfg(target_os = "macos")]
