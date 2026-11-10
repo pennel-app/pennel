@@ -24,3 +24,12 @@ test("malformed or unowned completion metadata cannot create a processing state"
  for(const value of [null,{},event("A","one","finished"),{...event("A","one","started"),stage:"transcript text"},{...event("A","one","started"),state:"provider reply"}])assert.equal(progress.accept(value),false);
  assert.equal(progress.get("A","summary"),null);
 });
+
+test("whole postprocess progress spans preparation independently of summary and suggestions",()=>{
+ const progress=new MeetingPostprocessState();
+ assert.equal(progress.accept(event("A","whole","started","postprocess")),true);
+ progress.accept(event("A","summary","started"));progress.accept(event("A","summary","finished"));
+ assert.equal(progress.get("A","postprocess").state,"started");
+ progress.accept(event("A","whole","finished","postprocess"));
+ assert.equal(progress.get("A","postprocess").state,"finished");
+});

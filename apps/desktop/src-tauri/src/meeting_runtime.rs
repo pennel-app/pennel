@@ -1032,6 +1032,7 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
     if shared.quitting.load(Ordering::SeqCst) {
         return;
     }
+    let _progress = crate::meeting_postprocess::PostprocessProgress::start(&app, &shared, &id);
     let settings = shared.settings();
     if settings.diarization && shared.engine.speaker_recognition_ready() {
         let dir = std::path::PathBuf::from(shared.engine.meeting_dir(id.clone()));
@@ -1084,6 +1085,7 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
             LOG.error("Automatic summarization failed; transcript and notes remain saved.");
         }
     }
+    crate::automatic_suggestions::run_after_summary(app.clone(), shared.clone(), id.clone());
     let _ = app.emit("meeting-updated", id);
     crate::cloud::poke(&app);
 }

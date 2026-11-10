@@ -20,6 +20,7 @@ const SOURCE: &str = "pennel_summary_source_revision";
 const EDITED: &str = "pennel_summary_edited";
 const BODY_REVISION: &str = "pennel_summary_body_revision";
 const PROMPT_DISMISSED: &str = "pennel_summary_prompt_dismissed";
+const SUGGESTION_PROMPT_DISMISSED: &str = "pennel_suggestion_prompt_dismissed";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
@@ -325,13 +326,17 @@ impl MeetingStore {
     }
 
     fn summary_prompt_dismissed(&self, id: &str) -> Result<bool, PennelError> {
+        self.prompt_dismissed(id, PROMPT_DISMISSED)
+    }
+
+    fn prompt_dismissed(&self, id: &str, key: &str) -> Result<bool, PennelError> {
         let directory = checked_directory(self, id)?;
         let gate = replacement_gate(&directory);
         let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
         let raw = String::from_utf8(regular_bytes(&directory.join("meeting.md"))?)
             .map_err(PennelError::storage)?;
         let (head, _, _) = split_document(&raw)?;
-        Ok(field(head, PROMPT_DISMISSED) == Some("true"))
+        Ok(field(head, key) == Some("true"))
     }
 
     fn dismiss_summary_prompt(
@@ -339,6 +344,16 @@ impl MeetingStore {
         id: &str,
         expected_revision: &str,
         expected_source: &str,
+    ) -> Result<MeetingSummaryDocument, PennelError> {
+        self.dismiss_prompt(id, expected_revision, expected_source, PROMPT_DISMISSED)
+    }
+
+    fn dismiss_prompt(
+        &self,
+        id: &str,
+        expected_revision: &str,
+        expected_source: &str,
+        key: &str,
     ) -> Result<MeetingSummaryDocument, PennelError> {
         let directory = checked_directory(self, id)?;
         let gate = replacement_gate(&directory);
@@ -351,10 +366,10 @@ impl MeetingStore {
         let (head, body, newline) = split_document(&before.raw)?;
         let mut lines: Vec<_> = head
             .lines()
-            .filter(|line| line.split(':').next().map(str::trim) != Some(PROMPT_DISMISSED))
+            .filter(|line| line.split(':').next().map(str::trim) != Some(key))
             .map(str::to_owned)
             .collect();
-        lines.push(format!("{PROMPT_DISMISSED}: true"));
+        lines.push(format!("{key}: true"));
         let next = format!(
             "---{newline}{}{newline}---{newline}{body}",
             lines.join(newline)
@@ -653,6 +668,28 @@ impl PennelEngine {
             &id,
             &expected_revision,
             &expected_source_revision,
+        )
+    }
+
+    pub fn meeting_suggestion_prompt_dismissed(&self, id: String) -> Result<bool, PennelError> {
+        self.claim_library()?;
+        self.meeting_store()
+            .prompt_dismissed(&id, SUGGESTION_PROMPT_DISMISSED)
+    }
+
+    pub fn dismiss_meeting_suggestion_prompt(
+        &self,
+        id: String,
+        expected_revision: String,
+        expected_source_revision: String,
+    ) -> Result<MeetingSummaryDocument, PennelError> {
+        self.claim_library()?;
+        let _edit = self.edit_meeting(&id)?;
+        self.meeting_store().dismiss_prompt(
+            &id,
+            &expected_revision,
+            &expected_source_revision,
+            SUGGESTION_PROMPT_DISMISSED,
         )
     }
 
@@ -3647,5 +3684,118 @@ mod tests {
             "Newer private notes from another editor"
         );
         provider.assert();
+    }
+    #[test]
+    fn t6b_dismissal_is_separate_durable_metadata_without_policy_or_content_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let provider = server.mock("POST", "/chat/completions").expect(0).create();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let settings = serde_json::to_string(&engine.settings()).unwrap();
+        let before = engine.meeting_summary(id.clone()).unwrap();
+        assert!(
+            !engine
+                .meeting_suggestion_prompt_dismissed(id.clone())
+                .unwrap()
+        );
+        let saved = engine
+            .dismiss_meeting_suggestion_prompt(
+                id.clone(),
+                before.revision.clone(),
+                before.source_revision.clone(),
+            )
+            .unwrap();
+        assert!(
+            engine
+                .meeting_suggestion_prompt_dismissed(id.clone())
+                .unwrap()
+        );
+        assert!(!engine.meeting_summary_prompt_dismissed(id.clone()).unwrap());
+        assert_eq!(
+            (
+                saved.markdown.clone(),
+                saved.source_revision.clone(),
+                saved.edited,
+                saved.record.clone()
+            ),
+            (
+                before.markdown,
+                before.source_revision,
+                before.edited,
+                before.record
+            )
+        );
+        let after_summary = engine
+            .dismiss_meeting_summary_prompt(id.clone(), saved.revision, saved.source_revision)
+            .unwrap();
+        assert!(engine.meeting_summary_prompt_dismissed(id.clone()).unwrap());
+        assert!(
+            engine
+                .meeting_suggestion_prompt_dismissed(id.clone())
+                .unwrap()
+        );
+        assert_eq!(after_summary.markdown, saved.markdown);
+        let renamed = engine
+            .meeting_store()
+            .rename(&id, "Durable suggestion dismissal")
+            .unwrap();
+        assert!(engine.meeting_suggestion_prompt_dismissed(renamed).unwrap());
+        assert_eq!(serde_json::to_string(&engine.settings()).unwrap(), settings);
+        provider.assert();
+    }
+
+    #[test]
+    fn t6b_dismissal_rejects_stale_summary_or_source_and_does_not_mask_other_meetings() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let before = engine.meeting_summary(id.clone()).unwrap();
+        engine
+            .meeting_store()
+            .write_notes(&id, "Changed private note.")
+            .unwrap();
+        assert!(
+            engine
+                .dismiss_meeting_suggestion_prompt(
+                    id.clone(),
+                    before.revision,
+                    before.source_revision
+                )
+                .is_err()
+        );
+        assert!(
+            !engine
+                .meeting_suggestion_prompt_dismissed(id.clone())
+                .unwrap()
+        );
+        let current = engine.meeting_summary(id.clone()).unwrap();
+        engine
+            .dismiss_meeting_summary_prompt(
+                id.clone(),
+                current.revision.clone(),
+                current.source_revision.clone(),
+            )
+            .unwrap();
+        assert!(
+            engine
+                .dismiss_meeting_suggestion_prompt(
+                    id.clone(),
+                    current.revision,
+                    current.source_revision
+                )
+                .is_err()
+        );
+        assert!(
+            !engine
+                .meeting_suggestion_prompt_dismissed(id.clone())
+                .unwrap()
+        );
+        let other = engine
+            .meeting_store()
+            .create("Other independent meeting", chrono::Local::now())
+            .unwrap();
+        assert!(!engine.meeting_suggestion_prompt_dismissed(other).unwrap());
     }
 }

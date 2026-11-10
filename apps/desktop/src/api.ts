@@ -266,6 +266,8 @@ export interface Settings {
   meetings_dir: string;
   default_template: string;
   summary_automation: SummaryAutomation;
+  suggestion_automation: "unanswered" | "manual" | "automatic";
+  suggestion_language: "en" | "nl" | "mixed" | null;
   meeting_audio_retention_days: number;
   app_rules: { bundle_id: string; action: RecordAction }[];
   calendar_rules: { calendar_id: string; calendar_name: string; action: RecordAction }[];
@@ -940,7 +942,7 @@ export const api = {
   onWritingProfileChanged: (handler: () => void): Promise<() => void> =>
     listen<null>("writing-profile-changed", handler),
   insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
-  automaticInsightsAvailability: (id: string) => invoke<InsightAvailability>("automatic_insights_availability", { id }),
+  automaticInsightsAvailability: (id: string, languagePolicy?: InsightLanguagePolicy) => invoke<InsightAvailability>("automatic_insights_availability", { id, languagePolicy }),
   insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),
   beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy }),
   insightsJob: (jobId: string) => invoke<InsightJob>("insights_job", { jobId }),
@@ -1074,6 +1076,8 @@ export const api = {
   meetingTranscriptProvenance: (id: string) => invoke<MeetingTranscriptProvenance | null>("meeting_transcript_provenance", { id }),
   meetingSpeakerTimeline: (id: string) => invoke<MeetingSpeakerTimeline>("meeting_speaker_timeline", { id }),
   meetingSummary: (id: string) => invoke<MeetingSummaryDocument>("meeting_summary", { id }),
+  meetingSuggestionPromptDismissed: (id: string) => invoke<boolean>("meeting_suggestion_prompt_dismissed", { id }),
+  dismissMeetingSuggestionPrompt: (id: string, expectedRevision: string, expectedSourceRevision: string) => invoke<MeetingSummaryDocument>("dismiss_meeting_suggestion_prompt", { id, expectedRevision, expectedSourceRevision }),
   meetingSummaryPromptDismissed: (id: string) => invoke<boolean>("meeting_summary_prompt_dismissed", { id }),
   dismissMeetingSummaryPrompt: (id: string, expectedRevision: string, expectedSourceRevision: string) =>
     invoke<MeetingSummaryDocument>("dismiss_meeting_summary_prompt", { id, expectedRevision, expectedSourceRevision }),

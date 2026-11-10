@@ -686,7 +686,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     }
   }
   function insightHost(): InsightReviewHost {
-    return { id: owner.id, meetingUid: uid, notes: {
+    return { id: owner.id, meetingUid: uid, dismissSuggestionPrompt: summary.dismissSuggestionPrompt,
+      canDismissPrompt: () => !composing && summary.canDismiss(), promptBlockedReason: () => composing ? t("meetings.workspace_composing") : summary.canDismiss() ? "" : summary.blockedReason(), notes: {
       flush: async () => { try { await saveNotes(); return true; } catch { return false; } }, current: currentNotes,
       stage: async (value, attempt, before) => {
         if (!finalized || !insertionStillCurrent(before, currentNotes())) return false;
