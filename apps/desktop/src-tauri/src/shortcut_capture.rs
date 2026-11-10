@@ -190,12 +190,33 @@ pub fn shortcut_capture_start(
         .recv()
         .map_err(|_| "Shortcut capture activation was interrupted".to_owned())?
 }
+fn validate_capture_action(
+    settings: &pennel_core::Settings,
+    action: &str,
+    platform: ShortcutPlatform,
+) -> Result<(), String> {
+    let binding = pennel_core::effective_shortcut(settings, action, platform);
+    let candidate = settings
+        .shortcuts
+        .get(action)
+        .and_then(Option::as_ref)
+        .or(binding.as_ref());
+    let capability = pennel_core::shortcut_capability(action, candidate, platform);
+    if capability.available {
+        Ok(())
+    } else {
+        Err(capability
+            .reason
+            .unwrap_or_else(|| "native_capture_unavailable".into()))
+    }
+}
 fn start_capture(
     window: &WebviewWindow,
     action: String,
     shared: &Arc<Shared>,
 ) -> Result<CaptureStarted, String> {
     let scope = pennel_core::shortcut_scope(&action).ok_or("Unknown shortcut action")?;
+    validate_capture_action(&shared.settings(), &action, crate::shortcuts::platform())?;
     if CAPTURING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
@@ -595,6 +616,37 @@ mod tests {
             capture_mode(ShortcutScope::Application, true, true).unwrap(),
             CaptureMode::Native
         );
+    }
+
+    #[test]
+    fn x11_capture_entry_refuses_affected_keyed_actions_including_saved_bindings() {
+        let mut settings = pennel_core::default_settings();
+        for (id, code, key) in [
+            ("record", "KeyQ", "a"),
+            ("open_pennel", "KeyW", "z"),
+            ("cancel", "Escape", "Escape"),
+            ("next_model", "F5", "F5"),
+        ] {
+            settings.shortcuts.insert(
+                id.into(),
+                Some(ShortcutBinding {
+                    mods: if matches!(id, "record" | "open_pennel") {
+                        vec!["ctrl".into(), "alt".into()]
+                    } else {
+                        vec![]
+                    },
+                    code: Some(code.into()),
+                    key: Some(key.into()),
+                }),
+            );
+            assert_eq!(
+                validate_capture_action(&settings, id, ShortcutPlatform::LinuxX11).unwrap_err(),
+                "x11_keyed_shortcuts_unavailable"
+            );
+        }
+        assert!(validate_capture_action(&settings, "dictate", ShortcutPlatform::LinuxX11).is_ok());
+        assert!(validate_capture_action(&settings, "find", ShortcutPlatform::LinuxX11).is_ok());
+        assert!(validate_capture_action(&settings, "record", ShortcutPlatform::Windows).is_ok());
     }
 
     #[test]

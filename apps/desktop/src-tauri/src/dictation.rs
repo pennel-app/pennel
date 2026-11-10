@@ -1211,18 +1211,12 @@ impl Controller {
                     self.requested_owned = owned_dictation::focused_session(&self.app);
                 }
                 self.perform(actions);
-                if self.recorder.is_some() {
-                    crate::record_shortcut::refresh(&self.app, &self.shared);
-                }
             }
             HotkeyEvent::Interrupt => {
                 let actions = self.gesture.interrupt();
                 self.perform(actions);
             }
             HotkeyEvent::Shift(down) => {
-                if self.recorder.is_some() {
-                    crate::record_shortcut::refresh(&self.app, &self.shared);
-                }
                 let was = self.command.is_command();
                 self.command.shift(
                     down,

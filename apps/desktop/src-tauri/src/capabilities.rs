@@ -435,7 +435,7 @@ pub fn snapshot(hotkey_error: Option<&str>) -> PlatformCapabilities {
                 "Wayland: configure a recording shortcut for pennel --toggle-meeting in your desktop settings.",
             );
         } else if crate::linux_input::has_x11_display() {
-            result.record_shortcut = Capability::available();
+            result.record_shortcut = Capability::unsupported("x11_keyed_shortcuts_unavailable");
             result.rich_clipboard = Capability { status: CapabilityStatus::Available, reason: Some("Rich copying is supported. After dictation, Pennel on Linux restores only text or one image from the previous clipboard.".into()) };
         } else {
             let reason =
