@@ -29,7 +29,7 @@ export async function checkClearedHome(){
 }
 export async function checkDomCapture(){
  const session=await begin('find');assert(session.native===false,'Fallback fixture claimed native.');
- window.dispatchEvent(new KeyboardEvent('keydown',{key:'a',code:'KeyQ',metaKey:true,bubbles:true,cancelable:true}));
+ window.dispatchEvent(new KeyboardEvent('keydown',{key:'a',code:'KeyQ',altKey:true,[window.__PENNEL_FIXTURE__.info().platform==='macos'?'metaKey':'ctrlKey']:true,bubbles:true,cancelable:true}));
  await until(()=>row('find').binding?.key==='a','Application-only DOM capture failed.');
  const global=document.querySelector('[data-shortcut-record="dictate"]');assert(global.disabled,'Unavailable global recorder remained enabled.');
 }

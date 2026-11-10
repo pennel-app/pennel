@@ -1007,6 +1007,8 @@
       case "set_shortcut": {
         const row = shortcutRows().find(row => row.id === args.action);
         const binding = command === "reset_shortcut" ? row.default_binding : args.binding;
+        if (binding?.key && row.scope === "application" && !binding.mods.includes(primary) && !/^F\d+$/.test(binding.key)) throw {kind:"not_allowed",reason:"modifier_required",action:null};
+        if (binding?.key && binding.mods.length === 1 && binding.mods[0] === primary && ["q","w","x","c","v","a","z"].includes(binding.key.toLowerCase())) throw {kind:"reserved",reason:"system_shortcut",action:null};
         if (binding?.mods.some(mod => mod.includes("shift")) && args.action === "dictate") throw {kind:"not_allowed",reason:"shift_is_command",action:null};
         if (binding) {
           const signature = value => JSON.stringify([value.mods.map(mod=>value.key ? mod.replace(/^(left|right)_/, "") : mod).sort(), value.key?.toLowerCase() || null]);

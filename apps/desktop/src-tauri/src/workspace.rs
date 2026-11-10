@@ -501,7 +501,7 @@ pub fn legacy_route(kind: &str, tab: Option<&str>) -> Option<WorkspaceRoute> {
                     "local" => "local",
                     known @ ("overview" | "providers" | "models" | "dictation"
                     | "meeting-settings" | "recording" | "dictionary" | "styles"
-                    | "appearance" | "account" | "advanced") => known,
+                    | "shortcuts" | "appearance" | "account" | "advanced") => known,
                     _ => "overview",
                 }
                 .into(),
@@ -522,6 +522,7 @@ pub fn legacy_route(kind: &str, tab: Option<&str>) -> Option<WorkspaceRoute> {
                             | "recording"
                             | "dictionary"
                             | "styles"
+                            | "shortcuts"
                             | "appearance"
                             | "account"
                             | "advanced"

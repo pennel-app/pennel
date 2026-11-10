@@ -31,6 +31,7 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
   alert.append(message, h('div', { class: 'row' }, replace, cancel));
   const presets = h('div', { class: 'shortcut-presets', 'aria-label': l('dictation.shortcut.title') }, ...(options.presets ?? []).map(preset => controlButton({ class: 'btn', 'data-shortcut-preset': preset.binding.mods.join(','), onclick: () => { void write(preset.binding); } }, preset.label)));
   const root = h('div', { class: 'shortcut-recorder', 'data-shortcut-recorder': action }, h('div', { class: 'shortcut-recorder-controls' }, record, clear, reset), options.presets ? presets : null, status, reason, alert);
+  root.addEventListener('shortcut-reset', () => { issue = null; candidate = null; failure = null; saved = false; refresh(); });
   const showError = (error: unknown) => { if (!disposed) { failure = error; refresh(); } };
   const capture = new ShortcutCapture({ start: api.shortcutCaptureStart, stop: api.shortcutCaptureStop,
     listen: async handler => listenToWindow<CaptureEvent>('shortcut-capture', event => handler(event.payload)),
@@ -52,7 +53,8 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
   function refresh() {
     if (disposed) return;
     const row = shortcutRow(ctx.info, action), recording = state.phase === 'starting' || state.phase === 'listening';
-    const blocked = listening || !row?.editable || !row.capability.available;
+    const configurable = action === 'next_model' && ['next_model_switch_disabled', 'next_model_shortcut_cleared'].includes(row?.capability.reason ?? '');
+    const blocked = listening || !row?.editable || !row.capability.available && !configurable;
     const name = shortcutName(action);
     record.disabled = saving || blocked;
     record.setAttribute('aria-label', `${name}: ${recording ? t('shortcuts.press') : shortcutText(ctx.info, action)}. ${t('shortcuts.record')}`);
