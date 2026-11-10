@@ -779,7 +779,7 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 
 .live-workspace { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 0; min-width: 0; padding: 20px 22px 16px 28px; overflow: hidden; }
 .live-recording-band { flex-shrink: 0; min-width: 0; }
-.live-recording-band .live-title { min-width: 0; width: 100%; font-size: var(--font-display-title); }
+.live-recording-band .live-title { min-width: 0; width: 100%; font-size: var(--font-display-title); text-overflow: ellipsis; }
 .live-recording-band .recording-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
 .live-recording-band .live-clock { font-variant-numeric: tabular-nums; }
 .live-recording-band .live-phase { color: var(--muted); }
