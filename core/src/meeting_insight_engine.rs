@@ -3146,6 +3146,7 @@ mod tests {
                 .is_some_and(|job| !job.busy());
             if !matches!(state["state"].as_str(), Some("queued" | "running"))
                 && !state["physical_running"].as_bool().unwrap()
+                && state["finalization_finished"] == true
                 && lease_closed
             {
                 return state;
