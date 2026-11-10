@@ -282,7 +282,7 @@ pub struct Recorder {
 
 impl Recorder {
     pub fn start(
-        on_level: impl Fn(f32) + Send + 'static,
+        mut on_level: impl FnMut(f32) + Send + 'static,
         mut on_samples: impl FnMut(&[f32]) + Send + 'static,
     ) -> Result<Self, CaptureError> {
         let samples = Arc::new(Mutex::new(Vec::with_capacity(16_000 * 30)));

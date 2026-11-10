@@ -202,6 +202,23 @@ fn fitted_geometry(
 }
 
 const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
+/// The length of the pill's leave fade in `pill.css`.
+const LEAVE: Duration = Duration::from_millis(140);
+
+/// Orders the window out once the pill has faded, unless it was shown again meanwhile.
+fn hide_after_leaving(app: AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(LEAVE);
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if snapshot(&handle) == PillState::Hidden
+                && let Some(window) = handle.get_webview_window(LABEL)
+            {
+                platform::hide(&window);
+            }
+        });
+    });
+}
 
 #[cfg(test)]
 mod tests {
@@ -232,6 +249,23 @@ mod tests {
         assert_eq!(json["preview"]["session_id"], "first");
         assert_eq!(json["preview"]["revision"], 2);
         assert_eq!(json["preview"]["text"], "Een voorlopige zin");
+    }
+
+    #[test]
+    fn structured_notices_reach_the_webview_as_named_fields() {
+        let mut content = listening();
+        content.set_state(PillState::Problem {
+            title: "No connection".into(),
+            detail: Some("Your words are kept in History".into()),
+        });
+        let json = serde_json::to_value(&content).unwrap();
+        assert_eq!(json["state"], "problem");
+        assert_eq!(json["title"], "No connection");
+        assert_eq!(json["detail"], "Your words are kept in History");
+        assert_eq!(json["preview"]["session_id"], "first");
+        let metadata = serde_json::to_value(content.processing_snapshot()).unwrap();
+        assert_eq!(metadata["state"], "problem");
+        assert!(metadata.get("preview").is_none());
     }
 
     #[test]
@@ -472,7 +506,7 @@ impl Pill {
             let latest = content_snapshot(&handle);
             let _ = window.emit_to(LABEL, "pill-state", &latest);
             if latest.state == PillState::Hidden {
-                platform::hide(&window);
+                hide_after_leaving(handle);
             } else if position || is_new {
                 platform::show_at_bottom(&handle, &window);
             } else {

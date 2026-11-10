@@ -35,11 +35,16 @@ use crate::paste_queue::PasteQueue;
 use crate::pill::Pill;
 use crate::resample::TARGET_RATE;
 use crate::state::Shared;
-use crate::status::{CommandIntent, DictationStatus};
+use crate::status::{CommandIntent, DictationStatus, NoSoundWatch, PillState};
 
 const LOG: Log = Log::new("dictation");
-const NOTICE_DURATION: Duration = Duration::from_secs(2);
 const TICK: Duration = Duration::from_secs(1);
+const PASTE_KEY: &str = if cfg!(target_os = "macos") {
+    "⌘V"
+} else {
+    "Ctrl+V"
+};
+const KEPT_IN_HISTORY: &str = "Your words are kept in History";
 
 pub enum Msg {
     PrepareShutdown(Sender<()>),
@@ -56,8 +61,12 @@ pub enum Msg {
         history_id: String,
     },
     RefreshOwned,
-    DeliveryNotice(String),
-    DeliveryRecovery(RecoveryEvent),
+    Delivered(PillState),
+    DeliveryRecovery(RecoveryEvent, DeliveryFailure),
+    NoSound {
+        session: String,
+        silent: bool,
+    },
     Preview {
         update: DictationPreviewUpdate,
         owned: Option<OwnedCapture>,
@@ -81,90 +90,82 @@ pub enum Failure {
     AppChanged,
 }
 
+fn problem(title: &str, detail: Option<&str>) -> PillState {
+    PillState::Problem {
+        title: title.into(),
+        detail: detail.map(str::to_owned),
+    }
+}
+
+fn inserted_in(app: &str) -> PillState {
+    let app = app.trim();
+    PillState::Inserted {
+        app: (!app.is_empty()).then(|| app.to_owned()),
+    }
+}
+
 #[cfg(test)]
-fn notice_for_cleanup(cleanup: &CleanupStatus) -> Option<String> {
+fn notice_for_cleanup(cleanup: &CleanupStatus) -> Option<PillState> {
     notice_for_cleanup_destination(cleanup, false)
 }
 
-fn notice_for_cleanup_destination(cleanup: &CleanupStatus, available: bool) -> Option<String> {
-    match cleanup {
+fn notice_for_cleanup_destination(cleanup: &CleanupStatus, available: bool) -> Option<PillState> {
+    let title = match cleanup {
         CleanupStatus::Failed { message }
             if message.to_lowercase().contains("timed out")
                 || message.to_lowercase().contains("timeout") =>
         {
-            Some(
-                if available {
-                    "Cleanup timed out — original text available (see log)"
-                } else {
-                    "Cleanup timed out — original text pasted (see log)"
-                }
-                .into(),
-            )
+            "Cleanup timed out"
         }
-        CleanupStatus::Failed { .. } => Some(
-            if available {
-                "Cleanup failed — original text available (see log)"
-            } else {
-                "Cleanup failed — original text pasted (see log)"
-            }
-            .into(),
-        ),
-        CleanupStatus::Rejected => Some(
-            if available {
-                "Cleanup could not preserve the wording and meaning — original text available"
-            } else {
-                "Cleanup could not preserve the wording and meaning — original text pasted"
-            }
-            .into(),
-        ),
-        _ => None,
-    }
+        CleanupStatus::Failed { .. } => "Cleanup failed",
+        CleanupStatus::Rejected => "Cleanup could not preserve the wording and meaning",
+        _ => return None,
+    };
+    let detail = match (cleanup, available) {
+        (CleanupStatus::Rejected, true) => "Original text available",
+        (CleanupStatus::Rejected, false) => "Original text pasted",
+        (_, true) => "Original text available (see log)",
+        (_, false) => "Original text pasted (see log)",
+    };
+    Some(problem(title, Some(detail)))
 }
 
-pub fn notice_for_error(error: &PennelError) -> Option<String> {
-    Some(
-        match error {
-            PennelError::NoSpeech => return None,
-            PennelError::MissingApiKey { .. } => "No API key configured",
-            PennelError::ModelNotDownloaded => "Model not downloaded — saved in History",
-            PennelError::Http { status, .. } if *status == 401 || *status == 403 => {
-                "API key rejected — saved in History"
-            }
-            PennelError::Network { .. } => "No connection — saved in History",
-            PennelError::UnsupportedProcessor => {
-                "Processor too old for local models — saved in History"
-            }
-            PennelError::Http { .. } | PennelError::InvalidResponse { .. } => {
-                "Failed — saved in History"
-            }
-            _ => "Failed",
+pub fn notice_for_error(error: &PennelError) -> Option<PillState> {
+    let (title, kept) = match error {
+        PennelError::NoSpeech => return None,
+        PennelError::MissingApiKey { .. } => ("No API key configured", false),
+        PennelError::ModelNotDownloaded => ("Model not downloaded", true),
+        PennelError::Http { status, .. } if *status == 401 || *status == 403 => {
+            ("API key rejected", true)
         }
-        .into(),
-    )
+        PennelError::Network { .. } => ("No connection", true),
+        PennelError::UnsupportedProcessor => ("Processor too old for local models", true),
+        PennelError::Http { .. } | PennelError::InvalidResponse { .. } => ("Failed", true),
+        _ => ("Failed", false),
+    };
+    Some(problem(title, kept.then_some(KEPT_IN_HISTORY)))
 }
 
 /// Commands are not kept in history when they fail, so these notices don't promise a retry.
-pub fn notice_for_command(failure: &Failure) -> Option<String> {
+pub fn notice_for_command(failure: &Failure) -> Option<PillState> {
     let error = match failure {
-        Failure::AppChanged => return Some("Another app is active — command not pasted".into()),
+        Failure::AppChanged => {
+            return Some(problem("Another app is active — command not pasted", None));
+        }
         Failure::Core(error) => error,
     };
-    Some(
-        match error {
-            PennelError::NoSpeech => return None,
-            PennelError::MissingApiKey { .. } => "No API key configured",
-            PennelError::NotFound => "No text model configured",
-            PennelError::Http { status, .. } if *status == 401 || *status == 403 => {
-                "API key rejected"
-            }
-            PennelError::InvalidResponse { message } if message == "selection too long" => {
-                "Selection is too long for a command"
-            }
-            PennelError::Network { .. } => "No connection",
-            _ => "Command failed",
+    let title = match error {
+        PennelError::NoSpeech => return None,
+        PennelError::MissingApiKey { .. } => "No API key configured",
+        PennelError::NotFound => "No text model configured",
+        PennelError::Http { status, .. } if *status == 401 || *status == 403 => "API key rejected",
+        PennelError::InvalidResponse { message } if message == "selection too long" => {
+            "Selection is too long for a command"
         }
-        .into(),
-    )
+        PennelError::Network { .. } => "No connection",
+        _ => "Command failed",
+    };
+    Some(problem(title, None))
 }
 
 fn describe(cleanup: &CleanupStatus) -> String {
@@ -494,18 +495,8 @@ fn copy_only_delivery(requested: bool) -> bool {
     requested
 }
 
-fn delivery_notice(result: Result<(), String>) -> String {
-    match result {
-        Ok(()) => "Text copied — paste with Ctrl+V".into(),
-        Err(_) => {
-            LOG.error("clipboard write failed");
-            "Copying failed — your text is in History".into()
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DeliveryFailure {
+pub enum DeliveryFailure {
     Missing,
     Changed,
     Permission,
@@ -530,20 +521,35 @@ fn recovery_for_failure(history_id: &str, failure: DeliveryFailure) -> RecoveryE
     }
 }
 
+fn problem_for_failure(failure: DeliveryFailure) -> PillState {
+    let title = match failure {
+        DeliveryFailure::Missing => "No active text destination",
+        DeliveryFailure::Changed => "Not pasted — the text destination changed",
+        DeliveryFailure::Permission => "Permission to paste is missing",
+        DeliveryFailure::Other => "Not pasted",
+        DeliveryFailure::Copy => "Copying failed",
+    };
+    problem(title, Some(KEPT_IN_HISTORY))
+}
+
 fn unavailable_destination(shared: &Shared, history_id: &str, failure: DeliveryFailure) {
-    let _ = shared
-        .dictation
-        .send(Msg::DeliveryRecovery(recovery_for_failure(
-            history_id, failure,
-        )));
+    let _ = shared.dictation.send(Msg::DeliveryRecovery(
+        recovery_for_failure(history_id, failure),
+        failure,
+    ));
 }
 
 fn finish_copy(notices: &Sender<Msg>, history_id: &str, result: Result<(), String>) {
     let message = match result {
-        Ok(()) => Msg::DeliveryNotice(delivery_notice(Ok(()))),
+        Ok(()) => Msg::Delivered(PillState::Copied {
+            paste_key: PASTE_KEY.into(),
+        }),
         Err(_) => {
             LOG.error("clipboard write failed");
-            Msg::DeliveryRecovery(recovery_for_failure(history_id, DeliveryFailure::Copy))
+            Msg::DeliveryRecovery(
+                recovery_for_failure(history_id, DeliveryFailure::Copy),
+                DeliveryFailure::Copy,
+            )
         }
     };
     let _ = notices.send(message);
@@ -680,6 +686,9 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                         "release→paste {} ms",
                         result.released.elapsed().as_millis()
                     ));
+                    let _ = shared
+                        .dictation
+                        .send(Msg::Delivered(inserted_in(&target.name)));
                 } else {
                     unavailable_destination(&shared, &result.history_id, DeliveryFailure::Other);
                 }
@@ -804,6 +813,9 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                         "release→paste {} ms",
                         result.released.elapsed().as_millis()
                     ));
+                    let _ = shared
+                        .dictation
+                        .send(Msg::Delivered(inserted_in(&target.name)));
                 } else {
                     unavailable_destination(&shared, &result.history_id, DeliveryFailure::Other);
                 }
@@ -874,7 +886,6 @@ struct Controller {
     recording_copy_only: bool,
     requested_owned: Option<String>,
     recording_owned: Option<OwnedCapture>,
-    notice_until: Option<Instant>,
     pending_shutdown: Option<Sender<()>>,
 }
 
@@ -906,7 +917,6 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>, rx: Receiver<Msg>, tx: Sender<
         recording_copy_only: false,
         requested_owned: None,
         recording_owned: None,
-        notice_until: None,
         pending_shutdown: None,
     };
     std::thread::Builder::new()
@@ -988,11 +998,26 @@ impl Controller {
                     }
                     self.clear_owned_preview(&id);
                 }
-                Some(Msg::DeliveryNotice(notice)) => self.notify(&notice),
-                Some(Msg::DeliveryRecovery(mut recovery)) => {
+                Some(Msg::Delivered(notice)) => {
+                    self.status.delivery_finished(notice, Instant::now());
+                    self.render();
+                }
+                Some(Msg::DeliveryRecovery(mut recovery, failure)) => {
                     recovery.reason = crate::ui::message(recovery.reason);
                     let _ = self.app.emit("dictation-recovery", &recovery);
-                    self.notify(&recovery.reason);
+                    self.status
+                        .delivery_finished(problem_for_failure(failure), Instant::now());
+                    self.render();
+                }
+                Some(Msg::NoSound { session, silent }) => {
+                    if self
+                        .recording_session
+                        .as_ref()
+                        .is_some_and(|recording| recording.id() == session)
+                    {
+                        self.status.set_no_sound(silent);
+                        self.render();
+                    }
                 }
                 Some(Msg::Preview { update, owned }) => {
                     let owner_valid = owned.as_ref().is_none_or(OwnedCapture::valid);
@@ -1014,7 +1039,7 @@ impl Controller {
                         );
                         let recovery = recovery_for_failure(&history_id, DeliveryFailure::Other);
                         let _ = self.app.emit("dictation-recovery", &recovery);
-                        self.notify(&recovery.reason);
+                        self.show(problem_for_failure(DeliveryFailure::Other));
                     }
                 }
                 Some(Msg::RefreshOwned) => {
@@ -1053,9 +1078,7 @@ impl Controller {
                 let actions = self.gesture.tick(hotkey::now());
                 self.perform(actions);
             }
-            if self.notice_until.is_some_and(|t| Instant::now() >= t) {
-                self.notice_until = None;
-                self.status.notice_expired();
+            if self.status.expire_notice(Instant::now()) {
                 self.render();
             }
             if self.pending_shutdown.is_some()
@@ -1076,7 +1099,7 @@ impl Controller {
         } else {
             self.recorder.is_some().then(|| Instant::now() + TICK)
         };
-        match (tick, self.notice_until) {
+        match (tick, self.status.notice_deadline()) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         }
@@ -1215,7 +1238,7 @@ impl Controller {
             self.status.mark_command();
         }
         self.render();
-        self.pill.begin_preview(preview_id, &session);
+        self.pill.begin_preview(preview_id.clone(), &session);
         if let Some(capture) = &self.recording_owned {
             owned_dictation::verification(&self.app, capture, &session);
         }
@@ -1239,8 +1262,18 @@ impl Controller {
             preview
         };
         let pill = self.pill.clone();
+        let sound = self.tx.clone();
+        let mut watch = NoSoundWatch::default();
         match Recorder::start(
-            move |level| pill.level(level),
+            move |level| {
+                pill.level(level);
+                if let Some(silent) = watch.level(level, Instant::now()) {
+                    let _ = sound.send(Msg::NoSound {
+                        session: preview_id.clone(),
+                        silent,
+                    });
+                }
+            },
             move |samples| {
                 session.feed_audio(samples.to_vec());
                 #[cfg(target_os = "macos")]
@@ -1543,7 +1576,15 @@ impl Controller {
                         if active {
                             let _ = self.app.emit("dictation-recovery", &retained.recovery);
                         }
-                        (None, active.then_some(retained.recovery.reason))
+                        (
+                            None,
+                            active.then(|| {
+                                problem(
+                                    "Saving failed",
+                                    Some("Your words are temporarily in History"),
+                                )
+                            }),
+                        )
                     }
                 }
             }
@@ -1579,19 +1620,18 @@ impl Controller {
             }
         };
         self.clear_preview(&preview_id);
-        if notice.is_some() {
-            self.notice_until = Some(Instant::now() + NOTICE_DURATION);
-        }
-        self.status.dictation_finished(notice);
-        self.render();
+        self.status.dictation_finished(notice, Instant::now());
         let _ = self.app.emit("history-changed", ());
         for result in self.queue.fulfill(seq, text) {
             match result {
                 CompletedDelivery::External(result) => {
-                    let _ = self.paster.send(PasteJob::Paste {
+                    let sent = self.paster.send(PasteJob::Paste {
                         result,
                         pending: paste_pending(&self.shared),
                     });
+                    if sent.is_ok() {
+                        self.status.delivery_started();
+                    }
                 }
                 CompletedDelivery::Owned {
                     capture,
@@ -1611,20 +1651,25 @@ impl Controller {
                 }
             }
         }
+        self.render();
         let _ = self.tx.send(Msg::RefreshOwned);
     }
 
-    fn notify(&mut self, message: &str) {
-        self.status.show_notice(message);
-        self.notice_until = Some(Instant::now() + NOTICE_DURATION);
+    fn notify(&mut self, title: &str) {
+        self.show(problem(title, None));
+    }
+
+    fn show(&mut self, notice: PillState) {
+        self.status.show_notice(notice, Instant::now());
         self.render();
     }
 
     fn render(&self) {
         let state = match self.status.pill() {
-            pennel_core::PillState::Error(message) => {
-                pennel_core::PillState::Error(crate::ui::message(message))
-            }
+            PillState::Problem { title, detail } => PillState::Problem {
+                title: crate::ui::message(title),
+                detail: detail.map(crate::ui::message),
+            },
             other => other,
         };
         self.pill.show(state);
@@ -1975,64 +2020,125 @@ mod tests {
             notice_for_error(&PennelError::Http {
                 status: 401,
                 message: String::new()
-            })
-            .as_deref(),
-            Some("API key rejected — saved in History")
+            }),
+            Some(problem("API key rejected", Some(KEPT_IN_HISTORY)))
         );
         assert_eq!(
-            notice_for_error(&PennelError::UnsupportedProcessor).as_deref(),
-            Some("Processor too old for local models — saved in History")
+            notice_for_error(&PennelError::UnsupportedProcessor),
+            Some(problem(
+                "Processor too old for local models",
+                Some("Your words are kept in History")
+            ))
+        );
+        assert_eq!(
+            notice_for_error(&PennelError::MissingApiKey { task: "stt".into() }),
+            Some(problem("No API key configured", None))
         );
         assert_eq!(
             notice_for_cleanup(&CleanupStatus::Failed {
                 message: "request Timed Out".into()
-            })
-            .as_deref(),
-            Some("Cleanup timed out — original text pasted (see log)")
+            }),
+            Some(problem(
+                "Cleanup timed out",
+                Some("Original text pasted (see log)")
+            ))
         );
         assert_eq!(notice_for_cleanup(&CleanupStatus::Applied), None);
         assert_eq!(
-            notice_for_command(&Failure::AppChanged).as_deref(),
-            Some("Another app is active — command not pasted")
+            notice_for_command(&Failure::AppChanged),
+            Some(problem("Another app is active — command not pasted", None))
         );
         assert_eq!(
             notice_for_command(&Failure::Core(PennelError::InvalidResponse {
                 message: "selection too long".into()
-            }))
-            .as_deref(),
-            Some("Selection is too long for a command")
+            })),
+            Some(problem("Selection is too long for a command", None))
         );
     }
 
     #[test]
+    fn every_pill_notice_has_english_and_dutch_text() {
+        let mut sources: Vec<String> = [
+            KEPT_IN_HISTORY,
+            "Your words are temporarily in History",
+            "Saving failed",
+            "Model not downloaded",
+            "Processor too old for local models",
+        ]
+        .map(String::from)
+        .into();
+        for failure in [
+            DeliveryFailure::Missing,
+            DeliveryFailure::Changed,
+            DeliveryFailure::Permission,
+            DeliveryFailure::Other,
+            DeliveryFailure::Copy,
+        ] {
+            let PillState::Problem { title, .. } = problem_for_failure(failure) else {
+                panic!("a failed delivery is a problem");
+            };
+            sources.push(title);
+        }
+        for cleanup in [
+            CleanupStatus::Failed {
+                message: "timed out".into(),
+            },
+            CleanupStatus::Failed {
+                message: "error".into(),
+            },
+            CleanupStatus::Rejected,
+        ] {
+            for available in [true, false] {
+                let Some(PillState::Problem { title, detail }) =
+                    notice_for_cleanup_destination(&cleanup, available)
+                else {
+                    panic!("a cleanup failure is a problem");
+                };
+                sources.extend([title, detail.unwrap()]);
+            }
+        }
+        for source in sources {
+            let dutch =
+                pennel_core::localize_ui_text(pennel_core::InterfaceLanguage::Dutch, &source);
+            assert_ne!(dutch, source, "no Dutch text for {source:?}");
+        }
+    }
+
+    #[test]
     fn cleanup_notices_describe_available_text_without_claiming_it_was_pasted() {
-        for (cleanup, expected) in [
+        for (cleanup, title, detail) in [
             (
                 CleanupStatus::Failed {
                     message: "request timed out".into(),
                 },
-                "Cleanup timed out — original text available (see log)",
+                "Cleanup timed out",
+                "Original text available (see log)",
             ),
             (
                 CleanupStatus::Failed {
                     message: "provider error".into(),
                 },
-                "Cleanup failed — original text available (see log)",
+                "Cleanup failed",
+                "Original text available (see log)",
             ),
             (
                 CleanupStatus::Rejected,
-                "Cleanup could not preserve the wording and meaning — original text available",
+                "Cleanup could not preserve the wording and meaning",
+                "Original text available",
             ),
         ] {
             assert_eq!(
-                notice_for_cleanup_destination(&cleanup, true).as_deref(),
-                Some(expected)
+                notice_for_cleanup_destination(&cleanup, true),
+                Some(problem(title, Some(detail)))
             );
-            assert!(
-                notice_for_cleanup_destination(&cleanup, false)
-                    .unwrap()
-                    .contains("pasted")
-            );
+            let Some(PillState::Problem {
+                detail: Some(pasted),
+                ..
+            }) = notice_for_cleanup_destination(&cleanup, false)
+            else {
+                panic!("a pasted cleanup failure says where the text went");
+            };
+            assert!(pasted.contains("pasted"));
         }
         assert_eq!(
             notice_for_cleanup_destination(&CleanupStatus::Applied, true),
@@ -2045,11 +2151,45 @@ mod tests {
     }
 
     #[test]
-    fn copy_confirmation_requires_a_successful_clipboard_write() {
-        assert_eq!(delivery_notice(Ok(())), "Text copied — paste with Ctrl+V");
+    fn copy_confirmation_requires_a_successful_clipboard_write_and_names_the_paste_key() {
+        let (notices, received) = mpsc::channel();
+        finish_copy(&notices, "copied-result", Ok(()));
+        let Msg::Delivered(copied) = received.try_recv().unwrap() else {
+            panic!("a successful clipboard write is confirmed");
+        };
+        let key = if cfg!(target_os = "macos") {
+            "⌘V"
+        } else {
+            "Ctrl+V"
+        };
         assert_eq!(
-            delivery_notice(Err("unavailable".into())),
-            "Copying failed — your text is in History"
+            copied,
+            PillState::Copied {
+                paste_key: key.into()
+            }
+        );
+        finish_copy(&notices, "copied-result", Err("unavailable".into()));
+        assert!(matches!(
+            received.try_recv().unwrap(),
+            Msg::DeliveryRecovery(_, DeliveryFailure::Copy)
+        ));
+    }
+
+    #[test]
+    fn insertion_names_the_receiving_app_only_when_it_is_known() {
+        assert_eq!(
+            inserted_in(" Mail "),
+            PillState::Inserted {
+                app: Some("Mail".into())
+            }
+        );
+        assert_eq!(inserted_in(""), PillState::Inserted { app: None });
+        assert_eq!(
+            problem_for_failure(DeliveryFailure::Changed),
+            problem(
+                "Not pasted — the text destination changed",
+                Some(KEPT_IN_HISTORY)
+            )
         );
     }
 
@@ -2188,7 +2328,7 @@ mod tests {
             "clipboard-result",
             Err("synthetic-private-finished-text".into()),
         );
-        let Msg::DeliveryRecovery(recovery) = received.try_recv().unwrap() else {
+        let Msg::DeliveryRecovery(recovery, _) = received.try_recv().unwrap() else {
             panic!("failed clipboard write must report recoverable text");
         };
         assert_eq!(
