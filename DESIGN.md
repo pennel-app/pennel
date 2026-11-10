@@ -24,7 +24,7 @@ Use spacing to group related controls before adding a container. Keep reading co
 
 Edit the token source, then regenerate. `--check` validates output reproducibility and text contrast; `--self-test` verifies palette and generator failure cases. The generator has no third-party runtime dependency.
 
-Core color roles are Surface, Chrome, Sidebar, Foreground, Muted, Border, Subtle, Hover, Field, Selection, Button, Button text, Accent, Danger and Focus ring. Components use these roles rather than adding private hex values. Desktop and base palettes are validated separately, including secondary text on selected rows and text over native navigation backings.
+Core color roles are Surface, Chrome, Sidebar, Foreground, Muted, Border, Subtle, Hover, Field, Selection, Button, Button text, Accent, Danger, Live and Focus ring. Live is the brand orange for a live or recording signal on desktop surfaces; the ink pill keeps Soft wave. Components use these roles rather than adding private hex values. Desktop and base palettes are validated separately, including secondary text on selected rows and text over native navigation backings.
 
 Desktop geometry follows the approved Forma baseline: 6 px outer insets, 16 px navigation/workspace corners, 24 px dialog corners and capsule buttons, search and segmented controls. Ordinary controls are 32 px high, explicitly compact controls 28 px, toolbar controls 36 px, sidebar search 30 px and source-list rows at least 34 px. Inter UI text is about 13 px, captions start at 11 px and main titles are a restrained 20 px. Use sentence case and restrained tracking. Base mobile geometry and typography remain separate.
 

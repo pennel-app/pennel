@@ -135,7 +135,7 @@ def validate_desktop_theme(tokens: dict) -> None:
     if any(name.startswith(("pill-", "brand-", "voice-")) or name == "wave" for name in desktop["colors"]):
         raise ValueError("desktop theme must retain fixed brand and pill colors")
     fixed = {name for name in tokens["colors"] if name.startswith(("pill-", "brand-", "voice-")) or name == "wave"}
-    required = (tokens["colors"].keys() - fixed) | {"border-strong", "control-surface", "surface-raised", "accent-hover", "accent-soft", "success-soft", "danger", "danger-soft"}
+    required = (tokens["colors"].keys() - fixed) | {"border-strong", "control-surface", "surface-raised", "accent-hover", "accent-soft", "success-soft", "danger", "danger-soft", "live"}
     if missing := required - desktop["colors"].keys():
         raise ValueError(f"missing desktop semantic colors: {', '.join(sorted(missing))}")
     if not {"control", "segmented", "panel", "window", "dialog"} <= desktop["radii"].keys():
@@ -153,7 +153,8 @@ def validate_desktop_theme(tokens: dict) -> None:
         merged[section].update(desktop[section])
     merged["typography"]["sizes"].update(typography["sizes"])
     validate(merged)
-    for foreground, background in (("danger", "surface"), ("danger", "subtle"), ("danger", "danger-soft"), ("success", "success-soft"), ("accent", "accent-soft"), ("foreground", "control-surface"), ("muted", "control-surface"), ("foreground", "surface-raised"), ("muted", "surface-raised")):
+    for foreground, background in (("danger", "surface"), ("danger", "subtle"), ("danger", "danger-soft"), ("success", "success-soft"), ("accent", "accent-soft"), ("foreground", "control-surface"), ("muted", "control-surface"), ("foreground", "surface-raised"), ("muted", "surface-raised"),
+                                   ("live", "surface"), ("live", "subtle"), *((f"voice-{number}", background) for number in range(1, 5) for background in ("surface", "subtle"))):
         for appearance in ("light", "dark"):
             ratio = contrast(merged["colors"][foreground][appearance], merged["colors"][background][appearance])
             if ratio < 4.5:
@@ -438,6 +439,22 @@ class GeneratorTests(unittest.TestCase):
             invalid["desktop-theme"]["colors"][role][appearance] = value
             with self.subTest(role=role), self.assertRaisesRegex(ValueError, "contrast"):
                 validate(invalid)
+
+    def test_desktop_live_and_speaker_text_stay_readable_on_desktop_surfaces(self) -> None:
+        validate(self.tokens)
+        invalid = copy.deepcopy(self.tokens)
+        invalid["desktop-theme"]["colors"]["live"]["light"] = "#E0703C"
+        with self.assertRaisesRegex(ValueError, "live on surface"):
+            validate(invalid)
+        # Readable on the base paper and desktop white, but not on the desktop's quiet panels.
+        invalid = copy.deepcopy(self.tokens)
+        invalid["colors"]["voice-1"]["light"] = "#747474"
+        with self.assertRaisesRegex(ValueError, "voice-1 on subtle"):
+            validate(invalid)
+        invalid = copy.deepcopy(self.tokens)
+        del invalid["desktop-theme"]["colors"]["live"]
+        with self.assertRaisesRegex(ValueError, "missing desktop semantic colors: live"):
+            validate(invalid)
 
     def test_desktop_theme_requires_complete_semantic_roles(self) -> None:
         invalid = copy.deepcopy(self.tokens)

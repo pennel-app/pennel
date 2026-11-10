@@ -21,6 +21,7 @@ Desktop palette:
 | Foreground | `#171717` | `#F2F2F2` |
 | Primary button | `#006FDF` | `#006FDF` |
 | Primary button text | `#FFFFFF` | `#FFFFFF` |
+| Live (recording signal) | `#C2410C` | `#F2B48E` |
 
 Navigation selection and ordinary toolbar actions stay neutral. Blue marks primary submission and focus; errors and destructive actions have a separate red role. Native glass has contrast-protecting navigation and toolbar backings. All secondary text must remain readable on its actual surface.
 
