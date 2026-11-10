@@ -1103,7 +1103,7 @@ fn save_document(
     durable_write(&root.join(INSIGHTS_FILE), &bytes)
 }
 
-fn require_current_source(
+pub(crate) fn require_current_source(
     root: &Path,
     current: &MeetingTranscriptSnapshot,
 ) -> Result<(), PennelError> {

@@ -363,11 +363,35 @@ pub struct DictationResult {
     pub cleanup: CleanupStatus,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum AutomaticPolicy {
+    Summary = 0,
+    Suggestions = 1,
+}
+
+#[derive(Default)]
+struct AutomaticPolicyState {
+    revocation: u64,
+    requests: Vec<Weak<crate::InferenceCancellation>>,
+}
+
+impl AutomaticPolicy {
+    fn enabled(self, settings: &Settings) -> bool {
+        match self {
+            Self::Summary => settings.summary_automation == crate::SummaryAutomation::Automatic,
+            Self::Suggestions => {
+                settings.suggestion_automation == crate::SuggestionAutomation::Automatic
+            }
+        }
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct PennelEngine {
     settings_path: PathBuf,
     settings: RwLock<Settings>,
     pub(crate) inference_requests: Arc<Mutex<crate::inference_engine::InferenceState>>,
+    automatic_policies: Mutex<[AutomaticPolicyState; 2]>,
     #[cfg(test)]
     pub(crate) cleanup_qualification: Mutex<Option<crate::cleanup_verification::Qualification>>,
     #[cfg(test)]
@@ -2502,12 +2526,25 @@ impl PennelEngine {
             || current.llm != settings.llm
             || current.dictionary != settings.dictionary
             || current.cleanup_verification_enabled != settings.cleanup_verification_enabled
-            || current.summary_automation != settings.summary_automation
         {
             // Invalidate queued requests before their captured destination can be used.
             self.invalidate_inference_requests();
         }
         settings.save(&self.settings_path)?;
+        for policy in [AutomaticPolicy::Summary, AutomaticPolicy::Suggestions] {
+            if policy.enabled(&current) && !policy.enabled(&settings) {
+                let mut policies = self.automatic_policies.lock().unwrap();
+                let state = &mut policies[policy as usize];
+                state.revocation = state.revocation.wrapping_add(1);
+                for request in state
+                    .requests
+                    .drain(..)
+                    .filter_map(|request| request.upgrade())
+                {
+                    request.cancel();
+                }
+            }
+        }
         *self.settings.write().unwrap() = settings;
         if let Some(lease) = next_lease {
             *self.library_lease.lock().unwrap() = Some(lease);
@@ -2807,6 +2844,7 @@ impl PennelEngine {
             inference_requests: Arc::new(Mutex::new(
                 crate::inference_engine::InferenceState::default(),
             )),
+            automatic_policies: Mutex::default(),
             #[cfg(test)]
             cleanup_qualification: Mutex::new(None),
             #[cfg(test)]
@@ -2952,14 +2990,36 @@ impl PennelEngine {
         Ok(guard)
     }
 
+    pub(crate) fn register_automatic_policy(
+        &self,
+        policy: AutomaticPolicy,
+        cancellation: &Arc<crate::InferenceCancellation>,
+    ) -> Result<u64, PennelError> {
+        let _gate = self.meeting_gate.lock().unwrap();
+        if !policy.enabled(&self.settings()) || cancellation.is_cancelled() {
+            return Err(PennelError::Cancelled);
+        }
+        let mut policies = self.automatic_policies.lock().unwrap();
+        let state = &mut policies[policy as usize];
+        state.requests.retain(|request| request.strong_count() > 0);
+        state.requests.push(Arc::downgrade(cancellation));
+        Ok(state.revocation)
+    }
+
+    pub(crate) fn automatic_policy_current(&self, policy: AutomaticPolicy, epoch: u64) -> bool {
+        policy.enabled(&self.settings())
+            && self.automatic_policies.lock().unwrap()[policy as usize].revocation == epoch
+    }
+
     /// Serialize the final automatic write with consent and inference-configuration changes.
     pub(crate) fn automatic_summary_policy_guard(
         &self,
         cancellation: &crate::InferenceCancellation,
+        epoch: u64,
     ) -> Result<std::sync::MutexGuard<'_, ()>, PennelError> {
         let guard = self.meeting_gate.lock().unwrap();
         if cancellation.is_cancelled()
-            || self.settings().summary_automation != crate::SummaryAutomation::Automatic
+            || !self.automatic_policy_current(AutomaticPolicy::Summary, epoch)
         {
             return Err(PennelError::Cancelled);
         }

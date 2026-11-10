@@ -549,7 +549,17 @@ pub(crate) fn test_qualification_for(
     request: &MeetingQualificationRequest,
     actual: MeetingActualInference,
 ) -> QualifiedMeetingAnalysis {
+    test_qualification_with_foreground_impact(request, actual, true)
+}
+
+#[cfg(test)]
+pub(crate) fn test_qualification_with_foreground_impact(
+    request: &MeetingQualificationRequest,
+    actual: MeetingActualInference,
+    foreground_impact_accepted: bool,
+) -> QualifiedMeetingAnalysis {
     let mut record = tests::record();
+    record.evidence.foreground_impact_accepted = foreground_impact_accepted;
     record.context.request = request.clone();
     record.context.actual = actual;
     if request.use_case == MeetingAnalysisUseCase::SourceAssessment {

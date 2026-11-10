@@ -5,6 +5,7 @@ export type { InsightSnapshot, InsightAvailability, InsightJob, InsightItem, Ins
 export type InterfaceLanguage = 'en' | 'nl';
 export type Appearance = 'system' | 'light' | 'dark';
 export type SummaryAutomation = 'unanswered' | 'manual' | 'automatic';
+export type SuggestionAutomation = 'unanswered' | 'manual' | 'automatic';
 export type MeetingOutputScope = 'personal' | 'shareable';
 export type ProviderKind = 'open_ai' | 'open_router' | 'groq' | 'mistral' | 'ollama' | 'lm_studio' | 'custom' | 'local' | 'apple_speech' | 'apple_intelligence' | 'claude_code' | 'codex' | 'open_code' | 'copilot' | 'cursor_agent' | 'gemini_cli' | 'pennel_cloud';
 export interface Capability { status: 'available' | 'permission_required' | 'unsupported' | 'unavailable'; reason: string | null }
@@ -48,6 +49,8 @@ export interface Settings {
   history_retention_days: number;
   default_template: string;
   summary_automation: SummaryAutomation;
+  suggestion_automation: SuggestionAutomation;
+  suggestion_language: string | null;
   meeting_audio_retention_days: number;
   diarization: boolean;
   speaker_recognition: 'local' | 'cloud';
