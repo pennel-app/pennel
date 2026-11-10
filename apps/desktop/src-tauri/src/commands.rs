@@ -1012,14 +1012,14 @@ fn runtime_status(
             result.audio_warning = warning.map(crate::ui::message);
             result.terminal_error = terminal;
             result.echo_cancellation_active = echo;
-            if recording && !echo && shared.settings().echo_cancellation {
+            if recording
+                && !echo
+                && shared.settings().echo_cancellation
+                && result.audio_warning.is_none()
+            {
                 let explanation =
                     "Echo cancellation is not active. Use headphones to avoid duplicate audio.";
-                let explanation = crate::ui::message(explanation);
-                result.audio_warning = Some(match result.audio_warning {
-                    Some(warning) => format!("{warning} {explanation}"),
-                    None => explanation,
-                });
+                result.audio_warning = Some(crate::ui::message(explanation));
             }
         }
         result.pending = session.pending();

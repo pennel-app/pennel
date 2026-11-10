@@ -53,6 +53,25 @@ private func prejoinWindow() -> Node {
     ]))
 }
 
+private func retainedPostcallWindow() -> Node {
+    window(Node(domClasses: ["fui-Flex"], children: [
+        Node(domIdentifier: "customChatPMVTitle", children: [
+            Node(role: "AXStaticText", text: "Stay connected after your meeting"),
+            Node(role: "AXStaticText", text: "Chat with everyone or pick specific people"),
+        ]),
+        Node(domClasses: ["fui-Card"], children: [
+            Node(domIdentifier: "everyoneListItemText", children: [Node(role: "AXStaticText", text: "Private names are not lifecycle evidence")]),
+            Node(role: "AXCheckBox", domClasses: ["fui-Checkbox__input"]),
+            Node(role: "AXSplitter", domClasses: ["fui-Divider"]),
+            Node(role: "AXButton", label: "Send a message", domClasses: ["fui-Button"]),
+        ]),
+        Node(role: "AXButton", label: "Dismiss", domClasses: ["fui-Button"]),
+        Node(role: "AXButton", label: "Rejoin the call", domClasses: ["fui-Link"]),
+        Node(role: "AXLink", label: "Need help?", domClasses: ["fui-Link"]),
+        Node(role: "AXButton", label: "Report a problem", domClasses: ["fui-Link"]),
+    ]))
+}
+
 final class MeetingSpeakerObserverTests: XCTestCase {
     private let idleRing = ["fui-Primitive", "___dv8x4j0", "f1429bq1"]
     private let speakingRing = ["fui-Primitive", "___1vvhwjq", "vdi-frame-occlusion"]
@@ -87,6 +106,23 @@ final class MeetingSpeakerObserverTests: XCTestCase {
         XCTAssertFalse(TeamsParticipantParser.snapshot(windows: [prejoin]).available)
         XCTAssertEqual(TeamsParticipantParser.callEligibility([soloCallWindow()]), true)
         XCTAssertNil(TeamsParticipantParser.callEligibility([window(Node(role: "AXButton", label: "Join now"))]))
+    }
+
+    func testMeasuredRetainedPostcallPanelIsInactiveWithoutReadingItsPeopleCard() {
+        let postcall = retainedPostcallWindow()
+        XCTAssertEqual(TeamsParticipantParser.callWindowKind(postcall), .postcall)
+        XCTAssertEqual(TeamsParticipantParser.callEligibility([postcall]), false)
+        XCTAssertFalse(TeamsParticipantParser.snapshot(windows: [postcall]).available)
+    }
+
+    func testRetainedPostcallWordsNeedNativeAnchorsAndCompleteCompoundControls() {
+        var noAnchor = retainedPostcallWindow()
+        noAnchor.children[0].children[0].children[0].children[0].domIdentifier = ""
+        var missingAction = retainedPostcallWindow()
+        missingAction.children[0].children[0].children[0].children.removeLast()
+        for unsupported in [noAnchor, missingAction, window(Node(role: "AXButton", label: "Rejoin the call"))] {
+            XCTAssertEqual(TeamsParticipantParser.callWindowKind(unsupported), .unreadable)
+        }
     }
 
     func testCallLifecycleCannotBeAuthorizedByChatWordsOrParticipantTileLabelsAlone() {
@@ -277,6 +313,25 @@ final class MeetingSpeakerCallAssociationTests: XCTestCase {
         XCTAssertTrue(MeetingSpeakerObserver.cleanCallEnded([main], hadBinding: true, boundWindowDestroyed: true))
         XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([main], hadBinding: true, boundWindowDestroyed: false))
         XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([main, TeamsCallWindowState(kind: .unreadable)], hadBinding: true, boundWindowDestroyed: true))
+        XCTAssertTrue(MeetingSpeakerObserver.cleanCallEnded([TeamsCallWindowState(kind: .postcall, focused: true, bound: true)], hadBinding: true, boundWindowDestroyed: false))
+        XCTAssertFalse(MeetingSpeakerObserver.cleanCallEnded([TeamsCallWindowState(kind: .postcall, focused: true, bound: true)], hadBinding: false, boundWindowDestroyed: false))
+    }
+
+    func testMissingRegistryMetadataOnlyAllowsTheSameLiveKernelBirthAndExecutable() {
+        let cached = TeamsProcessIdentity(pid: 42, startedSeconds: 100, startedMicroseconds: 20, executablePath: "/Teams")
+        XCTAssertTrue(MeetingSpeakerObserver.canUseCachedProcess(registrations: 0, registeredPID: nil, launchDateAvailable: false, cached: cached, current: cached, terminated: false))
+        XCTAssertTrue(MeetingSpeakerObserver.canUseCachedProcess(registrations: 1, registeredPID: 42, launchDateAvailable: false, cached: cached, current: cached, terminated: false))
+        for replacement in [
+            TeamsProcessIdentity(pid: 42, startedSeconds: 101, startedMicroseconds: 20, executablePath: "/Teams"),
+            TeamsProcessIdentity(pid: 42, startedSeconds: 100, startedMicroseconds: 21, executablePath: "/Teams"),
+            TeamsProcessIdentity(pid: 42, startedSeconds: 100, startedMicroseconds: 20, executablePath: "/Other"),
+        ] {
+            XCTAssertFalse(MeetingSpeakerObserver.canUseCachedProcess(registrations: 0, registeredPID: nil, launchDateAvailable: false, cached: cached, current: replacement, terminated: false))
+        }
+        XCTAssertFalse(MeetingSpeakerObserver.canUseCachedProcess(registrations: 2, registeredPID: 42, launchDateAvailable: false, cached: cached, current: cached, terminated: false))
+        XCTAssertFalse(MeetingSpeakerObserver.canUseCachedProcess(registrations: 1, registeredPID: 43, launchDateAvailable: false, cached: cached, current: cached, terminated: false))
+        XCTAssertFalse(MeetingSpeakerObserver.canUseCachedProcess(registrations: 0, registeredPID: nil, launchDateAvailable: false, cached: cached, current: nil, terminated: false))
+        XCTAssertFalse(MeetingSpeakerObserver.canUseCachedProcess(registrations: 0, registeredPID: nil, launchDateAvailable: false, cached: cached, current: cached, terminated: true))
     }
 
     func testHiddenMinimizedUnfocusedAmbiguousAndUnsupportedWindowsNeverProveEnd() {

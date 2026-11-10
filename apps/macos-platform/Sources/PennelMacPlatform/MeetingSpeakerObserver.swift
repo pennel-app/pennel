@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Darwin
 
 /// The part of an accessibility element the participant reader needs, so the parser can run on fixtures.
 protocol ParticipantNode {
@@ -30,7 +31,28 @@ extension ParticipantNode {
 }
 
 enum TeamsCallWindowKind: Equatable {
-    case call, prejoin, other, unreadable
+    case call, prejoin, postcall, other, unreadable
+}
+
+struct TeamsProcessIdentity: Equatable {
+    let pid: pid_t
+    let startedSeconds: UInt64
+    let startedMicroseconds: UInt64
+    let executablePath: String
+
+    static func read(_ pid: pid_t) -> Self? {
+        guard pid > 0 else { return nil }
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
+              info.pbi_pid == UInt32(pid), info.pbi_status != SZOMB else { return nil }
+        // libproc's PROC_PIDPATHINFO_MAXSIZE is 4*MAXPATHLEN; that compound macro is not imported by Swift.
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let length = path.withUnsafeMutableBufferPointer { proc_pidpath(pid, $0.baseAddress, UInt32($0.count)) }
+        guard length > 0 else { return nil }
+        return Self(pid: pid, startedSeconds: info.pbi_start_tvsec, startedMicroseconds: info.pbi_start_tvusec,
+                    executablePath: String(cString: path))
+    }
 }
 
 struct TeamsCallWindowState {
@@ -80,6 +102,7 @@ enum TeamsParticipantParser {
                 && !selfLabelPrefixes.contains(where: { node.label.lowercased().hasPrefix($0) })
         }
         if complete && controls.prejoin && !hasRemote { return .prejoin }
+        if complete && controls.postcall && !hasRemote { return .postcall }
         if hasRemote || (!controls.join && nodes.contains { node in
             tileRoles.contains(node.role) && selfLabelPrefixes.contains(where: { node.label.lowercased().hasPrefix($0) })
         }) { return .call }
@@ -110,9 +133,10 @@ enum TeamsParticipantParser {
         var hangup = false
         var join = false
         var cancel = false
+        var postcall = false
         var live: Bool { meeting && calling && hangup }
         var prejoin: Bool { join && cancel && !meeting && !calling && !hangup }
-        var anyCallControl: Bool { meeting || calling || hangup || join }
+        var anyCallControl: Bool { meeting || calling || hangup || join || postcall }
     }
 
     private static func nativeControls<Node: ParticipantNode>(_ nodes: [Node]) -> NativeControls {
@@ -133,7 +157,33 @@ enum TeamsParticipantParser {
         // Only a native prejoin anchor permits examining its fixed Cancel control; no chat values
         // or participant tile labels are needed by the call detector's static-control check.
         if result.join && !result.hangup { result.cancel = nodes.contains { $0.role == "AXButton" && $0.label == "Cancel" } }
+        if !result.meeting && !result.calling && !result.hangup && !result.join {
+            result.postcall = nodes.contains(where: retainedPostcallPanel)
+        }
         return result
+    }
+
+    private static func retainedPostcallPanel<Node: ParticipantNode>(_ node: Node) -> Bool {
+        guard node.role == "AXGroup", node.domClasses.contains("fui-Flex"), node.childrenReadable,
+              node.children.map(\.role) == ["AXGroup", "AXGroup", "AXButton", "AXButton", "AXLink", "AXButton"]
+        else { return false }
+        let children = node.children
+        let title = children[0]
+        guard title.domIdentifier == "customChatPMVTitle", title.childrenReadable,
+              title.children.map(\.role) == ["AXStaticText", "AXStaticText"],
+              title.children.map(\.text) == ["Stay connected after your meeting", "Chat with everyone or pick specific people"]
+        else { return false }
+        let card = children[1]
+        guard card.domClasses.contains("fui-Card"), card.childrenReadable,
+              card.children.map(\.role) == ["AXGroup", "AXCheckBox", "AXSplitter", "AXButton"],
+              card.children[0].domIdentifier == "everyoneListItemText",
+              card.children[1].domClasses.contains("fui-Checkbox__input"),
+              children[2].label == "Dismiss", children[2].domClasses.contains("fui-Button"),
+              children[3].label == "Rejoin the call", children[3].domClasses.contains("fui-Link"),
+              children[4].label == "Need help?", children[4].domClasses.contains("fui-Link"),
+              children[5].label == "Report a problem", children[5].domClasses.contains("fui-Link")
+        else { return false }
+        return true
     }
 
     private static func soloStage<Node: ParticipantNode>(_ nodes: [Node]) -> Bool {
@@ -167,7 +217,7 @@ enum TeamsParticipantParser {
             guard complete else { return nil }
             let controls = nativeControls(nodes)
             if controls.live { return true }
-            if controls.prejoin { prejoin = true; continue }
+            if controls.prejoin || controls.postcall { prejoin = true; continue }
             if !controls.anyCallControl && (nodes.contains(where: isMainNavigation) || isWindowSharingButton(root)) { continue }
             return nil
         }
@@ -368,11 +418,14 @@ final class AccessibilityParticipantNode: ParticipantNode {
 /// speaking outline; no names or content are retained between snapshots.
 enum MeetingSpeakerObserver {
     static let teamsBundleId = "com.microsoft.teams2"
+    private static let log = Diagnostics("meeting-speakers")
     private static let lock = NSLock()
     nonisolated(unsafe) private static var exposedProcesses = Set<String>()
     private static let fullScanInterval: TimeInterval = 10
     private struct ContainerCache {
         let pid: pid_t
+        let application: NSRunningApplication
+        let processIdentity: TeamsProcessIdentity?
         let processStartedAtMs: UInt64
         let window: AXUIElement
         let windowNumber: UInt32
@@ -391,18 +444,44 @@ enum MeetingSpeakerObserver {
     }
 
     static func snapshot(appId: String) -> MeetingSpeakerSnapshot {
+        autoreleasepool { snapshotInsidePool(appId: appId) }
+    }
+
+    private static func snapshotInsidePool(appId: String) -> MeetingSpeakerSnapshot {
         guard appId == teamsBundleId else { return unavailable("unsupported") }
         guard AXIsProcessTrusted() else { return unavailable("permission_denied") }
+        let cached = lock.withLock { containerCache }
         let apps = NSRunningApplication.runningApplications(withBundleIdentifier: appId)
-        guard apps.count == 1, let app = apps.first, let launched = app.launchDate else {
+        let registered = apps.count == 1 ? apps.first : nil
+        let launched = registered?.launchDate
+        let registeredPID = registered?.processIdentifier
+        let currentIdentity = (registeredPID ?? cached?.pid).flatMap(TeamsProcessIdentity.read)
+        let app: NSRunningApplication
+        let pid: pid_t
+        let processStartedAtMs: UInt64
+        let lookupTransient: Bool
+        if let registered, let launched, registered.processIdentifier > 0 {
+            app = registered
+            pid = registered.processIdentifier
+            processStartedAtMs = UInt64(max(0, launched.timeIntervalSince1970 * 1_000))
+            lookupTransient = false
+        } else if let cached,
+                  canUseCachedProcess(registrations: apps.count, registeredPID: registeredPID, launchDateAvailable: launched != nil,
+                                      cached: cached.processIdentity, current: currentIdentity, terminated: cached.application.isTerminated) {
+            app = cached.application
+            pid = cached.pid
+            processStartedAtMs = cached.processStartedAtMs
+            lookupTransient = true
+            log.notice("app lookup transient: registrations=\(apps.count), registered_pid_present=\(registeredPID != nil), launch_present=\(launched != nil), cached_kernel_matches=true")
+        } else {
+            log.notice("app lookup unavailable: registrations=\(apps.count), registered_pid_positive=\((registeredPID ?? 0) > 0), launch_present=\(launched != nil), cached_identity_present=\(cached?.processIdentity != nil), cached_kernel_matches=\(cached?.processIdentity != nil && cached?.processIdentity == currentIdentity)")
             return unavailable(apps.count > 1 ? "ambiguous_process" : "app_unavailable")
         }
+        guard !app.isTerminated else { return unavailable("app_unavailable") }
         guard !app.isHidden else { return unavailable("window_hidden") }
-        let pid = app.processIdentifier
-        guard pid > 0 else { return unavailable("app_unavailable") }
-        let processStartedAtMs = UInt64(max(0, launched.timeIntervalSince1970 * 1_000))
-        let bound = lock.withLock { () -> ContainerCache? in
-            guard let cache = containerCache, cache.pid == pid, cache.processStartedAtMs == processStartedAtMs else { return nil }
+        let bound = cached.flatMap { cache -> ContainerCache? in
+            guard cache.pid == pid, cache.processStartedAtMs == processStartedAtMs,
+                  cache.processIdentity == nil || currentIdentity == nil || cache.processIdentity == currentIdentity else { return nil }
             return cache
         }
         let root = AXUIElementCreateApplication(pid)
@@ -462,17 +541,22 @@ enum MeetingSpeakerObserver {
         guard let focusedIndex = states.firstIndex(where: \.focused) else { return unavailable("window_unavailable") }
         let focusedNode = nodes[focusedIndex]
         var scan: (snapshot: MeetingSpeakerSnapshot, containers: [AccessibilityParticipantNode])
-        if let previous, Date() < previous.refreshAfter, !previous.containers.isEmpty {
+        let active = TeamsParticipantParser.hasNativeCallControls(focusedNode)
+        if lookupTransient {
+            // The cached kernel birth/executable and actual AX/CG window must all match. Do not
+            // collect names while app-registration metadata is unavailable, even from readable tiles.
+            guard previous != nil, active else { return unavailable("app_unavailable") }
+            scan = (MeetingSpeakerSnapshot(available: false, participants: [], speaking: [], unavailableReason: "app_lookup_transient"), [])
+        } else if let previous, Date() < previous.refreshAfter, !previous.containers.isEmpty {
             scan = TeamsParticipantParser.scan(previous.containers.map(AccessibilityParticipantNode.init))
             if !scan.snapshot.available { scan = TeamsParticipantParser.scan([focusedNode]) }
         } else {
             scan = TeamsParticipantParser.scan([focusedNode])
         }
-        let active = TeamsParticipantParser.hasNativeCallControls(focusedNode)
         guard scan.snapshot.available || active else { return unavailable("layout_unavailable") }
         lock.withLock {
             containerCache = ContainerCache(
-                pid: pid, processStartedAtMs: processStartedAtMs, window: window,
+                pid: pid, application: app, processIdentity: currentIdentity ?? previous?.processIdentity, processStartedAtMs: processStartedAtMs, window: window,
                 windowNumber: windowNumber, windowId: windowId,
                 containers: scan.containers.map(\.element),
                 refreshAfter: previous.flatMap { Date() < $0.refreshAfter ? $0.refreshAfter : nil }
@@ -484,8 +568,14 @@ enum MeetingSpeakerObserver {
         scan.snapshot.processStartedAtMs = processStartedAtMs
         scan.snapshot.windowId = windowId
         scan.snapshot.callActive = active
-        if !scan.snapshot.available { scan.snapshot.unavailableReason = "roster_unavailable" }
+        if !scan.snapshot.available && scan.snapshot.unavailableReason == nil { scan.snapshot.unavailableReason = "roster_unavailable" }
         return scan.snapshot
+    }
+
+    static func canUseCachedProcess(registrations: Int, registeredPID: pid_t?, launchDateAvailable: Bool,
+                                    cached: TeamsProcessIdentity?, current: TeamsProcessIdentity?, terminated: Bool) -> Bool {
+        guard let cached, let current, cached == current, !terminated else { return false }
+        return registrations == 0 || (registrations == 1 && registeredPID == cached.pid && !launchDateAvailable)
     }
 
     static func cleanCallEnded(_ windows: [TeamsCallWindowState], hadBinding: Bool, boundWindowDestroyed: Bool) -> Bool {
@@ -494,7 +584,7 @@ enum MeetingSpeakerObserver {
               let focused = windows.first(where: \.focused), focused.visible, !focused.minimized
         else { return false }
         if let bound = windows.first(where: \.bound) {
-            return bound.kind == .prejoin && bound.focused && bound.visible && !bound.minimized
+            return (bound.kind == .prejoin || bound.kind == .postcall) && bound.focused && bound.visible && !bound.minimized
         }
         return boundWindowDestroyed
     }

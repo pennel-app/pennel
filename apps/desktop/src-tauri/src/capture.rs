@@ -85,6 +85,7 @@ pub struct CaptureRuntimeStatus {
     auto_detect_enabled: bool,
     call_detector_configured: bool,
     audio_source_status: Option<serde_json::Value>,
+    speaker_evidence_status: Option<serde_json::Value>,
 }
 
 /// Read actual isolation state without enabling hooks or requesting permission.
@@ -109,6 +110,13 @@ pub fn capture_runtime_status(
         .unwrap()
         .as_ref()
         .map(crate::meeting::MeetingRecorder::audio_source_status);
+    let speaker_evidence_status = shared
+        .meeting_context
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|context| context.speaker_evidence.as_ref())
+        .map(crate::meeting_speaker_evidence::EvidenceSampler::live_status);
     Ok(CaptureRuntimeStatus {
         global_hotkey_active,
         dictation_active: shared
@@ -121,6 +129,7 @@ pub fn capture_runtime_status(
         auto_detect_enabled: settings.auto_detect,
         call_detector_configured: call_detection_enabled(&app)?,
         audio_source_status,
+        speaker_evidence_status,
     })
 }
 

@@ -1,9 +1,9 @@
 //! Samples one explicitly associated Teams call on the recording timeline.
 
-use std::sync::Arc;
 #[cfg(any(target_os = "macos", test))]
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -16,6 +16,143 @@ const INTERVAL: Duration = Duration::from_millis(500);
 type Consent = Arc<dyn Fn() -> bool + Send + Sync>;
 pub(crate) type CaptureSourceCheck = Arc<dyn Fn() -> bool + Send + Sync>;
 pub(crate) type CleanEndCallback = Arc<dyn Fn() + Send + Sync>;
+type SharedHealth = Arc<Mutex<SamplerHealth>>;
+
+#[derive(Default)]
+struct SamplerHealth {
+    sample_count: u64,
+    retained_sample_count: usize,
+    available_sample_count: usize,
+    last_sample_at_ms: Option<u64>,
+    last_sample_at: Option<Instant>,
+    last_read_duration_ms: Option<u64>,
+    last_sample_available: Option<bool>,
+    last_read_reason: Option<String>,
+    availability: AppEvidenceAvailability,
+    reason: Option<String>,
+    binding_verified: bool,
+    producer_running: bool,
+    stop_requested: bool,
+    clean_end: bool,
+    revoked: bool,
+    panicked: bool,
+}
+
+fn health_reason(reason: Option<&str>) -> Option<String> {
+    const SAFE: &[&str] = &[
+        "unsupported",
+        "permission_denied",
+        "ambiguous_process",
+        "app_unavailable",
+        "app_lookup_transient",
+        "window_hidden",
+        "window_unavailable",
+        "window_not_visible",
+        "ambiguous_call",
+        "layout_unavailable",
+        "unavailable",
+        "unbound_window",
+        "call_changed",
+        "unbound_call_end",
+        "invalid_call_end",
+        "audio_clock_unverified",
+        "audio_capture_not_app_scoped",
+        "consent_revoked",
+        "speaking_state_unknown",
+        "call_end_stop_unavailable",
+        "sampler_unavailable",
+        "sampler_starting",
+        "sampler_failed",
+    ];
+    reason.map(|value| {
+        SAFE.iter()
+            .copied()
+            .find(|known| *known == value)
+            .unwrap_or("unavailable")
+            .to_owned()
+    })
+}
+
+impl SamplerHealth {
+    fn observed(&mut self, at: Instant, started: Instant, reading: &Reading) {
+        self.sample_count = self.sample_count.saturating_add(1);
+        self.last_sample_at_ms = Some(at.saturating_duration_since(started).as_millis() as u64);
+        self.last_sample_at = Some(at);
+        self.last_read_duration_ms = Some(at.elapsed().as_millis() as u64);
+        self.last_sample_available = Some(reading.available);
+        self.last_read_reason = health_reason(reading.unavailable_reason.as_deref());
+    }
+
+    fn sampled(&mut self, sampled: &Sampled) {
+        if self.revoked || self.panicked {
+            return;
+        }
+        self.retained_sample_count = sampled.samples.len();
+        self.available_sample_count = sampled
+            .samples
+            .iter()
+            .filter(|sample| sample.available)
+            .count();
+        self.availability = sampled.availability;
+        self.reason = health_reason(sampled.unavailable_reason.as_deref());
+        self.binding_verified = sampled.window.is_some() && !sampled.invalidated;
+        self.clean_end = sampled.ended && !sampled.invalidated;
+    }
+
+    fn revoke(&mut self) {
+        self.revoked = true;
+        self.availability = AppEvidenceAvailability::Disabled;
+        self.reason = Some("consent_revoked".into());
+        self.binding_verified = false;
+        self.retained_sample_count = 0;
+        self.available_sample_count = 0;
+    }
+
+    fn snapshot(&self, handle_running: bool) -> serde_json::Value {
+        serde_json::json!({
+            "sample_count": self.sample_count,
+            "retained_sample_count": self.retained_sample_count,
+            "available_sample_count": self.available_sample_count,
+            "last_sample_at_ms": self.last_sample_at_ms,
+            "last_sample_age_ms": self.last_sample_at.map(|at| at.elapsed().as_millis() as u64),
+            "last_read_duration_ms": self.last_read_duration_ms,
+            "last_sample_available": self.last_sample_available,
+            "last_read_reason": self.last_read_reason,
+            "availability": self.availability,
+            "reason": self.reason,
+            "binding_verified": self.binding_verified,
+            "producer_running": self.producer_running && handle_running,
+            "stop_requested": self.stop_requested,
+            "clean_end": self.clean_end,
+        })
+    }
+}
+
+struct ProducerHealth(SharedHealth);
+
+impl Drop for ProducerHealth {
+    fn drop(&mut self) {
+        let mut health = self.0.lock().unwrap_or_else(|poison| poison.into_inner());
+        health.producer_running = false;
+        if std::thread::panicking() {
+            health.panicked = true;
+            health.availability = AppEvidenceAvailability::Unavailable;
+            health.reason = Some("sampler_failed".into());
+            health.binding_verified = false;
+            health.retained_sample_count = 0;
+            health.available_sample_count = 0;
+        }
+    }
+}
+
+fn publish_health(health: Option<&SharedHealth>, sampled: &Sampled) {
+    if let Some(health) = health {
+        health
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .sampled(sampled);
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct EvidenceClock {
@@ -85,6 +222,7 @@ pub struct EvidenceSampler {
     capture_source: CaptureSourceCheck,
     clock_verified: bool,
     thread: Option<JoinHandle<Sampled>>,
+    health: SharedHealth,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -250,11 +388,22 @@ impl Sampled {
 /// Discarding a recording still stops its narrowly scoped observer.
 impl Drop for EvidenceSampler {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
+        self.request_stop();
     }
 }
 
 impl EvidenceSampler {
+    pub(crate) fn live_status(&self) -> serde_json::Value {
+        let handle_running = self
+            .thread
+            .as_ref()
+            .is_some_and(|thread| !thread.is_finished());
+        self.health
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .snapshot(handle_running)
+    }
+
     /// `detected_app` must come from the selected recording source, never just a running Teams app.
     #[cfg(target_os = "macos")]
     pub(crate) fn start(
@@ -363,13 +512,20 @@ impl EvidenceSampler {
     ) -> Option<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let disabled = Arc::new(AtomicBool::new(false));
+        let health = Arc::new(Mutex::new(SamplerHealth {
+            producer_running: true,
+            reason: Some("sampler_starting".into()),
+            ..SamplerHealth::default()
+        }));
         let thread = std::thread::Builder::new()
             .name("meeting-speaker-evidence".into())
             .spawn({
                 let stop = stop.clone();
                 let disabled = disabled.clone();
                 let policy = policy.clone();
+                let health = health.clone();
                 move || {
+                    let _producer = ProducerHealth(health.clone());
                     sample_until_with_end(
                         &stop,
                         &disabled,
@@ -382,6 +538,7 @@ impl EvidenceSampler {
                             clock_verified: policy.clock_verified,
                         },
                         read,
+                        Some(&health),
                     )
                 }
             })
@@ -396,17 +553,26 @@ impl EvidenceSampler {
             capture_source: policy.capture_source,
             clock_verified: policy.clock_verified,
             thread: Some(thread),
+            health,
         })
     }
 
     /// Stop requests never wait for an in-flight AX read or extend the audio capture lifetime.
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+        self.health
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .stop_requested = true;
     }
 
     /// Revocation is sticky for this recording even if the setting is subsequently re-enabled.
     pub fn disable(&self) {
         self.disabled.store(true, Ordering::SeqCst);
+        self.health
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .revoke();
         self.request_stop();
     }
 
@@ -426,6 +592,7 @@ impl EvidenceSampler {
         } else if sampled.samples.is_empty() && !sampled.invalidated {
             sampled.unavailable_reason = Some("sampler_unavailable".into());
         }
+        publish_health(Some(&self.health), &sampled);
         AppSpeakerEvidence {
             app_id: std::mem::take(&mut self.app_id),
             samples: sampled.samples,
@@ -466,6 +633,7 @@ fn sample_until(
             clock_verified: true,
         },
         read,
+        None,
     )
 }
 
@@ -486,6 +654,7 @@ fn sample_until_with_end(
     interval: Duration,
     checks: SamplingChecks<'_>,
     read: impl Fn() -> Reading,
+    health: Option<&SharedHealth>,
 ) -> Sampled {
     let SamplingChecks {
         consent,
@@ -510,6 +679,12 @@ fn sample_until_with_end(
         }
         let at = Instant::now();
         let reading = read();
+        if let Some(health) = health {
+            health
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .observed(at, started, &reading);
+        }
         if disabled.load(Ordering::SeqCst) || !consent() {
             disabled.store(true, Ordering::SeqCst);
             sampled.revoke_consent();
@@ -531,8 +706,10 @@ fn sample_until_with_end(
                 sampled.invalidate_capture_source();
                 sampled.unavailable_reason = Some("call_end_stop_unavailable".into());
             }
+            publish_health(health, &sampled);
             break;
         }
+        publish_health(health, &sampled);
         // A new call can reuse the same Teams window. Once association is lost, an explicit new
         // recording must establish it again; never keep inspecting a replacement call.
         if sampled.invalidated {
@@ -547,6 +724,7 @@ fn sample_until_with_end(
     } else if !clock_verified {
         sampled.invalidate_clock();
     }
+    publish_health(health, &sampled);
     sampled
 }
 
@@ -582,6 +760,154 @@ mod tests {
             window: readable(window_id).window,
             ..Reading::default()
         }
+    }
+
+    fn wait_for_producer_exit(sampler: &EvidenceSampler) {
+        let until = Instant::now() + Duration::from_secs(2);
+        while !sampler.thread.as_ref().unwrap().is_finished() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(sampler.thread.as_ref().unwrap().is_finished());
+    }
+
+    #[test]
+    fn live_health_reports_a_producer_that_stopped_mid_recording() {
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let sampler = EvidenceSampler::spawn(
+            TEAMS,
+            Instant::now(),
+            "private-recording-uuid",
+            "private-started-at",
+            Arc::new(|| true),
+            Arc::new(|| true),
+            move || {
+                if reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                    readable("private-window-uuid")
+                } else {
+                    Reading {
+                        unavailable_reason: Some("app_unavailable".into()),
+                        ..Reading::default()
+                    }
+                }
+            },
+        )
+        .unwrap();
+        wait_for_producer_exit(&sampler);
+        let status = sampler.live_status();
+        assert_eq!(status["sample_count"], 2);
+        assert_eq!(status["retained_sample_count"], 2);
+        assert_eq!(status["available_sample_count"], 1);
+        assert_eq!(status["producer_running"], false);
+        assert_eq!(status["availability"], "unavailable");
+        assert_eq!(status["reason"], "app_unavailable");
+        assert_eq!(status["binding_verified"], false);
+        assert!(status["last_sample_at_ms"].as_u64().is_some());
+        assert!(status["last_sample_age_ms"].as_u64().is_some());
+        let encoded = status.to_string();
+        for secret in [
+            "Ann",
+            "Bert",
+            "private-window-uuid",
+            "private-recording-uuid",
+            "private-started-at",
+        ] {
+            assert!(!encoded.contains(secret));
+        }
+        sampler.finish();
+    }
+
+    #[test]
+    fn live_health_does_not_echo_unrecognized_native_reason_text() {
+        let sampler = EvidenceSampler::spawn(
+            TEAMS,
+            Instant::now(),
+            "private-recording-uuid",
+            "private-started-at",
+            Arc::new(|| true),
+            Arc::new(|| true),
+            || Reading {
+                unavailable_reason: Some("private transcript or participant name".into()),
+                ..Reading::default()
+            },
+        )
+        .unwrap();
+        wait_for_producer_exit(&sampler);
+        let status = sampler.live_status();
+        assert_eq!(status["reason"], "unavailable");
+        assert!(!status.to_string().contains("private"));
+        sampler.finish();
+    }
+
+    #[test]
+    fn live_health_updates_immediately_when_consent_is_revoked_during_a_read() {
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let (blocked, waiting) = std::sync::mpsc::channel();
+        let (release, resume) = std::sync::mpsc::channel();
+        let sampler = EvidenceSampler::spawn(
+            TEAMS,
+            Instant::now(),
+            "private-recording-uuid",
+            "private-started-at",
+            Arc::new(|| true),
+            Arc::new(|| true),
+            move || {
+                if reads.fetch_add(1, Ordering::SeqCst) == 1 {
+                    blocked.send(()).unwrap();
+                    resume.recv_timeout(Duration::from_secs(2)).unwrap();
+                }
+                readable("private-window-uuid")
+            },
+        )
+        .unwrap();
+        waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(sampler.live_status()["producer_running"], true);
+        assert_eq!(sampler.live_status()["sample_count"], 1);
+        sampler.disable();
+        let revoked = sampler.live_status();
+        assert_eq!(revoked["availability"], "disabled");
+        assert_eq!(revoked["reason"], "consent_revoked");
+        assert_eq!(revoked["stop_requested"], true);
+        assert_eq!(revoked["binding_verified"], false);
+        assert_eq!(revoked["retained_sample_count"], 0);
+        release.send(()).unwrap();
+        wait_for_producer_exit(&sampler);
+        assert_eq!(sampler.live_status()["producer_running"], false);
+        assert_eq!(
+            sampler.finish().availability,
+            AppEvidenceAvailability::Disabled
+        );
+    }
+
+    #[test]
+    fn dropping_the_sampler_requests_stop_and_thread_exit_updates_shared_health() {
+        let (blocked, waiting) = std::sync::mpsc::channel();
+        let (release, resume) = std::sync::mpsc::channel();
+        let sampler = EvidenceSampler::spawn(
+            TEAMS,
+            Instant::now(),
+            "private-recording-uuid",
+            "private-started-at",
+            Arc::new(|| true),
+            Arc::new(|| true),
+            move || {
+                blocked.send(()).unwrap();
+                resume.recv_timeout(Duration::from_secs(2)).unwrap();
+                readable("private-window-uuid")
+            },
+        )
+        .unwrap();
+        waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+        let health = sampler.health.clone();
+        drop(sampler);
+        assert!(health.lock().unwrap().stop_requested);
+        release.send(()).unwrap();
+        let until = Instant::now() + Duration::from_secs(2);
+        while health.lock().unwrap().producer_running && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let status = health.lock().unwrap().snapshot(false);
+        assert_eq!(status["producer_running"], false);
+        assert_eq!(status["retained_sample_count"], 0);
     }
 
     #[test]
@@ -702,6 +1028,7 @@ mod tests {
                 1 => clean_end("first"),
                 _ => panic!("a sealed call must not inspect a replacement call"),
             },
+            None,
         );
         assert_ne!(
             received.recv_timeout(Duration::from_secs(1)).unwrap(),
@@ -800,6 +1127,7 @@ mod tests {
                 clock_verified: false,
             },
             || panic!("an unverified timeline must not read participant names"),
+            None,
         );
         assert_eq!(sampled.availability, AppEvidenceAvailability::Unavailable);
         assert_eq!(
