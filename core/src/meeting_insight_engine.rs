@@ -696,6 +696,7 @@ struct JobProgress {
     completed_windows: usize,
     total_windows: usize,
     logical_done: bool,
+    finalization_finished: bool,
     items_found: usize,
 }
 
@@ -737,6 +738,7 @@ impl MeetingInsightAnalysisJob {
         let physical = self.coordinator.status(&self.meeting_uid);
         serde_json::json!({"job_id":self.id,"meeting_uid":self.meeting_uid,"state":progress.state,
             "revision":progress.revision.saturating_add(physical.revision),"error_code":progress.error_code,"physical_running":physical.physical_running,
+            "finalization_finished":progress.finalization_finished,
             "included_through_ms":self.included_through_ms,"completed_windows":progress.completed_windows,"total_windows":progress.total_windows,
             "language_policy":self.language_policy,"provider_id":self.provider_id,"model":self.model,"endpoint":self.endpoint})
     }
@@ -745,7 +747,8 @@ impl MeetingInsightAnalysisJob {
         matches!(
             progress.state,
             InsightJobState::Queued | InsightJobState::Running
-        ) || self.retention.lock().unwrap().strong_count() > 0
+        ) || !progress.finalization_finished
+            || self.retention.lock().unwrap().strong_count() > 0
     }
     fn cancel(&self, code: &str) {
         if self
@@ -792,6 +795,15 @@ impl MeetingInsightAnalysisJob {
         }
         progress.logical_done = true;
         progress.revision += 1;
+        self.changed.notify_all();
+    }
+    fn finish_finalization(&self) {
+        let mut progress = self.progress.lock().unwrap();
+        if !progress.finalization_finished {
+            progress.finalization_finished = true;
+            progress.revision += 1;
+        }
+        drop(progress);
         self.changed.notify_all();
     }
 }
@@ -853,6 +865,9 @@ impl Drop for AdmittedInsightAnalysis {
         }
         self.engine.finish_inference(&self.parent);
         self.job.cancellation.lock().unwrap().take();
+        // Logical cancellation is immediate; receipt handling is a separate, finite barrier.
+        // An unsuccessful receipt write still completes this attempt and must never enable retry.
+        self.job.finish_finalization();
     }
 }
 
@@ -1285,6 +1300,7 @@ impl PennelEngine {
                 completed_windows: 0,
                 total_windows: frozen.windows.len(),
                 logical_done: false,
+                finalization_finished: false,
                 items_found: 0,
             }),
             changed: Condvar::new(),
@@ -2632,6 +2648,140 @@ mod tests {
             automatic_snapshot(&engine, &id)["automatic_attempt"]["outcome"],
             "completed"
         );
+    }
+
+    fn receipt_latch(latch: &Arc<(Mutex<bool>, Condvar)>) {
+        let waited = latch
+            .1
+            .wait_timeout_while(latch.0.lock().unwrap(), Duration::from_secs(5), |ready| {
+                !*ready
+            })
+            .unwrap();
+        assert!(!waited.1.timed_out(), "receipt boundary latch timed out");
+    }
+
+    fn terminal_receipt_boundary(outcome: &str, unwritable: bool) {
+        let _physical = crate::meeting_scheduler::physical_test_gate();
+        let mut server = mockito::Server::new();
+        let (_directory, engine, id, keys) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let reached = Arc::new((Mutex::new(false), Condvar::new()));
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
+        let completed = outcome == "completed";
+        let provider_reached = reached.clone();
+        let provider_release = release.clone();
+        let provider = server
+            .mock("POST", "/v1/decisions")
+            .with_status(if outcome == "failed" { 500 } else { 200 })
+            .with_body_from_request(move |_| {
+                if !completed {
+                    *provider_reached.0.lock().unwrap() = true;
+                    provider_reached.1.notify_all();
+                    receipt_latch(&provider_release);
+                }
+                wire_response().into_bytes()
+            })
+            .expect(1)
+            .create();
+        let admitted = automatic_fixture(&engine, &id).unwrap();
+        let job = admitted
+            .prepared
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .job
+            .clone();
+        if completed {
+            let committed = reached.clone();
+            let finish = release.clone();
+            *job.after_commit.lock().unwrap() = Some(Arc::new(move || {
+                *committed.0.lock().unwrap() = true;
+                committed.1.notify_all();
+                receipt_latch(&finish);
+            }));
+        }
+        let begin: serde_json::Value = serde_json::from_str(
+            &engine
+                .clone()
+                .begin_meeting_insight_analysis_json(admitted, keys)
+                .unwrap(),
+        )
+        .unwrap();
+        let job_id = begin["job_id"].as_str().unwrap();
+        receipt_latch(&reached);
+        let gate = crate::meetings::replacement_gate(&engine.meeting_store().dir_of(&id));
+        let receipt_blocked = gate.lock().unwrap();
+        let marker = attempt_files(&engine, &id).remove(0);
+        if unwritable {
+            std::fs::remove_file(&marker).unwrap();
+            std::fs::create_dir(&marker).unwrap();
+        }
+        if outcome == "cancelled" {
+            let cancelled: serde_json::Value = serde_json::from_str(
+                &engine
+                    .cancel_meeting_insight_analysis_json(job_id.into())
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(cancelled["state"], "cancelled");
+        }
+        *release.0.lock().unwrap() = true;
+        release.1.notify_all();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let terminal = loop {
+            let snapshot: serde_json::Value =
+                serde_json::from_str(&engine.meeting_insight_job_json(job_id.into()).unwrap())
+                    .unwrap();
+            if snapshot["state"] == outcome && snapshot["physical_running"] == false {
+                break snapshot;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "terminal provider work did not drain: {snapshot}"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let pending = if unwritable {
+            None
+        } else {
+            Some(
+                serde_json::from_slice::<serde_json::Value>(&std::fs::read(&marker).unwrap())
+                    .unwrap(),
+            )
+        };
+        drop(receipt_blocked);
+        let finished = wait_job(&engine, job_id);
+        // Assert only after releasing the latch so a red test never abandons an owned worker.
+        assert_eq!(terminal["finalization_finished"], false);
+        assert_eq!(finished["finalization_finished"], true);
+        assert!(finished["revision"].as_u64().unwrap() > terminal["revision"].as_u64().unwrap());
+        if let Some(pending) = pending {
+            assert_eq!(pending["outcome"], serde_json::Value::Null);
+            assert_eq!(
+                automatic_snapshot(&engine, &id)["automatic_attempt"]["outcome"],
+                outcome
+            );
+        } else {
+            assert!(marker.is_dir(), "unwritable receipt must remain consumed");
+        }
+        assert!(
+            automatic_fixture(&engine, &id).is_none(),
+            "receipt failures never authorize automatic retry"
+        );
+        provider.assert();
+    }
+
+    #[test]
+    fn terminal_receipt_is_not_finalized_until_after_the_actual_receipt_write() {
+        for outcome in ["completed", "failed", "cancelled"] {
+            terminal_receipt_boundary(outcome, false);
+        }
+    }
+
+    #[test]
+    fn terminal_receipt_finalization_error_still_retires_the_consumed_attempt() {
+        terminal_receipt_boundary("failed", true);
     }
 
     #[test]

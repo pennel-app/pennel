@@ -60,6 +60,7 @@ struct Job {
     revision: u64,
     state: JobState,
     physical_running: bool,
+    finalization_finished: bool,
 }
 fn identifier(value: &str) -> bool {
     value.len() == 36
@@ -305,7 +306,7 @@ fn drive<B: Backend>(
             }
             published = Some(job.clone());
         }
-        if job.state.terminal() && !job.physical_running {
+        if job.state.terminal() && !job.physical_running && job.finalization_finished {
             refresh_durable(backend, &mut operation, &mut durable, &mut publish);
             let state = job.state.progress();
             publish(operation.progress(state));
@@ -439,7 +440,7 @@ mod tests {
         }
     }
     fn job(id: &str, uid: &str, state: &str, revision: u64, physical: bool) -> Job {
-        parse_job(&json!({"job_id":id,"meeting_uid":uid,"state":state,"revision":revision,"physical_running":physical,
+        parse_job(&json!({"job_id":id,"meeting_uid":uid,"state":state,"revision":revision,"physical_running":physical,"finalization_finished":matches!(state,"completed"|"cancelled"|"failed") && !physical,
             "items":[{"text":PRIVATE}],"notes":PRIVATE,"endpoint":PRIVATE,"error_code":PRIVATE}).to_string()).unwrap()
     }
     fn stamp(revision: u64, outcome: Option<&str>) -> DurableStamp {
@@ -469,7 +470,11 @@ mod tests {
                 .borrow_mut()
                 .pop_front()
                 .expect("runtime must stop at the owned terminal response");
-            if job.state.terminal() && !job.physical_running && self.write_outcome {
+            if job.state.terminal()
+                && !job.physical_running
+                && job.finalization_finished
+                && self.write_outcome
+            {
                 *self.durable.borrow_mut() = stamp(
                     if job.state == JobState::Completed {
                         1
@@ -516,6 +521,107 @@ mod tests {
         fn durable(&self, _: &str, _: &str) -> Option<DurableStamp> {
             Some(self.durable.borrow().clone())
         }
+    }
+
+    fn finalization_job(state: &str, finished: bool, revision: u64) -> Job {
+        parse_job(&json!({"job_id":JOB,"meeting_uid":UID,"state":state,"revision":revision,"physical_running":false,"finalization_finished":finished}).to_string()).unwrap()
+    }
+
+    #[test]
+    fn terminal_job_waits_for_the_receipt_latch_before_final_durable_notification() {
+        for state in ["completed", "cancelled", "failed"] {
+            let mut backend = FakeBackend::new(vec![
+                finalization_job(state, false, 2),
+                finalization_job(state, true, 3),
+            ]);
+            backend.write_outcome = false;
+            let waits = Cell::new(0);
+            let notices = RefCell::new(Vec::new());
+            let result = drive(
+                &backend,
+                operation(),
+                || false,
+                |notice| notices.borrow_mut().push(notice),
+                || {
+                    waits.set(waits.get() + 1);
+                    *backend.durable.borrow_mut() =
+                        stamp(if state == "completed" { 1 } else { 0 }, Some(state));
+                },
+            );
+            assert_eq!(
+                waits.get(),
+                1,
+                "{state}: a terminal request count is not receipt completion"
+            );
+            assert_eq!(
+                result,
+                match state {
+                    "completed" => ProgressState::Finished,
+                    "cancelled" => ProgressState::Cancelled,
+                    _ => ProgressState::Failed,
+                }
+            );
+            assert_eq!(
+                notices
+                    .borrow()
+                    .iter()
+                    .filter(|notice| matches!(notice, Notice::DurableChanged { .. }))
+                    .count(),
+                2
+            );
+            assert!(matches!(notices.borrow().last(), Some(Notice::Progress(_))));
+        }
+    }
+
+    #[test]
+    fn failed_receipt_write_completes_without_waiting_for_an_outcome_or_retrying() {
+        let mut backend = FakeBackend::new(vec![
+            finalization_job("failed", false, 2),
+            finalization_job("failed", true, 3),
+        ]);
+        backend.write_outcome = false;
+        let waits = Cell::new(0);
+        let notices = RefCell::new(Vec::new());
+        assert_eq!(
+            drive(
+                &backend,
+                operation(),
+                || false,
+                |notice| notices.borrow_mut().push(notice),
+                || {
+                    waits.set(waits.get() + 1);
+                }
+            ),
+            ProgressState::Failed
+        );
+        assert_eq!(waits.get(), 1);
+        assert_eq!(
+            notices
+                .borrow()
+                .iter()
+                .filter(|notice| matches!(notice, Notice::DurableChanged { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            backend
+                .trace
+                .borrow()
+                .iter()
+                .filter(|entry| entry.as_str() == "admit")
+                .count(),
+            1
+        );
+        assert_eq!(
+            backend
+                .durable
+                .borrow()
+                .automatic_attempt
+                .as_ref()
+                .unwrap()
+                .outcome,
+            None
+        );
     }
 
     #[test]
