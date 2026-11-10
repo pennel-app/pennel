@@ -579,7 +579,7 @@ mod tests {
     fn structured_reply_resolves_only_received_references_and_supported_owner_due() {
         let row = row();
         let sources = SummarySources::new(
-            &[row.clone()],
+            std::slice::from_ref(&row),
             &[crate::SpeakerName {
                 voice: 2,
                 name: "Noor".into(),
