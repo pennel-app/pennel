@@ -49,8 +49,9 @@
   --font-title: 20px;
   --font-onboarding: 20px;
   --font-welcome: 20px;
-  --font-page-title: 20px;
-  --font-display-title: 20px;
+  --font-page-title: 26px;
+  --font-display-title: 26px;
+  --font-dictation-instruction: 30px;
 }
 
 @media (prefers-color-scheme: dark) {
