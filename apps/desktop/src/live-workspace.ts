@@ -422,13 +422,13 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     writingTabs.hidden = true;
     tabList.hidden = true;
     primaryColumn.inert = false;
+    const focused = companionTabs.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+    companion.hidden = !panes.companionOpen;
     const controlsHost = panes.companionOpen ? companionHeader : headerActions;
     if (companionTabs.parentElement !== controlsHost) {
-      const focused = companionTabs.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
       controlsHost.insertBefore(companionTabs, controlsHost.firstChild);
       focused?.focus({ preventScroll: true });
     }
-    companion.hidden = !panes.companionOpen;
     const overlay = !panes.wide && panes.companionOpen;
     root.classList.toggle("live-overlay", overlay);
     root.dataset.splitCustom = String(splitAdjusted);
