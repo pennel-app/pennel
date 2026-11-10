@@ -755,5 +755,15 @@
       "width": 420,
       "height": 120
     }
-  ]
+  ],
+  "validated_head": "83f667506ac6b5980acd895335fea6a848946bd4",
+  "rendered_frontend_unchanged_at_validated_head": true,
+  "render_source_hashes": {
+    "apps/desktop/src": "d6ead05643cf5252043b80df7fa54b2aa9162170",
+    "apps/desktop/pill.html": "f963a60da7ebef2d883970c4b8ea58991629b20c",
+    "apps/desktop/index.html": "e44e10fd24a1905e935740a671915c4bfaf982ca",
+    "assets": "1f178ffa4a57b62737980e76f930e907676f7619",
+    "scripts/fixtures": "942003dfaf4b895c511a9d59367b21874222baca",
+    "scripts/capture-desktop-reference.mjs": "8b019828fe52fec260edb2472d545512c5ab4783"
+  }
 }
