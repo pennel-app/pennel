@@ -810,5 +810,10 @@
   "backend.next_model_hook_unavailable": "next_model_hook_unavailable",
   "backend.speech_model_switch_current_unavailable": "This speech model is unavailable. Your current dictation is unchanged.",
   "backend.speech_model_switch_setup_required": "This speech model is unavailable. Set up speech recognition first.",
+  "backend.shortcut_accessibility_required": "accessibility_required",
+  "backend.shortcut_native_key_not_supported": "native_key_not_supported",
+  "backend.shortcut_native_shortcut_unavailable": "native_shortcut_unavailable",
+  "backend.shortcut_wayland_global_shortcuts": "wayland_global_shortcuts",
+  "backend.shortcut_x11_keyed_shortcuts_unavailable": "x11_keyed_shortcuts_unavailable",
   "backend.x11_keyed_shortcuts_unavailable": "x11_keyed_shortcuts_unavailable"
 }

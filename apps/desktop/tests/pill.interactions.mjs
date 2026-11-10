@@ -245,3 +245,20 @@ export async function checkPillNativeShortcutHints() {
   assert(!document.getElementById('model-chip').title.includes('Ctrl+M'), 'Cached idle shortcut metadata overrode unavailable live readiness.');
   return { actualCancelLabel: true, unavailableHintsHidden: true, actualNextModelLabel: true, syntheticOnly: true };
 }
+
+export async function checkPillBackToBackModels() {
+  const { fixture } = await ready();
+  const chip = document.getElementById('model-chip');
+  const metadata = (session_id, generation, label) => ({ session_id, generation, model: { choice: { provider_id: label, model: 'synthetic' }, label }, available_models: 2, enabled: true, switched: false });
+  fixture.emit('pill-preview', { session_id: 'first-model-capture', revision: 0, text: '' });
+  fixture.emit('pill-model', metadata('first-model-capture', 2, 'First capture model'));
+  fixture.emit('pill-state', { state: 'working' });
+  fixture.emit('pill-state', { state: 'listening' });
+  fixture.emit('pill-preview', { session_id: 'second-model-capture', revision: 0, text: '' });
+  assert(chip.hidden, 'A new preview retained the old capture model while waiting for its metadata.');
+  fixture.emit('pill-model', metadata('second-model-capture', 0, 'Second capture model'));
+  assert(!chip.hidden && chip.textContent.includes('Second capture model'), 'The new capture generation-zero model was missing.');
+  fixture.emit('pill-model', metadata('first-model-capture', 99, 'Obsolete capture model'));
+  assert(chip.textContent.includes('Second capture model'), 'An old capture replaced the new model.');
+  return { backToBackCapture: true, generationZeroAccepted: true, oldModelCleared: true, lateCaptureRejected: true, syntheticOnly: true };
+}

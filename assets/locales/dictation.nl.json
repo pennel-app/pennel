@@ -204,5 +204,6 @@
   "dictation.pill.switch_needs_models": "Stel een tweede spraakmodel in om tijdens het dicteren te wisselen.",
   "dictation.pill.model_setup": "Nog een spraakmodel instellen…",
   "dictation.pill.model_unavailable": "Er is geen ingesteld spraakmodel klaar.",
-  "dictation.pill.cancel": "annuleren"
+  "dictation.pill.cancel": "annuleren",
+  "dictation.pill.switch_unavailable": "De sneltoets voor het volgende model is hier niet beschikbaar. Bekijk Sneltoetsen voor meer informatie."
 }

@@ -104,6 +104,7 @@ impl PillSnapshot {
         {
             return false;
         }
+        self.speech_model = None;
         self.preview = Some(DictationPreviewUpdate {
             session_id: id,
             revision: 0,
@@ -118,10 +119,9 @@ impl PillSnapshot {
                 .preview
                 .as_ref()
                 .is_none_or(|preview| preview.session_id != next.session_id)
-            || self
-                .speech_model
-                .as_ref()
-                .is_some_and(|current| current.generation > next.generation)
+            || self.speech_model.as_ref().is_some_and(|current| {
+                current.session_id == next.session_id && current.generation > next.generation
+            })
         {
             return false;
         }
@@ -387,6 +387,30 @@ mod tests {
                 .get("cancel_shortcut")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn a_new_capture_accepts_generation_zero_without_reusing_the_previous_model() {
+        let mut content = listening();
+        let mut first = model(2);
+        first.model.label = "First capture model".into();
+        assert!(content.update_model(first.clone()));
+        content.set_state(PillState::Working);
+        content.set_state(PillState::Listening);
+        assert!(content.begin_preview("second".into()));
+        assert!(content.speech_model.is_none());
+        let mut second = model(0);
+        second.session_id = "second".into();
+        second.model.choice.provider_id = "second-provider".into();
+        second.model.label = "Second capture model".into();
+        assert!(content.update_model(second));
+        first.generation = 99;
+        assert!(!content.update_model(first));
+        assert!(!content.begin_preview("second".into()));
+        let model = content.speech_model.as_ref().unwrap();
+        assert_eq!(model.session_id, "second");
+        assert_eq!(model.generation, 0);
+        assert_eq!(model.model.label, "Second capture model");
     }
 
     #[test]

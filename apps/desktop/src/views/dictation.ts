@@ -109,8 +109,18 @@ export function dictationView(ctx: Context): HTMLElement {
       speechPicker.hidden = models.length === 0;
       if (speechSetupAction) speechSetupAction.hidden = models.length > 0;
       speechPicker.title = models.length === 0 ? t("dictation.pill.model_unavailable") : "";
-      const key = ctx.info.shortcuts?.find(row => row.id === "next_model" && row.binding && row.capability.available)?.label.text;
-      modelSwitchReason.textContent = models.length < 2 ? t("dictation.pill.switch_needs_models") : key ? t("dictation.pill.switch_key", { shortcut: key }) : t("dictation.pill.switch_none");
+      const next = ctx.info.shortcuts?.find(row => row.id === "next_model");
+      const key = next?.binding && next.capability.available ? next.label.text : "";
+      const reason = next?.capability.available === false ? next.capability.reason : null;
+      let runtimeReason = reason ? localizeBackendText(reason) : "";
+      if (runtimeReason && /^[a-z0-9_]+$/.test(runtimeReason)) {
+        runtimeReason = ctx.info.capabilities.global_hotkey.reason ? localizeBackendText(ctx.info.capabilities.global_hotkey.reason) : t("dictation.pill.switch_unavailable");
+      }
+      if (runtimeReason) modelSwitchReason.textContent = runtimeReason;
+      else if (next?.binding && !next.capability.available) modelSwitchReason.textContent = t("dictation.pill.switch_unavailable");
+      else if (models.length < 2) modelSwitchReason.textContent = t("dictation.pill.switch_needs_models");
+      else if (key) modelSwitchReason.textContent = t("dictation.pill.switch_key", { shortcut: key });
+      else modelSwitchReason.textContent = t(next && !next.binding ? "dictation.pill.switch_none" : "dictation.pill.switch_unavailable");
     }).catch(error => { if (!disposed && revision === speechRevision) { speechModels = []; speechPicker.disabled = true; modelSwitchReason.textContent = errorText(error); } });
   };
   const taskRows = settingsTaskRows(ctx, ["dictation_stt", "llm"]);
