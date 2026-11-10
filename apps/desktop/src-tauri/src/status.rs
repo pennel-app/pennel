@@ -1,1 +1,1 @@
-pub use pennel_core::{CommandIntent, DictationStatus, PillState};
+pub use pennel_core::{CommandIntent, DictationStatus, NoSoundWatch, PillState};
