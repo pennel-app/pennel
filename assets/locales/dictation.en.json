@@ -204,5 +204,6 @@
   "dictation.pill.switch_needs_models": "Set up a second speech model to switch while dictating.",
   "dictation.pill.model_setup": "Set up another speech model…",
   "dictation.pill.model_unavailable": "No configured speech model is ready.",
-  "dictation.pill.cancel": "cancel"
+  "dictation.pill.cancel": "cancel",
+  "dictation.pill.switch_unavailable": "The next-model shortcut is unavailable on this desktop. Check Shortcuts for details."
 }

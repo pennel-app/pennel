@@ -810,5 +810,10 @@
   "backend.next_model_hook_unavailable": "The next-model shortcut is unavailable. Check keyboard shortcut access.",
   "backend.speech_model_switch_current_unavailable": "This speech model is unavailable. Your current dictation is unchanged.",
   "backend.speech_model_switch_setup_required": "This speech model is unavailable. Set up speech recognition first.",
-  "backend.x11_keyed_shortcuts_unavailable": "Global shortcuts with a regular key cannot yet be safely released on X11. Use Pennel’s buttons or your desktop’s shortcut settings."
+  "backend.x11_keyed_shortcuts_unavailable": "Global shortcuts with a regular key cannot yet be safely released on X11. Use Pennel’s buttons or your desktop’s shortcut settings.",
+  "backend.shortcut_accessibility_required": "Give Pennel Accessibility access to use this shortcut.",
+  "backend.shortcut_native_key_not_supported": "This key cannot be registered on this system.",
+  "backend.shortcut_native_shortcut_unavailable": "Keyboard shortcuts are unavailable on this system.",
+  "backend.shortcut_wayland_global_shortcuts": "Global shortcuts are unavailable on Wayland.",
+  "backend.shortcut_x11_keyed_shortcuts_unavailable": "Keyed global shortcuts are unavailable on X11. Use a modifier-only shortcut, the buttons or a desktop command."
 }

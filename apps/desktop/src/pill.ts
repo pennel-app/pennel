@@ -215,9 +215,16 @@ async function boot() {
   await listenToWindow<PillState>("pill-state", (event) => { eventReceived = true; render(event.payload); });
   await listenToWindow<PillPreview | null>("pill-preview", (event) => {
     pendingPreview = event.payload;
+    const previousSession = previewState.snapshot?.session_id;
     if (previewState.receive(event.payload)) {
       previewReceived = true;
       if (event.payload) modelState.begin(event.payload.session_id);
+      else modelState.clear();
+      if (previousSession !== event.payload?.session_id) {
+        clearModelTimer();
+        if (visible && pendingState) paint(pendingState);
+        renderModel();
+      }
     }
     renderPreview();
   });
