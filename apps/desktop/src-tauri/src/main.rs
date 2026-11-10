@@ -48,6 +48,7 @@ mod pill;
 mod platform_audio;
 mod platform_clipboard;
 mod platform_commands;
+mod portable_shortcuts;
 mod record_shortcut;
 mod recording_metadata;
 mod resample;

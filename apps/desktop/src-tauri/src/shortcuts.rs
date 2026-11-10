@@ -38,11 +38,40 @@ pub fn rows(shared: &Shared) -> Vec<ShortcutRow> {
             }
         }
     }
-    if let Some(error) = crate::record_shortcut::error() {
+    for row in &mut rows {
+        let scoped = matches!(row.id.as_str(), "cancel" | "next_model");
+        let keyed_dictate = row.id == "dictate"
+            && row
+                .binding
+                .as_ref()
+                .is_some_and(|binding| binding.code.is_some());
+        if row.capability.available
+            && (!scoped || crate::record_shortcut::is_listening())
+            && (row.id != "dictate" || keyed_dictate)
+            && let Some(reason) = crate::record_shortcut::action_error(&row.id)
+        {
+            row.capability.available = false;
+            row.capability.reason = Some(reason);
+        }
+        if row.id == "next_model"
+            && !crate::record_shortcut::next_model_enabled()
+            && row.capability.available
+        {
+            row.capability.available = false;
+            row.capability.reason = Some("next_model_not_ready".into());
+            row.editable = false;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if crate::macos::permissions()
+        .get("accessibility")
+        .and_then(serde_json::Value::as_str)
+        != Some("granted")
+    {
         for row in &mut rows {
-            if matches!(row.id.as_str(), "record" | "open_pennel") && row.capability.available {
+            if row.scope != pennel_core::ShortcutScope::Application {
                 row.capability.available = false;
-                row.capability.reason = Some(error.clone());
+                row.capability.reason = Some("accessibility_required".into());
             }
         }
     }
