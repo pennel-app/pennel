@@ -97,8 +97,14 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
   const element = document.createElement("div") as InlineNotesSurface;
   element.className = `inline-notes-editor ${options.className ?? ""}`.trim();
   let disabled = false, readOnly = false, composing = false, destroyed = false, direction: Direction | null = null, language = options.language ?? "";
+  type ReaderPosition = { node: HTMLElement; top: number; left: number };
   let revealGeneration = 0;
-  let pendingReveal: { generation: number; range: SelectionRange; top: number; left: number } | null = null;
+  let pendingReveal: { generation: number; range: SelectionRange; readers: ReaderPosition[] } | null = null;
+  const readerMoved = (readers: ReaderPosition[]) => readers.some(({ node, top, left }) => Math.abs(node.scrollTop - top) > 1 || Math.abs(node.scrollLeft - left) > 1);
+  function revealScroll(event: Event) {
+    const reveal = pendingReveal;
+    if (reveal && (event.target === element.ownerDocument || reveal.readers.some(({ node }) => node === event.target)) && readerMoved(reveal.readers)) ++revealGeneration;
+  }
   const behavior = new Compartment();
   const configuration = () => [EditorState.readOnly.of(disabled || readOnly), EditorView.editable.of(!disabled && !readOnly),
     EditorView.contentAttributes.of({ "aria-label": String(options.label), "aria-disabled": String(disabled), tabindex: disabled ? "-1" : "0", lang: language, spellcheck: "true" }),
@@ -106,12 +112,13 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
   const view = new EditorView({ parent: element,
     state: inlineNoteState(options.value ?? "", [noteDecorations, EditorView.lineWrapping, behavior.of(configuration()),
       EditorView.focusChangeEffect.of((_state, focused) => noteFocus.of(focused)),
-      EditorView.scrollHandler.of((view, range, options) => {
+      EditorView.scrollHandler.of((_view, range, options) => {
         const reveal = pendingReveal; pendingReveal = null;
+        element.ownerDocument.removeEventListener("scroll", revealScroll, true);
         // A source reveal may outlive its selection until CodeMirror's next measure pass.
-        // Read the actual offset too: native scroll events can arrive after that pass.
+        // Include outer readers: finished Notes expands inside the scrolling document.
         return !!reveal && options.y === "center" && range.eq(reveal.range)
-          && (reveal.generation !== revealGeneration || Math.abs(view.scrollDOM.scrollTop - reveal.top) > 1 || Math.abs(view.scrollDOM.scrollLeft - reveal.left) > 1);
+          && (reveal.generation !== revealGeneration || readerMoved(reveal.readers));
       }),
       Prec.highest(EditorView.domEventHandlers({
         keydown: event => options.deferKey?.(event) === true,
@@ -132,7 +139,6 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
       if (changes.length) element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: changes.some(transaction => transaction.isUserEvent("undo")) ? "historyUndo" : changes.some(transaction => transaction.isUserEvent("redo")) ? "historyRedo" : "insertText", isComposing: composing || target.composing }));
     },
   });
-  view.scrollDOM.addEventListener("scroll", () => { ++revealGeneration; }, true);
   function reconfigure() { if (!destroyed) view.dispatch({ effects: behavior.reconfigure(configuration()), annotations: quietNoteChange.of(true) }); }
   function setRange(start: number, end: number, next: Direction = "none") {
     view.dispatch({ selection: noteSelection(start, end, next, view.state.doc.length), annotations: Transaction.addToHistory.of(false) });
@@ -145,7 +151,10 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
     view.dispatch(change); direction = previous;
   }
   function revealSelection() {
-    pendingReveal = { generation: ++revealGeneration, range: view.state.selection.main, top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft };
+    const readers: ReaderPosition[] = [];
+    for (let node: HTMLElement | null = view.scrollDOM; node; node = node.parentElement) readers.push({ node, top: node.scrollTop, left: node.scrollLeft });
+    pendingReveal = { generation: ++revealGeneration, range: view.state.selection.main, readers };
+    element.ownerDocument.addEventListener("scroll", revealScroll, true);
     view.dispatch({ effects: EditorView.scrollIntoView(pendingReveal.range, { y: "center" }), annotations: Transaction.addToHistory.of(false) });
   }
   Object.defineProperties(element, {
@@ -172,7 +181,7 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
     applyFormat: { value: (format: NoteFormat) => { if (composing || view.composing) return false; const change = formatNote(view.state, format); if (!change) return false; view.dispatch(change); return true; } },
     undo: { value: () => undo(view) }, redo: { value: () => redo(view) },
     setDocumentMode: { value: (value: boolean) => { if (element.dataset.documentMode !== String(value)) { element.dataset.documentMode = String(value); view.requestMeasure(); } } },
-    destroy: { value: () => { destroyed = true; unbind(); view.destroy(); } },
+    destroy: { value: () => { destroyed = true; element.ownerDocument.removeEventListener("scroll", revealScroll, true); unbind(); view.destroy(); } },
   });
   const unbind = bindLocalization(element, reconfigure);
   return element;

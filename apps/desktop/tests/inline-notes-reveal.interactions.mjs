@@ -80,3 +80,26 @@ export async function checkImmediateSourceReturn() {
   assert(editor.contentDOM === content && editor.value === text && editor.selectionStart === bookmark && editor.selectionEnd === bookmark + 12 && editor.selectionDirection === 'backward' && !root.querySelector('.live-questions-pane').hidden, 'Returning before source measurement changed the retained editor or answer context.');
   return { actualCitation: true, immediateAnswerReturn: true, readingBookmarkWins: true, retainedSourceSelection: true };
 }
+export async function checkFinishedScrollOwner() {
+  await until(() => document.querySelector('.meeting-finished-document .live-notes .cm-content'), 'The actual finished Notes editor did not open.');
+  const root = document.querySelector('.meeting-finished-document'), editor = root.querySelector('.live-notes'), doc = root.querySelector('.meeting-document');
+  const text = Array.from({ length: 180 }, (_, i) => `Finished source line ${i}: retained exact note evidence.`).join('\n'), deep = text.indexOf('Finished source line 150:');
+  editor.applyUserChange(text); await import('/src/views/meetings.ts').then(module => module.flushMeetingDrafts());
+  editor.focus({ preventScroll: true }); editor.setSelectionRange(deep, deep + 12, 'backward'); await settle();
+  doc.scrollTop = 900; await settle();
+  assert(doc.scrollTop > 400 && editor.scrollTop === 0 && getComputedStyle(editor.scrollDOM).overflowY === 'visible', 'The regression must use the actual outer finished-document reader.');
+  const content = editor.contentDOM, nextScroll = doc.scrollTop + 240;
+  content.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+  await holdMeasurement(async () => {
+    editor.revealSelection();
+    doc.scrollTop = nextScroll;
+    assert(editor.selectionStart === deep && editor.selectionEnd === deep + 12 && editor.selectionDirection === 'backward', 'The outer-scroll regression changed the canonical selection instead of superseding only the reader position.');
+  });
+  assert(Math.abs(doc.scrollTop - nextScroll) < 2, `Older finished reveal replaced the newer outer reader position: ${nextScroll}→${doc.scrollTop}.`);
+  assert(root.querySelector('.live-notes') === editor && editor.contentDOM === content && document.activeElement === content && editor.composing && editor.value === text && editor.selectionStart === deep && editor.selectionEnd === deep + 12 && editor.selectionDirection === 'backward', 'Outer reveal supersession lost the retained editor, source, focus or composition.');
+  content.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); await settle();
+  editor.revealSelection(); await settle();
+  const line = [...editor.querySelectorAll('.cm-line')].find(node => node.textContent.startsWith('Finished source line 150:')), bounds = line?.getBoundingClientRect(), viewport = doc.getBoundingClientRect();
+  assert(doc.scrollTop > nextScroll + 1000 && bounds && bounds.bottom > viewport.top && bounds.top < viewport.bottom, 'A current finished-document source reveal no longer reaches its real outer reader.');
+  return { actualFinishedOwner: true, newerOuterScrollWins: true, unchangedSourceSelection: true, retainedFocusAndComposition: true, currentFinishedReveal: true };
+}
