@@ -159,7 +159,7 @@ if (options.serve) {
         await send("Log.enable");
         await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Brussels" });
         await send("Emulation.setLocaleOverride", { locale: locale === "nl" ? "nl-BE" : "en-GB" });
-        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }] });
+        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }, ...(item.reduced_motion ? [{ name: "prefers-reduced-motion", value: "reduce" }] : [])] });
         connection.events.length = 0;
         const [width, height] = item.size ?? (item.window === "pill" ? [pillMetrics["window-width"], pillMetrics["window-height"]] : windowSizes[item.window]);
         await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: item.scale ?? 1, mobile: false });
@@ -217,6 +217,8 @@ if (options.serve) {
         metadata.result.value.people_acceptance = peopleAcceptance.result.value;
         const conversationAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_CONVERSATION_ACCEPTANCE__ || null", returnByValue: true });
         metadata.result.value.conversation_acceptance = conversationAcceptance.result.value;
+        const pillAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_PILL_ACCEPTANCE__ || null", returnByValue: true });
+        metadata.result.value.pill_acceptance = pillAcceptance.result.value;
         const image = await send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
         const file = `${locale}/${appearance}/${item.name}.png`;
         await writeFile(join(options.output, file), Buffer.from(image.data, "base64"));

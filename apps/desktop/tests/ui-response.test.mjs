@@ -56,6 +56,21 @@ test("lightweight recording metadata localizes errors while preserving identity 
   assert.equal(Object.hasOwn(value, "transcript"), false);
 });
 
+test("structured pill problems localize recovery copy without changing delivery or preview data", () => {
+  setInterfaceLanguage("en");
+  const preview = { session_id: "pill-session", revision: 7, text: "Kies een spraakmodel." };
+  const problem = { state: "problem", title: "Kies een spraakmodel.", detail: "Er is geen bewaarde audio om opnieuw te transcriberen.", preview };
+  const value = localizeUiResponse("dictation_state", problem);
+  assert.equal(value.state, "problem");
+  assert.equal(value.title, "Choose a speech model.");
+  assert.equal(value.detail, "There is no saved audio to transcribe again.");
+  assert.deepEqual(value.preview, preview);
+  assert.equal(problem.title, "Kies een spraakmodel.");
+  for (const literal of [{ state: "inserted", app: "Kies een spraakmodel." }, { state: "copied", paste_key: "Ctrl+V" }, { state: "working", preview }]) {
+    assert.deepEqual(localizeUiResponse("dictation_state", literal), literal);
+  }
+});
+
 test("local model metadata localizes owned labels while preserving vendor names and IDs", () => {
   setInterfaceLanguage("nl");
   const models = [

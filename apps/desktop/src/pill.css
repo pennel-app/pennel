@@ -49,39 +49,47 @@ body {
 
 #pill.entering { animation: pill-enter 220ms var(--pill-easing); }
 #pill.leaving { animation: pill-leave 140ms var(--pill-easing) forwards; }
-#status.switching { animation: pill-switch 120ms var(--pill-easing); }
+#status.switching { animation: pill-switch-in 120ms var(--pill-easing); }
 
-#status {
+#status-layers { display: grid; }
+
+.pill-status {
+  grid-area: 1 / 1;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-#pill[data-state="problem"] #status {
+.pill-status-outgoing {
+  pointer-events: none;
+  animation: pill-switch-out 120ms var(--pill-easing) forwards;
+}
+
+.pill-status[data-state="problem"] {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   column-gap: 10px;
   row-gap: 1px;
 }
 
-#pill[data-state="problem"] #indicator { grid-row: 1 / span 2; }
+.pill-status[data-state="problem"] .pill-indicator { grid-row: 1 / span 2; }
 
-#label {
+.pill-label {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-#detail {
+.pill-detail {
   min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 400;
   color: var(--pill-quiet-text);
 }
 
-#detail[hidden],
-#hint[hidden] { display: none; }
+.pill-detail[hidden],
+.pill-hint[hidden] { display: none; }
 
-#hint {
+.pill-hint {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -91,7 +99,7 @@ body {
   white-space: nowrap;
 }
 
-#hint kbd {
+.pill-hint kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -121,7 +129,7 @@ body {
   overflow-wrap: anywhere;
 }
 
-#indicator {
+.pill-indicator {
   display: inline-flex;
   align-items: center;
   gap: 2.5px;
@@ -129,7 +137,7 @@ body {
   flex-shrink: 0;
 }
 
-#indicator i {
+.pill-indicator i {
   display: block;
   width: 2.5px;
   height: 16px;
@@ -138,7 +146,7 @@ body {
   transition: transform 0.12s ease-out;
 }
 
-#indicator.working {
+.pill-indicator.working {
   width: 12px;
   height: 12px;
   border: 2px solid color-mix(in srgb, var(--pill-accent) 35%, transparent);
@@ -148,15 +156,15 @@ body {
   box-sizing: border-box;
 }
 
-#indicator.no_sound i { opacity: 0.55; }
+.pill-indicator.no_sound i { opacity: 0.55; }
 
-#indicator svg {
+.pill-indicator svg {
   width: 15px;
   height: 15px;
   color: var(--pill-accent);
 }
 
-#indicator.problem svg {
+.pill-indicator.problem svg {
   width: 16px;
   height: 16px;
 }
@@ -175,13 +183,21 @@ body {
   to { opacity: 0; transform: translateY(4px) scale(.98); }
 }
 
-@keyframes pill-switch {
+@keyframes pill-switch-in {
   from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pill-switch-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #indicator.working { animation: none; }
-  #indicator i { transition: none; }
+  #pill.entering,
+  #pill.leaving { animation-duration: 120ms; }
+  .pill-indicator.working { animation: none; }
+  .pill-indicator i { transition: none; }
   @keyframes pill-enter { from { opacity: 0; } }
   @keyframes pill-leave { to { opacity: 0; } }
 }

@@ -1,0 +1,198 @@
+const assert = (value, message) => { if (!value) throw new Error(message); };
+const pause = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function ready() {
+  assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic pill fixture.");
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (!document.getElementById("pill")?.hidden && document.getElementById("label")?.textContent) break;
+    await pause(20);
+  }
+  const pill = document.getElementById("pill");
+  const status = document.getElementById("status");
+  assert(pill && status && !pill.hidden, "The production pill did not become visible.");
+  return { pill, status, fixture: window.__PENNEL_FIXTURE__ };
+}
+
+async function finishAnimations(pill) {
+  for (const animation of pill.getAnimations({ subtree: true })) {
+    if (animation.effect.getComputedTiming().iterations !== Infinity) animation.finish();
+  }
+  await pause(20);
+}
+
+function observeText(status) {
+  const records = [];
+  const observer = new MutationObserver(changes => records.push(...changes));
+  observer.observe(status, { childList: true, characterData: true, subtree: true });
+  return { records, observer };
+}
+
+export async function checkPillStatusAnnouncements() {
+  const { pill, status, fixture } = await ready();
+  fixture.emit("pill-state", { state: "listening" });
+  await finishAnimations(pill);
+  const { records, observer } = observeText(status);
+  try {
+    const firstLabel = document.getElementById("label").firstChild;
+    fixture.emit("pill-state", { state: "listening" });
+    await pause();
+    assert(records.length === 0 && document.getElementById("label").firstChild === firstLabel,
+      "Duplicate pill-state events rewrote the live status region.");
+    for (const level of [0, .04, .2, .7, 1, 0]) fixture.emit("pill-level", level);
+    await pause();
+    assert(records.length === 0, "Audio level ticks rewrote live status text.");
+
+    fixture.emit("pill-state", { state: "copied", paste_key: "⌘V" });
+    await finishAnimations(pill);
+    assert(status.textContent.includes("⌘V"), "The copy hint did not arrive in the live status region.");
+    records.length = 0;
+    fixture.emit("pill-state", { state: "copied", paste_key: "⌘V" });
+    await pause();
+    assert(records.length === 0, "A duplicate confirmation announced the same hint again.");
+    fixture.emit("pill-state", { state: "copied", paste_key: "Ctrl+V" });
+    await pause();
+    assert(records.length > 0 && status.textContent.includes("Ctrl+V") && !status.textContent.includes("⌘V"),
+      "A meaningful same-state hint change did not update the announcement.");
+    await finishAnimations(pill);
+
+    records.length = 0;
+    const { getInterfaceLanguage, setInterfaceLanguage } = await import("/src/i18n.ts");
+    const initialLanguage = getInterfaceLanguage();
+    const previousText = status.textContent;
+    setInterfaceLanguage(initialLanguage === "en" ? "nl" : "en");
+    await pause();
+    assert(records.length > 0 && status.textContent !== previousText, "A language change did not relabel the status.");
+    await finishAnimations(pill);
+    records.length = 0;
+    setInterfaceLanguage(initialLanguage === "en" ? "nl" : "en");
+    await pause();
+    assert(records.length === 0, "An unchanged language rewrote the live status.");
+    setInterfaceLanguage(initialLanguage);
+    await finishAnimations(pill);
+  } finally { observer.disconnect(); }
+  return { duplicateAnnouncementsSuppressed: true, levelsNeverAnnounced: true, sameStateHintRelabelled: true, localeRelabelled: true, syntheticOnly: true };
+}
+
+function fade(element, direction) {
+  const animation = element.getAnimations().find(animation => {
+    const frames = animation.effect.getKeyframes();
+    return frames.length >= 2 && Number(frames[0].opacity) === (direction === "in" ? 0 : 1)
+      && Number(frames.at(-1).opacity) === (direction === "in" ? 1 : 0);
+  });
+  assert(animation && animation.effect.getTiming().duration === 120, `The ${direction}going status does not have its real 120 ms fade.`);
+  return animation;
+}
+
+export async function checkPillCrossfade() {
+  const { pill, status, fixture } = await ready();
+  fixture.emit("pill-state", { state: "listening" });
+  await finishAnimations(pill);
+  const oldText = status.textContent;
+  fixture.emit("pill-state", { state: "working" });
+  const outgoing = document.querySelector(".pill-status-outgoing");
+  assert(outgoing?.textContent === oldText && outgoing !== status && outgoing.isConnected,
+    "Changing states discarded the outgoing content instead of retaining a visual layer.");
+  assert(outgoing.getAttribute("aria-hidden") === "true" && !outgoing.hasAttribute("role") && !outgoing.hasAttribute("aria-live")
+    && !outgoing.id && !outgoing.querySelector("[id], [role], [aria-live]"), "The outgoing visual layer duplicated live-region semantics or IDs.");
+  assert(document.querySelectorAll('[role="status"]').length === 1 && document.querySelectorAll("[aria-live]").length === 1
+    && document.getElementById("status") === status, "A state switch replaced or duplicated the one live status region.");
+  const entering = fade(status, "in");
+  const leaving = fade(outgoing, "out");
+  for (const animation of [entering, leaving]) { animation.pause(); animation.currentTime = 60; }
+  const opacities = [status, outgoing].map(element => Number(getComputedStyle(element).opacity));
+  assert(opacities.every(opacity => opacity > 0 && opacity < 1) && Math.abs(opacities[0] + opacities[1] - 1) < .02,
+    "Incoming and outgoing content did not overlap as complementary fades.");
+  fixture.emit("pill-state", { state: "working" });
+  assert(document.querySelector(".pill-status-outgoing") === outgoing && status.getAnimations().includes(entering),
+    "A duplicate state restarted an active crossfade.");
+  const intermediateText = status.textContent;
+  fixture.emit("pill-state", { state: "inserted", app: "Mail" });
+  const replacement = document.querySelector(".pill-status-outgoing");
+  assert(!outgoing.isConnected && leaving.playState === "idle" && entering.playState === "idle"
+    && replacement !== outgoing && replacement.textContent === intermediateText && document.querySelectorAll(".pill-status-outgoing").length === 1,
+    "An interrupted switch retained an obsolete outgoing layer or animation.");
+  fade(status, "in"); fade(replacement, "out");
+  await finishAnimations(pill);
+  assert(!document.querySelector(".pill-status-outgoing"), "The outgoing layer survived its completed fade.");
+
+  fixture.emit("pill-state", { state: "copied", paste_key: "⌘V" });
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "copied", paste_key: "Ctrl+V" });
+  assert(document.querySelector(".pill-status-outgoing")?.textContent.includes("⌘V") && status.textContent.includes("Ctrl+V"),
+    "A same-state hint update did not crossfade its previous content.");
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "problem", title: "No connection", detail: "Your words are kept in History" });
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "problem", title: "No connection", detail: "Original text pasted" });
+  assert(document.querySelector(".pill-status-outgoing") && !document.getElementById("detail").hidden,
+    "A meaningful same-state recovery detail did not crossfade.");
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "working" });
+  const bounds = pill.getBoundingClientRect();
+  assert([...document.querySelector(".pill-status-outgoing").children].filter(element => !element.hidden).every(element => {
+    const child = element.getBoundingClientRect();
+    return child.left >= bounds.left && child.top >= bounds.top && child.right <= bounds.right && child.bottom <= bounds.bottom;
+  }), "The outgoing recovery text escaped the pill when changing to a shorter state.");
+  fixture.emit("pill-state", { state: "hidden" });
+  assert(!document.querySelector(".pill-status-outgoing"), "Hiding did not cancel the outgoing status animation.");
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "listening" });
+  await finishAnimations(pill);
+  return { trueCrossfade: true, durationMs: 120, oneLiveRegion: true, outgoingAriaHidden: true, interruptedAnimationsCancelled: true, sameStateContentCrossfades: true, boundedOutgoingContent: true, syntheticOnly: true };
+}
+
+export async function checkPillPreviewLifecycle() {
+  const { pill, fixture } = await ready();
+  const preview = document.getElementById("preview");
+  const text = document.getElementById("preview-text");
+  fixture.emit("pill-preview", null);
+  fixture.emit("pill-preview", { session_id: "pill-first", revision: 0, text: "" });
+  fixture.emit("pill-preview", { session_id: "pill-first", revision: 1, text: "Latest synthetic words" });
+  fixture.emit("pill-state", { state: "working" });
+  assert(!preview.hidden && text.textContent === "Latest synthetic words", "Working discarded the current preview.");
+  fixture.emit("pill-preview", { session_id: "pill-first", revision: 1, text: "Older synthetic words" });
+  assert(text.textContent === "Latest synthetic words", "A stale revision replaced the preview.");
+  fixture.emit("pill-preview", { session_id: "pill-next", revision: 0, text: "" });
+  fixture.emit("pill-preview", { session_id: "pill-first", revision: 99, text: "Late old session" });
+  assert(preview.hidden && text.textContent === "", "A new session retained old words or admitted a superseded session.");
+  fixture.emit("pill-preview", { session_id: "pill-next", revision: 1, text: "<b>Literal synthetic words</b>" });
+  assert(text.textContent === "<b>Literal synthetic words</b>" && !text.querySelector("*"), "Preview markup was interpreted.");
+  fixture.emit("pill-state", { state: "hidden" });
+  fixture.emit("pill-preview", { session_id: "pill-next", revision: 2, text: "Late hidden words" });
+  fixture.emit("pill-state", { state: "listening" });
+  assert(preview.hidden && text.textContent === "", "Late text reappeared after hiding and a new capture.");
+  await finishAnimations(pill);
+  return { workingRetainsPreview: true, staleRevisionAndSessionRejected: true, hideClearsOwnership: true, previewIsPlainText: true, syntheticOnly: true };
+}
+
+export async function checkPillMotion({ reduced = false } = {}) {
+  const { pill, fixture } = await ready();
+  assert(matchMedia("(prefers-reduced-motion: reduce)").matches === reduced, "Set the real reduced-motion media feature for this case.");
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "hidden" });
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "listening" });
+  const arrival = pill.getAnimations().find(animation => animation.effect.target === pill);
+  assert(arrival, "Arrival has no short fade.");
+  const frames = arrival.effect.getKeyframes();
+  const movement = frames.some(frame => frame.transform && frame.transform !== "none");
+  const start = new DOMMatrixReadOnly(frames[0].transform || "none");
+  assert(Number(frames[0].opacity) === 0 && Number(frames.at(-1).opacity) === 1, "Arrival lost its opacity fade.");
+  assert(reduced ? !movement && arrival.effect.getTiming().duration <= 140 : start.m42 === 8 && arrival.effect.getTiming().duration === 220,
+    "Arrival does not preserve 220 ms / 8 px, or reduced motion kept movement or a long fade.");
+  await finishAnimations(pill);
+  fixture.emit("pill-state", { state: "working" });
+  const spinner = document.getElementById("indicator").getAnimations();
+  assert(reduced ? spinner.length === 0 : spinner.some(animation => animation.effect.getTiming().iterations === Infinity),
+    "The working indicator did not respect system reduced motion.");
+  fixture.emit("pill-state", { state: "hidden" });
+  const departure = pill.getAnimations().find(animation => animation.effect.target === pill);
+  assert(departure && departure.effect.getTiming().duration === (reduced ? 120 : 140), "Departure lost the expected short fade timing.");
+  assert(!reduced || departure.effect.getKeyframes().every(frame => !frame.transform || frame.transform === "none"),
+    "Reduced-motion departure retained movement.");
+  await finishAnimations(pill);
+  assert(pill.hidden, "The finished departure did not hide the pill.");
+  fixture.emit("pill-state", { state: "listening" });
+  await finishAnimations(pill);
+  return { reduced, arrivalDurationMs: reduced ? 120 : 220, arrivalOffsetPx: reduced ? 0 : 8, departureDurationMs: reduced ? 120 : 140, opacityRetained: true, syntheticOnly: true };
+}
