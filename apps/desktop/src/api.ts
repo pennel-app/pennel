@@ -609,6 +609,13 @@ export interface SpeakerTimelineLane {
   duration_ms: number;
   spans: SpeakerTimelineSpan[];
 }
+export interface MeetingTranscriptProvenance {
+  provider_kind: string;
+  model: string;
+  requested_language: string | null;
+  generated_at: string;
+}
+
 export interface MeetingSpeakerTimeline {
   duration_ms: number;
   duration_is_recorded: boolean;
@@ -1030,6 +1037,7 @@ export const api = {
   deleteTemplate: (id: string) => invoke<void>("delete_template", { id }),
   summarizeMeeting: (id: string, templateId: string) =>
     invoke<string>("summarize_meeting", { id, templateId }),
+  meetingTranscriptProvenance: (id: string) => invoke<MeetingTranscriptProvenance | null>("meeting_transcript_provenance", { id }),
   meetingSpeakerTimeline: (id: string) => invoke<MeetingSpeakerTimeline>("meeting_speaker_timeline", { id }),
   meetingSummary: (id: string) => invoke<MeetingSummaryDocument>("meeting_summary", { id }),
   saveMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>

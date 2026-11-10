@@ -1224,6 +1224,7 @@ fn main() {
             commands::summarize_meeting,
             summaries::meeting_summary,
             summaries::meeting_speaker_timeline,
+            summaries::meeting_transcript_provenance,
             summaries::save_meeting_summary,
             summaries::accept_meeting_summary,
             summaries::update_meeting_summary_action,

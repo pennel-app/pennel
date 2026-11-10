@@ -150,9 +150,9 @@ pub use meeting_qualification::{
 };
 pub use meeting_recording::{
     CaptureEventKind, CaptureFormatEpoch, MeetingAudioTrack, MeetingCaptureEvent,
-    MeetingRecordingMetadata, RecordingEnvironment, RecordingRecognition, RecordingSource,
-    RecordingTrackMetadata, RecordingTranscriptionAttempt, RecordingTransport,
-    resolve_meeting_audio_tracks,
+    MeetingRecordingMetadata, MeetingTranscriptProvenance, RecordingEnvironment,
+    RecordingRecognition, RecordingSource, RecordingTrackMetadata, RecordingTranscriptionAttempt,
+    RecordingTransport, resolve_meeting_audio_tracks,
 };
 pub use meeting_scheduler::{
     ForegroundQuestionAdmission, InferencePriority, MeetingAnalysisAdmission,
