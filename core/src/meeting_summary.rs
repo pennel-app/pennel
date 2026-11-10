@@ -548,6 +548,33 @@ impl PennelEngine {
         store.read_owner_summary(&id)
     }
 
+    pub fn meeting_speaker_timeline(
+        &self,
+        id: String,
+    ) -> Result<crate::MeetingSpeakerTimeline, PennelError> {
+        self.claim_library()?;
+        let store = self.meeting_store();
+        checked_directory(&store, &id)?;
+        store.ensure_uid(&id)?;
+        let before = store.summary_files(&id)?;
+        let snapshot = store.read_committed_transcript_snapshot(&id)?;
+        crate::meeting_utterances::assert_writable(&snapshot)?;
+        let names = store.speaker_names(&id);
+        let duration = store
+            .recording_metadata(&id)?
+            .filter(|metadata| metadata.meeting_uid == snapshot.meeting_uid)
+            .and_then(|metadata| metadata.duration_ms);
+        let after = store.summary_files(&id)?;
+        if before.raw != after.raw || before.owner_revision != after.owner_revision {
+            return Err(changed());
+        }
+        Ok(crate::meeting_timeline::speaker_timeline(
+            &snapshot.utterances,
+            &names,
+            duration,
+        ))
+    }
+
     pub fn save_meeting_summary(
         &self,
         id: String,
@@ -914,13 +941,18 @@ impl PennelEngine {
         let (account, model) = settings
             .resolve(&settings.llm)
             .ok_or(PennelError::NotFound)?;
-        let spec = crate::templates::TemplateStore::new(&store.root()).spec(template_id);
+        let (resolved_template_id, spec) =
+            crate::templates::TemplateStore::new(&store.root()).resolved_spec(template_id);
         let sources = crate::summary_structure::SummarySources::new(
             &snapshot.utterances,
             &store.speaker_names(id),
         );
-        let structured =
-            spec.default_sections && account.kind != crate::ProviderKind::AppleIntelligence;
+        let structured = spec.default_sections
+            && account.kind != crate::ProviderKind::AppleIntelligence
+            && matches!(
+                snapshot.metadata_status,
+                crate::TranscriptMetadataStatus::Valid | crate::TranscriptMetadataStatus::Absent
+            );
         let (mut body, mut structure) = self.generate_summary_output(
             &spec,
             &before.notes,
@@ -955,7 +987,7 @@ impl PennelEngine {
                 provider_kind: account.kind,
                 model,
                 generated_at: chrono::Utc::now().to_rfc3339(),
-                template_id: template_id.into(),
+                template_id: resolved_template_id,
             },
             structure,
         };
@@ -1357,6 +1389,10 @@ mod tests {
             fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
             assert_eq!(store.read_owner_summary(&id).unwrap().record, None);
         }
+        record.schema_version = 99;
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert_eq!(store.read_owner_summary(&id).unwrap().record, None);
+        record.schema_version = 1;
         record.meeting_uid = uuid::Uuid::now_v7().to_string();
         fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
         assert_eq!(store.read_owner_summary(&id).unwrap().record, None);
@@ -1581,6 +1617,102 @@ mod tests {
                 .done
         );
         provider.assert();
+    }
+
+    #[test]
+    fn provenance_is_frozen_at_generation_instead_of_acceptance_or_read_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let original = engine.settings();
+        let (account, model) = original.resolve(&original.llm).unwrap();
+        let provider = server.mock("POST", "/chat/completions").with_body(response(r#"{"lead":"Generated now.","topics":[],"decisions":[],"actions":[],"open_questions":[]}"#)).expect(1).create();
+        let start = chrono::Utc::now();
+        let candidate = engine
+            .generate_meeting_summary(id.clone(), "missing-template".into(), keys())
+            .unwrap();
+        let generation_end = chrono::Utc::now();
+        let record = candidate.record.as_ref().unwrap();
+        let generated =
+            chrono::DateTime::parse_from_rfc3339(&record.provenance.generated_at).unwrap();
+        assert!(generated >= start);
+        assert!(generated <= generation_end);
+        assert_eq!(record.provenance.provider_id, account.id);
+        assert_eq!(record.provenance.provider_kind, account.kind);
+        assert_eq!(record.provenance.model, model);
+        assert_eq!(record.provenance.template_id, crate::templates::FALLBACK_ID);
+        let mut changed = original;
+        changed.llm.model = "different-later-model".into();
+        engine.update_settings(changed).unwrap();
+        let accepted = engine
+            .accept_meeting_summary_record(
+                id.clone(),
+                candidate.revision,
+                candidate.source_revision,
+                candidate.markdown,
+                candidate.record.clone(),
+            )
+            .unwrap();
+        assert_eq!(accepted.record, candidate.record);
+        assert_eq!(engine.meeting_summary(id).unwrap().record, candidate.record);
+        provider.assert();
+    }
+
+    #[test]
+    fn chunked_structure_resolves_only_references_retained_by_the_final_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let store = engine.meeting_store();
+        let rows: Vec<_> = (0..450)
+            .map(|i| crate::Segment {
+                start_ms: i * 1000,
+                end_ms: i * 1000 + 500,
+                speaker: crate::Speaker::Others,
+                text: format!("{i} {}", "x".repeat(100)),
+                failed: false,
+                voice: Some(1),
+            })
+            .collect();
+        store.write_transcript(&id, &rows).unwrap();
+        let chunks = server
+            .mock("POST", "/chat/completions")
+            .match_body(mockito::Matcher::Regex("Summarize this part".into()))
+            .with_body_from_request(|request| {
+                let body: serde_json::Value =
+                    serde_json::from_slice(request.body().unwrap()).unwrap();
+                let input = body["messages"][1]["content"].as_str().unwrap();
+                let part = input.split_once("[u").unwrap().1;
+                let digits: String = part.chars().take_while(char::is_ascii_digit).collect();
+                response(&format!(
+                    "- [u{digits}] Facts{}",
+                    if digits == "1" {
+                        "\n- [u450] Not in this block"
+                    } else {
+                        ""
+                    }
+                ))
+            })
+            .expect(2)
+            .create();
+        let final_call = server.mock("POST", "/chat/completions")
+            .match_body(mockito::Matcher::Regex("Return one JSON object".into()))
+            .with_body(response(r#"{"lead":"Summary","topics":[],"decisions":[{"text":"Supported","reference":"u1"},{"text":"Retained without a fabricated source","reference":"u450"}],"actions":[],"open_questions":[]}"#)).expect(1).create();
+        let candidate = engine
+            .generate_meeting_summary(id.clone(), "algemeen".into(), keys())
+            .unwrap();
+        let structure = candidate.record.unwrap().structure.unwrap();
+        assert_eq!(
+            structure.decisions[0].source.as_ref().unwrap().utterance_id,
+            store.read_transcript_snapshot(&id).unwrap().utterances[0]
+                .metadata
+                .utterance_id
+        );
+        assert_eq!(structure.decisions[1].source, None);
+        chunks.assert();
+        final_call.assert();
     }
 
     #[test]

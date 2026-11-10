@@ -44,6 +44,7 @@ mod meeting_qualification;
 mod meeting_recording;
 mod meeting_scheduler;
 mod meeting_summary;
+mod meeting_timeline;
 mod meeting_utterances;
 mod meetings;
 mod models;
@@ -162,6 +163,9 @@ pub use meeting_scheduler::{
 pub use meeting_summary::{
     MeetingOutputScope, MeetingSummaryCandidate, MeetingSummaryDocument, MeetingSummaryRevision,
     ShareableMeetingSummary,
+};
+pub use meeting_timeline::{
+    MeetingSpeakerTimeline, SpeakerTimelineKind, SpeakerTimelineLane, SpeakerTimelineSpan,
 };
 pub use meeting_utterances::{
     AcousticTurn, AttributionKind, AutomaticAttribution, ManualCorrection,
