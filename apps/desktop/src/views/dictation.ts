@@ -101,6 +101,10 @@ export function dictationView(ctx: Context): HTMLElement {
     group("permissions", l("dictation.access.title"), permissions, permissionError, h("button", { class: "text-button dictation-permission-repair", onclick: () => api.showWindow("onboarding", "dictation-permissions") }, l("dictation.access.check_ellipsis"))));
   const refresh = () => {
     const settings = ctx.info.settings, verification = ctx.info.cleanup_verification;
+    mode.setAttribute("aria-label", t("dictation.settings.result"));
+    shortcut.setAttribute("aria-label", t("dictation.shortcut.title"));
+    language.setAttribute("aria-label", t("dictation.language.title"));
+    retention.setAttribute("aria-label", t("dictation.history.retention"));
     mode.value = settings.mode; shortcut.value = settings.hotkey; language.value = settings.language ?? ""; retention.value = String(settings.history_retention_days);
     key.textContent = hotkeyLabel(settings.hotkey, ctx.info.platform);
     live.querySelector<HTMLInputElement>("input")!.checked = settings.live_text_enabled !== false;
