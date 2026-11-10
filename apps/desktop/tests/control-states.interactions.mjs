@@ -43,7 +43,7 @@ export function checkPrimaryPressed() {
 }
 
 const movement = /^(all|transform|translate|scale|rotate|width|height|top|left|right|bottom|inset|margin.*|padding.*|max-height|min-height|flex.*)$/;
-const fade = /^(opacity|color|background-color|background|border-color|box-shadow)$/;
+const fade = /^(opacity|color|background-color|background|border-color|outline-color|box-shadow|text-decoration-color|fill|stroke)$/;
 function transitions(pseudo) {
   const result = [];
   for (const element of document.querySelectorAll("*")) {
@@ -51,14 +51,19 @@ function transitions(pseudo) {
     const durations = style.transitionDuration.split(",").map(parseFloat);
     const properties = style.transitionProperty.split(",").map(item => item.trim());
     properties.forEach((property, index) => { if (durations[index % durations.length] > 0) result.push({ property, selector: element.className || element.tagName, pseudo }); });
-    if (style.animationName !== "none" && parseFloat(style.animationDuration) > 0) result.push({ property: `animation ${style.animationName}`, selector: element.className || element.tagName, pseudo });
+    const animationDurations = style.animationDuration.split(",").map(parseFloat);
+    style.animationName.split(",").map(name => name.trim()).forEach((name, index) => {
+      if (name !== "none" && animationDurations[index % animationDurations.length] > 0) result.push({ property: `animation ${name}`, selector: element.className || element.tagName, pseudo });
+    });
   }
   return result;
 }
 
-/** With the system setting emulated, `emulated` is true; otherwise the app's own switch is set here. */
+/** With the system setting emulated, `emulated` is true; otherwise the native-environment dataset route is applied here. */
 export function checkReducedMotion(emulated) {
   const root = document.documentElement;
+  const original = root.getAttribute("data-reduce-motion");
+  if (emulated) assert(matchMedia("(prefers-reduced-motion: reduce)").matches, "The system reduced-motion setting was not emulated.");
   if (!emulated) {
     const before = [...transitions(), ...transitions("::after")];
     assert(before.some(item => /transform/.test(item.property)), "The check is vacuous: no transform transition exists before reduced motion.");
@@ -66,22 +71,56 @@ export function checkReducedMotion(emulated) {
   }
   try {
     const active = [...transitions(), ...transitions("::before"), ...transitions("::after")];
-    const moving = active.filter(item => movement.test(item.property));
+    const moving = active.filter(item => !fade.test(item.property));
     assert(!moving.length, `Reduced motion leaves movement: ${JSON.stringify(moving.slice(0, 5))}`);
     assert(active.some(item => fade.test(item.property)), "Reduced motion removed the fade feedback too.");
-  } finally { if (!emulated) delete root.dataset.reduceMotion; }
+    checkSwitchFade(emulated);
+  } finally { if (!emulated) { if (original === null) root.removeAttribute("data-reduce-motion"); else root.setAttribute("data-reduce-motion", original); } }
+}
+
+function checkSwitchFade(emulated) {
+  const checkbox = document.querySelector('.settings-pane input[type="checkbox"]:not(:disabled)');
+  assert(checkbox, "The real settings switch is missing from the motion fixture.");
+  const original = checkbox.checked;
+  const finish = () => checkbox.getAnimations({ subtree: true }).forEach(animation => animation.finish());
+  try {
+    checkbox.checked = false;
+    getComputedStyle(checkbox).backgroundColor;
+    finish();
+    const before = getComputedStyle(checkbox).backgroundColor;
+    const beforeThumb = getComputedStyle(checkbox, "::after").transform;
+    checkbox.checked = true;
+    getComputedStyle(checkbox).backgroundColor;
+    const animations = checkbox.getAnimations({ subtree: true });
+    const colour = animations.find(animation => animation.transitionProperty === "background-color");
+    const duration = colour?.effect.getComputedTiming().duration;
+    assert(colour && duration > 0 && duration <= 200, "The real settings switch has no short colour fade.");
+    assert(!animations.some(animation => movement.test(animation.transitionProperty || "")), "The real settings switch still animates movement.");
+    const thumb = getComputedStyle(checkbox, "::after").transform;
+    assert(thumb !== beforeThumb, "The real settings switch did not change position.");
+    colour.pause();
+    colour.currentTime = duration / 2;
+    const during = getComputedStyle(checkbox).backgroundColor;
+    colour.finish();
+    const after = getComputedStyle(checkbox).backgroundColor;
+    assert(during !== before && during !== after, "The real settings switch has no intermediate colour during its short colour fade.");
+    assert(getComputedStyle(checkbox, "::after").transform === thumb, "The real settings switch thumb moved during the colour fade.");
+    acceptance("reduced_motion", { route: emulated ? "system" : "app", control: "real settings checkbox", injected: false, duration_ms: duration, before, during, after, thumb_moved_immediately: true, movement_animations: 0 });
+  } finally { checkbox.checked = original; getComputedStyle(checkbox).backgroundColor; finish(); }
 }
 
 const danger = "#control-danger-probe";
 const toggle = "#control-toggle-probe";
 const addProbe = element => { document.querySelector(".settings-pane").prepend(element); return element; };
-/** The saved switches are mostly on or disabled in the fixtures, and the destructive buttons sit in closed disclosures, so the checks add an off switch and a danger button in view. */
+/** These visibly labelled synthetic probes supplement the real controls covered below. */
 export function markToggle() {
-  addProbe(Object.assign(document.createElement("input"), { id: "control-toggle-probe", type: "checkbox" }));
+  const label = Object.assign(document.createElement("label"), { className: "row", textContent: "Synthetic off-switch probe " });
+  label.append(Object.assign(document.createElement("input"), { id: "control-toggle-probe", type: "checkbox" }));
+  addProbe(label);
   window.__controlResting = { toggle: background(toggle) };
 }
 export function rememberFields() {
-  addProbe(Object.assign(document.createElement("button"), { id: "control-danger-probe", className: "btn danger", textContent: "Remove" }));
+  addProbe(Object.assign(document.createElement("button"), { id: "control-danger-probe", className: "btn danger", textContent: "Synthetic danger probe" }));
   window.__controlResting = { danger: background(danger) };
 }
 export function checkDangerHover() {
@@ -91,4 +130,126 @@ export function checkDangerHover() {
 }
 export function checkToggleHover() {
   assert(background(toggle) !== window.__controlResting.toggle, "An off switch does not change on hover.");
+}
+
+const appearanceOf = element => {
+  const style = getComputedStyle(element);
+  return { background: style.backgroundColor, color: style.color, opacity: style.opacity, decoration: style.textDecorationLine };
+};
+const selectionOf = element => Object.fromEntries(["aria-checked", "aria-pressed", "aria-selected", "aria-current"].map(name => [name, element.getAttribute(name)]));
+const acceptance = (name, value) => { (window.__PENNEL_CONTROL_ACCEPTANCE__ ??= {})[name] = value; };
+function checkProviderTextContrast(state, interaction) {
+  const secondary = state.element.querySelector(".provider-kind");
+  if (!secondary) return;
+  const luminance = colour => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d");
+    context.fillStyle = colour;
+    context.fillRect(0, 0, 1, 1);
+    const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map(value => {
+      const channel = value / 255;
+      return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+    });
+    return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+  };
+  const text = luminance(getComputedStyle(secondary).color);
+  const fill = luminance(getComputedStyle(state.element).backgroundColor);
+  const ratio = (Math.max(text, fill) + .05) / (Math.min(text, fill) + .05);
+  assert(ratio >= 4.5, `Provider secondary text contrast is ${ratio.toFixed(2)}:1 while ${interaction}; expected at least 4.5:1.`);
+  acceptance("provider_text_contrast", { ...window.__PENNEL_CONTROL_ACCEPTANCE__?.provider_text_contrast, [interaction]: ratio });
+}
+function control() {
+  const state = window.__controlTarget;
+  assert(state?.element.isConnected, "The control under test was replaced.");
+  assert(JSON.stringify(selectionOf(state.element)) === JSON.stringify(state.selection), `${state.selector} lost its selected state.`);
+  return state;
+}
+
+/** Targets real app controls. Only the disabled check temporarily changes their disabled property. */
+export function rememberControl(selector) {
+  const element = document.querySelector(selector);
+  assert(element, `No control for ${selector}.`);
+  element.dataset.controlTarget = "true";
+  element.scrollIntoView({ block: "center", inline: "nearest" });
+  window.__controlTarget = { element, selector, resting: appearanceOf(element), selection: selectionOf(element) };
+}
+
+export function checkControlHover() {
+  const state = control();
+  assert(state.element.matches(":hover"), `${state.selector} did not receive real pointer hover.`);
+  state.hover = appearanceOf(state.element);
+  checkProviderTextContrast(state, "hovered");
+  assert(JSON.stringify(state.hover) !== JSON.stringify(state.resting), `${state.selector} does not change on hover.`);
+  acceptance("control", { selector: state.selector, resting: state.resting, hover: state.hover, selection: state.selection });
+}
+
+export function checkControlPressed() {
+  const state = control();
+  assert(state.element.matches(":active"), `${state.selector} did not receive real pointer press.`);
+  const pressed = appearanceOf(state.element);
+  checkProviderTextContrast(state, "pressed");
+  assert(JSON.stringify(pressed) !== JSON.stringify(state.hover), `${state.selector} looks the same pressed as hovered.`);
+  acceptance("control", { ...window.__PENNEL_CONTROL_ACCEPTANCE__.control, pressed });
+}
+
+export function checkControlFocus(selector) {
+  const element = document.querySelector(selector);
+  assert(element, `No control for ${selector}.`);
+  element.focus();
+  const ring = ringOf(element);
+  assert(ring.visible && ring.color === colorOf("var(--focus-ring)"), `${selector} lost its keyboard focus ring.`);
+}
+
+export async function disableControl() {
+  const state = control();
+  assert(state.element instanceof HTMLButtonElement, "The disabled check needs a real button.");
+  state.element.disabled = true;
+  await new Promise(resolve => setTimeout(resolve, 180));
+  state.disabled = appearanceOf(state.element);
+  acceptance("disabled_probe", "Existing app button temporarily disabled by the fixture; no injected product control.");
+}
+
+export function checkDisabledControl() {
+  const state = control();
+  assert(state.element.disabled, "The disabled button became enabled.");
+  assert(JSON.stringify(appearanceOf(state.element)) === JSON.stringify(state.disabled), `${state.selector} changes on pointer input while disabled.`);
+  acceptance("disabled", state.disabled);
+}
+
+/** Deliberately bypasses the reduced-motion CSS to prove the checker rejects a surviving animation. */
+export function checkReducedMotionRejectsAnimation(emulated) {
+  const style = document.createElement("style");
+  style.textContent = "@keyframes control-negative-movement { from { transform: translateX(0); } to { transform: translateX(12px); } }";
+  const probe = document.createElement("span");
+  probe.textContent = "Synthetic movement negative control";
+  document.head.append(style);
+  document.body.append(probe);
+  const rejected = [];
+  try {
+    for (const animation of ["control-negative-movement 2s linear infinite", "none 0s, control-negative-movement 2s linear infinite"]) {
+      probe.style.setProperty("animation", animation, "important");
+      let failed = false;
+      try { checkReducedMotion(emulated); }
+      catch (error) { if (/Reduced motion leaves movement:.*animation/.test(String(error))) failed = true; else throw error; }
+      assert(failed, `${emulated ? "System" : "App"} reduced-motion check accepted a surviving movement animation.`);
+      rejected.push(animation);
+    }
+  }
+  finally { probe.remove(); style.remove(); }
+  acceptance("animation_negative_control", { injected: true, rejected, route: emulated ? "system" : "app" });
+}
+
+/** Disables only the real switch's transition: declarations elsewhere must not satisfy the fade check. */
+export function checkReducedMotionRejectsMissingFade(emulated) {
+  const checkbox = document.querySelector('.settings-pane input[type="checkbox"]:not(:disabled)');
+  assert(checkbox, "The fade negative control needs a real enabled settings switch.");
+  const original = checkbox.getAttribute("style");
+  checkbox.style.setProperty("transition-duration", "0s", "important");
+  let rejected = false;
+  try { checkReducedMotion(emulated); }
+  catch (error) { if (/real settings switch.*short colour fade/.test(String(error))) rejected = true; else throw error; }
+  finally { if (original === null) checkbox.removeAttribute("style"); else checkbox.setAttribute("style", original); }
+  assert(rejected, `${emulated ? "System" : "App"} reduced-motion check accepted a missing real colour fade.`);
+  acceptance("fade_negative_control", { injected: true, rejected, route: emulated ? "system" : "app" });
 }

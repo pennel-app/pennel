@@ -225,6 +225,8 @@ if (options.serve) {
         metadata.result.value.people_acceptance = peopleAcceptance.result.value;
         const conversationAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_CONVERSATION_ACCEPTANCE__ || null", returnByValue: true });
         metadata.result.value.conversation_acceptance = conversationAcceptance.result.value;
+        const controlAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_CONTROL_ACCEPTANCE__ || null", returnByValue: true });
+        metadata.result.value.control_acceptance = controlAcceptance.result.value;
         const image = await send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
         const file = `${locale}/${appearance}/${item.name}.png`;
         await writeFile(join(options.output, file), Buffer.from(image.data, "base64"));
