@@ -305,6 +305,70 @@ final class MeetingSpeakerWindowTests: XCTestCase {
 
 
 final class MeetingSpeakerCallAssociationTests: XCTestCase {
+    func testEndOnlyTransitionHasOneFixedMonotonicDeadline() {
+        let budget = TeamsEndTransitionBudget(startedAt: 10)
+        let unknown = [TeamsCallWindowState(kind: .unreadable, focused: true, bound: true)]
+        for now in [10.0, 10.5, 11.0, 11.999] {
+            XCTAssertTrue(MeetingSpeakerObserver.canAwaitSupportedEnd(unknown, trustedBinding: true,
+                                                                    sameIdentity: true, budget: budget, at: now))
+            XCTAssertEqual(budget.deadline, 12, "repeated unknown reads must not extend the budget")
+        }
+        XCTAssertTrue(budget.isOpen(at: 11.999))
+        XCTAssertFalse(budget.isOpen(at: 12.001), "a terminal proof arriving after2s must be rejected")
+        XCTAssertFalse(MeetingSpeakerObserver.canAwaitSupportedEnd(unknown, trustedBinding: true,
+                                                                 sameIdentity: true, budget: budget, at: 12))
+        let ended = [TeamsCallWindowState(kind: .postcall, focused: true, bound: true)]
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(unknown, trustedBinding: true, sameIdentity: true, budget: budget, at: 10), .wait)
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(unknown, trustedBinding: true, sameIdentity: true, budget: budget, at: 11), .wait)
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(ended, trustedBinding: true, sameIdentity: true, budget: budget, at: 11.999), .cleanEnd)
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(ended, trustedBinding: true, sameIdentity: true, budget: budget, at: 12.001), .invalidate)
+    }
+
+    func testEndOnlyTransitionNeverBeginsForUnboundOrMismatchedAndNeverResumesLive() {
+        let budget = TeamsEndTransitionBudget(startedAt: 10)
+        let unknown = [TeamsCallWindowState(kind: .unreadable, focused: true, bound: true)]
+        XCTAssertFalse(MeetingSpeakerObserver.canAwaitSupportedEnd(unknown, trustedBinding: false, sameIdentity: true, budget: budget, at: 10))
+        XCTAssertFalse(MeetingSpeakerObserver.canAwaitSupportedEnd(unknown, trustedBinding: true, sameIdentity: false, budget: budget, at: 10))
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(unknown, trustedBinding: true, sameIdentity: false, budget: budget, at: 11), .invalidate,
+                       "an intervening episode/kernel/window change cannot keep the grace alive")
+        for candidate in [
+            TeamsCallWindowState(kind: .call, focused: true, bound: true),
+            TeamsCallWindowState(kind: .unreadable, focused: false, bound: true),
+            TeamsCallWindowState(kind: .unreadable, focused: true, minimized: true, bound: true),
+            TeamsCallWindowState(kind: .unreadable, focused: true, visible: false, bound: true),
+        ] {
+            XCTAssertFalse(MeetingSpeakerObserver.canAwaitSupportedEnd([candidate], trustedBinding: true,
+                                                                     sameIdentity: true, budget: budget, at: 10))
+        }
+        for competing in [TeamsCallWindowState(kind: .call), TeamsCallWindowState(kind: .unreadable)] {
+            XCTAssertFalse(MeetingSpeakerObserver.canAwaitSupportedEnd(unknown + [competing], trustedBinding: true,
+                                                                     sameIdentity: true, budget: budget, at: 10))
+        }
+    }
+
+    func testEndOnlyTransitionAllowsOnlyProvenDestructionWhenFocusMovesToKnownMain() {
+        let budget = TeamsEndTransitionBudget(startedAt: 10)
+        let unknown = [TeamsCallWindowState(kind: .unreadable, focused: true, bound: true)]
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(unknown, trustedBinding: true, sameIdentity: true, budget: budget, at: 10), .wait)
+        let main = [TeamsCallWindowState(kind: .other, focused: true)]
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(main, trustedBinding: true, sameIdentity: true, sameWindow: false,
+                                                                   boundWindowDestroyed: true, budget: budget, at: 11), .cleanEnd)
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(main, trustedBinding: true, sameIdentity: true, sameWindow: false,
+                                                                   boundWindowDestroyed: false, budget: budget, at: 11), .invalidate)
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(main + [TeamsCallWindowState(kind: .unreadable)], trustedBinding: true,
+                                                                   sameIdentity: true, sameWindow: false, boundWindowDestroyed: true, budget: budget, at: 11), .invalidate)
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(main + [TeamsCallWindowState(kind: .call)], trustedBinding: true,
+                                                                   sameIdentity: true, sameWindow: false, boundWindowDestroyed: true, budget: budget, at: 11), .invalidate)
+        XCTAssertEqual(MeetingSpeakerObserver.endTransitionDecision(main, trustedBinding: true, sameIdentity: true, sameWindow: false,
+                                                                   boundWindowDestroyed: true, budget: budget, at: 12.001), .invalidate)
+    }
+
+    func testEndTransitionStaticScanDoesNotUseParticipantTileLabelsAsAuthority() {
+        XCTAssertEqual(TeamsParticipantParser.endTransitionKind(window(tile("Ann, video is on", shown: "Ann"))), .unreadable)
+        XCTAssertEqual(TeamsParticipantParser.endTransitionKind(soloCallWindow()), .call)
+        XCTAssertEqual(TeamsParticipantParser.endTransitionKind(retainedPostcallWindow()), .postcall)
+    }
+
     func testOnlyAPreviouslyTrustedBoundPrejoinOrDestroyedWindowProvesCleanEnd() {
         let ended = TeamsCallWindowState(kind: .prejoin, focused: true, bound: true)
         XCTAssertTrue(MeetingSpeakerObserver.cleanCallEnded([ended], hadBinding: true, boundWindowDestroyed: false))

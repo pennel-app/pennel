@@ -63,6 +63,15 @@ struct TeamsCallWindowState {
     var bound = false
 }
 
+struct TeamsEndTransitionBudget {
+    let deadline: TimeInterval
+
+    init(startedAt: TimeInterval) { deadline = startedAt + 2 }
+    func isOpen(at uptime: TimeInterval) -> Bool { uptime.isFinite && deadline.isFinite && uptime < deadline }
+}
+
+enum TeamsEndTransitionDecision: Equatable { case wait, cleanEnd, invalidate }
+
 struct MeetingSpeakerSnapshot: Equatable {
     /// False when no participant tile was readable, e.g. the window is minimized or not a meeting.
     var available: Bool
@@ -206,6 +215,19 @@ enum TeamsParticipantParser {
     static func hasNativeCallControls<Node: ParticipantNode>(_ root: Node) -> Bool {
         let (nodes, complete) = windowNodes(root)
         return complete && nativeControls(nodes).live
+    }
+
+    /// Reconciliation of a previously bound call reads fixed native controls only, never roster
+    /// labels or text that could reinstate live naming authority after an unproved transition.
+    static func endTransitionKind<Node: ParticipantNode>(_ root: Node) -> TeamsCallWindowKind {
+        let (nodes, complete) = windowNodes(root)
+        guard complete else { return .unreadable }
+        let controls = nativeControls(nodes)
+        if controls.live { return .call }
+        if controls.prejoin { return .prejoin }
+        if controls.postcall { return .postcall }
+        if !controls.anyCallControl && (nodes.contains(where: isMainNavigation) || isWindowSharingButton(root)) { return .other }
+        return .unreadable
     }
 
     /// Names-free eligibility override: a known prejoin is not an active call. Unknown layouts keep
@@ -420,6 +442,7 @@ enum MeetingSpeakerObserver {
     static let teamsBundleId = "com.microsoft.teams2"
     private static let log = Diagnostics("meeting-speakers")
     private static let lock = NSLock()
+    private static let readLock = NSLock()
     nonisolated(unsafe) private static var exposedProcesses = Set<String>()
     private static let fullScanInterval: TimeInterval = 10
     private struct ContainerCache {
@@ -435,6 +458,13 @@ enum MeetingSpeakerObserver {
         let trustedLifecycle: Bool
         var ended = false
     }
+    private struct EndTransition {
+        let budget: TeamsEndTransitionBudget
+        let windowId: String
+        let processStartedAtMs: UInt64
+        let processIdentity: TeamsProcessIdentity
+        let windowNumber: UInt32
+    }
     nonisolated(unsafe) private static var containerCache: ContainerCache?
 
     private static func unavailable(_ reason: String) -> MeetingSpeakerSnapshot {
@@ -444,10 +474,10 @@ enum MeetingSpeakerObserver {
     }
 
     static func snapshot(appId: String) -> MeetingSpeakerSnapshot {
-        autoreleasepool { snapshotInsidePool(appId: appId) }
+        readLock.withLock { autoreleasepool { snapshotInsidePool(appId: appId) } }
     }
 
-    private static func snapshotInsidePool(appId: String) -> MeetingSpeakerSnapshot {
+    private static func snapshotInsidePool(appId: String, transition: EndTransition? = nil) -> MeetingSpeakerSnapshot {
         guard appId == teamsBundleId else { return unavailable("unsupported") }
         guard AXIsProcessTrusted() else { return unavailable("permission_denied") }
         let cached = lock.withLock { containerCache }
@@ -484,6 +514,13 @@ enum MeetingSpeakerObserver {
                   cache.processIdentity == nil || currentIdentity == nil || cache.processIdentity == currentIdentity else { return nil }
             return cache
         }
+        if let transition {
+            guard transition.budget.isOpen(at: ProcessInfo.processInfo.systemUptime) else { return unavailable("ambiguous_call") }
+            guard bound?.windowId == transition.windowId,
+                  processStartedAtMs == transition.processStartedAtMs,
+                  bound?.processIdentity == transition.processIdentity,
+                  currentIdentity == transition.processIdentity else { return unavailable("call_changed") }
+        }
         let root = AXUIElementCreateApplication(pid)
         exposeWebContent(root, processKey: "\(pid):\(processStartedAtMs)")
 
@@ -515,7 +552,8 @@ enum MeetingSpeakerObserver {
             let readableMinimized = AXUIElementCopyAttributeValue(candidate, kAXMinimizedAttribute as CFString, &minimizedValue) == .success
             let minimized = readableMinimized ? minimizedValue as? Bool : nil
             return TeamsCallWindowState(
-                kind: minimized == nil ? .unreadable : TeamsParticipantParser.callWindowKind(node),
+                kind: minimized == nil ? .unreadable : (transition == nil
+                    ? TeamsParticipantParser.callWindowKind(node) : TeamsParticipantParser.endTransitionKind(node)),
                 focused: CFEqual(candidate, window),
                 minimized: minimized ?? true,
                 visible: windowBounds(candidate).flatMap { visibleWindowNumber(pid: pid, bounds: $0, windows: descriptions) } != nil,
@@ -527,6 +565,31 @@ enum MeetingSpeakerObserver {
             var role: AnyObject?
             destroyed = AXUIElementCopyAttributeValue(bound.window, kAXRoleAttribute as CFString, &role) == .invalidUIElement
         }
+        if let transition, endTransitionDecision(states, trustedBinding: bound?.trustedLifecycle == true,
+                                                  sameIdentity: TeamsProcessIdentity.read(pid) == transition.processIdentity,
+                                                  sameWindow: transition.windowNumber == windowNumber && bound.map({ CFEqual($0.window, window) }) == true,
+                                                  boundWindowDestroyed: destroyed,
+                                                  budget: transition.budget,
+                                                  at: ProcessInfo.processInfo.systemUptime) == .invalidate {
+            // Recheck after the scan: AX can overrun the deadline. A live return is never restored.
+            return unavailable(states.contains(where: { $0.kind == .call }) ? "call_changed" : "ambiguous_call")
+        }
+        if let transition {
+            // Revalidate after the potentially blocking AX scan as well as before each re-read.
+            var currentFocus: AnyObject?
+            var currentMinimized: AnyObject?
+            guard AXIsProcessTrusted(), !app.isHidden,
+                  AXUIElementCopyAttributeValue(root, kAXFocusedWindowAttribute as CFString, &currentFocus) == .success,
+                  let currentFocus, CFGetTypeID(currentFocus) == AXUIElementGetTypeID(),
+                  CFEqual(unsafeBitCast(currentFocus, to: AXUIElement.self), window),
+                  AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &currentMinimized) == .success,
+                  currentMinimized as? Bool == false,
+                  let currentBounds = windowBounds(window),
+                  let currentWindows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
+                  visibleWindowNumber(pid: pid, bounds: currentBounds, windows: currentWindows) == windowNumber
+            else { return unavailable(AXIsProcessTrusted() ? "window_not_visible" : "permission_denied") }
+            guard transition.budget.isOpen(at: ProcessInfo.processInfo.systemUptime) else { return unavailable("ambiguous_call") }
+        }
         if var terminal = bound, cleanCallEnded(states, hadBinding: terminal.trustedLifecycle, boundWindowDestroyed: destroyed) {
             terminal.ended = true
             terminal.containers = []
@@ -534,7 +597,26 @@ enum MeetingSpeakerObserver {
             return MeetingSpeakerSnapshot(available: false, participants: [], speaking: [], processId: UInt32(pid),
                                           processStartedAtMs: processStartedAtMs, windowId: terminal.windowId, callEnded: true)
         }
-        if let reason = callAssociationReason(states) { return unavailable(reason) }
+        if let reason = callAssociationReason(states) {
+            let sameWindow = bound.map { CFEqual($0.window, window) && $0.windowNumber == windowNumber } ?? false
+            let kernelMatches = bound?.processIdentity != nil && bound?.processIdentity == currentIdentity
+            let budget = transition?.budget ?? TeamsEndTransitionBudget(startedAt: ProcessInfo.processInfo.systemUptime)
+            if let bound, let identity = bound.processIdentity,
+               canAwaitSupportedEnd(states, trustedBinding: bound.trustedLifecycle && !bound.ended,
+                                    sameIdentity: sameWindow && kernelMatches, budget: budget,
+                                    at: ProcessInfo.processInfo.systemUptime) {
+                if transition == nil {
+                    log.notice("call end transition: bound=true, trusted=true, kernel_matches=true, same_window=true, max_ms=2000")
+                }
+                let reconciliation = transition ?? EndTransition(budget: budget, windowId: bound.windowId,
+                                                                 processStartedAtMs: processStartedAtMs, processIdentity: identity,
+                                                                 windowNumber: windowNumber)
+                Thread.sleep(forTimeInterval: min(0.05, max(0, budget.deadline - ProcessInfo.processInfo.systemUptime)))
+                return autoreleasepool { snapshotInsidePool(appId: appId, transition: reconciliation) }
+            }
+            log.notice("call association unavailable: trusted=\(bound?.trustedLifecycle == true), bound_window=\(states.contains(where: \.bound)), same_window=\(sameWindow), kernel_matches=\(kernelMatches), call_count=\(states.filter { $0.kind == .call }.count), unknown_count=\(states.filter { $0.kind == .unreadable }.count), transition=\(transition != nil)")
+            return unavailable(reason)
+        }
 
         let previous = bound.flatMap { !$0.ended && $0.windowNumber == windowNumber && CFEqual($0.window, window) ? $0 : nil }
         let windowId = previous?.windowId ?? UUID().uuidString
@@ -587,6 +669,25 @@ enum MeetingSpeakerObserver {
             return (bound.kind == .prejoin || bound.kind == .postcall) && bound.focused && bound.visible && !bound.minimized
         }
         return boundWindowDestroyed
+    }
+
+    static func canAwaitSupportedEnd(_ windows: [TeamsCallWindowState], trustedBinding: Bool, sameIdentity: Bool,
+                                    budget: TeamsEndTransitionBudget, at uptime: TimeInterval) -> Bool {
+        guard trustedBinding, sameIdentity, budget.isOpen(at: uptime),
+              windows.filter(\.bound).count == 1, let bound = windows.first(where: \.bound),
+              bound.kind == .unreadable, bound.focused, bound.visible, !bound.minimized
+        else { return false }
+        return windows.filter { !$0.bound }.allSatisfy { $0.kind != .call && $0.kind != .unreadable }
+    }
+
+    static func endTransitionDecision(_ windows: [TeamsCallWindowState], trustedBinding: Bool, sameIdentity: Bool,
+                                      sameWindow: Bool = true, boundWindowDestroyed: Bool = false,
+                                      budget: TeamsEndTransitionBudget, at uptime: TimeInterval) -> TeamsEndTransitionDecision {
+        guard trustedBinding, sameIdentity, budget.isOpen(at: uptime) else { return .invalidate }
+        guard sameWindow || boundWindowDestroyed else { return .invalidate }
+        if cleanCallEnded(windows, hadBinding: true, boundWindowDestroyed: boundWindowDestroyed) { return .cleanEnd }
+        guard sameWindow else { return .invalidate }
+        return canAwaitSupportedEnd(windows, trustedBinding: true, sameIdentity: true, budget: budget, at: uptime) ? .wait : .invalidate
     }
 
     /// Optional static-control override for the audio detector. This never collects participants.
