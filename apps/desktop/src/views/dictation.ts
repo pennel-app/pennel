@@ -1,6 +1,6 @@
 import { bindLocalization, l, localizeBackendText, t, type UiText } from "../i18n.ts";
-import { api, type HotkeyTrigger, type PermissionInfo, type PermissionKind, type Style } from "../api";
-import { controlButton, textField, errorText, h, section, select, toggle } from "../dom";
+import { api, type HotkeyTrigger, type ModelChoice, type PermissionInfo, type PermissionKind, type Style } from "../api";
+import { controlButton, textField, errorText, h, section, select, showPopupMenu, toggle } from "../dom";
 import type { Context } from "../main";
 import { icon } from "../icons";
 import { appBadge } from "../app-icon";
@@ -86,7 +86,36 @@ export function dictationView(ctx: Context): HTMLElement {
     const revision = ++permissionRevision;
     void api.permissions().then(values => { if (!disposed && revision === permissionRevision) { permissionValues = values; permissionError.hidden = true; updatePermissions(); } }).catch(error => { if (!disposed && revision === permissionRevision) { permissionError.textContent = errorText(error); permissionError.hidden = false; } });
   };
+  let speechModels: Awaited<ReturnType<typeof api.configuredDictationModels>> = [];
+  let speechRevision = 0;
+  const sameChoice = (choice: ModelChoice) => JSON.stringify([choice.provider_id, choice.model]);
+  const speechPickerLabel = h("span", { class: "menu-button-label" }, l("dictation.pill.models"));
+  const speechPicker = controlButton({ class: "menu-button speech-model-picker", "data-speech-model-picker": true, "aria-haspopup": "menu", disabled: true, onclick: () => showPopupMenu(speechPicker, [
+    ...speechModels.map(model => ({ value: sameChoice(model.choice), label: model.label, run: () => ctx.mutate(() => api.selectDictationModel(model.choice)) })),
+    { value: "setup", label: l("dictation.pill.model_setup"), separatorBefore: true, run: () => ctx.openSetup("dictation_stt") },
+  ], { current: sameChoice(ctx.info.settings.dictation_stt), report: ctx.report }) }, speechPickerLabel, icon("chevronRight"));
+  const modelSwitch = toggle(l("dictation.pill.switch_enabled"), ctx.info.settings.pill_model_switch_enabled !== false, value => save(settings => { settings.pill_model_switch_enabled = value; }));
+  const modelSwitchLabel = modelSwitch.querySelector("label")!;
+  modelSwitchLabel.replaceChildren(modelSwitch.querySelector("input")!, h("span", { class: "visually-hidden" }, l("dictation.pill.switch_enabled")));
+  const modelSwitchReason = h("p", { class: "help", role: "status" });
+  const refreshModels = () => {
+    const revision = ++speechRevision;
+    void api.configuredDictationModels().then(models => {
+      if (disposed || revision !== speechRevision) return;
+      speechModels = models;
+      const selected = models.find(model => sameChoice(model.choice) === sameChoice(ctx.info.settings.dictation_stt));
+      speechPickerLabel.textContent = selected?.label ?? t("dictation.pill.models");
+      speechPicker.disabled = models.length === 0;
+      speechPicker.hidden = models.length === 0;
+      if (speechSetupAction) speechSetupAction.hidden = models.length > 0;
+      speechPicker.title = models.length === 0 ? t("dictation.pill.model_unavailable") : "";
+      const key = ctx.info.shortcuts?.find(row => row.id === "next_model" && row.binding && row.capability.available)?.label.text;
+      modelSwitchReason.textContent = models.length < 2 ? t("dictation.pill.switch_needs_models") : key ? t("dictation.pill.switch_key", { shortcut: key }) : t("dictation.pill.switch_none");
+    }).catch(error => { if (!disposed && revision === speechRevision) { speechModels = []; speechPicker.disabled = true; modelSwitchReason.textContent = errorText(error); } });
+  };
   const taskRows = settingsTaskRows(ctx, ["dictation_stt", "llm"]);
+  const speechSetupAction = taskRows.querySelector<HTMLElement>('[data-task-row="dictation_stt"] [data-setup-task]');
+  taskRows.querySelector('[data-task-row="dictation_stt"]')?.append(speechPicker);
   taskRows.querySelector('[data-task-row="llm"] h3')?.replaceChildren(h("span", {}, l("dictation.processing.text")));
   const root = h("div", { class: "dictation-settings" },
     group("processing", l("dictation.settings.processing"), taskRows),
@@ -97,6 +126,7 @@ export function dictationView(ctx: Context): HTMLElement {
       preference(l("settings.live_text.title"), l("settings.live_text.help"), live, "live-text"),
       preference(l("dictation.verification.title"), l("dictation.verification.help"), h("div", { "data-cleanup-verification": true }, verify, verificationState, verificationDestination, h("button", { class: "text-button", onclick: () => ctx.navigate("models") }, l("navigation.models"))), "verification"),
       preference(l("dictation.pad.title"), l("dictation.pad.preference_help"), h("div", {}, paste, h("p", { class: "help" }, l("dictation.settings.pad_target")), pasteReason), "pad")),
+    group("pill", l("dictation.pill.settings_title"), preference(l("dictation.pill.switch_enabled"), l("dictation.pill.switch_help"), h("div", {}, modelSwitch, modelSwitchReason), "model-switch")),
     group("words", l("dictation.settings.words"), destination("dictionary", l("dictation.dictionary.title"), l("dictation.dictionary.help")), destination("styles", l("dictation.style.title"), l("dictation.settings.style_help")), preference(l("dictation.history.retention"), null, retention, "history")),
     group("permissions", l("dictation.access.title"), permissions, permissionError, h("button", { class: "text-button dictation-permission-repair", onclick: () => api.showWindow("onboarding", "dictation-permissions") }, l("dictation.access.check_ellipsis"))));
   const refresh = () => {
@@ -117,9 +147,11 @@ export function dictationView(ctx: Context): HTMLElement {
     pasteReason.textContent = external.reason ? localizeBackendText(external.reason) : ""; pasteReason.hidden = !pasteReason.textContent;
     shortcutReason.textContent = ctx.info.capabilities.global_hotkey.reason ? localizeBackendText(ctx.info.capabilities.global_hotkey.reason) : ""; shortcutReason.hidden = !shortcutReason.textContent;
     shortcutError.textContent = ctx.info.hotkey_error ? localizeBackendText(ctx.info.hotkey_error) : ""; shortcutError.hidden = !shortcutError.textContent;
+    modelSwitch.querySelector<HTMLInputElement>("input")!.checked = settings.pill_model_switch_enabled !== false;
+    refreshModels();
     updatePermissions(); refreshPermissions();
   };
-  ctx.onInfoChange(refresh); ctx.onFocusChange(focused => { if (focused) refresh(); }); ctx.onDispose(() => { disposed = true; permissionRevision++; });
+  ctx.onInfoChange(refresh); ctx.onFocusChange(focused => { if (focused) refresh(); }); ctx.onDispose(() => { disposed = true; permissionRevision++; speechRevision++; });
   bindLocalization(root, refresh); refresh();
   return root;
 }

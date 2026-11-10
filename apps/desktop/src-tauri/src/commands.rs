@@ -347,6 +347,9 @@ fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> R
 }
 
 fn refresh_cleanup_verification(app: &AppHandle) {
+    if let Some(shared) = app.try_state::<Arc<Shared>>() {
+        let _ = shared.dictation.send(Msg::RefreshSpeechModels);
+    }
     crate::pill::refresh_verification(app);
     crate::owned_dictation::refresh_verification(app);
 }
@@ -629,6 +632,37 @@ pub fn copy_history(id: String, shared: State<'_, Arc<Shared>>) -> Result<()> {
         return Err("This dictation has no text to copy yet.".into());
     }
     crate::platform_clipboard::copy(&entry.text, None)
+}
+
+#[tauri::command]
+pub async fn configured_dictation_models(
+    shared: State<'_, Arc<Shared>>,
+) -> Result<Vec<pennel_core::ConfiguredDictationModel>> {
+    let shared = shared.inner().clone();
+    off_main("configured_dictation_models", move || {
+        Ok(shared.engine.configured_dictation_models(shared.keys()))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn select_dictation_model(
+    choice: ModelChoice,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<AppInfo> {
+    let shared = shared.inner().clone();
+    off_main("select_dictation_model", move || {
+        let (reply, received) = std::sync::mpsc::channel();
+        shared
+            .dictation
+            .send(Msg::SelectSpeechModel { choice, reply })
+            .map_err(|_| "Dictation is unavailable".to_owned())?;
+        received
+            .recv()
+            .map_err(|_| "Dictation is unavailable".to_owned())??;
+        info(&shared)
+    })
+    .await
 }
 
 #[tauri::command]

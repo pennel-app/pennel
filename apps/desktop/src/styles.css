@@ -963,3 +963,7 @@ button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--d
   .toolbar-capture, .toolbar-capture.is-recording, .recording-levels i { transition: none; }
 }
 :root[data-reduce-motion="true"] :is(.toolbar-capture, .recording-levels i) { transition: none; }
+.speech-model-picker { max-width: min(100%, 260px); }
+.speech-model-picker > .ui-icon { width: 12px; height: 12px; flex: 0 0 auto; transform: rotate(90deg); }
+.speech-model-picker .menu-button-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+

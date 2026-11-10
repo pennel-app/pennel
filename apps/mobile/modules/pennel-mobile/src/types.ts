@@ -39,6 +39,7 @@ export interface Settings {
   providers: ProviderAccount[];
   dictation_stt: ModelChoice;
   dictation_models?: ModelChoice[];
+  pill_model_switch_enabled?: boolean;
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;

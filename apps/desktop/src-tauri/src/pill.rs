@@ -15,6 +15,16 @@ use crate::status::PillState;
 pub const LABEL: &str = "pill";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PillModelPresentation {
+    pub session_id: String,
+    pub generation: u64,
+    pub model: pennel_core::ConfiguredDictationModel,
+    pub available_models: usize,
+    pub enabled: bool,
+    pub switched: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PillSnapshot {
     #[serde(flatten)]
     pub state: PillState,
@@ -24,6 +34,8 @@ pub struct PillSnapshot {
     pub cleanup_verification: Option<pennel_core::CleanupVerificationAvailability>,
     #[serde(skip)]
     visibility_generation: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speech_model: Option<PillModelPresentation>,
 }
 
 #[derive(Clone, Serialize)]
@@ -41,6 +53,7 @@ impl Default for PillSnapshot {
             preview: None,
             cleanup_verification: None,
             visibility_generation: 0,
+            speech_model: None,
         }
     }
 }
@@ -66,6 +79,7 @@ impl PillSnapshot {
         if self.state == PillState::Hidden {
             self.preview = None;
             self.cleanup_verification = None;
+            self.speech_model = None;
         }
         changed
     }
@@ -85,6 +99,26 @@ impl PillSnapshot {
             text: String::new(),
         });
         true
+    }
+
+    fn update_model(&mut self, mut next: PillModelPresentation) -> bool {
+        if self.state == PillState::Hidden
+            || self
+                .preview
+                .as_ref()
+                .is_none_or(|preview| preview.session_id != next.session_id)
+            || self
+                .speech_model
+                .as_ref()
+                .is_some_and(|current| current.generation > next.generation)
+        {
+            return false;
+        }
+        // A boot snapshot restores metadata, never an old acknowledgement timer.
+        next.switched = false;
+        let changed = self.speech_model.as_ref() != Some(&next);
+        self.speech_model = Some(next);
+        changed
     }
 
     fn update_preview(&mut self, update: DictationPreviewUpdate) -> bool {
@@ -110,6 +144,7 @@ impl PillSnapshot {
         }
         self.preview = None;
         self.cleanup_verification = None;
+        self.speech_model = None;
         true
     }
 }
@@ -257,6 +292,40 @@ mod tests {
         assert_eq!(json["preview"]["session_id"], "first");
         assert_eq!(json["preview"]["revision"], 2);
         assert_eq!(json["preview"]["text"], "Een voorlopige zin");
+    }
+
+    fn model(generation: u64) -> PillModelPresentation {
+        PillModelPresentation {
+            session_id: "first".into(),
+            generation,
+            model: pennel_core::ConfiguredDictationModel {
+                choice: pennel_core::ModelChoice {
+                    provider_id: "apple".into(),
+                    model: "dictation".into(),
+                },
+                label: "Apple dictation".into(),
+            },
+            available_models: 2,
+            enabled: true,
+            switched: true,
+        }
+    }
+
+    #[test]
+    fn speech_model_metadata_stays_with_capture_and_boot_does_not_replay_confirmation() {
+        let mut content = listening();
+        assert!(content.update_model(model(2)));
+        assert!(!content.update_model(model(1)));
+        let mut old = model(3);
+        old.session_id = "previous".into();
+        assert!(!content.update_model(old));
+        let snapshot = serde_json::to_value(&content).unwrap();
+        assert_eq!(snapshot["speech_model"]["generation"], 2);
+        assert_eq!(snapshot["speech_model"]["switched"], false);
+        assert!(snapshot["speech_model"].get("text").is_none());
+        content.set_state(PillState::Hidden);
+        assert!(content.speech_model.is_none());
+        assert!(!content.update_model(model(4)));
     }
 
     #[test]
@@ -503,6 +572,44 @@ impl Pill {
             let _ = self
                 .app
                 .emit("dictation-state", content.processing_snapshot());
+        }
+        drop(content);
+        self.refresh_model(session, false);
+    }
+
+    pub fn refresh_model(&self, session: &Arc<pennel_core::LiveDictationSession>, switched: bool) {
+        let shared = self.app.state::<Arc<crate::state::Shared>>();
+        let settings = shared.settings();
+        let models = shared.engine.configured_dictation_models(shared.keys());
+        let model = models
+            .iter()
+            .find(|model| model.choice == session.speech_model())
+            .cloned();
+        let mut content = self.content.lock().unwrap();
+        if content
+            .preview
+            .as_ref()
+            .is_none_or(|preview| preview.session_id != session.id())
+        {
+            return;
+        }
+        let Some(model) = model else {
+            content.speech_model = None;
+            let _ = self
+                .app
+                .emit_to(LABEL, "pill-model", Option::<PillModelPresentation>::None);
+            return;
+        };
+        let next = PillModelPresentation {
+            session_id: session.id(),
+            generation: session.preview_generation(),
+            model,
+            available_models: models.len(),
+            enabled: settings.pill_model_switch_enabled,
+            switched,
+        };
+        if content.update_model(next.clone()) || switched {
+            let _ = self.app.emit_to(LABEL, "pill-model", next);
         }
     }
 

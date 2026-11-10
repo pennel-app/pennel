@@ -170,6 +170,8 @@ pub struct Settings {
     /// Explicit speech setups; empty preserves the single saved choice on upgrade.
     #[serde(default)]
     pub dictation_models: Vec<ModelChoice>,
+    #[serde(default = "enabled")]
+    pub pill_model_switch_enabled: bool,
     pub meeting_stt: ModelChoice,
     pub llm: ModelChoice,
     #[serde(default)]
@@ -286,6 +288,7 @@ pub fn default_settings() -> Settings {
     Settings {
         dictation_stt: choice(&local, ProviderTask::DictationStt),
         dictation_models: Vec::new(),
+        pill_model_switch_enabled: true,
         meeting_stt: choice(&local, ProviderTask::MeetingStt),
         llm: choice(&groq, ProviderTask::Llm),
         decision: None,
@@ -538,6 +541,21 @@ mod tests {
 
     fn ids(s: &Settings) -> Vec<&str> {
         s.providers.iter().map(|p| p.id.as_str()).collect()
+    }
+
+    #[test]
+    fn pill_model_switch_upgrade_defaults_on_and_an_explicit_off_choice_survives() {
+        let mut value = serde_json::to_value(default_settings()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("pill_model_switch_enabled");
+        let mut restored: Settings = serde_json::from_value(value).unwrap();
+        assert!(restored.pill_model_switch_enabled);
+        restored.pill_model_switch_enabled = false;
+        let reloaded: Settings =
+            serde_json::from_str(&serde_json::to_string(&restored).unwrap()).unwrap();
+        assert!(!reloaded.pill_model_switch_enabled);
     }
 
     #[test]

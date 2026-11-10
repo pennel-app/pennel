@@ -15,7 +15,7 @@ use pennel_core::{
     CleanupStatus, DictationPreviewObserver, DictationPreviewUpdate, DictationRequest,
     DictationResult, LiveDictationSession, PennelError,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 
 use crate::audio::{self, CaptureError, Recorder};
 #[cfg(not(target_os = "macos"))]
@@ -61,6 +61,11 @@ pub enum Msg {
         history_id: String,
     },
     RefreshOwned,
+    RefreshSpeechModels,
+    SelectSpeechModel {
+        choice: pennel_core::ModelChoice,
+        reply: Sender<Result<(), String>>,
+    },
     Delivered {
         preview_id: String,
         notice: Option<PillState>,
@@ -1016,9 +1021,24 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>, rx: Receiver<Msg>, tx: Sender<
         recording_owned: None,
         pending_shutdown: None,
     };
+    let refresh_events: Vec<_> = ["settings-changed", "download-done", "sync-changed"]
+        .into_iter()
+        .map(|event| {
+            let sender = controller.tx.clone();
+            controller.app.listen(event, move |_| {
+                let _ = sender.send(Msg::RefreshSpeechModels);
+            })
+        })
+        .collect();
     std::thread::Builder::new()
         .name("pennel-dictation".into())
-        .spawn(move || controller.run(rx))
+        .spawn(move || {
+            controller.refresh_speech_models();
+            controller.run(rx);
+            for event in refresh_events {
+                controller.app.unlisten(event);
+            }
+        })
         .expect("dictation thread");
 }
 
@@ -1149,6 +1169,11 @@ impl Controller {
                     },
                     pending,
                 ),
+                Some(Msg::SelectSpeechModel { choice, reply }) => {
+                    let result = self.select_speech_model(Some(choice));
+                    let _ = reply.send(result);
+                }
+                Some(Msg::RefreshSpeechModels) => self.refresh_speech_models(),
                 Some(Msg::TriggerChanged) if !self.gesture.is_manual() => {
                     if self.recorder.is_some() {
                         self.cancel();
@@ -1197,6 +1222,13 @@ impl Controller {
                 let actions = self.gesture.cancel();
                 self.perform(actions);
             }
+            HotkeyEvent::Action(4)
+                if self.recorder.is_some() && self.shared.settings().pill_model_switch_enabled =>
+            {
+                if self.select_speech_model(None).is_err() {
+                    self.refresh_speech_models();
+                }
+            }
             HotkeyEvent::Action(1) => {
                 crate::call_detection::toggle_recording(self.app.clone(), self.shared.clone());
             }
@@ -1237,6 +1269,62 @@ impl Controller {
                 }
             }
         }
+    }
+
+    fn refresh_speech_models(&self) {
+        if let Some(session) = &self.recording_session {
+            self.pill.refresh_model(session, false);
+        }
+    }
+
+    fn select_speech_model(
+        &mut self,
+        choice: Option<pennel_core::ModelChoice>,
+    ) -> Result<(), String> {
+        let keys = self.shared.keys();
+        if let Some(session) = self
+            .recording_session
+            .as_ref()
+            .filter(|_| self.recorder.is_some())
+        {
+            match choice {
+                Some(choice) => session.select_speech_model(choice, keys),
+                None => session.next_speech_model(keys),
+            }
+            .map_err(|_| {
+                "This speech model is unavailable. Your current dictation is unchanged.".to_owned()
+            })?;
+            #[cfg(target_os = "macos")]
+            if let Some(preview) = &self.apple_preview {
+                let mut service = preview.lock().unwrap();
+                if let Some(previous) = service.take() {
+                    previous.stop();
+                }
+                if session.mode() == DictationPreviewMode::System {
+                    let generation = session.preview_generation();
+                    let session = session.clone();
+                    *service = crate::macos::AppleSpeechPreview::start(
+                        session.language().as_deref(),
+                        move |text| {
+                            session.update_system_preview_for_generation(text, generation);
+                        },
+                    )
+                    .ok();
+                }
+            }
+            self.pill.refresh_model(session, true);
+        } else {
+            match choice {
+                Some(choice) => self.shared.engine.select_dictation_model(choice, keys),
+                None => self.shared.engine.next_dictation_model(keys),
+            }
+            .map_err(|_| {
+                "This speech model is unavailable. Set up speech recognition first.".to_owned()
+            })?;
+        }
+        let _ = self.app.emit("settings-changed", ());
+        self.refresh_speech_models();
+        Ok(())
     }
 
     fn perform(&mut self, actions: Vec<GestureAction>) {
@@ -1344,11 +1432,12 @@ impl Controller {
         #[cfg(target_os = "macos")]
         let apple_preview = {
             let service = if session.mode() == DictationPreviewMode::System {
+                let generation = session.preview_generation();
                 let session = session.clone();
                 crate::macos::AppleSpeechPreview::start(
                     session.language().as_deref(),
                     move |text| {
-                        session.update_system_preview(text);
+                        session.update_system_preview_for_generation(text, generation);
                     },
                 )
                 .ok()
@@ -1414,6 +1503,7 @@ impl Controller {
         }
         self.capture_activity = Some(activity);
         self.shared.set_meeting_dictating(true);
+        self.refresh_speech_models();
     }
 
     fn stop_recording(&mut self) -> Vec<f32> {
