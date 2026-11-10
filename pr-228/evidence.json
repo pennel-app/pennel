@@ -1,0 +1,272 @@
+{
+  "head": "246245fb9b64cc2740c4cad71b73a03f400765ff",
+  "base": "9e9bc066d42604a6d8a2b28a6b30627a41ad4951",
+  "mock": "Headless production frontend with synthetic data; no native-window/device acceptance",
+  "matched_pairs": 8,
+  "images": [
+    {
+      "case": "recording-capsule-live",
+      "locale": "en",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "before",
+      "file": "before-en-light-recording-capsule-live.png",
+      "sha256": "13dd6019a11b8c6deee2a9d2258e4c240320117b06f59aaa94c5bb8185a748f9"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "en",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "before",
+      "file": "before-en-light-recording-capsule-return.png",
+      "sha256": "674da5cf8d128553459d9778c4712345778913e3fe56fd6752f2efff3681d278"
+    },
+    {
+      "case": "recording-capsule-live",
+      "locale": "en",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "before",
+      "file": "before-en-dark-recording-capsule-live.png",
+      "sha256": "eb87f32105935401a46fde46a1899c23d058bdb95c3f10592358ac5eb395674c"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "en",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "before",
+      "file": "before-en-dark-recording-capsule-return.png",
+      "sha256": "f62aaa8b179502604dd3060333025c254c9f4d80ad2185779c19232dc8aa17ed"
+    },
+    {
+      "case": "recording-capsule-live",
+      "locale": "nl",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "before",
+      "file": "before-nl-light-recording-capsule-live.png",
+      "sha256": "2a4a54e6724b4e6af1aadb31ea9660e8f852db55bf31309c89c4664e18c4e312"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "nl",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "before",
+      "file": "before-nl-light-recording-capsule-return.png",
+      "sha256": "70ef6d559e6b29b751cef8fefbec715812d1358844337958d5466ecba83d01fe"
+    },
+    {
+      "case": "recording-capsule-live",
+      "locale": "nl",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "before",
+      "file": "before-nl-dark-recording-capsule-live.png",
+      "sha256": "4c8b62fc205601e26bdf4743b885157a22e6742cb6d7d3ed590cb48fb01c46a4"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "nl",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "before",
+      "file": "before-nl-dark-recording-capsule-return.png",
+      "sha256": "c3caffd21bc739e5afa1e913ebd5c2c27533c64a05ebd67caf149169b7f85bdd"
+    },
+    {
+      "case": "recording-capsule-live",
+      "locale": "en",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "after",
+      "file": "after-en-light-recording-capsule-live.png",
+      "sha256": "b09fcc95590c42aabc9877c702a584ae72ff545d0b712cff586436a4fbdc93fa"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "en",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "after",
+      "file": "after-en-light-recording-capsule-return.png",
+      "sha256": "19b31623882f996d6e73c53e15e8085b2202c48a599fa90e9aa298d618ddd162"
+    },
+    {
+      "case": "recording-capsule-live",
+      "locale": "en",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "after",
+      "file": "after-en-dark-recording-capsule-live.png",
+      "sha256": "da7be1c5f3437d95acfb05ffaa75a11fbbc1797c35ba004546b7f1358d52166e"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "en",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "after",
+      "file": "after-en-dark-recording-capsule-return.png",
+      "sha256": "4b056537853f3ade7e9bb541dafd8fd6d4c5384ea1e24a2c400464038517e066"
+    },
+    {
+      "case": "recording-capsule-live",
+      "locale": "nl",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "after",
+      "file": "after-nl-light-recording-capsule-live.png",
+      "sha256": "277c4988ff2f8e45638ae0b7b32f80a3a3ed3330086ed444e8711f196839a70f"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "nl",
+      "appearance": "light",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "after",
+      "file": "after-nl-light-recording-capsule-return.png",
+      "sha256": "421f755f27886746d339b2f55ba7841938b31b7a3c985cdbf8a9616f70501fc7"
+    },
+    {
+      "case": "recording-capsule-live",
+      "locale": "nl",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "b51c4ed9c13f277fd069ceb8c5e64ae8ac1ce3188c4105a82a07b155c644ade1",
+      "phase": "after",
+      "file": "after-nl-dark-recording-capsule-live.png",
+      "sha256": "adf1bc4694fb953d6ddbab0ac99b8a20a6c1b1d830907fec4c8e60c0bc3d1a2a"
+    },
+    {
+      "case": "recording-capsule-return",
+      "locale": "nl",
+      "appearance": "dark",
+      "width": 1280,
+      "height": 860,
+      "fixture_case_sha256": "f59f1be454223e7e92feaa0d1ac91160862ba56a16f91733d92edfa087db1f62",
+      "phase": "after",
+      "file": "after-nl-dark-recording-capsule-return.png",
+      "sha256": "024b9ab3e8bd09ef1bb9ab389f29ed5783273caa86017ef270762a0e8b4fe829"
+    },
+    {
+      "case": "recording-capsule-minimum",
+      "locale": "en",
+      "appearance": "light",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "ae7e068edb8065f116ed000b26df3a153838050e048d2c08fab7d25b33a4cbc4",
+      "phase": "after",
+      "file": "after-en-light-recording-capsule-minimum.png",
+      "sha256": "a8ee3eeae0e1b628e4e864ff88c2445691e4a0404262a6a4e03fa8b8081aee4e"
+    },
+    {
+      "case": "recording-capsule-enlarged",
+      "locale": "en",
+      "appearance": "light",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "a7745c8f46b57f2d27a92dfad5e35392c9751a962e86379eab28280345b887b3",
+      "phase": "after",
+      "file": "after-en-light-recording-capsule-enlarged.png",
+      "sha256": "605d676f43b0060d0b2d3af3fe44a1b91fbb1d99383458738fccf699b49ec661"
+    },
+    {
+      "case": "recording-capsule-minimum",
+      "locale": "en",
+      "appearance": "dark",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "ae7e068edb8065f116ed000b26df3a153838050e048d2c08fab7d25b33a4cbc4",
+      "phase": "after",
+      "file": "after-en-dark-recording-capsule-minimum.png",
+      "sha256": "abbfee1f8fa22def9d18ceffa0a2453da2921d4007a10bed418c45a4bb74607c"
+    },
+    {
+      "case": "recording-capsule-enlarged",
+      "locale": "en",
+      "appearance": "dark",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "a7745c8f46b57f2d27a92dfad5e35392c9751a962e86379eab28280345b887b3",
+      "phase": "after",
+      "file": "after-en-dark-recording-capsule-enlarged.png",
+      "sha256": "8a3f87a56d9b06eed5f192814a5f790a9f45eab1cc9973f11db2f4b747331038"
+    },
+    {
+      "case": "recording-capsule-minimum",
+      "locale": "nl",
+      "appearance": "light",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "ae7e068edb8065f116ed000b26df3a153838050e048d2c08fab7d25b33a4cbc4",
+      "phase": "after",
+      "file": "after-nl-light-recording-capsule-minimum.png",
+      "sha256": "77db478f0cc213b6bc71d26fbdffd4ec63d64149d494b52cd3fd0fa16dc5272b"
+    },
+    {
+      "case": "recording-capsule-enlarged",
+      "locale": "nl",
+      "appearance": "light",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "a7745c8f46b57f2d27a92dfad5e35392c9751a962e86379eab28280345b887b3",
+      "phase": "after",
+      "file": "after-nl-light-recording-capsule-enlarged.png",
+      "sha256": "cd061e87f77db38306f740632764a2e5b41baf606509f5b5524dbe63cf495edc"
+    },
+    {
+      "case": "recording-capsule-minimum",
+      "locale": "nl",
+      "appearance": "dark",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "ae7e068edb8065f116ed000b26df3a153838050e048d2c08fab7d25b33a4cbc4",
+      "phase": "after",
+      "file": "after-nl-dark-recording-capsule-minimum.png",
+      "sha256": "25d91c46f887387e7619f2e085c2bd0acb1fc7bcfaa81d0b53d2c199089f2165"
+    },
+    {
+      "case": "recording-capsule-enlarged",
+      "locale": "nl",
+      "appearance": "dark",
+      "width": 760,
+      "height": 520,
+      "fixture_case_sha256": "a7745c8f46b57f2d27a92dfad5e35392c9751a962e86379eab28280345b887b3",
+      "phase": "after",
+      "file": "after-nl-dark-recording-capsule-enlarged.png",
+      "sha256": "ddcbda7ec15823c831e7e3fad634c50c0bdbb93cd8fb8e7b9f0e7a33f51bc8d2"
+    }
+  ]
+}
