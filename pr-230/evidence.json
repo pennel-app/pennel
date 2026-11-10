@@ -1,0 +1,249 @@
+{
+  "task": "T7 Dictation settings",
+  "mock": true,
+  "source": "Owned synthetic headless fixture; no user screen",
+  "before_ref": "344487ff9361d5f0542a305cdb8918f921acfcf5",
+  "after_ref": "d65fe624ff1afe0a2b513c3368695b988bd16e68",
+  "rows": [
+    {
+      "phase": "before",
+      "case": "en/dark/t7-settings-min.png",
+      "file": "before-en-dark-t7-settings-min.png",
+      "sha256": "f95b3a27ee9d6e400169515d4ccd44e157cba6e62853024b01049d698efb80ba"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/t7-settings-zoom.png",
+      "file": "before-en-dark-t7-settings-zoom.png",
+      "sha256": "9a154fa424b0e155f8a4fc865e773b0cd90c9c826af43246811cc3eba194c65a"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/t7-settings.png",
+      "file": "before-en-dark-t7-settings.png",
+      "sha256": "4c52d9fc24912446c32f9d0ed25fdc8cd6496c8384782d2b5bbb2bef9f250a30"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t7-settings-min.png",
+      "file": "before-en-light-t7-settings-min.png",
+      "sha256": "7a72cb89eeeb4891bbc0ae0d1e4b64118985dfd63e6eee2df6d8e6d71e4659c2"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t7-settings-zoom.png",
+      "file": "before-en-light-t7-settings-zoom.png",
+      "sha256": "c43acfea8baf4efaff693e7bd68429a198c4778f97780cb146f148c708d15b69"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/t7-settings.png",
+      "file": "before-en-light-t7-settings.png",
+      "sha256": "e979baa4f31bd0c753b22c2ca0ecc6ca0d373a527e8a6f0e80ab9ce5a143e2ce"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t7-settings-min.png",
+      "file": "before-nl-dark-t7-settings-min.png",
+      "sha256": "4799aacae9a017345666b7c75019fa2ad954d65181803888365fcee4cc9dac4b"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t7-settings-zoom.png",
+      "file": "before-nl-dark-t7-settings-zoom.png",
+      "sha256": "13b01b9428c8329d390507c0855bd5607795b3619d44301af29fbfbf6516cf48"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/t7-settings.png",
+      "file": "before-nl-dark-t7-settings.png",
+      "sha256": "29c13850778755f20a6b2bb368888c90c1f21b0b1bb02c6eec81f1728302726f"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t7-settings-min.png",
+      "file": "before-nl-light-t7-settings-min.png",
+      "sha256": "f8f54b7570c81f0e3c1437b42f545838ed5f6b10c57cf44cfae35129a3790e2c"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t7-settings-zoom.png",
+      "file": "before-nl-light-t7-settings-zoom.png",
+      "sha256": "af0dab5e4e53a2fbecf7660806c9709bdab24079ebe3d356cb0871cfffb0e500"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/t7-settings.png",
+      "file": "before-nl-light-t7-settings.png",
+      "sha256": "e74abb8775c5da88a121f156b4de697190659324cdd0af03544d303d901ad568"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t7-dictionary.png",
+      "file": "after-en-dark-t7-dictionary.png",
+      "sha256": "a406372db88f4a3e2ca4b7a2cb7694507950c356ecaccca95078825d817d39ab"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t7-permissions.png",
+      "file": "after-en-dark-t7-permissions.png",
+      "sha256": "1e365531186000978d17f65e9b0416758b0ac7b24f71c8c20d84d513796f30e2"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t7-settings-interaction.png",
+      "file": "after-en-dark-t7-settings-interaction.png",
+      "sha256": "f0d5dc07774e2e641953a691144d21109582cc4f8f83fbd0ddb7266e0bb4bcc1"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t7-settings-min.png",
+      "file": "after-en-dark-t7-settings-min.png",
+      "sha256": "2686aa1155c9edf5aefacf6eeb4781d117dc76e62349857aea5c94c31e121b97"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t7-settings-zoom.png",
+      "file": "after-en-dark-t7-settings-zoom.png",
+      "sha256": "c5b7e9e5cd1f7e67416bea185276b6e64aab05af4f695a48be541e3f77f7e2f4"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t7-settings.png",
+      "file": "after-en-dark-t7-settings.png",
+      "sha256": "2e23a85ffb182b0c558541db9985d0d1ae0bb6440b907e4a6c373a77e4328146"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/t7-styles.png",
+      "file": "after-en-dark-t7-styles.png",
+      "sha256": "ad22db09af73f43b490d3c7705cebe2f15457e5bdc136e65fee56078aef4b366"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t7-dictionary.png",
+      "file": "after-en-light-t7-dictionary.png",
+      "sha256": "7bccfc0bf870b0bd5663b480ca458c6065dca48f656d109bcb59278d2f6e5321"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t7-permissions.png",
+      "file": "after-en-light-t7-permissions.png",
+      "sha256": "aa27119ad0ecb91debc50906a21374e2eb7619a55445bc4da7cbdad66dc9e982"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t7-settings-interaction.png",
+      "file": "after-en-light-t7-settings-interaction.png",
+      "sha256": "9bfb462468a7e31ac2a4b7b8913ecfdd5c08904429efd430fefca81c71c588a3"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t7-settings-min.png",
+      "file": "after-en-light-t7-settings-min.png",
+      "sha256": "6a7a7fc08575731a2db0fa87851d8e4a9b03b82811b16a2a58884959ecf58b09"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t7-settings-zoom.png",
+      "file": "after-en-light-t7-settings-zoom.png",
+      "sha256": "f455b98f6c3f32a0dbb4470aca6564ea780795c00710439c31bc7ba91902e6f5"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t7-settings.png",
+      "file": "after-en-light-t7-settings.png",
+      "sha256": "fde9fd85ac96c2f530b080a8b33006f1981fc9e6c2e8528163b5c1fe148bca12"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/t7-styles.png",
+      "file": "after-en-light-t7-styles.png",
+      "sha256": "05f8f9af46c9b20f7ea7132030baf5df8e52d28ed8c792d34840c4314f25a453"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t7-dictionary.png",
+      "file": "after-nl-dark-t7-dictionary.png",
+      "sha256": "bb84d7e63c892dc44053d76d4b28de8cfc0aa82b4908e7f1b3658b0c9b6169b4"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t7-permissions.png",
+      "file": "after-nl-dark-t7-permissions.png",
+      "sha256": "b4549ddf999508cf3f5b58d530ca69f5768f2e3bdbf6fdbd63c4e0aeb67e1cf3"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t7-settings-interaction.png",
+      "file": "after-nl-dark-t7-settings-interaction.png",
+      "sha256": "27338dad8a1bb68d8bf16bc249466dbfac8a75035db8faa67fe44ccc94ab4875"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t7-settings-min.png",
+      "file": "after-nl-dark-t7-settings-min.png",
+      "sha256": "720eee2490b2e227fbcd55bf9d079c329060341cad8ea92c6c6fde8a155ee6a8"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t7-settings-zoom.png",
+      "file": "after-nl-dark-t7-settings-zoom.png",
+      "sha256": "668779f268a1d7954e6c9bcd94c98b0e91a6ba352a65e67174885193ad997274"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t7-settings.png",
+      "file": "after-nl-dark-t7-settings.png",
+      "sha256": "ea2b22aa645e88fbc93aeb4337bf2ad23626dd0e8e7aaaf675a19ab3114b0ee2"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/t7-styles.png",
+      "file": "after-nl-dark-t7-styles.png",
+      "sha256": "e5d4e9be02d86112192f16a38ef5d78da3bfed4691b45a930c80487dc2f20e05"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t7-dictionary.png",
+      "file": "after-nl-light-t7-dictionary.png",
+      "sha256": "d689c42bdd294069d83ee267a0777f01327d567f47164c043f18de381127b08f"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t7-permissions.png",
+      "file": "after-nl-light-t7-permissions.png",
+      "sha256": "dd1223c125c10a737888c81034376e7fa95094506f8ae9d4a5743ca9dfd8890c"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t7-settings-interaction.png",
+      "file": "after-nl-light-t7-settings-interaction.png",
+      "sha256": "6c528db8e651a66d726e3a7ce264d482b37276937bd5e68f8c41f38dd33c9a2c"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t7-settings-min.png",
+      "file": "after-nl-light-t7-settings-min.png",
+      "sha256": "09c8bdb3a7e8765617a90b71e65849582eb9b02f81f7a7544ddac4b1048bf0e5"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t7-settings-zoom.png",
+      "file": "after-nl-light-t7-settings-zoom.png",
+      "sha256": "5cce008cf2861b1ab750c24da0d12c0fdb54476cbc36c650321ffb0c9f7b1e84"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t7-settings.png",
+      "file": "after-nl-light-t7-settings.png",
+      "sha256": "924f11e33edaa0c24b45c62fc24104014cb7ac8928032d5d24550126bd96c969"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/t7-styles.png",
+      "file": "after-nl-light-t7-styles.png",
+      "sha256": "42f91581ad549aedbf0b0651d0b171439e7c9e35bffd34dda55d80527ef4278d"
+    }
+  ]
+}
