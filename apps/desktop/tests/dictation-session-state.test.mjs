@@ -1,8 +1,55 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DictationSessionState, OwnedSessionLifecycle, PadDraftState } from "../src/dictation-session-state.ts";
+import { DictationSessionState, HomePracticeDraft, OwnedSessionLifecycle, PadDraftState } from "../src/dictation-session-state.ts";
 
 const snapshot = (id, kind = "practice", phase = "idle") => ({ session_id: id, kind, phase, text: "", error: null, target_name: null, external_paste_available: false, external_paste_reason: null });
+
+test("home practice appends each completed capture once while preserving editable text and recoverable results", () => {
+  const draft = new HomePracticeDraft();
+  draft.value = "My message:";
+  draft.accept(snapshot("home", "home_practice", "listening"));
+  draft.accept({ ...snapshot("home", "home_practice", "done"), text: "Hello." });
+  assert.equal(draft.value, "My message: Hello.");
+  draft.value += " Edited.";
+  draft.accept({ ...snapshot("home", "home_practice", "done"), text: "Hello." });
+  assert.equal(draft.value, "My message: Hello. Edited.");
+  draft.accept({ ...snapshot("home", "home_practice", "listening"), text: "Hello." });
+  draft.accept({ ...snapshot("home", "home_practice", "error"), text: "Hello.", error: "No speech" });
+  assert.equal(draft.value, "My message: Hello. Edited.");
+  draft.accept({ ...snapshot("home", "home_practice", "listening"), text: "Hello." });
+  draft.accept({ ...snapshot("home", "home_practice", "error"), text: "Recovered.", error: "Saving failed" });
+  assert.equal(draft.value, "My message: Hello. Edited. Recovered.");
+});
+
+test("home practice disposal rejects late events and busy leave preserves its owner", async () => {
+  let emit; let phase = "listening"; const closed = [];
+  const driver = {
+    open: async kind => snapshot("home", kind, phase), get: async () => snapshot("home", "home_practice", phase),
+    toggle: async () => {}, cancel: async () => {}, close: async id => { closed.push(id); },
+    subscribe: async listener => { emit = listener; return () => {}; },
+  };
+  const updates = [];
+  const lifecycle = new OwnedSessionLifecycle("home_practice", value => updates.push(value.phase), driver);
+  await lifecycle.open();
+  assert.equal(await lifecycle.leave(), false);
+  assert.deepEqual(closed, []);
+  assert.equal(lifecycle.state.accept(snapshot("home", "practice", "done")), false);
+  await lifecycle.close();
+  emit(snapshot("home", "home_practice", "done"));
+  assert.deepEqual(updates, ["listening"]);
+  assert.deepEqual(closed, ["home"]);
+});
+
+test("home practice retains completion even when an opening race delivers only the final snapshot", () => {
+  const draft = new HomePracticeDraft();
+  const done = { ...snapshot("home", "home_practice", "done"), text: "Fast result." };
+  draft.accept(done);
+  draft.accept(done);
+  assert.equal(draft.value, "Fast result.");
+  draft.accept({ ...snapshot("home", "home_practice", "listening"), text: "Fast result." });
+  draft.accept(done);
+  assert.equal(draft.value, "Fast result. Fast result.");
+});
 
 test("late results from a closed or replaced owned session are rejected", () => {
   const state = new DictationSessionState();

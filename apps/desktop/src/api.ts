@@ -107,7 +107,7 @@ export interface SetupReadiness {
 
 export interface DictationSessionSnapshot {
   session_id: string;
-  kind: "pad" | "practice";
+  kind: "pad" | "practice" | "home_practice";
   phase: "idle" | "listening" | "working" | "done" | "error";
   text: string;
   error: string | null;
@@ -911,7 +911,7 @@ export const api = {
   dictationState: () => invoke<PillState>("dictation_state"),
   onboardingReadiness: (target: "dictation" | "global_dictation" | "dictation_pad" | "practice" | "meeting") =>
     invoke<SetupReadiness>("onboarding_readiness", { target }),
-  openDictationSession: (kind: "pad" | "practice") => invoke<DictationSessionSnapshot>("open_dictation_session", { kind }),
+  openDictationSession: (kind: DictationSessionSnapshot["kind"]) => invoke<DictationSessionSnapshot>("open_dictation_session", { kind }),
   getDictationSession: (sessionId: string) => invoke<DictationSessionSnapshot>("get_dictation_session", { sessionId }),
   toggleDictationSession: (sessionId: string) => invoke<void>("toggle_dictation_session", { sessionId }),
   cancelDictationSession: (sessionId: string) => invoke<void>("cancel_dictation_session", { sessionId }),

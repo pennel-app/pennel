@@ -1,5 +1,28 @@
 import type { DictationSessionSnapshot } from "./api";
 
+export class HomePracticeDraft {
+  value = "";
+  private pending = false;
+  private previous = "";
+  private completed = false;
+  private sessionId = "";
+  accept(snapshot: DictationSessionSnapshot): void {
+    if (snapshot.session_id !== this.sessionId) {
+      this.sessionId = snapshot.session_id;
+      this.pending = false; this.completed = false; this.previous = "";
+    }
+    if (snapshot.phase === "listening") {
+      if (!this.pending) this.previous = snapshot.text;
+      this.pending = true; this.completed = false;
+    } else if (snapshot.phase === "done" && !this.completed || this.pending && snapshot.phase !== "working") {
+      this.pending = false; this.completed = true;
+      if (snapshot.text.trim() && (snapshot.phase === "done" || snapshot.phase === "error" && snapshot.text !== this.previous)) {
+        this.value += `${this.value && !/\s$/.test(this.value) ? " " : ""}${snapshot.text}`;
+      }
+    }
+  }
+}
+
 /** The Pad presents its own navigation recovery without leaving the current view. */
 export class PadNavigationBlocked extends Error {
   constructor(message = "Finish or cancel dictation before switching sections.") { super(message); this.name = "PadNavigationBlocked"; }
@@ -53,7 +76,7 @@ export class PadDraftState {
 }
 
 export interface DictationSessionDriver {
-  open(kind: "pad" | "practice"): Promise<DictationSessionSnapshot>;
+  open(kind: DictationSessionSnapshot["kind"]): Promise<DictationSessionSnapshot>;
   get(id: string): Promise<DictationSessionSnapshot>;
   toggle(id: string): Promise<void>;
   cancel(id: string): Promise<void>;
@@ -68,11 +91,11 @@ export class OwnedSessionLifecycle {
   private unlisten: (() => void) | null = null;
   private opening: Promise<void> | null = null;
   private eventRevision = 0;
-  private readonly kind: "pad" | "practice";
+  private readonly kind: DictationSessionSnapshot["kind"];
   private readonly update: (snapshot: DictationSessionSnapshot) => void;
   private readonly driver: DictationSessionDriver;
 
-  constructor(kind: "pad" | "practice", update: (snapshot: DictationSessionSnapshot) => void, driver: DictationSessionDriver) {
+  constructor(kind: DictationSessionSnapshot["kind"], update: (snapshot: DictationSessionSnapshot) => void, driver: DictationSessionDriver) {
     this.kind = kind; this.update = update; this.driver = driver;
   }
 
