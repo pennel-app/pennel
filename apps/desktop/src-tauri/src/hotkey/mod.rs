@@ -84,6 +84,8 @@ pub struct TriggerTracker {
     listening: bool,
     listening_bindings: Vec<(u32, TriggerBinding)>,
     armed: HashMap<u32, bool>,
+    dirty: HashSet<u32>,
+    hold_suppressed: bool,
     capturing: bool,
 }
 impl TriggerTracker {
@@ -110,6 +112,10 @@ impl TriggerTracker {
         self.binding = binding;
         self.trigger = None;
         self.active = false;
+        self.hold_suppressed = self
+            .binding
+            .as_ref()
+            .is_some_and(|binding| self.matches(binding, false));
         self.armed.clear();
     }
     pub fn set_listening_bindings(&mut self, bindings: Vec<(u32, TriggerBinding)>) {
@@ -131,7 +137,36 @@ impl TriggerTracker {
         }
     }
     pub fn mouse_down(&mut self) {
+        let dirty: Vec<_> = self
+            .listening_bindings
+            .iter()
+            .filter(|(_, b)| b.key.is_none() && b.mods.iter().any(|m| self.modifier(m)))
+            .map(|(id, _)| *id)
+            .collect();
+        self.dirty.extend(dirty);
         self.armed.clear();
+    }
+    fn owns_modifier(binding: &TriggerBinding, key: Key) -> bool {
+        let side = match key {
+            Key::LeftCtrl => "left_ctrl",
+            Key::RightCtrl => "right_ctrl",
+            Key::LeftAlt => "left_alt",
+            Key::RightAlt => "right_alt",
+            Key::LeftSuper => "left_meta",
+            Key::RightSuper => "right_meta",
+            Key::LeftShift => "left_shift",
+            Key::RightShift => "right_shift",
+            Key::Fn => "fn",
+            _ => return false,
+        };
+        let family = side
+            .strip_prefix("left_")
+            .or_else(|| side.strip_prefix("right_"))
+            .unwrap_or(side);
+        binding
+            .mods
+            .iter()
+            .any(|modifier| modifier == side || modifier == family)
     }
     pub fn is_active(&self) -> bool {
         self.active
@@ -236,11 +271,34 @@ impl TriggerTracker {
                         .iter()
                         .find(|(old, _)| old == id)
                         .is_some_and(|(_, engaged)| *engaged);
-                    if engaged && !was && changed {
+                    let any_held = binding.mods.iter().any(|m| self.modifier(m));
+                    let own_press = Self::owns_modifier(binding, key);
+                    if down && changed && any_held && !own_press {
+                        self.dirty.insert(*id);
+                        self.armed.remove(id);
+                    }
+                    // Only a fresh qualifying press arms; another key's release never re-arms.
+                    if engaged
+                        && !was
+                        && changed
+                        && down
+                        && own_press
+                        && !self.dirty.contains(id)
+                        && !self.pressed.iter().any(|key| matches!(key, Key::Other(code) if !(self.active && self.binding.as_ref().and_then(|hold| hold.key) == Some(*code))))
+                    {
                         self.armed.insert(*id, true);
                     }
-                    if was && !engaged && self.armed.remove(id) == Some(true) && !down {
+                    if was
+                        && !engaged
+                        && self.armed.remove(id) == Some(true)
+                        && !down
+                        && !self.dirty.contains(id)
+                    {
                         events.push(HotkeyEvent::Action(*id));
+                        self.dirty.insert(*id);
+                    }
+                    if !any_held {
+                        self.dirty.remove(id);
                     }
                 }
             }
@@ -255,6 +313,7 @@ impl TriggerTracker {
             .is_some_and(|code| key == Key::Other(code));
         if own_key
             && down
+            && (!self.hold_suppressed || self.withheld.contains(&key))
             && self
                 .binding
                 .as_ref()
@@ -271,10 +330,16 @@ impl TriggerTracker {
         {
             events.push(HotkeyEvent::Interrupt);
         }
-        let engaged = self
+        let mut engaged = self
             .binding
             .as_ref()
             .is_some_and(|b| self.matches(b, false));
+        if self.hold_suppressed {
+            if !engaged {
+                self.hold_suppressed = false;
+            }
+            engaged = false;
+        }
         if engaged != self.active {
             self.active = engaged;
             events.push(HotkeyEvent::Edge(
@@ -622,6 +687,63 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn bare_actions_accommodate_the_existing_keyed_dictation_hold() {
+        let mut t = TriggerTracker::from_binding(Some(TriggerBinding {
+            mods: vec!["ctrl".into()],
+            key: Some(32),
+        }));
+        t.set_listening_bindings(vec![(
+            4,
+            TriggerBinding {
+                mods: vec!["left_alt".into()],
+                key: None,
+            },
+        )]);
+        t.set_listening(true);
+        press(&mut t, Key::LeftCtrl);
+        press(&mut t, Key::Other(32));
+        press(&mut t, Key::LeftAlt);
+        assert_eq!(release(&mut t, Key::LeftAlt), [Action(4)]);
+    }
+
+    #[test]
+    fn foreign_modifiers_do_not_rearm_a_dirty_bare_action_on_release() {
+        for id in [3, 4] {
+            let mut t = TriggerTracker::from_binding(None);
+            t.set_listening_bindings(vec![(
+                id,
+                TriggerBinding {
+                    mods: vec!["left_alt".into()],
+                    key: None,
+                },
+            )]);
+            t.set_listening(true);
+            press(&mut t, Key::LeftAlt);
+            press(&mut t, Key::LeftCtrl);
+            release(&mut t, Key::LeftCtrl);
+            assert_eq!(release(&mut t, Key::LeftAlt), []);
+            press(&mut t, Key::LeftAlt);
+            assert_eq!(release(&mut t, Key::LeftAlt), [Action(id)]);
+        }
+    }
+
+    #[test]
+    fn rebind_while_held_waits_for_release_before_another_start() {
+        let binding = keyed_hold();
+        let mut tracker = TriggerTracker::from_binding(Some(binding.clone()));
+        press(&mut tracker, Key::LeftCtrl);
+        press(&mut tracker, Key::LeftAlt);
+        press(&mut tracker, Key::Other(32));
+        tracker.set_binding(Some(binding));
+        assert!(press(&mut tracker, Key::Other(32)).is_empty());
+        assert!(release(&mut tracker, Key::Other(32)).is_empty());
+        assert_eq!(
+            press(&mut tracker, Key::Other(32)),
+            [Edge(KeyEdge::Down, 1.0)]
+        );
     }
 
     #[test]

@@ -56,3 +56,13 @@ test("effective command rows match logical keys exactly and suspend commands dur
   assert.equal(desktopShortcut(event, "macos", [{ ...rows[0], binding: null }]), null);
   assert.equal(desktopShortcut(event, "macos", [{ ...rows[0], capability: { available: false, reason: "unavailable" } }]), null);
 });
+
+
+test("Space aliases use logical characters and preserve all command guards", () => {
+  const row = { id: "find", binding: { mods: ["ctrl", "alt"], code: "Space", key: "Space" }, capability: { available: true, reason: null } };
+  const event = { key: " ", code: "Space", ctrlKey: true, altKey: true, metaKey: false, shiftKey: false, repeat: false, isComposing: false };
+  assert.equal(desktopShortcut(event, "windows", [row]), "find");
+  assert.equal(desktopShortcut(event, "linux", [{ ...row, binding: { ...row.binding, key: " " } }]), "find");
+  for (const patch of [{ shiftKey: true }, { repeat: true }, { isComposing: true }]) assert.equal(desktopShortcut({ ...event, ...patch }, "windows", [row]), null);
+  assert.equal(desktopShortcut(event, "windows", [row], true), null);
+});

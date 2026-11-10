@@ -258,6 +258,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_save_refreshes_accelerators_independently_of_language_and_command_state() {
+        let source = include_str!("commands.rs");
+        let apply = source
+            .split("fn apply_settings(")
+            .nth(1)
+            .unwrap()
+            .split("fn refresh_cleanup_verification")
+            .next()
+            .unwrap();
+        assert!(apply.contains("crate::desktop_commands::refresh(app).map_err(err)?;"));
+        let state = CommandState {
+            ready: true,
+            find: true,
+            ..Default::default()
+        };
+        let mut settings = pennel_core::default_settings();
+        let get = |settings: &pennel_core::Settings| {
+            pennel_core::effective_shortcut(settings, "find", pennel_core::ShortcutPlatform::Macos)
+                .as_ref()
+                .and_then(pennel_core::menu_accelerator)
+        };
+        assert_eq!(get(&settings).as_deref(), Some("Cmd+F"));
+        settings.shortcuts.insert(
+            "find".into(),
+            Some(pennel_core::ShortcutBinding {
+                mods: vec!["meta".into(), "alt".into()],
+                code: Some("KeyG".into()),
+                key: Some("g".into()),
+            }),
+        );
+        assert_eq!(get(&settings).as_deref(), Some("Alt+Cmd+G"));
+        settings.shortcuts.insert("find".into(), None);
+        assert_eq!(get(&settings), None);
+        settings.shortcuts.remove("find");
+        assert_eq!(get(&settings).as_deref(), Some("Cmd+F"));
+        assert!(state.enabled(DesktopCommand::Find));
+    }
+
+    #[test]
     fn readiness_and_per_action_state_both_gate_commands() {
         let mut state = CommandState {
             settings: true,

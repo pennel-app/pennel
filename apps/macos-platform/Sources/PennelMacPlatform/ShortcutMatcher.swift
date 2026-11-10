@@ -25,13 +25,17 @@ struct ShortcutMatcher {
     private var withheld: Set<Int64> = []
     private var captureDraining: Set<Int64> = []
     private var armed: Set<UInt32> = []
+    private var dirty: Set<UInt32> = []
+    private var physicalFn = false
+    private var holdSuppressed = false
     init(table: ShortcutTable) { self.table = table }
     var needsSwallowingTap: Bool {
         capturing || !withheld.isEmpty || table.hold?.code != nil || !table.always.isEmpty ||
             (listening && table.listening.contains { $0.code != nil })
     }
     mutating func setTable(_ table: ShortcutTable) {
-        self.table = table; isHeld = false; keys.removeAll(); armed.removeAll()
+        self.table = table; isHeld = false; armed.removeAll()
+        holdSuppressed = table.hold.map { matches($0, exact: false) } ?? false
     }
     mutating func setListening(_ value: Bool) {
         if value != listening { armed.removeAll() }; listening = value
@@ -39,6 +43,7 @@ struct ShortcutMatcher {
     mutating func setCapture(_ value: Bool) {
         if capturing && !value { captureDraining = withheld }
         capturing = value; isHeld = false; keys.removeAll(); armed.removeAll()
+        holdSuppressed = table.hold.map { matches($0, exact: false) } ?? false
     }
     private func family(_ mask: UInt64) -> UInt64 {
         switch mask {
@@ -70,9 +75,14 @@ struct ShortcutMatcher {
         return flags & relevant & ~allowed == 0
     }
     mutating func route(_ input: ShortcutInput, code: Int64, flags nextFlags: UInt64, repeating: Bool = false) -> ShortcutDecision {
-        if input == .mouse { armed.removeAll(); return ShortcutDecision() }
+        if input == .mouse {
+            for binding in table.listening where binding.code == nil && binding.mods.contains(where: { flags & $0 == $0 }) { dirty.insert(binding.action) }
+            armed.removeAll(); return ShortcutDecision()
+        }
         let before = Set(table.listening.filter { $0.code == nil && matches($0, exact: true) }.map(\.action))
-        flags = nextFlags
+        if input == .flags && code == 63 { physicalFn = nextFlags & 0x800000 != 0 }
+        // Arrows/function keys synthesize fn; only its own physical flags event changes this state.
+        flags = (nextFlags & ~UInt64(0x800000)) | (physicalFn ? 0x800000 : 0)
         let modifier = Self.modifierMask(code)
         let down = input == .down || (input == .flags && modifier.map { flags & $0 != 0 } == true)
         if input == .down { keys.insert(code) }
@@ -95,20 +105,26 @@ struct ShortcutMatcher {
                 }
             } else if listening {
                 let engaged = matches(binding, exact: true)
-                if engaged && !before.contains(binding.action) { armed.insert(binding.action) }
+                let anyHeld = binding.mods.contains { flags & $0 == $0 }
+                let ownModifier = modifier.map { mask in binding.mods.contains(mask) || binding.mods.contains(family(mask)) } ?? false
+                let foreignPress = input == .down || (input == .flags && (down || modifier == nil))
+                if foreignPress && anyHeld && !ownModifier { dirty.insert(binding.action); armed.remove(binding.action) }
+                if engaged && !before.contains(binding.action) && down && ownModifier && !dirty.contains(binding.action) && keys.allSatisfy({ isHeld && $0 == table.hold?.code }) { armed.insert(binding.action) }
                 if !engaged && before.contains(binding.action) {
-                    if armed.remove(binding.action) != nil && !down { result.signals.append(.action(binding.action)) }
+                    if armed.remove(binding.action) != nil && !down && !dirty.contains(binding.action) { result.signals.append(.action(binding.action)); dirty.insert(binding.action) }
                 }
+                if !anyHeld { dirty.remove(binding.action) }
             }
         }
         if input == .flags && (code == 56 || code == 60) { result.signals.append(.shift(flags & 0x20000 != 0)) }
         if let hold = table.hold {
-            if input == .down && code == hold.code && matches(hold, exact: false) {
+            if input == .down && code == hold.code && matches(hold, exact: false) && (!holdSuppressed || withheld.contains(code)) {
                 result.withhold = true; withheld.insert(code)
             }
             if input == .down && isHeld && hold.code == nil && !actionKey { result.signals.append(.interrupt) }
         }
-        let engaged = table.hold.map { matches($0, exact: false) } ?? false
+        var engaged = table.hold.map { matches($0, exact: false) } ?? false
+        if holdSuppressed { if !engaged { holdSuppressed = false }; engaged = false }
         if engaged != isHeld { isHeld = engaged; result.signals.append(engaged ? .down : .up) }
         return result
     }
