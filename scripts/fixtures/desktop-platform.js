@@ -594,7 +594,7 @@
       if (!rows.length || rows.some(row => !row)) return null;
       return fingerprint(JSON.stringify(await Promise.all(rows.map(async row => [await fingerprint(JSON.stringify(evidenceValue(row))), row.attribution_revision || 0, row.confirmed_speaker_name || null]))));
     }
-    return fingerprint(anchor.passage.kind === "notes" ? record.notes : record.summary);
+    return fingerprint(anchor.passage.kind === "notes" ? record.notes : summaryDocuments.get(record.uid)?.markdown ?? record.summary);
   }
   async function resolveConversationSource(source) {
     const id = meetingIdForUid(source.passage.meeting_uid), record = id ? recordForId(id) : null;
@@ -625,6 +625,12 @@
         kind: "notes", start_ms: null, text: line, snippet: line.slice(0, 180) }, segment_keys: [], segment_fingerprints: [],
         notes_start: offset, notes_end: offset + line.length, source_text: line });
       offset += line.length + 1;
+    }
+    if (options.conversation_summary_source) {
+      const body = summaryDocuments.get(record.uid)?.markdown ?? record.summary;
+      const passage = body.split("\n").find(line => line.trim() && !line.startsWith("#"));
+      if (passage) anchors.push({ passage: { meeting_id: record.id, meeting_uid: record.uid, title: record.info.title, start_iso: record.info.start_iso,
+        kind: "summary", start_ms: null, text: passage, snippet: passage.slice(0, 180) }, segment_keys: [], segment_fingerprints: [], notes_start: null, notes_end: null, source_text: passage });
     }
     const selected = options.live_question_selected_scope ? anchors.slice(0, Math.max(1, Math.floor(anchors.length / 2))) : anchors;
     const cutoff = Math.max(0, ...record.transcript.filter(row => !row.failed && row.text.trim()).map(row => row.end_ms));

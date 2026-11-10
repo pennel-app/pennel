@@ -950,10 +950,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     transcriptOutput.scrollTop = retained.transcriptScroll;
     editor.setSelectionRange(retained.start, retained.end, retained.direction);
     editor.scrollTop = retained.notesScroll;
-    documentSurface.scrollTop = retained.documentScroll;
     summary.editor.setSelectionRange(retained.summaryStart, retained.summaryEnd, retained.summaryDirection);
     summary.editor.scrollTop = retained.summaryScroll;
     summary.restorePresentation(retained.summaryEditing);
+    documentSurface.scrollTop = retained.documentScroll;
     sourceBack.hidden = true; sourceNotice.hidden = true;
     panels.get("questions")!.scrollTop = retained.questionPaneScroll;
     root.querySelectorAll(".live-source-highlight").forEach(node => node.classList.remove("live-source-highlight"));

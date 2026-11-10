@@ -169,3 +169,30 @@ async function checkToolStatusOwnership(root, client) {
     tools.querySelector(".meeting-tool-back").click();
   }
 }
+
+export async function checkLongSummaryCitationReturn() {
+  const { root, fixture } = await owned();
+  const { flushMeetingDrafts } = await import("/src/views/meetings.ts");
+  const summary = root.querySelector(".meeting-summary-surface"), editor = summary.querySelector(".meeting-summary-editor");
+  summary.querySelector(".meeting-summary-edit").click();
+  const text = "## Long synthetic summary\n\n" + Array.from({ length: 100 }, (_, index) => `Paragraph ${index}: a distinct synthetic summary passage whose rendered reading position must survive citation inspection.`).join("\n\n");
+  editor.value = text; editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+  await flushMeetingDrafts(); summary.querySelector(".meeting-summary-edit").click();
+  await until(() => editor.hidden, "The saved long summary did not return to reading mode.");
+  selectMeetingPane(root, "questions");
+  const input = root.querySelector(".live-question-input"); input.value = "Which summary passage supports this answer?"; input.dispatchEvent(new Event("input", { bubbles: true }));
+  root.querySelector(".live-question-submit").click();
+  await until(() => fixture.workspace.requests().length, "The summary question was not admitted.");
+  const request = fixture.workspace.requests().at(-1), index = request.anchors.findIndex(anchor => anchor.passage.kind === "summary");
+  assert(index >= 0, "The owned question fixture did not capture the saved summary source.");
+  await fixture.conversations.complete(request.request_id, { text: `A saved summary passage [${index + 1}]`, citations: [{ number: index + 1, passage: request.anchors[index].passage }] });
+  await until(() => root.querySelector(".citation"), "The real summary citation did not render.");
+  const document = root.querySelector(".meeting-document"); document.scrollTop = Math.min(1000, document.scrollHeight - document.clientHeight);
+  const reading = document.scrollTop; assert(reading > 500, "The summary needs a deep real reading position.");
+  root.querySelector(".citation").click();
+  await until(() => !editor.hidden && editor.value.slice(editor.selectionStart, editor.selectionEnd) === request.anchors[index].source_text, "The citation did not inspect the exact saved summary passage.");
+  root.querySelector(".live-source-back").click();
+  assert(editor.hidden && document.scrollTop === reading, `Citation return lost long-summary reading position: ${document.scrollTop} instead of ${reading}.`);
+  assert(editor.value === text && !root.querySelector(".live-questions-pane").hidden, "Citation return lost summary content or its answer context.");
+  return result("longSummaryCitationReturn", { realSummaryCitation: true, renderedPresentationRestored: true, deepDocumentScrollRestored: true, exactSourceAndContentRetained: true });
+}
