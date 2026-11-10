@@ -1,6 +1,6 @@
 import manifestSource from "../../../assets/ui/icons/manifest.json?raw";
 
-export type IconName = "sidebar" | "search" | "mic" | "notebook" | "history" | "settings" | "sun" | "moon" | "arrowRight" | "arrowLeft" | "copy" | "laptop" | "download" | "check" | "close" | "globe" | "square" | "rotate" | "warning" | "keyboard" | "audioLines" | "trash" | "chat" | "more";
+export type IconName = "sidebar" | "search" | "mic" | "notebook" | "history" | "settings" | "sun" | "moon" | "arrowRight" | "arrowLeft" | "chevronRight" | "copy" | "laptop" | "download" | "check" | "close" | "globe" | "square" | "rotate" | "warning" | "keyboard" | "audioLines" | "trash" | "chat" | "more";
 const manifest = JSON.parse(manifestSource) as { viewBox: string; strokeWidth: number; icons: Record<IconName, string[]> };
 
 export function icon(name: IconName): SVGSVGElement {
