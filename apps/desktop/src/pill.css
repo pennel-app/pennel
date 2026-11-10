@@ -16,6 +16,8 @@ body {
 }
 
 #pill {
+  --pill-easing: cubic-bezier(.2, .8, .2, 1);
+  --pill-quiet-text: color-mix(in srgb, var(--pill-text) 82%, var(--pill-background));
   display: inline-flex;
   flex-direction: column;
   align-items: stretch;
@@ -28,17 +30,26 @@ body {
   color: var(--pill-text);
   font: 500 var(--font-label)/1.2 var(--ui);
   box-shadow: 0 var(--pill-shadow-y) var(--pill-shadow-blur) var(--shadow);
+  transform-origin: 50% 100%;
 }
 
 #pill[hidden] {
   display: none;
 }
 
+#pill.has-preview,
+#pill[data-state="problem"] {
+  border-radius: var(--radius-panel);
+}
+
 #pill.has-preview {
   width: calc(var(--pill-window-width) - 2 * var(--pill-outer-inset));
   padding: var(--space-3);
-  border-radius: var(--radius-panel);
 }
+
+#pill.entering { animation: pill-enter 220ms var(--pill-easing); }
+#pill.leaving { animation: pill-leave 140ms var(--pill-easing) forwards; }
+#status.switching { animation: pill-switch 120ms var(--pill-easing); }
 
 #status {
   display: flex;
@@ -46,9 +57,52 @@ body {
   gap: 10px;
 }
 
+#pill[data-state="problem"] #status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 1px;
+}
+
+#pill[data-state="problem"] #indicator { grid-row: 1 / span 2; }
+
 #label {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+#detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+  color: var(--pill-quiet-text);
+}
+
+#detail[hidden],
+#hint[hidden] { display: none; }
+
+#hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-weight: 400;
+  color: var(--pill-quiet-text);
+  white-space: nowrap;
+}
+
+#hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--pill-text) 16%, transparent);
+  color: var(--pill-text);
+  font: 600 var(--font-caption)/1 var(--ui);
 }
 
 #preview {
@@ -94,11 +148,17 @@ body {
   box-sizing: border-box;
 }
 
-#indicator.error {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--pill-accent);
+#indicator.no_sound i { opacity: 0.55; }
+
+#indicator svg {
+  width: 15px;
+  height: 15px;
+  color: var(--pill-accent);
+}
+
+#indicator.problem svg {
+  width: 16px;
+  height: 16px;
 }
 
 @keyframes spin {
@@ -107,7 +167,21 @@ body {
   }
 }
 
+@keyframes pill-enter {
+  from { opacity: 0; transform: translateY(8px) scale(.96); }
+}
+
+@keyframes pill-leave {
+  to { opacity: 0; transform: translateY(4px) scale(.98); }
+}
+
+@keyframes pill-switch {
+  from { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #indicator.working { animation: none; }
   #indicator i { transition: none; }
+  @keyframes pill-enter { from { opacity: 0; } }
+  @keyframes pill-leave { to { opacity: 0; } }
 }
