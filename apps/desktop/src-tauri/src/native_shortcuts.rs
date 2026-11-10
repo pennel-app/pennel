@@ -148,6 +148,13 @@ pub fn resolve_mac(action: u32, binding: &ShortcutBinding) -> Option<MacShortcut
     })
 }
 pub fn mac_table(settings: &Settings, include_listening: bool) -> MacShortcutTable {
+    mac_table_with_next_model(settings, include_listening, false)
+}
+pub fn mac_table_with_next_model(
+    settings: &Settings,
+    include_listening: bool,
+    next_model: bool,
+) -> MacShortcutTable {
     let resolve = |id, action| {
         effective_shortcut(settings, id, ShortcutPlatform::Macos)
             .as_ref()
@@ -162,6 +169,7 @@ pub fn mac_table(settings: &Settings, include_listening: bool) -> MacShortcutTab
         listening: if include_listening {
             [("cancel", 3), ("next_model", 4)]
                 .into_iter()
+                .filter(|(_, action)| *action != 4 || next_model)
                 .filter_map(|(id, action)| resolve(id, action))
                 .collect()
         } else {

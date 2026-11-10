@@ -1204,11 +1204,6 @@ impl Controller {
                 crate::open_default(&self.app);
             }
             HotkeyEvent::Action(_) => {}
-            HotkeyEvent::MeetingShortcut => {
-                if self.shared.settings().record_shortcut_enabled {
-                    crate::call_detection::toggle_recording(self.app.clone(), self.shared.clone());
-                }
-            }
             HotkeyEvent::Edge(edge, time) => {
                 let actions = self.gesture.handle(edge, time);
                 if actions.contains(&GestureAction::Start) {
@@ -1216,12 +1211,18 @@ impl Controller {
                     self.requested_owned = owned_dictation::focused_session(&self.app);
                 }
                 self.perform(actions);
+                if self.recorder.is_some() {
+                    crate::record_shortcut::refresh(&self.app, &self.shared);
+                }
             }
             HotkeyEvent::Interrupt => {
                 let actions = self.gesture.interrupt();
                 self.perform(actions);
             }
             HotkeyEvent::Shift(down) => {
+                if self.recorder.is_some() {
+                    crate::record_shortcut::refresh(&self.app, &self.shared);
+                }
                 let was = self.command.is_command();
                 self.command.shift(
                     down,
@@ -1322,6 +1323,7 @@ impl Controller {
                 .as_ref()
                 .map(|capture| capture.id.clone()),
         );
+        crate::record_shortcut::set_listening(&self.app, &self.shared, true);
         self.status
             .recording_started(&preview_id, self.gesture.is_hands_free());
         self.command.reset();
@@ -1382,6 +1384,7 @@ impl Controller {
         ) {
             Ok(recorder) => self.recorder = Some(recorder),
             Err(CaptureError::NoDevice) => {
+                crate::record_shortcut::set_listening(&self.app, &self.shared, false);
                 self.discard_recording_preview();
                 self.status.recording_cancelled();
                 self.gesture = HotkeyGesture::default();
@@ -1393,6 +1396,7 @@ impl Controller {
             Err(e) => {
                 self.discard_recording_preview();
                 self.status.recording_cancelled();
+                crate::record_shortcut::set_listening(&self.app, &self.shared, false);
                 LOG.error(format!("recording start failed: {e}"));
                 self.gesture = HotkeyGesture::default();
                 if let Some(capture) = self.recording_owned.take() {
@@ -1405,25 +1409,12 @@ impl Controller {
                 return self.notify("Recording failed");
             }
         }
-        #[cfg(target_os = "macos")]
-        {
-            let listener = self.shared.hotkey.lock().unwrap().clone();
-            if let Some(listener) = listener {
-                let _ = listener.set_listening(true);
-            }
-        }
         self.capture_activity = Some(activity);
         self.shared.set_meeting_dictating(true);
     }
 
     fn stop_recording(&mut self) -> Vec<f32> {
-        #[cfg(target_os = "macos")]
-        {
-            let listener = self.shared.hotkey.lock().unwrap().clone();
-            if let Some(listener) = listener {
-                let _ = listener.set_listening(false);
-            }
-        }
+        crate::record_shortcut::set_listening(&self.app, &self.shared, false);
         let samples = self.recorder.take().map(Recorder::stop).unwrap_or_default();
         #[cfg(target_os = "macos")]
         if let Some(preview) = self.apple_preview.take()
