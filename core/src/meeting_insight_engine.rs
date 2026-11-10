@@ -696,6 +696,7 @@ struct JobProgress {
     completed_windows: usize,
     total_windows: usize,
     logical_done: bool,
+    items_found: usize,
 }
 
 pub(crate) struct MeetingInsightAnalysisJob {
@@ -806,6 +807,8 @@ struct FrozenInsightAnalysis {
     account_epoch: u64,
     observed_account_epoch: u64,
     credential_epoch: u64,
+    automatic_policy_epoch: Option<u64>,
+    automatic_attempt: Option<crate::meeting_suggestion_automation::AutomaticInsightAttempt>,
 }
 
 #[derive(uniffi::Object)]
@@ -827,6 +830,26 @@ impl Drop for AdmittedInsightAnalysis {
         if !self.job.progress.lock().unwrap().logical_done {
             self.job.cancel("cancelled");
             self.job.finish(Err("cancelled"));
+        }
+        if let Some(mut attempt) = self.frozen.automatic_attempt.clone() {
+            use crate::meeting_suggestion_automation::AutomaticInsightOutcome;
+            let progress = self.job.progress.lock().unwrap();
+            attempt.outcome = Some(match progress.state {
+                InsightJobState::Completed => AutomaticInsightOutcome::Completed,
+                InsightJobState::Cancelled => AutomaticInsightOutcome::Cancelled,
+                _ => AutomaticInsightOutcome::Failed,
+            });
+            attempt.error_code = progress.error_code.clone();
+            attempt.items_found = Some(progress.items_found);
+            attempt.finished_at = Some(chrono::Utc::now().to_rfc3339());
+            drop(progress);
+            if let Ok(id) = current_id(&self.engine, &self.frozen) {
+                // A failed receipt update leaves the existing attempt consumed, never retryable.
+                let _ = self
+                    .engine
+                    .meeting_store()
+                    .finish_automatic_insight_attempt(&id, &attempt);
+            }
         }
         self.engine.finish_inference(&self.parent);
         self.job.cancellation.lock().unwrap().take();
@@ -890,6 +913,9 @@ fn unchanged(
     token: &InferenceCancellation,
 ) -> bool {
     !token.is_cancelled()
+        && frozen.automatic_policy_epoch.is_none_or(|epoch| {
+            engine.automatic_policy_current(crate::engine::AutomaticPolicy::Suggestions, epoch)
+        })
         && engine
             .meeting_analysis_configuration()
             .is_ok_and(|(provider, config)| {
@@ -922,6 +948,9 @@ fn execute_analysis(
     let mut candidates = Vec::new();
     let mut assessments = Vec::new();
     for window in &frozen.windows {
+        if token.is_cancelled() {
+            return Err("cancelled");
+        }
         if Instant::now() >= deadline {
             token.cancel();
             return Err("deadline_exceeded");
@@ -996,6 +1025,9 @@ fn execute_analysis(
     let _edit = engine.edit_meeting(&id).map_err(|_| "meeting_busy")?;
     let _sync = engine.sync_gate.lock().unwrap();
     let _configuration = engine.inference_capture_gate();
+    if token.is_cancelled() {
+        return Err("cancelled");
+    }
     if !admission.is_current() || !unchanged(engine, frozen, &token) {
         return Err("configuration_changed");
     }
@@ -1040,6 +1072,7 @@ fn execute_analysis(
             &token,
         )
         .map_err(|_| "save_failed")?;
+    job.progress.lock().unwrap().items_found = candidates.len();
     #[cfg(test)]
     if let Some(hook) = job.after_commit.lock().unwrap().clone() {
         hook();
@@ -1053,6 +1086,39 @@ impl PennelEngine {
         id: String,
         language_policy: String,
         fixture: Option<QualifiedMeetingAnalysis>,
+    ) -> Result<Arc<MeetingInsightAnalysisAdmission>, PennelError> {
+        self.admit_insight_analysis_with_policy(id, language_policy, fixture, false)
+    }
+
+    fn admit_automatic_insight_analysis(
+        self: Arc<Self>,
+        id: String,
+        fixture: Option<QualifiedMeetingAnalysis>,
+    ) -> Result<Option<Arc<MeetingInsightAnalysisAdmission>>, PennelError> {
+        let settings = self.settings();
+        if settings.suggestion_automation != crate::SuggestionAutomation::Automatic {
+            return Ok(None);
+        }
+        let store = self.meeting_store();
+        let Some(language) =
+            store.suggestion_language(&id, settings.suggestion_language.as_deref())?
+        else {
+            return Ok(None);
+        };
+        let source = store.read_transcript_snapshot(&id)?;
+        if store.has_automatic_insight_attempt(&id, &source.transcript_digest)? {
+            return Ok(None);
+        }
+        self.admit_insight_analysis_with_policy(id, language, fixture, true)
+            .map(Some)
+    }
+
+    fn admit_insight_analysis_with_policy(
+        self: Arc<Self>,
+        id: String,
+        language_policy: String,
+        fixture: Option<QualifiedMeetingAnalysis>,
+        automatic: bool,
     ) -> Result<Arc<MeetingInsightAnalysisAdmission>, PennelError> {
         let requested_at = Instant::now();
         self.claim_library()?;
@@ -1072,12 +1138,28 @@ impl PennelEngine {
                 .qualify_meeting_analysis(&request)
                 .map_err(|error| invalid(error.reason_code()))?,
         };
+        if automatic && !qualification.record().evidence.foreground_impact_accepted {
+            return Err(invalid("foreground_impact_unaccepted"));
+        }
         let token = InferenceCancellation::new();
         self.register_inference(&token);
         if token.is_cancelled() {
             self.finish_inference(&token);
             return Err(PennelError::Cancelled);
         }
+        let automatic_policy_epoch = if automatic {
+            match self
+                .register_automatic_policy(crate::engine::AutomaticPolicy::Suggestions, &token)
+            {
+                Ok(epoch) => Some(epoch),
+                Err(error) => {
+                    self.finish_inference(&token);
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
         let prepared = (|| {
             let _edit = self.edit_meeting(&id)?;
             let _sync = self.sync_gate.lock().unwrap();
@@ -1117,9 +1199,11 @@ impl PennelEngine {
                 account_epoch,
                 observed_account_epoch,
                 credential_epoch,
+                automatic_policy_epoch,
+                automatic_attempt: None,
             })
         })();
-        let frozen = match prepared {
+        let mut frozen = match prepared {
             Ok(frozen) => frozen,
             Err(error) => {
                 self.finish_inference(&token);
@@ -1201,6 +1285,7 @@ impl PennelEngine {
                 completed_windows: 0,
                 total_windows: frozen.windows.len(),
                 logical_done: false,
+                items_found: 0,
             }),
             changed: Condvar::new(),
             cancellation: Mutex::new(Some(token.clone())),
@@ -1250,6 +1335,34 @@ impl PennelEngine {
                     jobs.remove(&oldest);
                 } else {
                     break;
+                }
+            }
+            if automatic {
+                let marker = (|| {
+                    let _edit = self.edit_meeting(&frozen.id)?;
+                    let _sync = self.sync_gate.lock().unwrap();
+                    let _configuration = self.inference_capture_gate();
+                    let demand = self.meeting_analysis_resource_demand();
+                    if demand.speech_busy || demand.foreground_busy {
+                        return Err(invalid("busy"));
+                    }
+                    if !admission.is_current() || !unchanged(&self, &frozen, &token) {
+                        return Err(PennelError::Cancelled);
+                    }
+                    self.meeting_store()
+                        .admit_automatic_insight_attempt(
+                            &frozen.id,
+                            &frozen.source,
+                            &language_policy,
+                        )?
+                        .ok_or_else(|| invalid("automatic_already_attempted"))
+                })();
+                match marker {
+                    Ok(marker) => frozen.automatic_attempt = Some(marker),
+                    Err(error) => {
+                        self.finish_inference(&token);
+                        return Err(error);
+                    }
                 }
             }
             jobs.insert(job.id.clone(), job.clone());
@@ -1316,6 +1429,14 @@ impl PennelEngine {
         language_policy: String,
     ) -> Result<Arc<MeetingInsightAnalysisAdmission>, PennelError> {
         self.admit_insight_analysis(id, language_policy, None)
+    }
+
+    /// Return an admission before the host reads credentials; skipped attempts do no provider work.
+    pub fn admit_automatic_meeting_insight_analysis(
+        self: Arc<Self>,
+        id: String,
+    ) -> Result<Option<Arc<MeetingInsightAnalysisAdmission>>, PennelError> {
+        self.admit_automatic_insight_analysis(id, None)
     }
 
     pub fn begin_meeting_insight_analysis_json(
@@ -1397,7 +1518,66 @@ impl PennelEngine {
         let mut value = serde_json::to_value(snapshot)
             .map_err(|_| invalid("The reviewed meeting data could not be encoded."))?;
         value["analysis_job"] = job.map_or(serde_json::Value::Null, |job| job.snapshot());
+        value["resolved_language"] = store
+            .suggestion_language(&id, self.settings().suggestion_language.as_deref())
+            .ok()
+            .flatten()
+            .map_or(serde_json::Value::Null, Into::into);
+        value["automatic_attempt"] = serde_json::Value::Null;
+        value["automatic_attempt_stale"] = false.into();
+        value["automatic_attempt_reason_code"] = serde_json::Value::Null;
+        match store.read_transcript_snapshot(&id) {
+            Ok(source) => match store.automatic_insight_attempt(&id, &source) {
+                Ok(attempt) => {
+                    value["automatic_attempt_stale"] = attempt
+                        .as_ref()
+                        .is_some_and(|attempt| {
+                            attempt.transcript_digest != source.transcript_digest
+                        })
+                        .into();
+                    value["automatic_attempt"] = serde_json::to_value(attempt)
+                        .map_err(|_| invalid("The automatic attempt could not be encoded."))?;
+                }
+                Err(_) => value["automatic_attempt_reason_code"] = "attempt_unavailable".into(),
+            },
+            Err(_) => value["automatic_attempt_reason_code"] = "source_unavailable".into(),
+        }
         encode(&value)
+    }
+
+    /// Setup-only readiness for the automatic path; this never grants consent or reads credentials.
+    pub fn meeting_automatic_insight_availability_json(
+        &self,
+        id: String,
+    ) -> Result<String, PennelError> {
+        let language = self
+            .meeting_store()
+            .suggestion_language(&id, self.settings().suggestion_language.as_deref())?;
+        let mut status: serde_json::Value = decode(&self.meeting_insight_availability_json(
+            id,
+            language.as_deref().unwrap_or("unknown").into(),
+        )?)?;
+        status["use_case"] = "automatic_finished_suggestions".into();
+        status["resolved_language"] = language.clone().map_or(serde_json::Value::Null, Into::into);
+        if language.is_none() {
+            status["available"] = false.into();
+            status["reason_code"] = "language_unknown".into();
+        } else if status["available"] == true {
+            let (_, configured) = self
+                .meeting_analysis_configuration()
+                .map_err(|error| invalid(error.reason_code()))?;
+            let qualified = self
+                .qualify_meeting_analysis(&qualification_request(
+                    configured,
+                    language.as_deref().expect("resolved language"),
+                ))
+                .map_err(|error| invalid(error.reason_code()))?;
+            if !qualified.record().evidence.foreground_impact_accepted {
+                status["available"] = false.into();
+                status["reason_code"] = "foreground_impact_unaccepted".into();
+            }
+        }
+        encode(&status)
     }
 
     pub fn meeting_insight_availability_json(
@@ -1784,6 +1964,127 @@ mod tests {
         TranscriptMetadataStatus,
     };
 
+    #[test]
+    fn suggestion_consent_upgrades_without_inheriting_summary_consent() {
+        let settings = crate::default_settings();
+        let value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(value["suggestion_automation"], "unanswered");
+        assert_eq!(value["suggestion_language"], serde_json::Value::Null);
+        let mut legacy = value;
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("suggestion_automation");
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("suggestion_language");
+        legacy["summary_automation"] = "automatic".into();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let restored = crate::Settings::load_strict(&path).unwrap();
+        assert_eq!(
+            restored.suggestion_automation,
+            crate::SuggestionAutomation::Unanswered
+        );
+        assert_eq!(restored.suggestion_language, None);
+        for (policy, wire) in [
+            (crate::SuggestionAutomation::Unanswered, "unanswered"),
+            (crate::SuggestionAutomation::Manual, "manual"),
+            (crate::SuggestionAutomation::Automatic, "automatic"),
+        ] {
+            assert_eq!(serde_json::to_value(policy).unwrap(), wire);
+        }
+        legacy["suggestion_language"] = "future-language".into();
+        let restored: crate::Settings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(
+            restored.suggestion_language.as_deref(),
+            Some("future-language")
+        );
+    }
+
+    #[test]
+    fn automatic_suggestion_language_uses_frozen_speech_language_and_only_explicit_fallback() {
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        let store = engine.meeting_store();
+        let path = store.dir_of(&id).join("meeting.md");
+        let original = std::fs::read_to_string(&path).unwrap();
+        for (recorded, fallback, expected) in [
+            (Some("en"), Some("nl"), Some("en")),
+            (Some("nl"), Some("en"), Some("nl")),
+            (Some("auto"), Some("mixed"), Some("mixed")),
+            (Some("auto"), None, None),
+            (Some("fr"), Some("en"), None),
+            (Some("mixed"), Some("en"), None),
+            (None, Some("nl"), Some("nl")),
+            (None, None, None),
+            (None, Some("invalid"), None),
+        ] {
+            let text = recorded.map_or_else(
+                || original.clone(),
+                |language| {
+                    original.replacen(
+                        "---\n",
+                        &format!("---\npennel_stt_language: {language}\n"),
+                        1,
+                    )
+                },
+            );
+            std::fs::write(&path, text).unwrap();
+            assert_eq!(
+                store.suggestion_language(&id, fallback).unwrap().as_deref(),
+                expected,
+                "recorded={recorded:?}, fallback={fallback:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn automatic_policies_revoke_only_their_own_work_and_revocation_is_sticky() {
+        use crate::engine::AutomaticPolicy;
+        let server = mockito::Server::new();
+        let (_directory, engine, _id, _) = configured_engine(&server);
+        let mut settings = engine.settings();
+        settings.summary_automation = crate::SummaryAutomation::Automatic;
+        settings.suggestion_automation = crate::SuggestionAutomation::Automatic;
+        engine.update_settings(settings.clone()).unwrap();
+        let summary = InferenceCancellation::new();
+        let suggestions = InferenceCancellation::new();
+        let manual = InferenceCancellation::new();
+        engine.register_inference(&manual);
+        let summary_epoch = engine
+            .register_automatic_policy(AutomaticPolicy::Summary, &summary)
+            .unwrap();
+        let suggestion_epoch = engine
+            .register_automatic_policy(AutomaticPolicy::Suggestions, &suggestions)
+            .unwrap();
+        let credential_epoch = engine.inference_epoch();
+        settings.summary_automation = crate::SummaryAutomation::Manual;
+        engine.update_settings(settings.clone()).unwrap();
+        settings.summary_automation = crate::SummaryAutomation::Automatic;
+        engine.update_settings(settings.clone()).unwrap();
+        assert!(summary.is_cancelled());
+        assert!(!engine.automatic_policy_current(AutomaticPolicy::Summary, summary_epoch));
+        assert!(!suggestions.is_cancelled());
+        assert!(engine.automatic_policy_current(AutomaticPolicy::Suggestions, suggestion_epoch));
+        assert!(!manual.is_cancelled());
+        assert_eq!(engine.inference_epoch(), credential_epoch);
+        let new_summary = InferenceCancellation::new();
+        engine
+            .register_automatic_policy(AutomaticPolicy::Summary, &new_summary)
+            .unwrap();
+        settings.suggestion_automation = crate::SuggestionAutomation::Manual;
+        engine.update_settings(settings.clone()).unwrap();
+        settings.suggestion_automation = crate::SuggestionAutomation::Automatic;
+        engine.update_settings(settings).unwrap();
+        assert!(suggestions.is_cancelled());
+        assert!(!engine.automatic_policy_current(AutomaticPolicy::Suggestions, suggestion_epoch));
+        assert!(!new_summary.is_cancelled());
+        assert!(!manual.is_cancelled());
+    }
+
     fn source(texts: &[&str]) -> MeetingTranscriptSnapshot {
         MeetingTranscriptSnapshot {
             meeting_uid: uuid::Uuid::now_v7().to_string(),
@@ -2116,6 +2417,523 @@ mod tests {
                 artifact_sha256: "b".repeat(64),
             },
         )
+    }
+
+    fn enable_automatic_suggestions(engine: &PennelEngine) {
+        let mut settings = engine.settings();
+        settings.suggestion_automation = crate::SuggestionAutomation::Automatic;
+        settings.suggestion_language = Some("en".into());
+        engine.update_settings(settings).unwrap();
+    }
+
+    fn automatic_fixture(
+        engine: &Arc<PennelEngine>,
+        id: &str,
+    ) -> Option<Arc<MeetingInsightAnalysisAdmission>> {
+        engine
+            .clone()
+            .admit_automatic_insight_analysis(id.into(), Some(qualified(engine)))
+            .unwrap()
+    }
+
+    fn automatic_snapshot(engine: &PennelEngine, id: &str) -> serde_json::Value {
+        serde_json::from_str(&engine.meeting_insights_json(id.into()).unwrap()).unwrap()
+    }
+
+    fn attempt_files(engine: &PennelEngine, id: &str) -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(engine.meeting_store().dir_of(id))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("pennel.suggestions.automatic.")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn automatic_suggestion_admission_needs_its_own_consent_language_and_exact_qualification() {
+        let mut server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        struct UnreadStore;
+        impl crate::cloud::SecretStore for UnreadStore {
+            fn get(&self, _account: String) -> Option<String> {
+                panic!("unadmitted work must not read credentials")
+            }
+            fn set(&self, _account: String, _value: Option<String>) {
+                panic!("unadmitted work must not write credentials")
+            }
+        }
+        engine.set_secret_store(Arc::new(UnreadStore)).unwrap();
+        let provider = server
+            .mock("POST", mockito::Matcher::Any)
+            .expect(0)
+            .create();
+        let probes = server.mock("GET", mockito::Matcher::Any).expect(0).create();
+        for policy in [
+            crate::SuggestionAutomation::Unanswered,
+            crate::SuggestionAutomation::Manual,
+        ] {
+            let mut settings = engine.settings();
+            settings.summary_automation = crate::SummaryAutomation::Automatic;
+            settings.suggestion_automation = policy;
+            settings.suggestion_language = Some("en".into());
+            engine.update_settings(settings).unwrap();
+            assert!(automatic_fixture(&engine, &id).is_none());
+        }
+        enable_automatic_suggestions(&engine);
+        let mut settings = engine.settings();
+        settings.suggestion_language = None;
+        engine.update_settings(settings).unwrap();
+        assert!(automatic_fixture(&engine, &id).is_none());
+        enable_automatic_suggestions(&engine);
+        assert!(
+            engine
+                .clone()
+                .admit_automatic_meeting_insight_analysis(id.clone())
+                .is_err()
+        );
+        let mut settings = engine.settings();
+        settings.decision = None;
+        engine.update_settings(settings).unwrap();
+        assert!(
+            engine
+                .clone()
+                .admit_automatic_meeting_insight_analysis(id.clone())
+                .is_err()
+        );
+        assert!(attempt_files(&engine, &id).is_empty());
+        assert!(engine.insight_jobs.lock().unwrap().is_empty());
+        provider.assert();
+        probes.assert();
+    }
+
+    #[test]
+    fn automatic_suggestions_require_foreground_impact_acceptance_without_changing_the_manual_gate()
+    {
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let (_, configured) = engine.meeting_analysis_configuration().unwrap();
+        let fixture = crate::meeting_qualification::test_qualification_with_foreground_impact(
+            &qualification_request(configured, "en"),
+            qualified(&engine).record().context.actual.clone(),
+            false,
+        );
+        assert!(
+            engine
+                .clone()
+                .admit_automatic_insight_analysis(id.clone(), Some(fixture.clone()))
+                .is_err()
+        );
+        assert!(attempt_files(&engine, &id).is_empty());
+        let manual = engine
+            .clone()
+            .admit_insight_analysis(id.clone(), "en".into(), Some(fixture))
+            .unwrap();
+        drop(manual);
+        assert!(attempt_files(&engine, &id).is_empty());
+    }
+
+    #[test]
+    fn automatic_attempt_precedes_content_dispatch_contains_only_metadata_and_survives_restart() {
+        let _physical = crate::meeting_scheduler::physical_test_gate();
+        let mut server = mockito::Server::new();
+        let (directory, engine, id, keys) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let store = engine.meeting_store();
+        store.write_notes(&id, "PRIVATE_NOTE_932d").unwrap();
+        store
+            .set_speaker_names(
+                &id,
+                &[crate::SpeakerName {
+                    voice: 1,
+                    name: "PRIVATE_SPEAKER_19fa".into(),
+                }],
+            )
+            .unwrap();
+        let id = engine
+            .rename_meeting(id, "PRIVATE_TITLE_04dc".into())
+            .unwrap();
+        let source = store.read_transcript_snapshot(&id).unwrap();
+        let expected = windows(&source, &engine.settings().decision.unwrap())
+            .unwrap()
+            .remove(0)
+            .request
+            .state;
+        for sentinel in [
+            "PRIVATE_NOTE_932d",
+            "PRIVATE_SPEAKER_19fa",
+            "PRIVATE_TITLE_04dc",
+        ] {
+            assert!(!expected.contains(sentinel));
+        }
+        let callback_engine = engine.clone();
+        let callback_id = id.clone();
+        let provider = server
+            .mock("POST", "/v1/decisions")
+            .match_body(mockito::Matcher::PartialJson(
+                serde_json::json!({"state": expected}),
+            ))
+            .with_body_from_request(move |_| {
+                let snapshot = automatic_snapshot(&callback_engine, &callback_id);
+                assert_eq!(
+                    snapshot["automatic_attempt"]["outcome"],
+                    serde_json::Value::Null
+                );
+                assert_eq!(
+                    snapshot["automatic_attempt"]["transcript_digest"],
+                    source.transcript_digest
+                );
+                wire_response().into_bytes()
+            })
+            .expect(1)
+            .create();
+        let admitted = automatic_fixture(&engine, &id).unwrap();
+        assert_eq!(attempt_files(&engine, &id).len(), 1);
+        assert!(automatic_fixture(&engine, &id).is_none());
+        let begin: serde_json::Value = serde_json::from_str(
+            &engine
+                .clone()
+                .begin_meeting_insight_analysis_json(admitted, keys)
+                .unwrap(),
+        )
+        .unwrap();
+        let done = wait_job(&engine, begin["job_id"].as_str().unwrap());
+        assert_eq!(done["state"], "completed", "{done}");
+        let snapshot = automatic_snapshot(&engine, &id);
+        assert_eq!(snapshot["resolved_language"], "en");
+        assert_eq!(snapshot["automatic_attempt"]["outcome"], "completed");
+        assert_eq!(snapshot["automatic_attempt"]["items_found"], 1);
+        assert!(
+            snapshot["automatic_attempt"]["finished_at"]
+                .as_str()
+                .is_some()
+        );
+        let marker = std::fs::read_to_string(&attempt_files(&engine, &id)[0]).unwrap();
+        for sentinel in [
+            "Noor",
+            "PRIVATE_NOTE_932d",
+            "PRIVATE_SPEAKER_19fa",
+            "PRIVATE_TITLE_04dc",
+        ] {
+            assert!(!marker.contains(sentinel));
+        }
+        assert_eq!(engine.meeting_notes(id.clone()), "PRIVATE_NOTE_932d");
+        provider.assert();
+        drop(provider);
+        drop(engine);
+        let engine =
+            PennelEngine::new_preview(directory.path().to_string_lossy().into_owned()).unwrap();
+        assert!(automatic_fixture(&engine, &id).is_none());
+        assert_eq!(
+            automatic_snapshot(&engine, &id)["automatic_attempt"]["outcome"],
+            "completed"
+        );
+    }
+
+    #[test]
+    fn failed_automatic_attempt_stays_consumed_but_owner_can_start_a_manual_retry() {
+        let _physical = crate::meeting_scheduler::physical_test_gate();
+        let mut server = mockito::Server::new();
+        let (_directory, engine, id, keys) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let failed = server
+            .mock("POST", "/v1/decisions")
+            .with_status(500)
+            .expect(1)
+            .create();
+        let admitted = automatic_fixture(&engine, &id).unwrap();
+        let begin: serde_json::Value = serde_json::from_str(
+            &engine
+                .clone()
+                .begin_meeting_insight_analysis_json(admitted, keys.clone())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            wait_job(&engine, begin["job_id"].as_str().unwrap())["state"],
+            "failed"
+        );
+        let marker = automatic_snapshot(&engine, &id)["automatic_attempt"].clone();
+        assert_eq!(marker["outcome"], "failed");
+        assert_eq!(marker["error_code"], "provider_failed");
+        assert!(automatic_fixture(&engine, &id).is_none());
+        failed.assert();
+        drop(failed);
+        let success = server
+            .mock("POST", "/v1/decisions")
+            .with_body(wire_response())
+            .expect(1)
+            .create();
+        let begin: serde_json::Value = serde_json::from_str(
+            &engine
+                .clone()
+                .start_insight_analysis(id.clone(), "en".into(), keys, Some(qualified(&engine)))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            wait_job(&engine, begin["job_id"].as_str().unwrap())["state"],
+            "completed"
+        );
+        assert_eq!(
+            automatic_snapshot(&engine, &id)["automatic_attempt"],
+            marker
+        );
+        success.assert();
+    }
+
+    #[test]
+    fn suggestion_policy_revocation_during_one_request_is_sticky_and_summary_policy_is_independent()
+    {
+        let _physical = crate::meeting_scheduler::physical_test_gate();
+        for revoke_suggestions in [false, true] {
+            let mut server = mockito::Server::new();
+            let (_directory, engine, id, keys) = configured_engine(&server);
+            enable_automatic_suggestions(&engine);
+            let callback_engine = engine.clone();
+            let provider = server
+                .mock("POST", "/v1/decisions")
+                .with_body_from_request(move |_| {
+                    let mut settings = callback_engine.settings();
+                    if revoke_suggestions {
+                        settings.suggestion_automation = crate::SuggestionAutomation::Manual;
+                        callback_engine.update_settings(settings.clone()).unwrap();
+                        settings.suggestion_automation = crate::SuggestionAutomation::Automatic;
+                    } else {
+                        settings.summary_automation = crate::SummaryAutomation::Automatic;
+                        callback_engine.update_settings(settings.clone()).unwrap();
+                        settings.summary_automation = crate::SummaryAutomation::Manual;
+                    }
+                    callback_engine.update_settings(settings).unwrap();
+                    wire_response().into_bytes()
+                })
+                .expect(1)
+                .create();
+            let admitted = automatic_fixture(&engine, &id).unwrap();
+            let begin: serde_json::Value = serde_json::from_str(
+                &engine
+                    .clone()
+                    .begin_meeting_insight_analysis_json(admitted, keys)
+                    .unwrap(),
+            )
+            .unwrap();
+            let done = wait_job(&engine, begin["job_id"].as_str().unwrap());
+            let snapshot = automatic_snapshot(&engine, &id);
+            if revoke_suggestions {
+                assert_eq!(done["state"], "cancelled", "{done}");
+                assert_eq!(snapshot["automatic_attempt"]["outcome"], "cancelled");
+                assert!(snapshot["items"].as_array().unwrap().is_empty());
+            } else {
+                assert_eq!(done["state"], "completed", "{done}");
+                assert_eq!(snapshot["items"].as_array().unwrap().len(), 1);
+            }
+            provider.assert();
+        }
+    }
+
+    #[test]
+    fn automatic_source_replacement_rejects_commit_and_reports_the_old_attempt_as_stale() {
+        let _physical = crate::meeting_scheduler::physical_test_gate();
+        let mut server = mockito::Server::new();
+        let (_directory, engine, id, keys) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let callback_engine = engine.clone();
+        let callback_id = id.clone();
+        let provider = server
+            .mock("POST", "/v1/decisions")
+            .with_body_from_request(move |_| {
+                let store = callback_engine.meeting_store();
+                let source = store.read_transcript_snapshot(&callback_id).unwrap();
+                let mut rows = source.utterances;
+                rows[0].segment.text = "A changed transcript source.".into();
+                let replacement = rows[0].segment.clone();
+                rows[0].metadata.refresh_fingerprints(&replacement);
+                store
+                    .write_transcript_snapshot(&callback_id, Some(source.revision), &rows)
+                    .unwrap();
+                wire_response().into_bytes()
+            })
+            .expect(1)
+            .create();
+        let admitted = automatic_fixture(&engine, &id).unwrap();
+        let begin: serde_json::Value = serde_json::from_str(
+            &engine
+                .clone()
+                .begin_meeting_insight_analysis_json(admitted, keys)
+                .unwrap(),
+        )
+        .unwrap();
+        let done = wait_job(&engine, begin["job_id"].as_str().unwrap());
+        assert_eq!(done["error_code"], "source_changed", "{done}");
+        let snapshot = automatic_snapshot(&engine, &id);
+        assert_eq!(
+            snapshot["automatic_attempt"]["error_code"],
+            "source_changed"
+        );
+        assert_eq!(snapshot["automatic_attempt_stale"], true);
+        assert!(snapshot["items"].as_array().unwrap().is_empty());
+        provider.assert();
+    }
+
+    #[test]
+    fn busy_speech_questions_and_retranscription_refuse_automatic_admission_without_a_marker() {
+        let _physical = crate::meeting_scheduler::physical_test_gate();
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let speech = crate::meeting_scheduler::speech_priority();
+        assert!(
+            engine
+                .clone()
+                .admit_automatic_insight_analysis(id.clone(), Some(qualified(&engine)))
+                .is_err()
+        );
+        drop(speech);
+        let question = crate::ForegroundQuestionAdmission::new(
+            InferenceCancellation::new(),
+            Instant::now() + Duration::from_secs(5),
+        );
+        assert!(
+            engine
+                .clone()
+                .admit_automatic_insight_analysis(id.clone(), Some(qualified(&engine)))
+                .is_err()
+        );
+        drop(question);
+        let _edit = engine.edit_meeting(&id).unwrap();
+        assert!(
+            engine
+                .clone()
+                .admit_automatic_insight_analysis(id.clone(), Some(qualified(&engine)))
+                .is_err()
+        );
+        assert!(attempt_files(&engine, &id).is_empty());
+    }
+
+    #[test]
+    fn dropping_an_automatic_admission_finishes_its_marker_as_cancelled_without_requests() {
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let admitted = automatic_fixture(&engine, &id).unwrap();
+        drop(admitted);
+        let snapshot = automatic_snapshot(&engine, &id);
+        assert_eq!(snapshot["automatic_attempt"]["outcome"], "cancelled");
+        assert_eq!(snapshot["automatic_attempt"]["error_code"], "cancelled");
+        assert!(automatic_fixture(&engine, &id).is_none());
+    }
+
+    #[test]
+    fn automatic_availability_reports_unknown_language_without_credentials_or_policy_side_effects()
+    {
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        let availability: serde_json::Value = serde_json::from_str(
+            &engine
+                .meeting_automatic_insight_availability_json(id.clone())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(availability["available"], false);
+        assert_eq!(availability["resolved_language"], serde_json::Value::Null);
+        assert_eq!(availability["reason_code"], "language_unknown");
+        let mut settings = engine.settings();
+        settings.suggestion_language = Some("en".into());
+        engine.update_settings(settings).unwrap();
+        let availability: serde_json::Value = serde_json::from_str(
+            &engine
+                .meeting_automatic_insight_availability_json(id.clone())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(availability["available"], false);
+        assert_eq!(availability["resolved_language"], "en");
+        assert_eq!(availability["reason_code"], "unqualified");
+        assert_eq!(
+            engine.settings().suggestion_automation,
+            crate::SuggestionAutomation::Unanswered
+        );
+        assert!(attempt_files(&engine, &id).is_empty());
+    }
+
+    #[test]
+    fn unavailable_transcript_does_not_hide_saved_review_or_expose_automatic_receipts() {
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        accepted_item(&engine, &id);
+        let path = engine.meeting_store().dir_of(&id).join("transcript.md");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let snapshot = automatic_snapshot(&engine, &id);
+        assert_eq!(snapshot["items"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["automatic_attempt"], serde_json::Value::Null);
+        assert_eq!(
+            snapshot["automatic_attempt_reason_code"],
+            "source_unavailable"
+        );
+    }
+
+    #[test]
+    fn damaged_automatic_attempt_is_consumed_without_hiding_cards_or_exposing_untrusted_text() {
+        let server = mockito::Server::new();
+        let (_directory, engine, id, _) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        accepted_item(&engine, &id);
+        let store = engine.meeting_store();
+        let source = store.read_transcript_snapshot(&id).unwrap();
+        let path = store.dir_of(&id).join(format!(
+            "pennel.suggestions.automatic.{}.json",
+            source.transcript_digest
+        ));
+        std::fs::write(&path, b"{PRIVATE_MARKER_CONTENT_49ed").unwrap();
+        assert!(automatic_fixture(&engine, &id).is_none());
+        let snapshot = automatic_snapshot(&engine, &id);
+        assert_eq!(snapshot["items"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["automatic_attempt"], serde_json::Value::Null);
+        assert_eq!(
+            snapshot["automatic_attempt_reason_code"],
+            "attempt_unavailable"
+        );
+        assert!(!snapshot.to_string().contains("PRIVATE_MARKER_CONTENT_49ed"));
+    }
+
+    #[test]
+    fn automatic_admission_follows_a_rename_and_updates_the_same_attempt() {
+        let _physical = crate::meeting_scheduler::physical_test_gate();
+        let mut server = mockito::Server::new();
+        let (_directory, engine, id, keys) = configured_engine(&server);
+        enable_automatic_suggestions(&engine);
+        let admitted = automatic_fixture(&engine, &id).unwrap();
+        let renamed = engine
+            .rename_meeting(id.clone(), "Renamed admitted automatic source".into())
+            .unwrap();
+        let provider = server
+            .mock("POST", "/v1/decisions")
+            .with_body(wire_response())
+            .expect(1)
+            .create();
+        let begin: serde_json::Value = serde_json::from_str(
+            &engine
+                .clone()
+                .begin_meeting_insight_analysis_json(admitted, keys)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            wait_job(&engine, begin["job_id"].as_str().unwrap())["state"],
+            "completed"
+        );
+        assert_eq!(
+            automatic_snapshot(&engine, &renamed)["automatic_attempt"]["outcome"],
+            "completed"
+        );
+        assert!(automatic_fixture(&engine, &renamed).is_none());
+        assert!(!engine.meeting_store().dir_of(&id).exists());
+        provider.assert();
     }
 
     fn wire_response() -> String {

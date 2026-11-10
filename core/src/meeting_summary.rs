@@ -135,7 +135,7 @@ fn regular_bytes(path: &Path) -> Result<Vec<u8>, PennelError> {
     }
 }
 
-fn checked_directory(store: &MeetingStore, id: &str) -> Result<PathBuf, PennelError> {
+pub(crate) fn checked_directory(store: &MeetingStore, id: &str) -> Result<PathBuf, PennelError> {
     let mut components = Path::new(id).components();
     if !matches!(components.next(), Some(Component::Normal(_)))
         || components.next().is_some()
@@ -751,6 +751,8 @@ impl PennelEngine {
             engine: self,
             cancellation: cancellation.clone(),
         };
+        let policy_epoch =
+            self.register_automatic_policy(crate::engine::AutomaticPolicy::Summary, &cancellation)?;
         let store = self.meeting_store();
         checked_directory(&store, &id)?;
         store.ensure_uid(&id)?;
@@ -772,7 +774,7 @@ impl PennelEngine {
         {
             return Err(changed());
         }
-        let _consent = self.automatic_summary_policy_guard(&cancellation)?;
+        let _consent = self.automatic_summary_policy_guard(&cancellation, policy_epoch)?;
         let saved = store.save_owner_summary_record(
             &id,
             &candidate.revision,

@@ -26,15 +26,26 @@ export interface InsightInsertionReceipt {
   markdown: string; state: "pending" | "acknowledged" | "not_inserted" | "needs_review";
   manual_resolution?: { state: "acknowledged" | "not_inserted"; notes_hash: string } | null;
 }
+export interface AutomaticInsightAttempt {
+  schema_version: 1; meeting_uid: string; transcript_digest: string;
+  language_policy: Exclude<InsightLanguagePolicy, "unknown">; admitted_at: string;
+  outcome?: "completed" | "failed" | "cancelled"; error_code?: string;
+  items_found?: number; finished_at?: string;
+}
 export interface InsightSnapshot {
   meeting_uid: string; revision: number; status: "missing" | "ready" | "unsupported" | "corrupt" | "too_large" | "wrong_meeting";
   items: InsightItem[]; insertion_receipts: InsightInsertionReceipt[];
   analysis_job?: InsightJob | null;
+  automatic_attempt?: AutomaticInsightAttempt | null;
+  resolved_language?: Exclude<InsightLanguagePolicy, "unknown"> | null;
+  automatic_attempt_stale?: boolean;
+  automatic_attempt_reason_code?: "attempt_unavailable" | "source_unavailable" | null;
 }
 export interface InsightAvailability {
   available: boolean; configured: boolean; qualified: boolean; reason_code: string;
   provider_id: string | null; model: string | null; endpoint: string | null; language_policy: string;
   task: string; qualification_id: string | null; use_case: string;
+  resolved_language?: Exclude<InsightLanguagePolicy, "unknown"> | null;
   extraction_scope?: "passage" | "exact_span"; complete_extraction?: boolean; coverage_notice?: string;
 }
 export interface InsightJob {

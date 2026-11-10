@@ -43,6 +43,7 @@ mod meeting_preview;
 mod meeting_qualification;
 mod meeting_recording;
 mod meeting_scheduler;
+mod meeting_suggestion_automation;
 mod meeting_summary;
 mod meeting_timeline;
 mod meeting_utterances;
@@ -199,7 +200,8 @@ pub use session::{MeetingHealth, MeetingRecognition, MeetingSession};
 pub use settings::{
     AppearancePreference, DictationMode, HotkeyTrigger, MeetingAppNamePolicy, ModelChoice,
     OnboardingGoal, OnboardingProgress, OnboardingStatus, OnboardingStep, Settings,
-    SpeakerRecognitionMode, Style, StyleRule, SummaryAutomation, default_settings,
+    SpeakerRecognitionMode, Style, StyleRule, SuggestionAutomation, SummaryAutomation,
+    default_settings,
 };
 pub use setup::{SetupAccess, SetupFacts, SetupReadiness, dictation_readiness, meeting_readiness};
 pub use speaker_jobs::{
