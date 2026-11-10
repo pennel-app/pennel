@@ -8,6 +8,7 @@ import ObjectiveC.runtime
 import Speech
 
 typealias EventSink = @convention(c) (UnsafeMutableRawPointer?, UInt32, Bool) -> Void
+typealias ShortcutEventSink = @convention(c) (UnsafeMutableRawPointer?, UInt32, UInt32) -> Void
 typealias CaptureScopeSink = @convention(c) (UnsafeMutableRawPointer?, Bool) -> Void
 typealias TextSink = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Void
 
@@ -252,71 +253,160 @@ private final class NativeHotkeys {
     var shortcut: ShortcutTap?
     var active = true
     var shiftHeld = false
-    var recordShortcut = RecordShortcutPreference()
-    let sink: EventSink
-    let context: UnsafeMutableRawPointer?
+    var matcher: ShortcutMatcher
+    var captureSink: TextSink?
+    var captureContext: UnsafeMutableRawPointer?
+    let sink: (UInt32, UInt32) -> Void
 
-    init(sink: @escaping EventSink, context: UnsafeMutableRawPointer?) { self.sink = sink; self.context = context }
-
-    func start(trigger: NativeHotkeyTrigger) -> Bool {
-        monitor = HotkeyMonitor(trigger: trigger, onEdge: { [weak self] edge, _ in
+    init(table: ShortcutTable, sink: @escaping (UInt32, UInt32) -> Void) {
+        matcher = ShortcutMatcher(table: table); self.sink = sink
+    }
+    func start() -> Bool {
+        monitor = HotkeyMonitor(onInput: { [weak self] type, event in
+            guard let self, self.active, !self.matcher.capturing else { return }
+            // The swallowing layer owns key events while installed; flags/mouse remain listen-only.
+            if type == .flagsChanged || type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown || self.shortcut?.isRunning != true {
+                _ = self.process(type, event)
+            }
+        }, onReset: { [weak self] in
             guard let self, self.active else { return }
-            self.sink(self.context, edge == .down ? 0 : 1, false)
-        }, onInterrupt: { [weak self] in
-            guard let self, self.active else { return }
-            self.sink(self.context, 2, false)
-        }, onShift: { [weak self] down in
-            guard let self, self.active else { return }
-            self.shiftHeld = down
-            self.sink(self.context, 3, down)
+            self.resetHold()
         })
-        shortcut = ShortcutTap { [weak self] in
-            guard let self, self.active, self.recordShortcut.enabled else { return }
-            self.sink(self.context, 4, false)
-        }
+        shortcut = ShortcutTap(onInput: { [weak self] type, event in
+            guard let self, self.active else { return false }
+            if type == .flagsChanged && !self.matcher.capturing { return false }
+            return self.process(type, event)
+        })
         guard monitor?.start() == true else { return false }
+        return refreshTap()
+    }
+    func resetHold() {
+        if matcher.isHeld { sink(2, 0); sink(1, 0) }
+        matcher.setTable(matcher.table)
+        shiftHeld = false; sink(3, 0)
+    }
+    func setTable(_ table: ShortcutTable) -> Bool {
+        guard monitor?.start() == true else { matcher.setTable(table); shortcut?.stop(); return false }
+        if table == matcher.table { return refreshTap() }
+        resetHold(); matcher.setTable(table); return refreshTap()
+    }
+    func refreshTap() -> Bool {
+        if matcher.needsSwallowingTap { return shortcut?.start() == true }
+        shortcut?.stop(); return true
+    }
+    func setListening(_ value: Bool) -> Bool { matcher.setListening(value); return refreshTap() }
+    func capture(_ sink: TextSink?, _ context: UnsafeMutableRawPointer?) -> Bool {
+        if sink != nil && (matcher.listening || !AXIsProcessTrusted()) { return false }
+        captureSink = sink; captureContext = context
+        matcher.setCapture(sink != nil)
+        guard refreshTap() else {
+            captureSink = nil; captureContext = nil; matcher.setCapture(false); return false
+        }
         return true
     }
-
-    func setRecordShortcut(_ enabled: Bool) -> Bool {
-        recordShortcut.update(enabled, start: { shortcut?.start() == true }, stop: { shortcut?.stop() })
+    private func process(_ type: CGEventType, _ event: CGEvent) -> Bool {
+        let input: ShortcutInput
+        switch type {
+        case .keyDown: input = .down
+        case .keyUp: input = .up
+        case .flagsChanged: input = .flags
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown: input = .mouse
+        default: return false
+        }
+        let code = event.getIntegerValueField(.keyboardEventKeycode)
+        let capturing = matcher.capturing
+        let decision = matcher.route(input, code: code, flags: event.flags.rawValue, repeating: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+        for signal in decision.signals {
+            switch signal {
+            case .down: sink(0, 0)
+            case .up: sink(1, 0)
+            case .interrupt: sink(2, 0)
+            case .shift(let down): shiftHeld = down; sink(3, down ? 1 : 0)
+            case .action(let action): sink(4, action)
+            }
+        }
+        if capturing, let captureSink, input != .mouse {
+            // AppKit reapplies the current layout without modifiers, including AZERTY base characters.
+            let character = (type == .keyDown || type == .keyUp) ? NSEvent(cgEvent: event)?.characters(byApplyingModifiers: []) : nil
+            let value: [String: Any] = ["code": code, "flags": event.flags.rawValue, "kind": type == .keyDown ? "down" : type == .keyUp ? "up" : "flags", "key": character.map { $0 as Any } ?? NSNull()]
+            if let data = try? JSONSerialization.data(withJSONObject: value), let json = String(data: data, encoding: .utf8) {
+                json.withCString { captureSink(captureContext, $0, nil) }
+            }
+        }
+        // Drain withheld releases before removing the tap; never invalidate it inside its callback.
+        if !matcher.needsSwallowingTap {
+            DispatchQueue.main.async { [weak self] in guard let self, self.active else { return }; _ = self.refreshTap() }
+        }
+        return decision.withhold
     }
-
-    func stop() { active = false; _ = setRecordShortcut(false); monitor?.stop(); shortcut?.stop() }
+    func stop() {
+        active = false; captureSink = nil; captureContext = nil
+        monitor?.stop(); shortcut?.stop()
+    }
 }
 
-@_cdecl("pennel_mac_hotkey_start")
-func hotkeyStart(_ rawTrigger: UnsafePointer<CChar>?, _ sink: @escaping EventSink, _ context: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
-    let trigger = NativeHotkeyTrigger(rawValue: decodeString(rawTrigger) ?? "fn") ?? .fn
+private func decodeShortcutTable(_ raw: UnsafePointer<CChar>?) -> ShortcutTable? {
+    guard let text = decodeString(raw), let data = text.data(using: .utf8) else { return nil }
+    return try? JSONDecoder().decode(ShortcutTable.self, from: data)
+}
+
+@_cdecl("pennel_mac_hotkey_start_bindings")
+func hotkeyStartBindings(_ raw: UnsafePointer<CChar>?, _ sink: @escaping ShortcutEventSink, _ context: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
+    guard let table = decodeShortcutTable(raw) else { return nil }
     return onMain {
         guard AXIsProcessTrusted() else { return nil }
-        let keys = NativeHotkeys(sink: sink, context: context)
-        guard keys.start(trigger: trigger) else { keys.stop(); return nil }
+        let keys = NativeHotkeys(table: table, sink: { kind, value in sink(context, kind, value) })
+        guard keys.start() else { keys.stop(); return nil }
         return Unmanaged.passRetained(keys).toOpaque()
     }
 }
-
-@_cdecl("pennel_mac_hotkey_set_trigger")
-public func hotkeySetTrigger(_ handle: UnsafeMutableRawPointer?, _ rawTrigger: UnsafePointer<CChar>?) {
-    guard let handle, let trigger = NativeHotkeyTrigger(rawValue: decodeString(rawTrigger) ?? "") else { return }
-    onMain { Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue().monitor?.setTrigger(trigger) }
+@_cdecl("pennel_mac_hotkey_set_bindings")
+public func hotkeySetBindings(_ handle: UnsafeMutableRawPointer?, _ raw: UnsafePointer<CChar>?) -> Bool {
+    guard let handle, let table = decodeShortcutTable(raw) else { return false }
+    return onMain { Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue().setTable(table) }
+}
+@_cdecl("pennel_mac_hotkey_set_listening")
+public func hotkeySetListening(_ handle: UnsafeMutableRawPointer?, _ listening: Bool) -> Bool {
+    guard let handle else { return false }
+    return onMain { Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue().setListening(listening) }
+}
+@_cdecl("pennel_mac_hotkey_capture")
+func hotkeyCapture(_ handle: UnsafeMutableRawPointer?, _ sink: TextSink?, _ context: UnsafeMutableRawPointer?) -> Bool {
+    guard let handle else { return false }
+    return onMain { Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue().capture(sink, context) }
 }
 
+// Retain the original ABI for existing platform clients. New clients always supply the core table.
+private func legacyHold(_ trigger: NativeHotkeyTrigger) -> NativeShortcut {
+    let mask: UInt64
+    switch trigger { case .fn, .controlSuper: mask = 0x800000; case .rightControl: mask = 0x2000; case .rightOption: mask = 0x40; case .rightCommand: mask = 0x10 }
+    return NativeShortcut(action: 0, code: nil, mods: [mask])
+}
+@_cdecl("pennel_mac_hotkey_start")
+func hotkeyStart(_ raw: UnsafePointer<CChar>?, _ sink: @escaping EventSink, _ context: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
+    let trigger = NativeHotkeyTrigger(rawValue: decodeString(raw) ?? "fn") ?? .fn
+    return onMain {
+        guard AXIsProcessTrusted() else { return nil }
+        let keys = NativeHotkeys(table: ShortcutTable(hold: legacyHold(trigger), always: [], listening: []), sink: { kind, value in sink(context, kind, value != 0) })
+        guard keys.start() else { keys.stop(); return nil }
+        return Unmanaged.passRetained(keys).toOpaque()
+    }
+}
+@_cdecl("pennel_mac_hotkey_set_trigger")
+public func hotkeySetTrigger(_ handle: UnsafeMutableRawPointer?, _ raw: UnsafePointer<CChar>?) {
+    guard let handle, let trigger = NativeHotkeyTrigger(rawValue: decodeString(raw) ?? "") else { return }
+    onMain { let keys = Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue(); var table = keys.matcher.table; table.hold = legacyHold(trigger); _ = keys.setTable(table) }
+}
 @_cdecl("pennel_mac_hotkey_set_record_shortcut_enabled")
 public func hotkeySetRecordShortcut(_ handle: UnsafeMutableRawPointer?, _ enabled: Bool) -> Bool {
     guard let handle else { return false }
-    return onMain { Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue().setRecordShortcut(enabled) }
+    return onMain { let keys = Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue(); var table = keys.matcher.table; table.always = enabled ? [NativeShortcut(action: 1, code: 15, mods: [0x100000, 0x20000])] : []; return keys.setTable(table) }
 }
-
 @_cdecl("pennel_mac_hotkey_held")
 public func hotkeyHeld(_ handle: UnsafeMutableRawPointer?, _ shift: Bool) -> Bool {
     guard let handle else { return false }
-    return onMain {
-        let keys = Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue()
-        return shift ? keys.shiftHeld : keys.monitor?.isKeyDown == true
-    }
+    return onMain { let keys = Unmanaged<NativeHotkeys>.fromOpaque(handle).takeUnretainedValue(); return shift ? keys.shiftHeld : keys.matcher.isHeld }
 }
-
 @_cdecl("pennel_mac_hotkey_stop")
 public func hotkeyStop(_ handle: UnsafeMutableRawPointer?) {
     guard let handle else { return }

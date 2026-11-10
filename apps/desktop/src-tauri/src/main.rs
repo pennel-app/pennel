@@ -40,6 +40,7 @@ mod meeting;
 mod meeting_level;
 mod meeting_runtime;
 mod meeting_speaker_evidence;
+mod native_shortcuts;
 mod owned_dictation;
 mod paste_queue;
 mod people;
@@ -51,6 +52,7 @@ mod record_shortcut;
 mod recording_metadata;
 mod resample;
 mod secrets;
+mod shortcut_capture;
 mod shortcuts;
 mod speakers;
 mod state;
@@ -714,9 +716,9 @@ pub fn refresh_hotkey(app: &AppHandle, shared: &Arc<Shared>) {
         return;
     }
     let (sender, receiver) = mpsc::channel();
-    match Listener::start(shared.settings().hotkey, sender) {
+    match Listener::start(&shared.settings(), sender) {
         Ok(listener) => {
-            let _ = listener.set_record_shortcut_enabled(shared.settings().record_shortcut_enabled);
+            let _ = listener.set_bindings(&shared.settings());
             let previous = shared.hotkey.lock().unwrap().replace(listener);
             drop(previous);
             record_shortcut::refresh(app, shared);
@@ -985,7 +987,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let settings = shared.settings();
     if !capture_profile {
         let (hotkey_tx, hotkey_rx) = mpsc::channel();
-        match Listener::start(settings.hotkey, hotkey_tx) {
+        match Listener::start(&settings, hotkey_tx) {
             Ok(listener) => *shared.hotkey.lock().unwrap() = Some(listener),
             Err(e) => {
                 LOG.error(format!("shortcut inactive: {e}"));
@@ -1121,6 +1123,9 @@ fn main() {
                 fit_window_to_work_area(window.app_handle(), &webview);
             }
             if let WindowEvent::Focused(false) = event {
+                if window.label() == "main" {
+                    shortcut_capture::stop(window.app_handle());
+                }
                 owned_dictation::focus_lost(window.app_handle(), window.label());
             }
             if let WindowEvent::Destroyed = event
@@ -1159,6 +1164,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_environment::desktop_environment,
             desktop_commands::set_desktop_command_state,
+            shortcut_capture::shortcut_capture_start,
+            shortcut_capture::shortcut_capture_stop,
             #[cfg(target_os = "macos")]
             capture::capture_snapshot,
             #[cfg(target_os = "macos")]

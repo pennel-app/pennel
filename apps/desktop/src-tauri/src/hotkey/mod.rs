@@ -329,12 +329,16 @@ type PlatformListener = crate::macos::Hotkey;
 
 impl Listener {
     /// Starts the platform hook on its own thread; events arrive on `sender`.
-    pub fn start(trigger: HotkeyTrigger, sender: Sender<HotkeyEvent>) -> Result<Self, String> {
+    pub fn start(
+        settings: &pennel_core::Settings,
+        sender: Sender<HotkeyEvent>,
+    ) -> Result<Self, String> {
         epoch();
         #[cfg(target_os = "macos")]
         {
             use crate::macos::NativeHotkeyEvent as Native;
-            let inner = PlatformListener::start(trigger, move |native| {
+            let bindings = crate::native_shortcuts::mac_table(settings, false);
+            let inner = PlatformListener::start(&bindings, move |native| {
                 let event = match native {
                     Native::Down => {
                         HELD.store(true, Ordering::SeqCst);
@@ -349,7 +353,7 @@ impl Listener {
                         HotkeyEvent::Shift(down)
                     }
                     Native::Interrupt => HotkeyEvent::Interrupt,
-                    Native::MeetingShortcut => HotkeyEvent::MeetingShortcut,
+                    Native::Action(action) => HotkeyEvent::Action(action),
                 };
                 let _ = sender.send(event);
             })?;
@@ -361,20 +365,26 @@ impl Listener {
         }
         #[cfg(any(windows, target_os = "linux"))]
         {
-            PlatformListener::start(trigger, sender).map(|inner| Self {
+            PlatformListener::start(settings.hotkey, sender).map(|inner| Self {
                 inner: std::sync::Arc::new(inner),
             })
         }
         #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
-            let _ = (trigger, sender);
+            let _ = (settings, sender);
             Err("shortcuts are not supported on this platform".into())
         }
     }
 
     pub fn set_trigger(&self, trigger: HotkeyTrigger) {
-        #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+        #[cfg(any(windows, target_os = "linux"))]
         self.inner.set_trigger(trigger);
+        #[cfg(target_os = "macos")]
+        {
+            let mut settings = pennel_core::default_settings();
+            settings.hotkey = trigger;
+            let _ = self.set_bindings(&settings);
+        }
         #[cfg(target_os = "macos")]
         {
             HELD.store(false, Ordering::SeqCst);
@@ -385,8 +395,20 @@ impl Listener {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn set_record_shortcut_enabled(&self, enabled: bool) -> Result<(), String> {
-        self.inner.set_record_shortcut_enabled(enabled)
+    pub fn set_bindings(&self, settings: &pennel_core::Settings) -> Result<(), String> {
+        self.inner
+            .set_bindings(&crate::native_shortcuts::mac_table(settings, false))
+    }
+    #[cfg(target_os = "macos")]
+    pub fn set_listening(&self, listening: bool) -> Result<(), String> {
+        self.inner.set_listening(listening)
+    }
+    #[cfg(target_os = "macos")]
+    pub fn set_capture(
+        &self,
+        callback: Option<Box<dyn FnMut(serde_json::Value) + Send>>,
+    ) -> Result<(), String> {
+        self.inner.set_capture(callback)
     }
 }
 
@@ -491,6 +513,77 @@ mod tests {
         assert!(press(&mut t, Key::RightCtrl).is_empty());
         t.set_capture(false);
         assert!(t.route(Key::Other(27), false, 2.0).withhold);
+    }
+
+    #[test]
+    fn shared_native_sequences_match_the_tracker() {
+        let cases: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../assets/contracts/shortcut-sequences.json"
+        ))
+        .unwrap();
+        for case in cases.as_array().unwrap() {
+            let binding = |value: &serde_json::Value| TriggerBinding {
+                mods: serde_json::from_value(value["mods"].clone()).unwrap(),
+                key: value["key"].as_u64().map(|key| key as u32),
+            };
+            let mut tracker = TriggerTracker::from_binding(
+                (!case["hold"].is_null()).then(|| binding(&case["hold"])),
+            );
+            tracker.set_listening_bindings(
+                case["listening"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| (value["action"].as_u64().unwrap() as u32, binding(value)))
+                    .collect(),
+            );
+            tracker.set_listening(true);
+            for event in case["events"].as_array().unwrap() {
+                let kind = event["kind"].as_str().unwrap();
+                let routed = if kind == "mouse" {
+                    tracker.mouse_down();
+                    RoutedKey::default()
+                } else {
+                    let key = match event["code"].as_u64().unwrap() {
+                        59 => Key::LeftCtrl,
+                        62 => Key::RightCtrl,
+                        58 => Key::LeftAlt,
+                        61 => Key::RightAlt,
+                        55 => Key::LeftSuper,
+                        54 => Key::RightSuper,
+                        56 => Key::LeftShift,
+                        60 => Key::RightShift,
+                        63 => Key::Fn,
+                        code => Key::Other(code as u32),
+                    };
+                    tracker.route(key, event["down"].as_bool().unwrap(), 1.0)
+                };
+                let signals: Vec<String> = routed
+                    .events
+                    .iter()
+                    .map(|event| match event {
+                        HotkeyEvent::Edge(KeyEdge::Down, _) => "down".into(),
+                        HotkeyEvent::Edge(KeyEdge::Up, _) => "up".into(),
+                        HotkeyEvent::Interrupt => "interrupt".into(),
+                        HotkeyEvent::Shift(down) => format!("shift:{}", u8::from(*down)),
+                        HotkeyEvent::Action(action) => format!("action:{action}"),
+                        HotkeyEvent::MeetingShortcut => "legacy".into(),
+                    })
+                    .collect();
+                assert_eq!(
+                    serde_json::to_value(signals).unwrap(),
+                    event["signals"],
+                    "{} {event}",
+                    case["name"]
+                );
+                assert_eq!(
+                    routed.withhold,
+                    event["withhold"].as_bool().unwrap(),
+                    "{} {event}",
+                    case["name"]
+                );
+            }
+        }
     }
 
     #[test]

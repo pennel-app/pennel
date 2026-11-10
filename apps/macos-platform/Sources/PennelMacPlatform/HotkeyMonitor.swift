@@ -5,30 +5,19 @@ import Foundation
 /// Listens system-wide for the dictation modifier key via a listen-only event tap.
 /// All access, including the timer's Sendable callback, stays on the main run loop.
 final class HotkeyMonitor: @unchecked Sendable {
-    private let onEdge: (KeyEdge, TimeInterval) -> Void
-    private let onInterrupt: () -> Void
-    private let onShift: (Bool) -> Void
+    private let onInput: (CGEventType, CGEvent) -> Void
+    private let onReset: () -> Void
     private let onAvailabilityChange: (Bool) -> Void
-    private var trigger: NativeHotkeyTrigger
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var tapID: UInt32?
     private var healthPoll: Timer?
     private var reportedAvailability: Bool?
-    private var isDown = false
 
-    init(
-        trigger: NativeHotkeyTrigger,
-        onEdge: @escaping (KeyEdge, TimeInterval) -> Void,
-        onInterrupt: @escaping () -> Void,
-        onShift: @escaping (Bool) -> Void,
-        onAvailabilityChange: @escaping (Bool) -> Void = { _ in }
-    ) {
-        self.trigger = trigger
-        self.onEdge = onEdge
-        self.onInterrupt = onInterrupt
-        self.onShift = onShift
-        self.onAvailabilityChange = onAvailabilityChange
+    init(onInput: @escaping (CGEventType, CGEvent) -> Void, onReset: @escaping () -> Void) {
+        self.onInput = onInput
+        self.onReset = onReset
+        self.onAvailabilityChange = { _ in }
     }
 
     deinit { stop() }
@@ -41,13 +30,6 @@ final class HotkeyMonitor: @unchecked Sendable {
             enabled: CGEvent.tapIsEnabled(tap: tap), events: events
         ).isAvailable
     }
-    var isKeyDown: Bool { isDown }
-
-    func setTrigger(_ trigger: NativeHotkeyTrigger) {
-        self.trigger = trigger
-        isDown = false
-    }
-
     func start() -> Bool {
         let available = EventTapRecovery.restore(
             isAvailable: { self.isRunning }, authorized: { AXIsProcessTrusted() },
@@ -110,12 +92,7 @@ final class HotkeyMonitor: @unchecked Sendable {
         tap = nil
         source = nil
         tapID = nil
-        if isDown {
-            isDown = false
-            onInterrupt()
-            onEdge(.up, ProcessInfo.processInfo.systemUptime)
-        }
-        if wasTracking { onShift(false) }
+        if wasTracking { onReset() }
     }
 
     private func reportAvailability(_ available: Bool) {
@@ -124,50 +101,11 @@ final class HotkeyMonitor: @unchecked Sendable {
         onAvailabilityChange(available)
     }
 
-    private static let leftShift: Int64 = 56
-    private static let rightShift: Int64 = 60
-
     private func handle(type: CGEventType, event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap, AXIsProcessTrusted() { CGEvent.tapEnable(tap: tap, enable: true) }
             return
         }
-        if type == .keyDown {
-            if isDown { onInterrupt() }
-            return
-        }
-        guard type == .flagsChanged else { return }
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        if keyCode == Self.leftShift || keyCode == Self.rightShift {
-            onShift(event.flags.contains(.maskShift))
-            return
-        }
-        guard keyCode == trigger.keyCode else { return }
-        let down = event.flags.rawValue & trigger.deviceMask != 0
-        guard down != isDown else { return }
-        isDown = down
-        onEdge(down ? .down : .up, ProcessInfo.processInfo.systemUptime)
-    }
-}
-
-/// `.controlSuper` is a Windows/Linux chord; a Mac falls back to fn for it.
-private extension NativeHotkeyTrigger {
-    var keyCode: Int64 {
-        switch self {
-        case .fn, .controlSuper: 63
-        case .rightOption: 61
-        case .rightCommand: 54
-        case .rightControl: 62
-        }
-    }
-
-    /// Device-dependent modifier bits, so left and right keys are told apart.
-    var deviceMask: UInt64 {
-        switch self {
-        case .fn, .controlSuper: CGEventFlags.maskSecondaryFn.rawValue
-        case .rightOption: 0x40
-        case .rightCommand: 0x10
-        case .rightControl: 0x2000
-        }
+        onInput(type, event)
     }
 }

@@ -7,11 +7,10 @@ use std::path::Path;
 use std::ptr::{self, NonNull};
 use std::sync::{Arc, Mutex, mpsc};
 
-use pennel_core::HotkeyTrigger;
 use serde::Deserialize;
 use serde_json::Value;
 
-type EventSink = unsafe extern "C" fn(*mut c_void, u32, bool);
+type EventSink = unsafe extern "C" fn(*mut c_void, u32, u32);
 type AudioSink = unsafe extern "C" fn(*mut c_void, u32, *const f32, usize, u64);
 type LevelSink = unsafe extern "C" fn(*mut c_void, u32, f32);
 type CaptureScopeSink = unsafe extern "C" fn(*mut c_void, bool);
@@ -56,13 +55,18 @@ unsafe extern "C" {
         title: *const c_char,
         action: *const c_char,
     ) -> *mut c_char;
-    fn pennel_mac_hotkey_start(
-        trigger: *const c_char,
+    fn pennel_mac_hotkey_start_bindings(
+        bindings: *const c_char,
         sink: EventSink,
         context: *mut c_void,
     ) -> *mut c_void;
-    fn pennel_mac_hotkey_set_trigger(handle: *mut c_void, trigger: *const c_char);
-    fn pennel_mac_hotkey_set_record_shortcut_enabled(handle: *mut c_void, enabled: bool) -> bool;
+    fn pennel_mac_hotkey_set_bindings(handle: *mut c_void, bindings: *const c_char) -> bool;
+    fn pennel_mac_hotkey_set_listening(handle: *mut c_void, listening: bool) -> bool;
+    fn pennel_mac_hotkey_capture(
+        handle: *mut c_void,
+        sink: Option<TextSink>,
+        context: *mut c_void,
+    ) -> bool;
     fn pennel_mac_hotkey_held(handle: *mut c_void, shift: bool) -> bool;
     fn pennel_mac_hotkey_stop(handle: *mut c_void);
     fn pennel_mac_call_snapshot(apps: *const c_char, browsers: *const c_char) -> *mut c_char;
@@ -410,18 +414,18 @@ pub enum NativeHotkeyEvent {
     Up,
     Interrupt,
     Shift(bool),
-    MeetingShortcut,
+    Action(u32),
 }
 
 type HotkeyCallback = Mutex<Box<dyn FnMut(NativeHotkeyEvent) + Send>>;
 
-unsafe extern "C" fn hotkey_event(context: *mut c_void, kind: u32, value: bool) {
+unsafe extern "C" fn hotkey_event(context: *mut c_void, kind: u32, value: u32) {
     let event = match kind {
         0 => NativeHotkeyEvent::Down,
         1 => NativeHotkeyEvent::Up,
         2 => NativeHotkeyEvent::Interrupt,
-        3 => NativeHotkeyEvent::Shift(value),
-        4 => NativeHotkeyEvent::MeetingShortcut,
+        3 => NativeHotkeyEvent::Shift(value != 0),
+        4 => NativeHotkeyEvent::Action(value),
         _ => return,
     };
     let callback = unsafe { &*context.cast::<HotkeyCallback>() };
@@ -430,19 +434,29 @@ unsafe extern "C" fn hotkey_event(context: *mut c_void, kind: u32, value: bool) 
     }));
 }
 
-fn trigger_name(trigger: HotkeyTrigger) -> &'static str {
-    match trigger {
-        HotkeyTrigger::Fn => "fn",
-        HotkeyTrigger::RightOption => "right_option",
-        HotkeyTrigger::RightCommand => "right_command",
-        HotkeyTrigger::RightControl => "right_control",
-        HotkeyTrigger::ControlSuper => "control_super",
-    }
+type ShortcutCaptureCallback = Mutex<Option<Box<dyn FnMut(Value) + Send>>>;
+unsafe extern "C" fn shortcut_capture_event(
+    context: *mut c_void,
+    value: *const c_char,
+    _error: *const c_char,
+) {
+    let Some(value) =
+        (unsafe { copy_string(value) }).and_then(|text| serde_json::from_str::<Value>(&text).ok())
+    else {
+        return;
+    };
+    let callback = unsafe { &*context.cast::<ShortcutCaptureCallback>() };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if let Some(callback) = callback.lock().unwrap_or_else(|p| p.into_inner()).as_mut() {
+            callback(value);
+        }
+    }));
 }
 
 pub struct Hotkey {
     handle: NonNull<c_void>,
     callback: Box<HotkeyCallback>,
+    capture_callback: Box<ShortcutCaptureCallback>,
 }
 
 // Swift synchronizes handle access onto the main queue; the owned callback is Send and locked.
@@ -452,29 +466,69 @@ unsafe impl Sync for Hotkey {}
 
 impl Hotkey {
     pub fn start(
-        trigger: HotkeyTrigger,
+        bindings: &crate::native_shortcuts::MacShortcutTable,
         callback: impl FnMut(NativeHotkeyEvent) + Send + 'static,
     ) -> Result<Self, String> {
         let mut callback: Box<HotkeyCallback> = Box::new(Mutex::new(Box::new(callback)));
-        let trigger = c_string(trigger_name(trigger))?;
+        let bindings =
+            c_string(&serde_json::to_string(bindings).map_err(|error| error.to_string())?)?;
         let context = (&mut *callback as *mut HotkeyCallback).cast();
         let handle = NonNull::new(unsafe {
-            pennel_mac_hotkey_start(trigger.as_ptr(), hotkey_event, context)
+            pennel_mac_hotkey_start_bindings(bindings.as_ptr(), hotkey_event, context)
         })
         .ok_or("Shortcut unavailable. Give Pennel Accessibility access")?;
-        Ok(Self { handle, callback })
+        Ok(Self {
+            handle,
+            callback,
+            capture_callback: Box::new(Mutex::new(None)),
+        })
     }
 
-    pub fn set_trigger(&self, trigger: HotkeyTrigger) {
-        let trigger = c_string(trigger_name(trigger)).expect("static trigger contains no NUL");
-        unsafe { pennel_mac_hotkey_set_trigger(self.handle.as_ptr(), trigger.as_ptr()) };
-    }
-
-    pub fn set_record_shortcut_enabled(&self, enabled: bool) -> Result<(), String> {
-        if unsafe { pennel_mac_hotkey_set_record_shortcut_enabled(self.handle.as_ptr(), enabled) } {
+    pub fn set_bindings(
+        &self,
+        bindings: &crate::native_shortcuts::MacShortcutTable,
+    ) -> Result<(), String> {
+        let json = c_string(&serde_json::to_string(bindings).map_err(|error| error.to_string())?)?;
+        if unsafe { pennel_mac_hotkey_set_bindings(self.handle.as_ptr(), json.as_ptr()) } {
             Ok(())
         } else {
-            Err("Recording shortcut unavailable — check Accessibility".into())
+            Err("Shortcut unavailable — check Accessibility".into())
+        }
+    }
+    pub fn set_listening(&self, listening: bool) -> Result<(), String> {
+        if unsafe { pennel_mac_hotkey_set_listening(self.handle.as_ptr(), listening) } {
+            Ok(())
+        } else {
+            Err("Shortcut unavailable — check Accessibility".into())
+        }
+    }
+    pub fn set_capture(
+        &self,
+        callback: Option<Box<dyn FnMut(Value) + Send>>,
+    ) -> Result<(), String> {
+        let start = callback.is_some();
+        // Context has a stable allocation. Stop on the main queue before clearing the Rust closure.
+        if start {
+            *self
+                .capture_callback
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = callback;
+        }
+        let context = (&*self.capture_callback as *const ShortcutCaptureCallback)
+            .cast_mut()
+            .cast();
+        let sink = start.then_some(shortcut_capture_event as TextSink);
+        let success = unsafe { pennel_mac_hotkey_capture(self.handle.as_ptr(), sink, context) };
+        if !start || !success {
+            *self
+                .capture_callback
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
+        }
+        if success {
+            Ok(())
+        } else {
+            Err("Shortcut capture unavailable — check Accessibility".into())
         }
     }
 
@@ -1141,15 +1195,6 @@ mod tests {
                 pennel_core::SpeechTranscript::plain("café")
             );
         }
-    }
-
-    #[test]
-    fn every_trigger_has_a_native_identity() {
-        assert_eq!(trigger_name(HotkeyTrigger::Fn), "fn");
-        assert_ne!(
-            trigger_name(HotkeyTrigger::Fn),
-            trigger_name(HotkeyTrigger::RightControl)
-        );
     }
 
     #[test]
