@@ -14,10 +14,10 @@ export async function checkMeetingDocument() {
   assert(root.querySelector('.meeting-export-action').classList.contains('primary') && root.querySelector('.meeting-export-action').textContent===t('meetings.share'),"Share is not the primary finished-header action.");
   assert(root.querySelector('.meeting-transcript-provenance').hidden,"A reopened meeting inferred transcript provenance from current setup.");
   selectMeetingPane(root,'notes');
-  notes.value='Synthetic private document draft.\n'+Array.from({length:18},(_,i)=>`Retained note line ${i}`).join('\n'); notes.dispatchEvent(new Event('input',{bubbles:true})); notes.focus(); notes.setSelectionRange(10,19,'backward');
+  notes.applyUserChange('Synthetic private document draft.\n'+Array.from({length:18},(_,i)=>`Retained note line ${i}`).join('\n')); notes.focus(); notes.setSelectionRange(10,19,'backward');
   const selection=[notes.selectionStart,notes.selectionEnd,notes.selectionDirection];
   fixture.emit('settings-changed',null); await settle();
-  assert(root.querySelector('.live-notes')===notes && document.activeElement===notes && selection.join() === [notes.selectionStart,notes.selectionEnd,notes.selectionDirection].join(),"A refresh replaced the writer or lost selection/focus.");
+  assert(root.querySelector('.live-notes')===notes && document.activeElement === notes.contentDOM && selection.join() === [notes.selectionStart,notes.selectionEnd,notes.selectionDirection].join(),"A refresh replaced the writer or lost selection/focus.");
   await import('/src/views/meetings.ts').then(module=>module.flushMeetingDrafts());
   assert((await api.meetingDetail(root.dataset.meetingId)).notes===notes.value,"The single document lost durable notes autosave.");
   selectMeetingPane(root,'summary'); doc.scrollTop=Math.min(100,doc.scrollHeight-doc.clientHeight); const scroll=doc.scrollTop;

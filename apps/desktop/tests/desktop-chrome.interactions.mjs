@@ -66,7 +66,7 @@ export async function checkDesktopChrome() {
       fixture.emit("desktop-environment-changed", environment);
       await settle();
       assert(document.querySelector(".live-workspace") === container && document.querySelector(".live-notes") === note, "An OS environment change remounted the document.");
-      assert(document.activeElement === note && note.value === value && note.selectionStart === 2 && note.selectionEnd === 9, "An OS environment change lost editor focus, draft or selection.");
+      assert(document.activeElement === note.contentDOM && note.value === value && note.selectionStart === 2 && note.selectionEnd === 9, "An OS environment change lost editor focus, draft or selection.");
       assert(root.dataset.nativeMaterial === (environment.reduce_transparency || environment.increase_contrast ? "opaque" : "liquid_glass"), "Accessibility preferences did not choose an opaque material.");
       if (environment.increase_contrast) {
         const colors = getComputedStyle(root);

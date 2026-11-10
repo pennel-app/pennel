@@ -17,9 +17,7 @@
 .meeting-notes-first .live-tools-pane, .meeting-notes-first .live-summary-pane { overflow-y: auto; scrollbar-gutter: stable; }
 .meeting-notes-first .live-notes { padding: 12px 4px; max-width: 75ch; font-size: var(--font-content); caret-color: var(--accent); }
 .meeting-notes-first:not(.live-companion-open) .live-notes-pane { width: 100%; align-self: stretch; }
-.meeting-notes-first .live-note-controls { padding-block: 0 4px; }
 .meeting-notes-first .live-save-controls .live-save:disabled { display: none; }
-.meeting-notes-first .live-note-preview { max-width: 75ch; }
 .meeting-notes-first .live-speaker-controls { max-height: none; overflow: visible; }
 .meeting-notes-first .live-speaker-details > summary { padding-block: 6px; }
 .meeting-notes-first .live-transcript-heading:empty { display: none; }
@@ -191,3 +189,11 @@
 
 .insight-primary-actions :is(.insight-edit-action, .insight-dismiss, .insight-undo) { border: 0; background: transparent; box-shadow: none; padding-inline: 4px; }
 .insight-primary-actions .insight-accept .ui-icon { width: 14px; height: 14px; }
+
+.meeting-notes-first .inline-notes-editor { padding: 0; max-width: 75ch; }
+.meeting-notes-first .inline-notes-editor .cm-content { padding-block: 12px; }
+.meeting-notes-first .inline-notes-editor .cm-scroller { min-height: 0; }
+.meeting-notes-first .live-save-controls { justify-content: flex-start; }
+.meeting-notes-first .live-save-status { margin-right: auto; }
+.meeting-notes-first .live-formatting .btn { color: var(--muted); border: 0; background: transparent; box-shadow: none; }
+.meeting-notes-first .live-formatting .btn:hover { color: var(--foreground); background: var(--hover); }

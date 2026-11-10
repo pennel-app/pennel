@@ -36,3 +36,9 @@ export async function openMeetingTools(root, section) {
   await openMeetingMore(root, key);
   await until(() => root.querySelector(`[data-meeting-tool="${section}"]`)?.getClientRects().length, `The ${section} tools are not visible.`);
 }
+
+/** Synthetic transaction during an actual contentDOM composition lifecycle; not physical IME evidence. */
+export function replaceNotesSelection(editor, text) {
+  const start = editor.selectionStart, end = editor.selectionEnd;
+  editor.applyUserChange(editor.value.slice(0, start) + text + editor.value.slice(end), { start, end: start + text.length });
+}

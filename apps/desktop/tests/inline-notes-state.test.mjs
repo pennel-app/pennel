@@ -23,3 +23,11 @@ test('line formatting and user replacements retain canonical source offsets and 
  assert.equal(state.doc.toString(),value);assert.equal(state.selection.main.to,value.length);assert.equal(undoDepth(state),2);
  assert.equal(quietNoteValue(state,value),null);assert.equal(userNoteValue(state,value),null);
 });
+test('all four footer formats make one undoable user edit',()=>{
+ for(const[format,expected]of [['heading','## A\n## B'],['bold','**A\nB**'],['list','- A\n- B'],['task','- [ ] A\n- [ ] B']]){
+  let state=inlineNoteState('A\nB');state=state.update({selection:EditorSelection.single(3,0)}).state;
+  const before=state.doc.toString();state=state.update(formatNote(state,format)).state;
+  assert.equal(state.doc.toString(),expected);assert.equal(undoDepth(state),1);
+  const target={get state(){return state;},dispatch(tr){state=tr.state;}};assert.equal(undo(target),true);assert.equal(state.doc.toString(),before);assert.equal(redo(target),true);assert.equal(state.doc.toString(),expected);
+ }
+});

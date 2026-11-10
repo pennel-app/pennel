@@ -78,8 +78,7 @@ export async function checkFocusedToolsReturn() {
   selectMeetingPane(root, "notes");
   const notes = root.querySelector(".live-notes"), pane = root.querySelector(".meeting-document");
   const text = Array.from({ length: 80 }, (_, index) => `Owned synthetic note ${index}.`).join("\n");
-  notes.value = text;
-  notes.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+  notes.applyUserChange(text);
   await flushMeetingDrafts();
   notes.focus(); notes.setSelectionRange(12, 22, "backward"); notes.scrollTop = 65; pane.scrollTop = 20;
   const retained = { start: notes.selectionStart, end: notes.selectionEnd, direction: notes.selectionDirection, scroll: notes.scrollTop, paneScroll: pane.scrollTop };
@@ -92,7 +91,7 @@ export async function checkFocusedToolsReturn() {
   await until(() => document.activeElement === tools.querySelector(".meeting-tool-heading"), "Keyboard focus did not enter the selected tool.");
   assert(!fixture.calls.slice(before).some(command => ["speaker_setup", "meeting_voices"].includes(command)), "Opening templates loaded unrelated speaker setup.");
   tools.querySelector(".meeting-tool-back").click();
-  assert(visible(notes) && document.activeElement === notes && notes.value === text, "Returning from a tool lost or replaced the document.");
+  assert(visible(notes) && document.activeElement === notes.contentDOM && notes.value === text, "Returning from a tool lost or replaced the document.");
   assert(notes.selectionStart === retained.start && notes.selectionEnd === retained.end && notes.selectionDirection === retained.direction
     && notes.scrollTop === retained.scroll && pane.scrollTop === retained.paneScroll, "Returning from a tool lost writing selection or reading position.");
   for (const section of ["speakers", "files", "automation"]) {

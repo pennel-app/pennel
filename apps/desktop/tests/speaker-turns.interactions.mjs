@@ -1,3 +1,4 @@
+import { replaceNotesSelection } from "./meeting-workspace-test-controls.mjs";
 import { selectMeetingPane, openMeetingTools } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
@@ -9,7 +10,8 @@ function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic fixture.");
   return window.__PENNEL_FIXTURE__;
 }
-function edit(input, value) { input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
+function edit(input, value) {
+  if (input.applyUserChange) { input.applyUserChange(value); return; } input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
 function tab(root, name) { selectMeetingPane(root, name); }
 
 export async function checkDurableSpeakerTurns() {
@@ -30,9 +32,8 @@ export async function checkDurableSpeakerTurns() {
   assert(request.anchors[0].segment_keys[0] === "utterance:qa-utterance-0", "The question retained a mutable speaker key.");
   tab(root, "notes");
   note.focus(); note.setSelectionRange(2, 10, "backward"); note.scrollTop = 10;
-  note.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-  note.setRangeText("samengesteld", note.selectionStart, note.selectionEnd, "select");
-  note.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, inputType: "insertCompositionText", data: "samengesteld" }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  replaceNotesSelection(note, "samengesteld");
   const before = { text: note.value, start: note.selectionStart, end: note.selectionEnd, direction: note.selectionDirection, scroll: note.scrollTop };
   for (const kind of ["mixed", "overlap", "unknown"]) {
     fixture.workspace.attribution(0, { speaker: "me", voice: null, attribution: { kind, voices: kind === "unknown" ? [] : [1, 2] } });
@@ -42,10 +43,10 @@ export async function checkDurableSpeakerTurns() {
   }
   fixture.workspace.complete(request.request_id);
   await until(() => root.querySelector(".citation"), "The frozen answer did not arrive.");
-  assert(document.activeElement === note && root.querySelector(".live-notes") === note && note.value === before.text
+  assert(document.activeElement === note.contentDOM && root.querySelector(".live-notes") === note && note.value === before.text
     && note.selectionStart === before.start && note.selectionEnd === before.end && note.selectionDirection === before.direction && note.scrollTop === before.scroll,
   "Attribution or answer updates changed the composing notes editor.");
-  note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   fixture.workspace.attribution(0, { confirmed_speaker_name: "Confirmed synthetic person" });
   await until(() => first.querySelector(".speaker").textContent === "Confirmed synthetic person", "A confirmed manual name lost to automatic attribution.");
   tab(root, "questions");

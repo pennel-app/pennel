@@ -29,8 +29,7 @@ export async function checkRetranscription() {
     selectMeetingPane(document.querySelector(".live-workspace"), "notes");
     const notes = document.querySelector(".live-notes");
     const expectedNotes = notes.value + "\nSynthetische eigen notitie blijft bewaard.";
-    notes.value = expectedNotes;
-    notes.dispatchEvent(new Event("input", { bubbles: true }));
+    notes.applyUserChange(expectedNotes);
     await openMeetingTool("meetings.retranscribe_audio");
     await until(() => action() && !action().disabled && action().getClientRects().length, "Local retranscription is unavailable");
     action().click();

@@ -27,8 +27,7 @@ export async function checkLiveQuestionSelection() {
   assert(metadata.textContent.includes("2/8"), "Shortened history counts were not shown.");
   const frozenMetadata = metadata.textContent;
   selectMeetingPane(root, "notes");
-  note.value += "\nSynthetic note typed while this answer waits.";
-  note.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "Synthetic note" }));
+  note.applyUserChange(note.value + "\nSynthetic note typed while this answer waits.");
   note.setSelectionRange(2, 9, "backward");
   const expected = { text: note.value, start: note.selectionStart, end: note.selectionEnd, direction: note.selectionDirection };
   fixture.workspace.append({ start_ms: 30_000, end_ms: 38_000, speaker: "others", text: "Later finalized evidence.", failed: false, voice: null });

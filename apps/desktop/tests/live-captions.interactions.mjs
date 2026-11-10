@@ -1,4 +1,4 @@
-import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
+import { replaceNotesSelection, selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -6,6 +6,7 @@ async function until(check, message) {
   throw new Error(message);
 }
 function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; }
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
@@ -39,9 +40,8 @@ export async function checkLiveCaptions() {
   assert(!JSON.stringify(request).includes("sentinel"), "Provisional captions entered the question evidence.");
   tab(root, "notes");
   note.focus(); note.setSelectionRange(15, 27, "backward"); note.scrollTop = 60;
-  note.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-  note.setRangeText("samengesteld", note.selectionStart, note.selectionEnd, "select");
-  note.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, inputType: "insertCompositionText", data: "samengesteld" }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  replaceNotesSelection(note, "samengesteld");
   const before = { value: note.value, start: note.selectionStart, end: note.selectionEnd, direction: note.selectionDirection, scroll: note.scrollTop };
   for (let index = 0; index < 8; index++) {
     fixture.workspace.preview("me", { text: `Newer microphone sentinel ${index}`, chunk_start_ms: 24000, start_ms: 24000, end_ms: 27000 + index });
@@ -54,10 +54,10 @@ export async function checkLiveCaptions() {
   assert(caption("me") === microphone && caption("others") === system, "A preview update replaced the physical source nodes.");
   assert(microphone.textContent === "Newer microphone sentinel 7" && system.textContent === "", "Finalizing an older chunk removed newer speech or retained a duplicate partial.");
   assert([...output.querySelectorAll(".transcript-copy")].filter(node => node.textContent === "Final microphone speech.").length === 1, "Final speech was duplicated.");
-  assert(document.activeElement === note && root.querySelector(".live-notes") === note && note.value === before.value
+  assert(document.activeElement === note.contentDOM && root.querySelector(".live-notes") === note && note.value === before.value
     && note.selectionStart === before.start && note.selectionEnd === before.end && note.selectionDirection === before.direction && note.scrollTop === before.scroll,
   "Preview, final or answer updates changed the composing editor.");
-  note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "samengesteld" }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "samengesteld" }));
   await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
   tab(root, "transcript");
   for (let index = 0; index < 60; index++) fixture.workspace.append({ start_ms: 30000 + index * 15000, end_ms: 45000 + index * 15000,

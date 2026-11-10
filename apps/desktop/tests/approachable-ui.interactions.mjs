@@ -31,7 +31,7 @@ const click = node => {
   }
   node.focus(); node.click();
 };
-const enter = (node, value) => { assert(node, "Required input is missing."); node.focus(); node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
+const enter = (node, value) => { assert(node, "Required input is missing."); node.focus(); if (node.applyUserChange) { node.applyUserChange(value); return; } node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
 const summaryInDocument = () => document.querySelector('.live-workspace[data-document-layout="continuous"] .live-summary-pane:not([hidden])');
 const dialog = () => document.querySelector("dialog.task-setup-dialog[open]");
 
@@ -218,7 +218,7 @@ export async function checkMeetingFlow() {
     const notes = article.querySelector(".live-notes");
     const originalNotes = notes.value;
     const synthetic = "Synthetic draft for task-local setup.\nThis text belongs only to the owned QA fixture.";
-    notes.value = synthetic; notes.dispatchEvent(new Event("input", { bubbles: true }));
+    notes.applyUserChange(synthetic);
     notes.focus(); notes.setSelectionRange(4, 17); await settle();
     selectMeetingPane(article, "summary"); await settle();
     const panel = article.querySelector('.meeting-document');
@@ -276,7 +276,7 @@ export async function checkMeetingFlow() {
     assert(!visible(opener) && !regenerate.disabled, "The repaired meeting still presents a blocked summary action.");
     assert(!observed.operations.some(operation => ["summarize_meeting", "ask_meetings", "start_meeting", "test_provider_task", "test_provider_task_choice"].includes(operation.command)), "Setup processed meeting content or started a recording without a user action.");
     selectMeetingPane(article, "notes");
-    notes.value = originalNotes; notes.dispatchEvent(new Event("input", { bubbles: true }));
+    notes.applyUserChange(originalNotes);
     notes.blur(); await settle();
     const title = article.querySelector(".live-title").value;
     click(record);

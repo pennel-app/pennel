@@ -32,7 +32,7 @@ function button(owner, label) {
 }
 function edit(node, value) {
   assert(node && !node.disabled, "The fixture has no editable note or title.");
-  node.focus(); node.value = value;
+  node.focus(); if (node.applyUserChange) { node.applyUserChange(value); return; } node.value = value;
   node.dispatchEvent(new Event("input", { bubbles: true }));
 }
 function observeCommands({ longTranscript = false } = {}) {

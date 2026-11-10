@@ -8,7 +8,7 @@ async function until(check, message) {
   throw Error(message);
 }
 const click = node => { assert(visible(node) && !node.disabled, "The requested review action is unavailable."); node.click(); };
-const edit = (node, value) => { node.focus(); node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
+const edit = (node, value) => { node.focus(); if (node.applyUserChange) { node.applyUserChange(value); return; } node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
 async function owned() {
   const fixture = window.__PENNEL_FIXTURE__;
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && fixture?.review, "Use an isolated owner-review fixture.");

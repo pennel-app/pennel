@@ -18,6 +18,7 @@ async function owned() {
 }
 
 function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; }
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
