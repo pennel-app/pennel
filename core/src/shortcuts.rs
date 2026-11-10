@@ -341,6 +341,31 @@ fn menu_key(key: &str) -> bool {
                 | "ArrowRight"
         )
 }
+// Tauri currently parses muda's physical Accelerator, whose native Mac key equivalent is logical.
+// Refuse unsupported character tokens rather than letting its parser silently remove the accelerator.
+fn accelerator_key(key: &str) -> bool {
+    (key.len() == 1 && (key.as_bytes()[0].is_ascii_alphanumeric() || "`,./\\;'=-[] ".contains(key)))
+        || function_key(key)
+        || matches!(
+            key,
+            "Space"
+                | "Escape"
+                | "Tab"
+                | "Enter"
+                | "Backspace"
+                | "Delete"
+                | "Insert"
+                | "Home"
+                | "End"
+                | "PageUp"
+                | "PageDown"
+                | "ArrowUp"
+                | "ArrowDown"
+                | "ArrowLeft"
+                | "ArrowRight"
+        )
+}
+
 fn reserved(b: &ShortcutBinding, platform: ShortcutPlatform) -> bool {
     let Some(key) = b.key.as_deref() else {
         return false;
@@ -412,6 +437,9 @@ fn validate_shape(
             .any(|m| m.starts_with("left_") || m.starts_with("right_"))
         {
             return Err(problem("not_allowed", "sides_require_modifier_only"));
+        }
+        if scope == ShortcutScope::Application && !accelerator_key(key) {
+            return Err(problem("unsupported", "menu_key_not_supported"));
         }
         if reserved(b, platform) {
             return Err(problem("reserved", "system_shortcut"));
@@ -711,6 +739,9 @@ pub fn shortcut_rows(
 /// Native menus and DOM handlers match logical characters, while global hooks match `code`.
 pub fn menu_accelerator(b: &ShortcutBinding) -> Option<String> {
     let key = b.key.as_deref()?;
+    if !accelerator_key(key) {
+        return None;
+    }
     let mut parts: Vec<String> = b
         .mods
         .iter()
@@ -1057,6 +1088,51 @@ mod tests {
                 .get("shortcuts")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn in_app_rows_reject_keys_the_native_menu_parser_cannot_express() {
+        let settings = default_settings();
+        for key in ["é", "&", "+"] {
+            let b = binding(&["meta"], "KeyE", key);
+            assert_eq!(
+                validate_shortcut(&settings, "find", &b, ShortcutPlatform::Macos)
+                    .unwrap_err()
+                    .reason,
+                "menu_key_not_supported"
+            );
+            assert!(menu_accelerator(&b).is_none());
+            assert!(validate_shortcut(&settings, "record", &b, ShortcutPlatform::Macos).is_ok());
+        }
+    }
+
+    #[test]
+    fn browser_default_command_contract_matches_core_policy() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../assets/contracts/desktop-shortcuts.json"
+        ))
+        .unwrap();
+        for (name, platform) in [
+            ("macos", ShortcutPlatform::Macos),
+            ("windows", ShortcutPlatform::Windows),
+            ("linux", ShortcutPlatform::LinuxX11),
+        ] {
+            for row in contract[name].as_array().unwrap() {
+                let id = row["id"].as_str().unwrap();
+                assert_eq!(
+                    row["binding"],
+                    serde_json::to_value(default_shortcut(id, platform)).unwrap(),
+                    "{name} {id}"
+                );
+            }
+            assert_eq!(
+                contract[name].as_array().unwrap().len(),
+                SHORTCUT_ACTIONS
+                    .iter()
+                    .filter(|id| shortcut_scope(id) == Some(ShortcutScope::Application))
+                    .count()
+            );
+        }
     }
 
     #[test]

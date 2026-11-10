@@ -843,7 +843,7 @@ function focusChanged(focused: boolean) {
 function windowShortcuts() {
   window.addEventListener("keydown", (event) => {
     if (fixtureClient() || info.platform !== "macos") {
-      const command = desktopShortcut(event, info.platform);
+      const command = desktopShortcut(event, info.platform, info.shortcuts);
       if (command) { event.preventDefault(); void runDesktopCommand(command).catch(report); return; }
     }
     if (!(info.platform === "macos" ? event.metaKey : event.ctrlKey) || event.altKey || event.shiftKey) return;

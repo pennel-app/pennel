@@ -253,6 +253,7 @@ export interface Settings {
   style_rules: { bundle_id: string; style: Style }[];
   history_retention_days: number;
   hotkey: HotkeyTrigger;
+  shortcuts?: Record<string, ShortcutBinding | null>;
   local_unload_minutes: number;
   meetings_dir: string;
   default_template: string;
@@ -287,7 +288,20 @@ export interface KindInfo {
   availability: Capability;
 }
 
+export interface ShortcutBinding { mods: string[]; code: string | null; key: string | null }
+export interface ShortcutLabel { keycaps: string[]; text: string }
+export interface ShortcutRow {
+  id: string;
+  scope: "global_hold" | "listening" | "global" | "application";
+  binding: ShortcutBinding | null;
+  default_binding: ShortcutBinding | null;
+  label: ShortcutLabel;
+  editable: boolean;
+  capability: { available: boolean; reason: string | null };
+  changed: boolean;
+}
 export interface AppInfo {
+  shortcuts?: ShortcutRow[];
   interface_language: "en" | "nl";
   system_interface_language: "en" | "nl";
   settings: Settings;
