@@ -8,6 +8,7 @@ import { summaryDestination } from "./meeting-summary-automation";
 import { sourceRange } from "./source-navigation";
 import { meetingSummaryReading } from "./meeting-summary-reading";
 import { actionState, attachedSummaryRecord } from "./meeting-summary-reading-state";
+import { LatestRequest } from "./async";
 
 export function meetingSummaryEditor(initial: Context, host: {
   id(): string;
@@ -24,6 +25,8 @@ export function meetingSummaryEditor(initial: Context, host: {
   let ctx = initial, composing = false, generating = false, loaded = false, loading = false, editing = false;
   let timer: number | undefined, saving: Promise<void> | null = null, reading: Promise<void> | null = null;
   const draft = new SummaryDraft();
+  const summaryReads = new LatestRequest();
+  let stopSelectionWatch: (() => void) | null = null;
   const editor = h("textarea", { class: "meeting-summary-editor", hidden: true, "aria-label": l("meetings.summary_editor_label"),
     placeholder: l("meetings.summary_editor_placeholder"), spellcheck: "true" });
   const rendered = h("div", { class: "meeting-summary-rendered", tabindex: 0, "aria-label": l("meetings.workspace_summary") });
@@ -76,6 +79,7 @@ export function meetingSummaryEditor(initial: Context, host: {
 
   function report(failure: unknown) { draft.error = errorText(failure); update(); }
   function update() {
+    draft.applyPresentation(presentationProtected());
     const ready = languageModelConfigured(ctx.info), finished = host.finished();
     root.dataset.summaryState = generating ? "generating" : draft.pending ? "saving" : draft.error ? "error" : draft.dirty ? "unsaved" : loaded ? "saved" : "loading";
     status.textContent = generating ? t("meetings.summary_generating") : draft.pending ? t("meetings.workspace_saving")
@@ -116,6 +120,16 @@ export function meetingSummaryEditor(initial: Context, host: {
   editor.addEventListener("compositionstart", () => { composing = true; clearTimeout(timer); update(); });
   editor.addEventListener("compositionend", () => { composing = false; draft.edit(editor.value); update(); schedule(); });
   editor.addEventListener("blur", () => { if (!composing) void flush().catch(report); });
+  rendered.addEventListener("focusout", () => { queueMicrotask(applyDeferredPresentation); });
+  function presentationProtected() { return composing || editing || documentActive() || renderedSelection() || reader.interacting(); }
+  function applyDeferredPresentation() { if (root.isConnected && draft.applyPresentation(presentationProtected())) update(); }
+  function watchPresentation(next: Context) {
+    stopSelectionWatch?.();
+    document.addEventListener("selectionchange", applyDeferredPresentation);
+    const stop = () => document.removeEventListener("selectionchange", applyDeferredPresentation);
+    stopSelectionWatch = stop;
+    next.onDispose(() => { if (stopSelectionWatch === stop) { stop(); stopSelectionWatch = null; } });
+  }
   async function flush(): Promise<void> {
     clearTimeout(timer);
     if (composing) throw new Error(t("meetings.workspace_composing"));
@@ -123,9 +137,9 @@ export function meetingSummaryEditor(initial: Context, host: {
     if (!draft.dirty || !draft.document || !host.finished()) return;
     if (draft.remote) throw new Error(t("meetings.summary_changed_saved"));
     const target = draft.value, base = draft.document;
-    draft.pending = true; update();
+    summaryReads.cancel(); draft.pending = true; update();
     saving = api.saveMeetingSummary(host.id(), base.revision, base.source_revision, target).then(validated).then(document => {
-      draft.acknowledge(document, target);
+      summaryReads.cancel(); draft.acknowledge(document, target);
     }).catch(failure => { report(failure); throw failure; }).finally(() => { saving = null; draft.pending = false; update(); });
     await saving;
   }
@@ -133,11 +147,13 @@ export function meetingSummaryEditor(initial: Context, host: {
     if (reading) return reading;
     if (!host.finished() || draft.pending || (!force && draft.dirty)) return;
     loading = true; update();
-    reading = api.meetingSummary(host.id()).then(validated).then(document => {
+    const id = host.id();
+    reading = summaryReads.run(() => api.meetingSummary(id).then(validated), document => {
+      if (host.id() !== id) return;
       loaded = true;
-      const changed = draft.receive(document, composing || editing || documentActive() || renderedSelection() || reader.interacting());
+      const changed = draft.receive(document, presentationProtected());
       if (changed && editor.value !== draft.value) editor.value = draft.value;
-    }).catch(failure => { report(failure); throw failure; }).finally(() => { reading = null; loading = false; update(); });
+    }).then(() => undefined).catch(failure => { if (host.id() !== id) return; report(failure); throw failure; }).finally(() => { reading = null; loading = false; update(); });
     await reading;
   }
   async function validated(document: MeetingSummaryDocument): Promise<MeetingSummaryDocument> { return { ...document, record: await attachedSummaryRecord(document) }; }
@@ -162,33 +178,33 @@ export function meetingSummaryEditor(initial: Context, host: {
   async function acceptCandidate() {
     if (!draft.canAccept || composing || !draft.candidate) return;
     const selected = draft.candidate, revision = draft.editRevision;
-    draft.pending = true; update();
+    summaryReads.cancel(); draft.pending = true; update();
     saving = api.acceptMeetingSummary(host.id(), selected.revision, selected.source_revision, selected.markdown, selected.record).then(validated).then(result => {
       if (draft.editRevision === revision) { draft.value = result.markdown; editor.value = draft.value; }
-      draft.acknowledge(result, result.markdown); draft.candidate = null;
+      summaryReads.cancel(); draft.acknowledge(result, result.markdown); draft.candidate = null;
     }).finally(() => { saving = null; draft.pending = false; update(); });
     await saving;
   }
   async function updateAction(base: MeetingSummaryDocument, index: number, change: { done?: boolean; owner?: string | null }) {
     const current = draft.document;
     if (!current || current.meeting_uid !== base.meeting_uid || current.revision !== base.revision || current.source_revision !== base.source_revision
-      || editing || composing || draft.dirty || draft.pending || draft.remote || generating || !host.finished() || host.processing?.()) throw new Error(t("meetings.summary_changed_saved"));
+      || editing || composing || draft.dirty || draft.pending || draft.remote || draft.deferredPresentation || generating || !host.finished() || host.processing?.()) throw new Error(t("meetings.summary_changed_saved"));
     const action = current.record?.structure?.actions[index];
     if (!action) throw new Error(t("meetings.summary_changed_saved"));
     const state = actionState(action, change), revision = draft.editRevision;
-    draft.pending = true; draft.error = null; update();
+    summaryReads.cancel(); draft.pending = true; draft.error = null; update();
     saving = api.updateMeetingSummaryAction(host.id(), current.revision, current.source_revision, index, state.done, state.owner).then(validated).then(result => {
       if (revision === draft.editRevision) { draft.value = result.markdown; editor.value = draft.value; }
-      draft.acknowledge(result, result.markdown);
+      summaryReads.cancel(); draft.acknowledge(result, result.markdown);
     }).finally(() => { saving = null; draft.pending = false; update(); });
     await saving;
   }
   async function markAsReviewed() {
     if (markReviewed.disabled || !draft.document) return;
     const reviewed = draft.document;
-    draft.pending = true; update();
+    summaryReads.cancel(); draft.pending = true; update();
     saving = api.acceptMeetingSummary(host.id(), reviewed.revision, reviewed.source_revision, reviewed.markdown).then(validated).then(result => {
-      draft.acknowledge(result, reviewed.markdown);
+      summaryReads.cancel(); draft.acknowledge(result, reviewed.markdown);
     }).finally(() => { saving = null; draft.pending = false; update(); });
     await saving;
   }
@@ -201,18 +217,18 @@ export function meetingSummaryEditor(initial: Context, host: {
           await flush(); await refresh();
           if (!draft.document || draft.remote) return;
           const revision = draft.editRevision;
-          draft.pending = true; update();
+          summaryReads.cancel(); draft.pending = true; update();
           saving = api.restoreMeetingSummary(host.id(), entry.revision, draft.document.revision, draft.document.source_revision).then(validated).then(result => {
             if (revision === draft.editRevision) { draft.value = result.markdown; editor.value = draft.value; ++draft.editRevision; }
-            draft.candidate = null; draft.acknowledge(result, result.markdown);
+            draft.candidate = null; summaryReads.cancel(); draft.acknowledge(result, result.markdown);
           }).finally(() => { saving = null; draft.pending = false; update(); });
           await saving; await loadHistory();
         } catch (failure) { report(failure); }
       } }, l("meetings.summary_restore")))));
     if (!entries.length) historyList.append(h("p", { class: "help" }, l("meetings.summary_history_empty")));
   }
-  bindLocalization(root, update); update();
-  return { root, editor, provenance: reader.provenance, flush, refresh, readiness: update, bind(next: Context) { ctx = next; next.onInfoChange(update); update(); },
+  watchPresentation(initial); bindLocalization(root, update); update();
+  return { root, editor, provenance: reader.provenance, flush, refresh, readiness: update, bind(next: Context) { ctx = next; watchPresentation(next); next.onInfoChange(update); update(); },
     editing: () => editing,
     restorePresentation(wasEditing: boolean) { if (!draft.dirty && !composing) { editing = wasEditing; update(); } },
     focusSource(text: string) {
