@@ -204,7 +204,7 @@ pub use speaker_jobs::{
 };
 pub use speakers::{MeetingVoice, SpeakerProcessingStatus, SpeakerRecognition};
 pub use speech_result::{SpeechTextSpan, SpeechTimingKind, SpeechTranscript};
-pub use status::{CommandIntent, DictationStatus, PillState};
+pub use status::{CommandIntent, DictationStatus, NoSoundWatch, PillState};
 pub use system_llm::{LanguageModelMessage, SystemLanguageModel};
 pub use system_stt::{SystemTranscriber, TimedSystemTranscriber};
 pub use templates::MeetingTemplate;
