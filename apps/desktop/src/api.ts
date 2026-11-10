@@ -636,8 +636,10 @@ export interface PillPreview {
 }
 
 export type PillState = (
-  | { state: "hidden" | "listening" | "hands_free" | "command" | "working" }
-  | { state: "error"; message: string }
+  | { state: "hidden" | "listening" | "hands_free" | "command" | "no_sound" | "working" }
+  | { state: "inserted"; app?: string | null }
+  | { state: "copied"; paste_key: string }
+  | { state: "problem"; title: string; detail?: string | null }
 ) & { preview?: PillPreview | null; cleanup_verification?: CleanupVerificationAvailability | null };
 
 export interface UpdateInfo {

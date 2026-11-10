@@ -182,7 +182,7 @@ function dictationHome(ctx: Context): HTMLElement {
   const currentVerification = h("p", { class: "help", role: "status", hidden: true });
   let activeDictation: PillState | null = null;
   const updateVerification = () => {
-    const active = activeDictation && !["hidden", "error"].includes(activeDictation.state);
+    const active = activeDictation && !["hidden", "inserted", "copied", "problem"].includes(activeDictation.state);
     currentVerification.hidden = !active || !activeDictation?.cleanup_verification;
     currentVerification.textContent = activeDictation?.cleanup_verification ? cleanupVerificationCurrent(activeDictation.cleanup_verification) : "";
   };
