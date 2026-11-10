@@ -169,6 +169,7 @@ pub async fn accept_meeting_summary(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn update_meeting_summary_action(
     id: String,
     expected_revision: String,
