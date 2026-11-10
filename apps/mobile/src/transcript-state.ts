@@ -27,7 +27,9 @@ export function transcriptSpeakerLabel(segment: Segment, speakers: MeetingDetail
     if (segment.attribution.kind !== 'single') return t(`meetings.attribution_${segment.attribution.kind}`);
     if (segment.attribution.self_voice === true) return t('meetings.speaker_me');
     const voice = segment.attribution.voices.length === 1 ? segment.attribution.voices[0] : null;
-    return voice === null ? t('meetings.attribution_unknown') : speakers.find(speaker => speaker.voice === voice)?.name ?? t('mobile.speakers.unknown', { number: voice });
+    if (voice === null) return t('meetings.attribution_unknown');
+    if (segment.automatic_speaker_name && !segment.attribution.provisional && !segment.correction_review_required) return t('meetings.speaker_teams_estimate', { name: segment.automatic_speaker_name });
+    return speakers.find(speaker => speaker.voice === voice)?.name ?? t('mobile.speakers.unknown', { number: voice });
   }
   return segment.voice === null ? t(`meetings.speaker_${segment.speaker}`) : speakers.find(speaker => speaker.voice === segment.voice)?.name ?? t('mobile.speakers.unknown', { number: segment.voice });
 }

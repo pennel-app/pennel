@@ -1,3 +1,10 @@
+/// Exclusive millisecond ends must cover the final sample, including a fractional millisecond.
+pub(crate) fn sample_duration_ms(sample_count: u64, sample_rate: u32) -> u64 {
+    sample_count
+        .saturating_mul(1_000)
+        .div_ceil(u64::from(sample_rate.max(1)))
+}
+
 pub fn encode_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
@@ -58,6 +65,21 @@ pub fn decode_wav(bytes: &[u8]) -> Option<(Vec<f32>, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exclusive_sample_durations_cover_submilliseconds_without_changing_integral_ends() {
+        for (samples, expected) in [
+            (0, 0),
+            (1, 1),
+            (15, 1),
+            (16, 1),
+            (17, 2),
+            (122_229, 7_640),
+            (272_326, 17_021),
+        ] {
+            assert_eq!(sample_duration_ms(samples, 16_000), expected);
+        }
+    }
 
     #[test]
     fn wav_header_is_valid() {

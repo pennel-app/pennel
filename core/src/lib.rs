@@ -116,7 +116,9 @@ pub use localization::{
     ui_text,
 };
 pub use meeting_app_evidence::{
-    AppSpeakerEvidence, CandidateSource, NameCandidate, NameSuggestion, SpeakingSample, VoiceNaming,
+    AppEvidenceAvailability, AppEvidenceBinding, AppSpeakerEvidence, AutomaticNameAttribution,
+    CandidateSource, NameCandidate, NameSuggestion, SpeakingSample, VoiceNaming, VoiceNamingStatus,
+    app_speaker_highlight_latency_ms,
 };
 pub use meeting_chat::{ChatTurn, Citation, MeetingAnswer};
 pub use meeting_evidence::{
@@ -190,9 +192,9 @@ pub use rules::{
 };
 pub use session::{MeetingHealth, MeetingRecognition, MeetingSession};
 pub use settings::{
-    AppearancePreference, DictationMode, HotkeyTrigger, ModelChoice, OnboardingGoal,
-    OnboardingProgress, OnboardingStatus, OnboardingStep, Settings, SpeakerRecognitionMode, Style,
-    StyleRule, SummaryAutomation, default_settings,
+    AppearancePreference, DictationMode, HotkeyTrigger, MeetingAppNamePolicy, ModelChoice,
+    OnboardingGoal, OnboardingProgress, OnboardingStatus, OnboardingStep, Settings,
+    SpeakerRecognitionMode, Style, StyleRule, SummaryAutomation, default_settings,
 };
 pub use setup::{SetupAccess, SetupFacts, SetupReadiness, dictation_readiness, meeting_readiness};
 pub use speaker_jobs::{
@@ -200,7 +202,7 @@ pub use speaker_jobs::{
     RecognitionUploadProgress, RecognitionUploadRequest, RecognitionUploadResponse,
     SpeakerRecognitionJob, SpeakerRecognitionJobSnapshot, SpeakerRecognitionStage,
 };
-pub use speakers::{MeetingVoice, SpeakerRecognition};
+pub use speakers::{MeetingVoice, SpeakerProcessingStatus, SpeakerRecognition};
 pub use speech_result::{SpeechTextSpan, SpeechTimingKind, SpeechTranscript};
 pub use status::{CommandIntent, DictationStatus, PillState};
 pub use system_llm::{LanguageModelMessage, SystemLanguageModel};

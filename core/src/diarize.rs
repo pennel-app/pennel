@@ -140,11 +140,10 @@ impl From<Speaker> for Track {
     }
 }
 
-/// The outcome of [`apply`]: which diarization speaker each meeting voice is, and whether the user
-/// was heard.
+/// One physical track's applied meeting identities and owner attribution.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Applied {
-    /// `(voice, speaker index)`, voices numbered 1.. in order of first line.
+    /// `(meeting voice ID, local speaker index)`; IDs are shared by all physical sources.
     pub voices: Vec<(u32, usize)>,
     pub me_found: bool,
 }
@@ -209,6 +208,16 @@ fn includes_source(row: &crate::meeting_utterances::MeetingUtterance, track: Tra
         (Track::Microphone, Some("microphone" | "room_microphone"))
             | (Track::System, Some("system" | "system_audio"))
     )
+}
+
+fn confirmed_microphone_owner(row: &crate::meeting_utterances::MeetingUtterance) -> bool {
+    row.metadata.source_id.as_deref() == Some("microphone")
+        && row.metadata.unresolved_manual.is_empty()
+        && row.metadata.manual.as_ref().is_some_and(|manual| {
+            manual.self_voice
+                && !manual.review_required
+                && manual.source_fingerprint == row.metadata.source_fingerprint
+        })
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -281,13 +290,21 @@ fn provisional_voice_map(
     turns: &[SpeakerTurn],
     track: Track,
 ) -> std::collections::BTreeMap<u32, Option<u32>> {
+    previous_voice_map(before, turns, track, true)
+}
+
+fn previous_voice_map(
+    before: &[crate::meeting_utterances::MeetingUtterance],
+    turns: &[SpeakerTurn],
+    track: Track,
+    provisional_only: bool,
+) -> std::collections::BTreeMap<u32, Option<u32>> {
     use std::collections::{BTreeMap, BTreeSet};
     let mut candidates: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
     let mut reverse: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
-    for old in before
-        .iter()
-        .filter(|row| includes_source(row, track) && row.metadata.attribution.provisional)
-    {
+    for old in before.iter().filter(|row| {
+        includes_source(row, track) && (!provisional_only || row.metadata.attribution.provisional)
+    }) {
         for prior in &old.metadata.attribution.turns {
             let Some(voice) = prior.voice else { continue };
             for fresh in turns
@@ -311,6 +328,327 @@ fn provisional_voice_map(
             (speaker, voice)
         })
         .collect()
+}
+
+pub(crate) struct DiarizedTrack<'a> {
+    pub turns: &'a [SpeakerTurn],
+    pub identities: &'a [Identity],
+    pub track: Track,
+    /// None is the explicit legacy no-voiceprint path; Some(empty) intentionally admits no IDs.
+    pub eligible_speakers: Option<&'a std::collections::BTreeSet<u32>>,
+}
+
+/// Admit voices from both physical sources before assigning the shared portable IDs. Inference
+/// order must not let one fragmented source consume the entire meeting's identity space.
+#[cfg(test)]
+fn apply_utterance_tracks(
+    before: &[crate::meeting_utterances::MeetingUtterance],
+    tracks: &[DiarizedTrack<'_>],
+) -> (
+    Vec<crate::meeting_utterances::MeetingUtterance>,
+    Vec<Applied>,
+    u32,
+) {
+    let (rows, applications, unassigned, _) =
+        apply_utterance_tracks_with_reserved(before, tracks, &[]);
+    (rows, applications, unassigned)
+}
+
+pub(crate) fn apply_utterance_tracks_with_reserved(
+    before: &[crate::meeting_utterances::MeetingUtterance],
+    tracks: &[DiarizedTrack<'_>],
+    reserved_ids: &[u32],
+) -> (
+    Vec<crate::meeting_utterances::MeetingUtterance>,
+    Vec<Applied>,
+    u32,
+    bool,
+) {
+    use std::collections::BTreeSet;
+
+    struct Candidate {
+        speaker: u32,
+        preferred: Option<u32>,
+        manual: bool,
+        blocked: bool,
+    }
+
+    let mut limited_evidence = false;
+    let candidates: Vec<Vec<Candidate>> = tracks
+        .iter()
+        .map(|input| {
+            let previous = previous_voice_map(before, input.turns, input.track, false);
+            let provisional = provisional_voice_map(before, input.turns, input.track);
+            let mut turns: Vec<_> = input
+                .turns
+                .iter()
+                .filter(|turn| {
+                    turn.end_ms > turn.start_ms
+                        && before.iter().any(|row| {
+                            includes_source(row, input.track)
+                                && !row.segment.failed
+                                && !row.segment.text.trim().is_empty()
+                                && !confirmed_microphone_owner(row)
+                                && turn.end_ms.min(row.metadata.end_ms)
+                                    > turn.start_ms.max(row.metadata.start_ms)
+                        })
+                })
+                .collect();
+            turns.sort_by_key(|turn| (turn.start_ms, turn.end_ms, turn.speaker));
+            let mut seen = BTreeSet::new();
+            turns
+                .into_iter()
+                .filter_map(|turn| {
+                    if !seen.insert(turn.speaker)
+                        || input.track == Track::Microphone
+                            && input.identities.get(turn.speaker as usize) == Some(&Identity::Me)
+                    {
+                        return None;
+                    }
+                    let manual: BTreeSet<_> = before
+                        .iter()
+                        .filter(|row| includes_source(row, input.track))
+                        .filter(|row| {
+                            attribution_label(
+                                input.turns,
+                                row.metadata.start_ms,
+                                row.metadata.end_ms,
+                            )
+                            .speakers
+                                == [turn.speaker]
+                        })
+                        .filter_map(|row| {
+                            row.metadata.manual.as_ref().filter(|manual| {
+                                !manual.review_required
+                                    && manual.source_fingerprint == row.metadata.source_fingerprint
+                            })
+                        })
+                        .filter_map(|manual| manual.voice)
+                        .filter(|voice| VOICES.contains(voice))
+                        .collect();
+                    let manual_voice = manual.first().copied().filter(|_| manual.len() == 1);
+                    if manual_voice.is_none()
+                        && input
+                            .eligible_speakers
+                            .is_some_and(|eligible| !eligible.contains(&turn.speaker))
+                    {
+                        limited_evidence = true;
+                        return None;
+                    }
+                    let preferred =
+                        manual_voice.or_else(|| previous.get(&turn.speaker).copied().flatten());
+                    Some(Candidate {
+                        speaker: turn.speaker,
+                        preferred,
+                        manual: manual_voice.is_some(),
+                        blocked: provisional.get(&turn.speaker) == Some(&None)
+                            && manual_voice.is_none(),
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    let row_voices = |row: &crate::meeting_utterances::MeetingUtterance| {
+        row.segment
+            .voice
+            .into_iter()
+            .chain(row.metadata.attribution.voices.iter().copied())
+            .chain(
+                row.metadata
+                    .attribution
+                    .turns
+                    .iter()
+                    .filter_map(|turn| turn.voice),
+            )
+            .chain(row.metadata.manual.iter().filter_map(|manual| manual.voice))
+            .chain(
+                row.metadata
+                    .unresolved_manual
+                    .iter()
+                    .filter_map(|manual| manual.voice),
+            )
+            .filter(|voice| VOICES.contains(voice))
+            .collect::<Vec<_>>()
+    };
+    let untouched: BTreeSet<_> = before
+        .iter()
+        .filter(|row| {
+            row.segment.failed
+                || row.segment.text.trim().is_empty()
+                || !tracks.iter().any(|input| includes_source(row, input.track))
+        })
+        .flat_map(row_voices)
+        .chain(
+            reserved_ids
+                .iter()
+                .copied()
+                .filter(|voice| VOICES.contains(voice)),
+        )
+        .collect();
+    let protected: BTreeSet<_> = before
+        .iter()
+        .flat_map(|row| {
+            row.metadata
+                .manual
+                .iter()
+                .filter_map(|manual| manual.voice)
+                .chain(
+                    row.metadata
+                        .unresolved_manual
+                        .iter()
+                        .filter_map(|manual| manual.voice),
+                )
+        })
+        .filter(|voice| VOICES.contains(voice))
+        .collect();
+    let mut occupied = untouched.clone();
+    occupied.extend(protected.iter().copied());
+    // An ambiguous live-to-final correspondence is an abstention, not permission to assign that
+    // session ID to a newly heard person. Only proven one-to-one live mappings can release it.
+    for input in tracks {
+        let proven: BTreeSet<_> = provisional_voice_map(before, input.turns, input.track)
+            .into_values()
+            .flatten()
+            .collect();
+        for row in before
+            .iter()
+            .filter(|row| includes_source(row, input.track) && row.metadata.attribution.provisional)
+        {
+            occupied.extend(
+                row_voices(row)
+                    .into_iter()
+                    .filter(|voice| !proven.contains(voice)),
+            );
+        }
+    }
+    let mut maps: Vec<Vec<(u32, u32)>> = vec![Vec::new(); tracks.len()];
+    let mut claimed = untouched;
+    for (index, source) in candidates.iter().enumerate() {
+        for candidate in source.iter().filter(|candidate| candidate.manual) {
+            if let Some(voice) = candidate.preferred.filter(|voice| claimed.insert(*voice)) {
+                maps[index].push((candidate.speaker, voice));
+            }
+        }
+    }
+    let mut admitted: Vec<Vec<&Candidate>> = vec![Vec::new(); tracks.len()];
+    let usable_history = |candidate: &Candidate| {
+        candidate
+            .preferred
+            .is_some_and(|voice| !occupied.contains(&voice))
+    };
+    let mut remaining: Vec<_> = candidates
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            let assigned: BTreeSet<_> = maps[index].iter().map(|(speaker, _)| *speaker).collect();
+            let mut remaining: Vec<_> = source
+                .iter()
+                .filter(move |candidate| {
+                    !candidate.blocked
+                        && !candidate.manual
+                        && !assigned.contains(&candidate.speaker)
+                })
+                .collect();
+            remaining.sort_by_key(|candidate| !usable_history(candidate));
+            remaining.into_iter().peekable()
+        })
+        .collect();
+    let mut slots = VOICES
+        .clone()
+        .filter(|voice| !occupied.contains(voice))
+        .count();
+    // First cover any source without an identity, preferring its established voice. Then keep
+    // historical one-to-one identities before admitting entirely new fragments.
+    for (index, source) in remaining.iter_mut().enumerate() {
+        if slots > 0
+            && maps[index].is_empty()
+            && let Some(candidate) = source.next()
+        {
+            admitted[index].push(candidate);
+            slots -= 1;
+        }
+    }
+    while slots > 0 {
+        let mut progress = false;
+        for (index, source) in remaining.iter_mut().enumerate() {
+            if slots == 0 {
+                break;
+            }
+            if let Some(candidate) = source.next_if(|candidate| usable_history(candidate)) {
+                admitted[index].push(candidate);
+                slots -= 1;
+                progress = true;
+            }
+        }
+        if !progress {
+            break;
+        }
+    }
+    // Remaining new clusters share free capacity across sources. IDs are assigned afterward so
+    // unsaturated meetings retain their established source ordering.
+    while slots > 0 {
+        let mut progress = false;
+        for (index, source) in remaining.iter_mut().enumerate() {
+            if slots == 0 {
+                break;
+            }
+            if let Some(candidate) = source.next() {
+                admitted[index].push(candidate);
+                slots -= 1;
+                progress = true;
+            }
+        }
+        if !progress {
+            break;
+        }
+    }
+    // Reuse proven one-to-one historical IDs before picking new ones. Protected manual IDs can
+    // only be claimed by their own explicit candidate, never by an unrelated cluster.
+    for (index, source) in admitted.iter().enumerate() {
+        for candidate in source {
+            if let Some(voice) = candidate
+                .preferred
+                .filter(|voice| VOICES.contains(voice) && !occupied.contains(voice))
+            {
+                occupied.insert(voice);
+                maps[index].push((candidate.speaker, voice));
+            }
+        }
+    }
+    for (index, source) in admitted.iter().enumerate() {
+        for candidate in source {
+            if maps[index]
+                .iter()
+                .any(|(speaker, _)| *speaker == candidate.speaker)
+            {
+                continue;
+            }
+            if let Some(voice) = VOICES.clone().find(|voice| !occupied.contains(voice)) {
+                occupied.insert(voice);
+                maps[index].push((candidate.speaker, voice));
+            }
+        }
+    }
+    let unassigned = candidates
+        .iter()
+        .zip(&maps)
+        .map(|(source, map)| source.len().saturating_sub(map.len()) as u32)
+        .sum();
+    let mut rows = before.to_vec();
+    let mut applied = Vec::with_capacity(tracks.len());
+    for (input, map) in tracks.iter().zip(&maps) {
+        let (updated, result) = apply_utterances_inner(
+            &rows,
+            input.turns,
+            input.identities,
+            input.track,
+            Some(map),
+            false,
+        );
+        rows = updated;
+        applied.push(result);
+    }
+    (rows, applied, unassigned, limited_evidence)
 }
 
 /// Apply actual acoustic turns to exact authoritative spans. Missing word alignment preserves the
@@ -489,7 +827,21 @@ fn apply_utterances_inner(
             result.push(original.clone());
             continue;
         }
-        let groups = if usable_spans(original) {
+        let confirmed_owner = track == Track::Microphone && confirmed_microphone_owner(original);
+        let groups = if confirmed_owner {
+            vec![(
+                0,
+                if usable_spans(original) {
+                    original.metadata.spans.len()
+                } else {
+                    0
+                },
+                AttributionLabel {
+                    kind: AttributionKind::Single,
+                    speakers: Vec::new(),
+                },
+            )]
+        } else if usable_spans(original) {
             let mut groups: Vec<(usize, usize, AttributionLabel)> = Vec::new();
             for (index, span) in original.metadata.spans.iter().enumerate() {
                 let label = attribution_label(turns, span.2, span.3);
@@ -567,7 +919,8 @@ fn apply_utterances_inner(
                 .collect();
             voices.sort_unstable();
             voices.dedup();
-            let self_voice = label.speakers.iter().any(|speaker| is_me(*speaker));
+            let self_voice =
+                confirmed_owner || label.speakers.iter().any(|speaker| is_me(*speaker));
             let kind = if label.kind == AttributionKind::Single && voices.is_empty() && !self_voice
             {
                 AttributionKind::Unknown
@@ -586,11 +939,12 @@ fn apply_utterances_inner(
                     row.metadata.attribution_revision.saturating_add(1);
             }
             row.metadata.attribution = automatic;
-            if label.kind == AttributionKind::Single
-                && label
-                    .speakers
-                    .first()
-                    .is_some_and(|speaker| is_me(*speaker))
+            if confirmed_owner
+                || label.kind == AttributionKind::Single
+                    && label
+                        .speakers
+                        .first()
+                        .is_some_and(|speaker| is_me(*speaker))
             {
                 row.segment.speaker = Speaker::Me;
                 row.segment.voice = None;
@@ -608,7 +962,11 @@ fn apply_utterances_inner(
             }
             row.metadata.refresh_fingerprints(&row.segment);
             if let Some(mut manual) = row.metadata.manual.take() {
-                if split
+                if confirmed_owner {
+                    manual.source_fingerprint = row.metadata.source_fingerprint.clone();
+                    row.metadata.manual = Some(manual);
+                    applied.me_found = true;
+                } else if split
                     || manual.review_required
                     || manual.source_fingerprint != row.metadata.source_fingerprint
                 {
@@ -647,6 +1005,7 @@ pub(crate) fn preserve_manual_names(
                 voice: Some(name.voice),
                 source_fingerprint: row.metadata.source_fingerprint.clone(),
                 review_required: false,
+                self_voice: false,
             });
         }
     }
@@ -1304,6 +1663,7 @@ mod tests {
             voice: Some(4),
             source_fingerprint: row.metadata.source_fingerprint.clone(),
             review_required: false,
+            self_voice: false,
         });
         let (same, _) = apply_utterances(
             &[row.clone()],
@@ -1385,6 +1745,412 @@ mod tests {
         assert_eq!(hybrid[0].segment.voice, Some(3));
         assert_eq!(applied.voices, [(3, 0)]);
         assert_eq!(hybrid[1], system[1]);
+    }
+
+    #[test]
+    fn joint_rerun_keeps_ids_when_track_order_and_model_indices_change() {
+        let mic = timed_row("Room", &[(0, 4, 0, 1_200)]);
+        let mut first = timed_row("Call", &[(0, 4, 0, 1_200)]);
+        first.metadata.source_id = Some("system_audio".into());
+        first.metadata.refresh_fingerprints(&first.segment);
+        let mut second = first.clone();
+        second.segment.start_ms = 2_000;
+        second.segment.end_ms = 3_200;
+        second.metadata.spans[0].2 = 2_000;
+        second.metadata.spans[0].3 = 3_200;
+        second.metadata.refresh_fingerprints(&second.segment);
+        let system = [turn(0, 1_200, 0), turn(2_000, 3_200, 1)];
+        let microphone = [turn(0, 1_200, 0)];
+        let identities = [Identity::Unknown, Identity::Unknown];
+        let (first_pass, _, missing) = apply_utterance_tracks(
+            &[mic, first, second],
+            &[
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &system,
+                    identities: &identities,
+                    track: Track::System,
+                },
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &microphone,
+                    identities: &identities[..1],
+                    track: Track::Microphone,
+                },
+            ],
+        );
+        assert_eq!(missing, 0);
+        assert_eq!(
+            first_pass
+                .iter()
+                .map(|row| row.segment.voice)
+                .collect::<Vec<_>>(),
+            [Some(3), Some(1), Some(2)]
+        );
+        let changed = [turn(0, 1_200, 1), turn(2_000, 3_200, 0)];
+        let (again, _, missing) = apply_utterance_tracks(
+            &first_pass,
+            &[
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &microphone,
+                    identities: &identities[..1],
+                    track: Track::Microphone,
+                },
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &changed,
+                    identities: &identities,
+                    track: Track::System,
+                },
+            ],
+        );
+        assert_eq!(missing, 0);
+        assert_eq!(
+            again
+                .iter()
+                .map(|row| row.segment.voice)
+                .collect::<Vec<_>>(),
+            [Some(3), Some(1), Some(2)]
+        );
+        assert_eq!(
+            again
+                .iter()
+                .map(|row| row.segment.text.clone())
+                .collect::<Vec<_>>(),
+            first_pass
+                .iter()
+                .map(|row| row.segment.text.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn joint_allocation_protects_manual_ids_from_the_other_physical_source() {
+        use crate::meeting_utterances::ManualCorrection;
+        let mic = timed_row("Room", &[(0, 4, 0, 1_200)]);
+        let mut call = timed_row("Call", &[(0, 4, 0, 1_200)]);
+        call.metadata.source_id = Some("system_audio".into());
+        call.segment.speaker = Speaker::Others;
+        call.segment.voice = Some(7);
+        call.metadata.refresh_fingerprints(&call.segment);
+        call.metadata.manual = Some(ManualCorrection {
+            name: Some("Confirmed".into()),
+            voice: Some(7),
+            self_voice: false,
+            source_fingerprint: call.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let turns = [turn(0, 1_200, 0)];
+        let identities = [Identity::Unknown];
+        let (rows, _, missing) = apply_utterance_tracks(
+            &[mic, call],
+            &[
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &turns,
+                    identities: &identities,
+                    track: Track::System,
+                },
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &turns,
+                    identities: &identities,
+                    track: Track::Microphone,
+                },
+            ],
+        );
+        assert_eq!(missing, 0);
+        assert_eq!(rows[1].segment.voice, Some(7));
+        assert_eq!(
+            rows[1].metadata.manual.as_ref().unwrap().name.as_deref(),
+            Some("Confirmed")
+        );
+        assert_ne!(rows[0].segment.voice, Some(7));
+        assert!(!rows[0].metadata.attribution.self_voice);
+    }
+
+    #[test]
+    fn joint_allocation_reserves_ids_on_unchanged_failed_and_empty_rows() {
+        use crate::meeting_utterances::{AcousticTurn, AttributionKind};
+        for failed in [true, false] {
+            let mut retained = timed_row(if failed { "Failed speech" } else { "" }, &[]);
+            retained.segment.failed = failed;
+            retained.segment.speaker = Speaker::Others;
+            retained.segment.voice = Some(1);
+            retained.metadata.attribution.kind = AttributionKind::Single;
+            retained.metadata.attribution.voices = vec![1];
+            retained.metadata.attribution.turns = vec![AcousticTurn {
+                start_ms: 0,
+                end_ms: 1_200,
+                voice: Some(1),
+            }];
+            retained.metadata.refresh_fingerprints(&retained.segment);
+            let mut fresh = timed_row("Call", &[(0, 4, 0, 1_200)]);
+            fresh.metadata.source_id = Some("system_audio".into());
+            fresh.metadata.refresh_fingerprints(&fresh.segment);
+            let turns = [turn(0, 1_200, 0)];
+            let identities = [Identity::Unknown];
+            let (rows, _, missing) = apply_utterance_tracks(
+                &[retained.clone(), fresh],
+                &[
+                    DiarizedTrack {
+                        eligible_speakers: None,
+                        turns: &turns,
+                        identities: &identities,
+                        track: Track::System,
+                    },
+                    DiarizedTrack {
+                        eligible_speakers: None,
+                        turns: &turns,
+                        identities: &identities,
+                        track: Track::Microphone,
+                    },
+                ],
+            );
+            assert_eq!(rows[0], retained);
+            assert_eq!(missing, 0);
+            assert_eq!(
+                rows[1].segment.voice,
+                Some(2),
+                "an unchanged retained row still owns its voice ID"
+            );
+        }
+    }
+
+    #[test]
+    fn saturated_joint_rerun_preserves_existing_ids_before_new_fragments() {
+        let owned_row = |start, source: &str| {
+            let mut row = timed_row("Word", &[(0, 4, start, start + 1_200)]);
+            row.segment.start_ms = start;
+            row.segment.end_ms = start + 1_200;
+            row.metadata.source_id = Some(source.into());
+            row.metadata.refresh_fingerprints(&row.segment);
+            row
+        };
+        let mut original: Vec<_> = (0..6)
+            .map(|i| owned_row(1_000 + i * 2_000, "system_audio"))
+            .collect();
+        original.extend((0..6).map(|i| owned_row(1_000 + i * 2_000, "microphone")));
+        let existing: Vec<_> = (0..6)
+            .map(|i| turn(1_000 + i * 2_000, 2_200 + i * 2_000, i as u32))
+            .collect();
+        let identities = vec![Identity::Unknown; 7];
+        let (mut before, _, missing) = apply_utterance_tracks(
+            &original,
+            &[
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &existing,
+                    identities: &identities,
+                    track: Track::System,
+                },
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &existing,
+                    identities: &identities,
+                    track: Track::Microphone,
+                },
+            ],
+        );
+        assert_eq!(missing, 0);
+        let prior: Vec<_> = before.iter().map(|row| row.segment.voice).collect();
+        assert_eq!(prior, (1..=12).map(Some).collect::<Vec<_>>());
+        before.insert(0, owned_row(0, "system_audio"));
+        before[0].segment.end_ms = 500;
+        before[0].metadata.spans[0].3 = 500;
+        let fragment_segment = before[0].segment.clone();
+        before[0].metadata.refresh_fingerprints(&fragment_segment);
+        let mut with_fragment = vec![turn(0, 500, 6)];
+        with_fragment.extend(existing.iter().cloned());
+        let (after, _, missing) = apply_utterance_tracks(
+            &before,
+            &[
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &with_fragment,
+                    identities: &identities,
+                    track: Track::System,
+                },
+                DiarizedTrack {
+                    eligible_speakers: None,
+                    turns: &existing,
+                    identities: &identities,
+                    track: Track::Microphone,
+                },
+            ],
+        );
+        assert_eq!(missing, 1);
+        assert_eq!(
+            after
+                .iter()
+                .skip(1)
+                .map(|row| row.segment.voice)
+                .collect::<Vec<_>>(),
+            prior
+        );
+        assert_eq!(
+            after[0].segment.voice, None,
+            "a newly resolved fragment must not inherit an established identity"
+        );
+    }
+
+    #[test]
+    fn joint_finalization_never_recycles_an_ambiguous_provisional_voice_id() {
+        use crate::meeting_utterances::{AcousticTurn, AttributionKind};
+        let mut provisional = timed_row("Word", &[(0, 4, 0, 1_200)]);
+        provisional.segment.speaker = Speaker::Others;
+        provisional.segment.voice = Some(1);
+        provisional.metadata.attribution.kind = AttributionKind::Single;
+        provisional.metadata.attribution.provisional = true;
+        provisional.metadata.attribution.voices = vec![1];
+        provisional.metadata.attribution.turns = vec![AcousticTurn {
+            start_ms: 0,
+            end_ms: 1_200,
+            voice: Some(1),
+        }];
+        let mut new_voice = timed_row("Later", &[(0, 5, 2_000, 3_200)]);
+        new_voice.segment.start_ms = 2_000;
+        new_voice.segment.end_ms = 3_200;
+        new_voice.metadata.refresh_fingerprints(&new_voice.segment);
+        let turns = [turn(0, 600, 0), turn(600, 1_200, 1), turn(2_000, 3_200, 2)];
+        let identities = [Identity::Unknown, Identity::Unknown, Identity::Unknown];
+        let (rows, _, missing) = apply_utterance_tracks(
+            &[provisional, new_voice],
+            &[DiarizedTrack {
+                eligible_speakers: None,
+                turns: &turns,
+                identities: &identities,
+                track: Track::Microphone,
+            }],
+        );
+        assert_eq!(missing, 2);
+        assert!(rows[0].metadata.attribution.voices.is_empty());
+        assert_eq!(
+            rows[1].segment.voice,
+            Some(2),
+            "an ambiguous prior ID is unavailable for a newly heard person"
+        );
+    }
+
+    #[test]
+    fn explicit_microphone_owner_survives_fragmented_acoustic_reruns() {
+        use crate::meeting_utterances::{AttributionKind, ManualCorrection};
+        let mut row = timed_row("Owner speech", &[(0, 12, 0, 1_200)]);
+        row.metadata.manual = Some(ManualCorrection {
+            self_voice: true,
+            name: None,
+            voice: None,
+            source_fingerprint: row.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let turns = [turn(0, 900, 0), turn(500, 1_200, 1)];
+        let identities = [Identity::Unknown, Identity::Unknown];
+        let (rows, applied, missing) = apply_utterance_tracks(
+            &[row],
+            &[DiarizedTrack {
+                eligible_speakers: None,
+                turns: &turns,
+                identities: &identities,
+                track: Track::Microphone,
+            }],
+        );
+        assert_eq!(missing, 0);
+        assert!(applied[0].voices.is_empty());
+        assert!(applied[0].me_found);
+        assert_eq!(rows[0].segment.speaker, Speaker::Me);
+        assert_eq!(rows[0].metadata.attribution.kind, AttributionKind::Single);
+        assert!(rows[0].metadata.attribution.self_voice);
+        assert!(rows[0].metadata.manual.as_ref().unwrap().self_voice);
+        assert!(rows[0].metadata.self_voice_profile_fingerprint.is_none());
+    }
+
+    #[test]
+    fn modern_empty_admission_abstains_without_capacity_failures_and_legacy_bypasses() {
+        use crate::meeting_utterances::AttributionKind;
+        let row = timed_row("Word", &[(0, 4, 0, 1_200)]);
+        let turns = [turn(0, 1_200, 0)];
+        let identities = [Identity::Unknown];
+        let empty = std::collections::BTreeSet::new();
+        let (modern, _, unassigned, limited) = apply_utterance_tracks_with_reserved(
+            std::slice::from_ref(&row),
+            &[DiarizedTrack {
+                turns: &turns,
+                identities: &identities,
+                track: Track::Microphone,
+                eligible_speakers: Some(&empty),
+            }],
+            &[],
+        );
+        assert_eq!(unassigned, 0);
+        assert!(limited);
+        assert_eq!(modern[0].segment.voice, None);
+        assert_eq!(
+            modern[0].metadata.attribution.kind,
+            AttributionKind::Unknown
+        );
+        assert_eq!(modern[0].segment.text, row.segment.text);
+        assert_eq!(modern[0].metadata.attribution.turns.len(), 1);
+        let (legacy, _, unassigned, limited) = apply_utterance_tracks_with_reserved(
+            &[row],
+            &[DiarizedTrack {
+                turns: &turns,
+                identities: &identities,
+                track: Track::Microphone,
+                eligible_speakers: None,
+            }],
+            &[],
+        );
+        assert_eq!(unassigned, 0);
+        assert!(!limited);
+        assert_eq!(legacy[0].segment.voice, Some(1));
+    }
+
+    #[test]
+    fn manually_owned_microphone_does_not_consume_identity_slots_or_limit_evidence() {
+        use crate::meeting_utterances::ManualCorrection;
+        let mut owner = timed_row("Owner", &[(0, 5, 0, 1_200)]);
+        owner.metadata.manual = Some(ManualCorrection {
+            self_voice: true,
+            name: None,
+            voice: None,
+            source_fingerprint: owner.metadata.source_fingerprint.clone(),
+            review_required: false,
+        });
+        let mut rows = vec![owner];
+        let system_turns: Vec<_> = (0..12).map(|speaker| turn(0, 1_200, speaker)).collect();
+        let mic_turns: Vec<_> = (0..20).map(|speaker| turn(0, 1_200, speaker)).collect();
+        let mut call = timed_row("Call", &[(0, 4, 0, 1_200)]);
+        call.metadata.source_id = Some("system_audio".into());
+        call.metadata.refresh_fingerprints(&call.segment);
+        rows.push(call);
+        let admitted = (0..12).collect();
+        let empty = std::collections::BTreeSet::new();
+        let identities = vec![Identity::Unknown; 20];
+        let (after, applied, unassigned, limited) = apply_utterance_tracks_with_reserved(
+            &rows,
+            &[
+                DiarizedTrack {
+                    turns: &system_turns,
+                    identities: &identities,
+                    track: Track::System,
+                    eligible_speakers: Some(&admitted),
+                },
+                DiarizedTrack {
+                    turns: &mic_turns,
+                    identities: &identities,
+                    track: Track::Microphone,
+                    eligible_speakers: Some(&empty),
+                },
+            ],
+            &[],
+        );
+        assert_eq!(unassigned, 0);
+        assert!(!limited);
+        assert_eq!(applied[0].voices.len(), 12);
+        assert!(applied[1].voices.is_empty());
+        assert_eq!(after[0].segment.speaker, Speaker::Me);
+        assert!(after[0].metadata.manual.as_ref().unwrap().self_voice);
     }
 
     #[test]

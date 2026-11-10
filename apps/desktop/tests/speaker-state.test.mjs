@@ -3,7 +3,7 @@ import test, { beforeEach } from "node:test";
 import { setInterfaceLanguage } from "../src/i18n.ts";
 
 beforeEach(() => setInterfaceLanguage("nl"));
-import { combinedProgress, enrollmentButton, enrollmentStatus, enrollmentStep, enrollmentTone, percent, recognitionSummary, speakerModelSizes, speakerModelsReady, trainedLabel } from "../src/speaker-state.ts";
+import { combinedProgress, enrollmentButton, enrollmentStatus, enrollmentStep, enrollmentTone, percent, recognitionSummary, speakerModelSizes, speakerModelsReady, trainedLabel, speakerProcessingNotice, voiceNamingNotice } from "../src/speaker-state.ts";
 
 const ids = Object.keys(speakerModelSizes);
 const [segmentation, embedding] = ids;
@@ -78,6 +78,64 @@ test("recognition results read as one short line", () => {
   assert.equal(recognitionSummary({ voices: 3, named: 1, me_found: false }), "3 stemmen gevonden · 1 herkend");
   assert.equal(recognitionSummary({ voices: 1, named: 0, me_found: true }), "1 stem gevonden · jouw stem herkend");
   assert.equal(recognitionSummary({ voices: 0, named: 0, me_found: false }), "Geen andere stemmen gevonden");
+});
+
+test("capacity exhaustion stays visible instead of reporting ordinary success", () => {
+  const result = { voices: 12, named: 0, me_found: false, complete: false, unassigned_voices: 3 };
+  assert.match(recognitionSummary(result), /Sprekerlabels onvolledig: 3 stemmen zonder label/);
+  setInterfaceLanguage("en");
+  assert.match(recognitionSummary(result), /Speaker labels incomplete: 3 voices without a label/);
+});
+
+test("an incomplete no-speech result does not imply successful labeling", () => {
+  assert.match(recognitionSummary({ voices: 0, named: 0, me_found: false, complete: false, unassigned_voices: 0 }), /Sprekerlabels onvolledig/);
+});
+
+test("saved processing failures and changed transcripts retain actionable guidance", () => {
+  assert.match(speakerProcessingNotice({ phase: "failed", reason: "private provider payload" }), /opnieuw/);
+  assert.doesNotMatch(speakerProcessingNotice({ phase: "failed", reason: "private provider payload" }), /private provider payload/);
+  assert.match(speakerProcessingNotice({ phase: "outdated" }), /opnieuw/);
+  assert.equal(speakerProcessingNotice(null), "");
+});
+
+test("low evidence remains visible separately from exhausted identity capacity", () => {
+  const status = { phase: "complete", reason: "limited_evidence", complete: true, unassigned_voices: 0 };
+  assert.match(speakerProcessingNotice(status), /passages.*geen sprekerlabel/);
+  assert.doesNotMatch(speakerProcessingNotice(status), /stemmen zonder label/);
+  assert.match(speakerProcessingNotice({ ...status, phase: "incomplete", unassigned_voices: 2 }), /2 stemmen zonder label/);
+  setInterfaceLanguage("en");
+  assert.match(speakerProcessingNotice(status), /short or unclear passages/);
+});
+
+test("missing and ambiguous Teams evidence never claims that names were applied", () => {
+  for (const status of ["unbound", "unavailable", "insufficient_evidence", "conflict"]) {
+    assert.ok(voiceNamingNotice({ status, reason: "untrusted payload" }));
+    assert.doesNotMatch(voiceNamingNotice({ status }), /automatisch toegepast/);
+  }
+  setInterfaceLanguage("en");
+  assert.match(voiceNamingNotice({ status: "applied" }), /applied automatically/);
+});
+
+test("lost app audio scope explains why automatic names require a new detected call", () => {
+  const naming = { status: "unavailable", reason: "audio_capture_not_app_scoped" };
+  assert.match(voiceNamingNotice(naming), /audio van andere apps/);
+  assert.match(voiceNamingNotice(naming), /gedetecteerde Teams-oproep/);
+  setInterfaceLanguage("en");
+  assert.match(voiceNamingNotice(naming), /audio from other apps/);
+  assert.match(voiceNamingNotice(naming), /detected Teams call/);
+  assert.doesNotMatch(voiceNamingNotice({ ...naming, status: "applied" }), /applied automatically/);
+  assert.deepEqual(naming, { status: "unavailable", reason: "audio_capture_not_app_scoped" });
+});
+
+test("unverified recording timing suspends names with separate retry guidance", () => {
+  const naming = { status: "unavailable", reason: "audio_clock_unverified" };
+  assert.match(voiceNamingNotice(naming), /timing van de opname/);
+  assert.doesNotMatch(voiceNamingNotice(naming), /andere apps/);
+  setInterfaceLanguage("en");
+  assert.match(voiceNamingNotice(naming), /recording timing/);
+  assert.match(voiceNamingNotice(naming), /new recording/);
+  assert.doesNotMatch(voiceNamingNotice({ ...naming, status: "applied" }), /applied automatically/);
+  assert.equal(voiceNamingNotice({ ...naming, reason: "audio_observation_timing_unverified" }), voiceNamingNotice(naming));
 });
 
 test("the trained date is shown in Dutch", () => {

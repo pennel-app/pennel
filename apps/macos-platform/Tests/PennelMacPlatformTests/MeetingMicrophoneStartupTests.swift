@@ -5,6 +5,58 @@ import XCTest
 final class MeetingMicrophoneStartupTests: XCTestCase {
     private enum UnexpectedFailure: Error, Equatable { case unavailable }
 
+    func testTapFormatIsResolvedAfterVoiceProcessingConfiguration() throws {
+        var format = 48_000
+        var events: [String] = []
+        let selected = try MeetingMicrophoneFormatReadiness.resolve(
+            attempts: 1, configure: { events.append("configure"); format = 24_000 },
+            read: { events.append("read"); return format }, usable: { $0 > 0 },
+            defaultInputAvailable: { true }, checkAccess: {}, pause: { XCTFail("ready route must not wait") }
+        )
+        XCTAssertEqual(selected, 24_000)
+        XCTAssertEqual(events, ["configure", "read"])
+    }
+
+    func testFormatReadinessWaitsForExistingDefaultInputAfterRouteReconfiguration() throws {
+        var formats = [0, 0, 48_000]
+        var waits = 0
+        let format = try MeetingMicrophoneFormatReadiness.resolve(
+            attempts: 3, read: { formats.removeFirst() }, usable: { $0 > 0 },
+            defaultInputAvailable: { true }, checkAccess: {}, pause: { waits += 1 }
+        )
+        XCTAssertEqual(format, 48_000)
+        XCTAssertEqual(waits, 2)
+    }
+
+    func testFormatReadinessDoesNotWaitForAHealthyFormatOrAMissingDevice() throws {
+        let format = try MeetingMicrophoneFormatReadiness.resolve(
+            attempts: 3, read: { 24_000 }, usable: { $0 > 0 },
+            defaultInputAvailable: { XCTFail("healthy input must not need re-resolution"); return false },
+            checkAccess: {}, pause: { XCTFail("healthy input must not wait") }
+        )
+        XCTAssertEqual(format, 24_000)
+        XCTAssertThrowsError(try MeetingMicrophoneFormatReadiness.resolve(
+            attempts: 3, read: { 0 }, usable: { $0 > 0 }, defaultInputAvailable: { false },
+            checkAccess: {}, pause: { XCTFail("missing input must not wait") }
+        )) { XCTAssertTrue($0 is NoInputDevice) }
+    }
+
+    func testPersistentUnreadyRouteIsBoundedAndRetainsPermissionFailures() {
+        var reads = 0
+        var waits = 0
+        XCTAssertThrowsError(try MeetingMicrophoneFormatReadiness.resolve(
+            attempts: 3, read: { reads += 1; return 0 }, usable: { $0 > 0 }, defaultInputAvailable: { true },
+            checkAccess: {}, pause: { waits += 1 }
+        )) { XCTAssertEqual($0 as? MicrophoneStartError, .failed) }
+        XCTAssertEqual(reads, 3)
+        XCTAssertEqual(waits, 2)
+        XCTAssertThrowsError(try MeetingMicrophoneFormatReadiness.resolve(
+            attempts: 3, read: { XCTFail("denied access must not query input"); return 0 }, usable: { $0 > 0 },
+            defaultInputAvailable: { true }, checkAccess: { throw MicrophoneStartError.permissionDenied },
+            pause: { XCTFail("denied access must not wait") }
+        )) { XCTAssertEqual($0 as? MicrophoneStartError, .permissionDenied) }
+    }
+
     func testEchoStartupDoesNotResetOrRetryAHealthyEngine() throws {
         var attempts: [Bool] = []
         var resets = 0

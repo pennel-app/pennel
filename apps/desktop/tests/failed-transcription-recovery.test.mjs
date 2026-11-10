@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FailedTranscriptionRecovery, failedRecoveryControl } from "../src/failed-transcription-recovery.ts";
+import { FailedTranscriptionRecovery, failedRecoveryControl, transcriptDisplayText } from "../src/failed-transcription-recovery.ts";
+import { setInterfaceLanguage } from "../src/i18n.ts";
+
+test("retained partial speech is visible and stays explicitly incomplete", () => {
+  setInterfaceLanguage("en");
+  assert.equal(transcriptDisplayText({ failed: false, text: "A complete passage." }), "A complete passage.");
+  assert.equal(transcriptDisplayText({ failed: true, text: "A recognized prefix" }), "A recognized prefix\nPartial transcription. Retry this passage to finish.");
+  assert.ok(transcriptDisplayText({ failed: true, text: "" }).length);
+  setInterfaceLanguage("nl");
+  assert.match(transcriptDisplayText({ failed: true, text: "Een herkend begin" }), /^Een herkend begin\nOnvolledige transcriptie/);
+});
 
 const plan = (failed = 2, retryable = failed, reason_code = null) => ({ failed_count: failed, retryable_count: retryable,
   status: failed === 0 ? "complete" : retryable > 0 ? "retryable" : "unavailable", reason_code });

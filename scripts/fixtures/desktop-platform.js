@@ -81,6 +81,7 @@
   if (options.rich_utterances) transcript.forEach((segment, index) => Object.assign(segment, richUtterance(segment, index),
     options.rich_attribution_states ? { attribution: { kind: ["overlap", "unknown", "mixed"][index], voices: index === 1 ? [] : [1, 2] } } : {}));
   if (options.rich_provisional) transcript.forEach(segment => { segment.attribution = { ...segment.attribution, provisional: true }; });
+  if (options.automatic_names) transcript.forEach(segment => { if (segment.voice === 2) segment.automatic_speaker_name = "Bert Jacobs"; });
   if (options.insights_seeded) transcript.forEach((segment, index) => { segment.utterance_id = `00000000-0000-7000-8000-${String(index + 1).padStart(12, "0")}`; });
   if (options.transcript_repetitions) {
     const original = clone(transcript);
@@ -121,7 +122,7 @@
     style_rules: [{ bundle_id: "com.tinyspeck.slackmacgap", style: "casual" }, { bundle_id: "com.apple.MobileSMS", style: "casual" }, { bundle_id: "com.apple.mail", style: "formal" }, { bundle_id: "com.microsoft.Word", style: "formal" }, { bundle_id: "com.apple.Terminal", style: "literal" }, { bundle_id: "com.microsoft.VSCode", style: "literal" }], history_retention_days: 30, hotkey: "fn", local_unload_minutes: 5,
     meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", summary_automation: options.summary_automation || "unanswered", meeting_audio_retention_days: 30,
     app_rules: [], calendar_rules: [], event_rules: [], calendar_enabled: false, echo_cancellation: true,
-    record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), meeting_app_speakers: Boolean(options.meeting_app_speakers), speaker_recognition: options.speaker_mode || "local",
+    record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), meeting_app_speakers: Boolean(options.meeting_app_speakers), meeting_app_name_policy: options.meeting_app_name_policy || "suggest", speaker_recognition: options.speaker_mode || "local",
     appearance: options.appearance, dictation_pad_auto_paste: false, live_text_enabled: options.live_text_enabled !== false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
     onboarding: { version: 1, status: options.onboarding_status || (options.window === "onboarding" ? "pending" : options.shortcut_denied ? "skipped" : "completed"), resume_step: options.step || "welcome", goal: options.goal || "dictation" },
   };
@@ -179,6 +180,14 @@
       { name: "Eva Wouters", source: "meeting_app" }, { name: "Noor", source: "known_voice" },
     ],
   } : { suggestions: [], candidates: [] };
+  voiceNaming.status = options.teams_naming ? "suggested" : "disabled";
+  voiceNaming.automatic_names = [];
+  if (options.automatic_names) {
+    voiceNaming.automatic_names = voiceNaming.suggestions.filter(item => item.voice === 2);
+    meetingVoices.find(voice => voice.voice === 2).name = "Bert Jacobs";
+    voiceNaming.suggestions = voiceNaming.suggestions.filter(item => item.voice !== 2);
+    voiceNaming.status = "applied";
+  }
   const modelFor = id => models.find(model => model.id === id) || speakerModels.find(model => model.id === id) || (id === diarizer.id ? diarizer : undefined);
   const activeDownloads = new Set(options.download_active ? ["whisper-large-v3-turbo"] : []);
   const downloadWaiters = new Map();
@@ -1393,7 +1402,21 @@
         if (options.retranscription_error) throw new Error(options.retranscription_error);
         return transcript.length;
       }
-      case "diarize_meeting": return { voices: 2, named: 1, me_found: false };
+      case "diarize_meeting": return options.speaker_overflow
+        ? { voices: 12, named: 1, me_found: false, complete: false, unassigned_voices: 3 }
+        : { voices: 2, named: 1, me_found: false, complete: true, unassigned_voices: 0 };
+      case "speaker_processing_status": return options.speaker_overflow
+        ? { phase: "incomplete", reason: "unassigned_voices", route: "local", model_ids: speakerModels.map(model => model.id), complete: false, unassigned_voices: 3 }
+        : options.speaker_limited
+        ? { phase: "complete", reason: "limited_evidence", route: "local", model_ids: speakerModels.map(model => model.id), complete: true, unassigned_voices: 0 }
+        : null;
+      case "confirm_meeting_microphone_owner":
+        for (const segment of transcript) if (segment.source_id === "microphone") {
+          segment.speaker = "me"; segment.voice = null;
+          segment.attribution = { kind: "single", voices: [], self_voice: true, provisional: false, turns: [] };
+        }
+        summaryOutdated = true;
+        return null;
       case "speaker_setup": return { local_available: options.speaker_local !== false, ready: options.speaker_mode === "cloud" ? signedIn : speakerModels.every(model => model.state.kind === "downloaded") || diarizer.state.kind === "downloaded", signed_in: signedIn, model_ids: speakerModels.map(model => model.id), legacy_model: diarizer.state.kind === "downloaded", profile: clone(voiceProfile), known: clone(knownVoices), enrollment_text: "Ik lees deze tekst voor zodat Pennel mijn stem leert kennen. Zo weet Pennel in elke meeting wanneer ik aan het woord ben, ook als we samen rond één microfoon zitten. Vandaag is een rustige dag: de koffie is nog warm, de zon schijnt door het raam en op mijn bureau ligt een schrift vol ideeën. Straks overlopen we de planning, verdelen we de taken en spreken we af wie welke vragen beantwoordt." };
       case "meeting_voices": return clone(meetingVoices);
       case "meeting_voice_naming": return clone(voiceNaming);

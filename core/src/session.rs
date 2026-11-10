@@ -151,6 +151,14 @@ impl Progress {
             crate::MeetingUtterance::new(segment, Some(physical_source_id(source).into()));
         row.metadata.spans = spans;
         row.metadata.recovery_audio = recovery;
+        if row.segment.failed
+            && !row.segment.text.is_empty()
+            && row.metadata.recovery_audio.as_ref().is_some_and(|proof| {
+                proof.disposition == crate::meeting_utterances::RecoveryAudioDisposition::Pending
+            })
+        {
+            row.metadata.partial_text = Some(row.segment.text.clone());
+        }
         self.utterances.push(row);
         self.utterances.sort_by_key(|row| row.segment.start_ms);
         if self
@@ -364,7 +372,13 @@ fn persist_job(store: &MeetingStore, id: &str, job: &Job) -> Result<StoredJob, P
     Ok(StoredJob {
         speaker: job.speaker,
         start_ms: job.chunk.start_ms,
-        end_ms: job.chunk.start_ms + job.chunk.samples.len() as u64 * 1000 / u64::from(SAMPLE_RATE),
+        end_ms: job
+            .chunk
+            .start_ms
+            .saturating_add(crate::wav::sample_duration_ms(
+                job.chunk.samples.len() as u64,
+                SAMPLE_RATE,
+            )),
         path,
         sha256: crate::meeting_utterances::digest(&wav),
     })
@@ -950,7 +964,7 @@ fn transcribe_job(
     let mut segment = job.failed();
     let mut spans = Vec::new();
     if let Ok(transcript) = result {
-        segment.failed = false;
+        segment.failed = !transcript.complete;
         segment.text = if is_hallucination(&transcript.text) {
             String::new()
         } else {
@@ -1614,6 +1628,307 @@ mod tests {
         }
     }
 
+    #[test]
+    fn fractional_tail_native_timing_commits_without_losing_the_last_span() {
+        for sample_count in [122_229, 1, 15, 16, 17] {
+            let directory = tempfile::tempdir().unwrap();
+            let store = MeetingStore::new(directory.path());
+            let id = store
+                .create("Owned fractional tail", chrono::Local::now())
+                .unwrap();
+            let stored = persist_job(
+                &store,
+                &id,
+                &Job {
+                    speaker: Speaker::Me,
+                    chunk: Chunk {
+                        start_ms: 451_100,
+                        samples: vec![0.2; sample_count],
+                    },
+                },
+            )
+            .unwrap();
+            let end_ms = 451_100 + (sample_count as u64 * 1_000).div_ceil(16_000);
+            let text = "Owned tail.";
+            let mut progress = Progress::default();
+            progress.insert_recovery(
+                Segment {
+                    text: text.into(),
+                    failed: false,
+                    ..stored.failed()
+                },
+                Speaker::Me,
+                vec![crate::TimedTextSpan(0, text.len() as u32, 451_100, end_ms)],
+                Some(stored.recovery_provenance(true)),
+            );
+            progress.changed();
+            commit_progress_owned(&store, &id, &Mutex::new(progress)).unwrap();
+            let snapshot = store.read_transcript_snapshot(&id).unwrap();
+            assert_eq!(
+                snapshot.metadata_status,
+                crate::TranscriptMetadataStatus::Valid
+            );
+            let row = &snapshot.utterances[0];
+            assert_eq!(row.segment.text, text);
+            assert_eq!(row.segment.end_ms, end_ms);
+            assert_eq!(row.metadata.spans[0].3, end_ms);
+            assert_eq!(row.metadata.recovery_audio.as_ref().unwrap().end_ms, end_ms);
+            assert!(!stored.path.exists());
+        }
+    }
+
+    struct FractionalTailHost(std::sync::atomic::AtomicUsize);
+
+    impl crate::TimedSystemTranscriber for FractionalTailHost {
+        fn transcribe_timed(
+            &self,
+            samples: Vec<f32>,
+            rate: u32,
+            _: Option<String>,
+            _: Vec<String>,
+        ) -> Result<crate::SpeechTranscript, PennelError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            let end_ms = (samples.len() as u64 * 1_000).div_ceil(u64::from(rate));
+            Ok(crate::SpeechTranscript::validated(
+                "Owned tail.".into(),
+                vec![crate::SpeechTextSpan {
+                    start_byte: 0,
+                    end_byte: 11,
+                    start_ms: 0,
+                    end_ms,
+                }],
+                crate::SpeechTimingKind::Segment,
+                end_ms,
+            ))
+        }
+    }
+
+    #[test]
+    fn fractional_tail_stop_saves_both_tracks_without_spurious_terminal_failure() {
+        let (_directory, engine) = preview_engine();
+        let host = Arc::new(FractionalTailHost(std::sync::atomic::AtomicUsize::new(0)));
+        engine.set_timed_system_transcriber(host.clone());
+        let session = engine
+            .clone()
+            .start_meeting(
+                "Owned two-track fractional tails".into(),
+                ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        session
+            .push_audio_at(Speaker::Me, 451_100, vec![0.2; 122_229])
+            .unwrap();
+        session
+            .push_audio_at(Speaker::Others, 441_800, vec![0.2; 272_326])
+            .unwrap();
+        session.stop().unwrap();
+        assert_eq!(host.0.load(Ordering::SeqCst), 2);
+        assert!(session.is_finalized());
+        assert!(session.health().terminal_error.is_none());
+        assert!(session.health().persistence_error.is_none());
+        assert!(!session.health().can_retry_persistence);
+        let snapshot = engine
+            .meeting_store()
+            .read_transcript_snapshot(&session.id())
+            .unwrap();
+        assert_eq!(snapshot.utterances.len(), 2);
+        for row in &snapshot.utterances {
+            assert!(!row.segment.failed);
+            assert_eq!(row.segment.text, "Owned tail.");
+            assert_eq!(row.metadata.spans.len(), 1);
+            assert_eq!(row.metadata.spans[0].3, row.segment.end_ms);
+        }
+        assert_eq!(
+            snapshot
+                .utterances
+                .iter()
+                .find(|row| row.metadata.source_id.as_deref() == Some("microphone"))
+                .unwrap()
+                .segment
+                .end_ms,
+            458_740
+        );
+        assert_eq!(
+            snapshot
+                .utterances
+                .iter()
+                .find(|row| row.metadata.source_id.as_deref() == Some("system_audio"))
+                .unwrap()
+                .segment
+                .end_ms,
+            458_821
+        );
+    }
+
+    #[test]
+    fn fractional_tail_legacy_floor_recovery_is_upgraded_only_by_verified_retry() {
+        for stored_hash in [true, false] {
+            let (_directory, engine) = preview_engine();
+            let host = Arc::new(FractionalTailHost(std::sync::atomic::AtomicUsize::new(0)));
+            engine.set_timed_system_transcriber(host.clone());
+            let store = engine.meeting_store();
+            let id = store
+                .create("Owned legacy fractional recovery", chrono::Local::now())
+                .unwrap();
+            let stored = persist_job(
+                &store,
+                &id,
+                &Job {
+                    speaker: Speaker::Me,
+                    chunk: Chunk {
+                        start_ms: 451_100,
+                        samples: vec![0.2; 122_229],
+                    },
+                },
+            )
+            .unwrap();
+            let mut segment = stored.failed();
+            segment.end_ms = 458_739;
+            let mut row = crate::MeetingUtterance::new(segment, Some("microphone".into()));
+            let mut proof = stored.recovery_provenance(false);
+            proof.end_ms = 458_739;
+            if !stored_hash {
+                proof.sha256.clear();
+            }
+            row.metadata.recovery_audio = Some(proof);
+            row.metadata.manual = Some(crate::ManualCorrection {
+                self_voice: false,
+                voice: Some(2),
+                name: Some("Explicit correction".into()),
+                source_fingerprint: row.metadata.source_fingerprint.clone(),
+                review_required: false,
+            });
+            let before = store.write_transcript_snapshot(&id, None, &[row]).unwrap();
+            store.write_notes(&id, "Unchanged owner notes.").unwrap();
+            let opened = store.read_transcript_snapshot(&id).unwrap();
+            assert_eq!(
+                store.failed_recovery_plan(&id, &opened).retryable_count,
+                Some(1)
+            );
+            assert_eq!(
+                engine
+                    .retranscribe_failed(
+                        id.clone(),
+                        ApiKeys {
+                            by_provider: HashMap::new()
+                        }
+                    )
+                    .unwrap(),
+                1
+            );
+            let after = store.read_transcript_snapshot(&id).unwrap();
+            let row = &after.utterances[0];
+            assert_eq!(
+                row.metadata.utterance_id,
+                before.utterances[0].metadata.utterance_id
+            );
+            assert_eq!(row.segment.text, "Owned tail.");
+            assert_eq!(row.segment.end_ms, 458_740);
+            assert_eq!(row.metadata.spans[0].3, 458_740);
+            assert_eq!(
+                row.metadata.recovery_audio.as_ref().unwrap().end_ms,
+                458_740
+            );
+            assert_eq!(
+                row.metadata.manual.as_ref().unwrap().name.as_deref(),
+                Some("Explicit correction")
+            );
+            assert!(row.metadata.manual.as_ref().unwrap().review_required);
+            assert_eq!(store.read_notes(&id), "Unchanged owner notes.");
+            assert!(!stored.path.exists());
+        }
+    }
+
+    #[test]
+    fn fractional_tail_rejected_shorter_partial_does_not_block_an_earlier_recovery_commit() {
+        struct ShrinkingHost(std::sync::atomic::AtomicUsize);
+        impl crate::TimedSystemTranscriber for ShrinkingHost {
+            fn transcribe_timed(
+                &self,
+                samples: Vec<f32>,
+                rate: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> Result<crate::SpeechTranscript, PennelError> {
+                if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                    FractionalTailHost(std::sync::atomic::AtomicUsize::new(0)).transcribe_timed(
+                        samples,
+                        rate,
+                        None,
+                        Vec::new(),
+                    )
+                } else {
+                    Ok(crate::SpeechTranscript::plain("Short.").with_complete(false))
+                }
+            }
+        }
+        let (_directory, engine) = preview_engine();
+        engine.set_timed_system_transcriber(Arc::new(ShrinkingHost(
+            std::sync::atomic::AtomicUsize::new(0),
+        )));
+        let store = engine.meeting_store();
+        let id = store
+            .create("Owned partial batch tail", chrono::Local::now())
+            .unwrap();
+        let mut rows = Vec::new();
+        let mut paths = Vec::new();
+        for start_ms in [0, 10_000] {
+            let stored = persist_job(
+                &store,
+                &id,
+                &Job {
+                    speaker: Speaker::Me,
+                    chunk: Chunk {
+                        start_ms,
+                        samples: vec![0.2; 122_229],
+                    },
+                },
+            )
+            .unwrap();
+            paths.push(stored.path.clone());
+            let mut segment = stored.failed();
+            segment.end_ms = start_ms + 7_639;
+            if start_ms != 0 {
+                segment.text = "A longer retained beginning.".into();
+            }
+            let mut row = crate::MeetingUtterance::new(segment, Some("microphone".into()));
+            let mut proof = stored.recovery_provenance(false);
+            proof.end_ms = start_ms + 7_639;
+            row.metadata.recovery_audio = Some(proof);
+            if start_ms != 0 {
+                row.metadata.partial_text = Some(row.segment.text.clone());
+                row.metadata.manual = Some(crate::ManualCorrection {
+                    self_voice: false,
+                    name: Some("Existing correction".into()),
+                    voice: None,
+                    source_fingerprint: row.metadata.source_fingerprint.clone(),
+                    review_required: false,
+                });
+            }
+            rows.push(row);
+        }
+        let before = store.write_transcript_snapshot(&id, None, &rows).unwrap();
+        assert!(
+            engine
+                .retranscribe_failed(
+                    id.clone(),
+                    ApiKeys {
+                        by_provider: HashMap::new()
+                    }
+                )
+                .is_err()
+        );
+        let after = store.read_transcript_snapshot(&id).unwrap();
+        assert!(!after.utterances[0].segment.failed);
+        assert_eq!(after.utterances[0].segment.text, "Owned tail.");
+        assert_eq!(after.utterances[0].segment.end_ms, 7_640);
+        assert_eq!(after.utterances[1], before.utterances[1]);
+        assert!(!paths[0].exists());
+        assert!(paths[1].exists());
+    }
+
     fn seed_live_row(session: &MeetingSession, source: Speaker) -> String {
         let mut progress = session.progress.lock().unwrap();
         progress.insert(
@@ -1960,6 +2275,7 @@ mod tests {
                 voice: Some(2),
                 source_fingerprint: row.metadata.source_fingerprint.clone(),
                 review_required: false,
+                self_voice: false,
             });
         }
         session.apply_live_speaker_update(live_update(&session, 2, Speaker::Me, 3));
@@ -2871,6 +3187,99 @@ mod tests {
                 .join("failed/me-0.wav")
                 .exists()
         );
+    }
+
+    #[test]
+    fn incomplete_recognition_retains_prefix_and_audio_until_a_complete_retry() {
+        struct Host(std::sync::atomic::AtomicBool);
+        impl crate::SystemTranscriber for Host {
+            fn transcribe(
+                &self,
+                _: Vec<f32>,
+                _: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> Result<String, PennelError> {
+                unreachable!("the timed host must be used");
+            }
+        }
+        impl crate::TimedSystemTranscriber for Host {
+            fn transcribe_timed(
+                &self,
+                _: Vec<f32>,
+                _: u32,
+                _: Option<String>,
+                _: Vec<String>,
+            ) -> Result<crate::SpeechTranscript, PennelError> {
+                let complete = self.0.load(Ordering::SeqCst);
+                Ok(crate::SpeechTranscript::plain(if complete {
+                    "The complete passage."
+                } else {
+                    "The retained beginning."
+                })
+                .with_complete(complete))
+            }
+        }
+        let (dir, server) = (tempfile::tempdir().unwrap(), mockito::Server::new());
+        let engine = engine(&dir, &server);
+        let mut settings = engine.settings();
+        let account =
+            crate::new_account(crate::ProviderKind::AppleSpeech, settings.providers.clone());
+        settings.meeting_stt = crate::ModelChoice {
+            provider_id: account.id.clone(),
+            model: "dictation".into(),
+        };
+        settings.providers.push(account);
+        engine.update_settings(settings).unwrap();
+        let host = Arc::new(Host(std::sync::atomic::AtomicBool::new(false)));
+        engine.set_system_transcriber(host.clone());
+        engine.set_timed_system_transcriber(host.clone());
+        let session = engine
+            .clone()
+            .start_meeting("Owned partial ASR fixture".into(), keys())
+            .unwrap();
+        session.push_audio(Speaker::Me, tone(3.0));
+        session.stop().unwrap();
+        let id = session.id();
+        let audio = failed_path(Path::new(&session.dir()), Speaker::Me, 0);
+        let current = engine.meeting_transcript(id.clone());
+        assert!(current[0].failed);
+        assert_eq!(current[0].text, "The retained beginning.");
+        assert!(audio.exists());
+        assert!(
+            crate::summary::transcript_text(&current, &[]).is_empty(),
+            "partial speech cannot become final summary evidence"
+        );
+        assert!(engine.retranscribe_failed(id.clone(), keys()).is_err());
+        let reopened = engine
+            .meeting_store()
+            .read_transcript_snapshot(&id)
+            .unwrap();
+        assert_eq!(
+            reopened.metadata_status,
+            crate::TranscriptMetadataStatus::Valid
+        );
+        assert_eq!(
+            reopened.utterances[0].metadata.partial_text.as_deref(),
+            Some("The retained beginning.")
+        );
+        assert_eq!(
+            reopened.utterances[0].segment.text,
+            "The retained beginning."
+        );
+        assert!(reopened.utterances[0].segment.failed);
+        assert!(audio.exists());
+
+        host.0.store(true, Ordering::SeqCst);
+        assert_eq!(engine.retranscribe_failed(id.clone(), keys()).unwrap(), 1);
+        let complete = engine
+            .meeting_store()
+            .read_transcript_snapshot(&id)
+            .unwrap();
+        assert!(!complete.utterances[0].segment.failed);
+        assert_eq!(complete.utterances[0].segment.text, "The complete passage.");
+        assert!(complete.utterances[0].metadata.partial_text.is_none());
+        assert!(!audio.exists());
     }
 
     #[test]

@@ -784,5 +784,8 @@
   "backend.summary_review_before_share": "Bereid het document voor en controleer het voordat je deelt.",
   "backend.summary_reviewed_export_only": "Kopieer de opgemaakte notities of exporteer het gecontroleerde document om het te delen.",
   "backend.give_pennel_accessibility_access_to_read_meeting_participants": "Geef Pennel toegang tot Toegankelijkheid om meetingdeelnemers te lezen.",
-  "backend.meeting_participant_names_are_currently_only_read_from_microsoft_teams_on_macos": "Namen van meetingdeelnemers worden momenteel alleen uit Microsoft Teams op macOS gelezen."
+  "backend.meeting_participant_names_are_currently_only_read_from_microsoft_teams_on_macos": "Namen van meetingdeelnemers worden momenteel alleen uit Microsoft Teams op macOS gelezen.",
+  "backend.app_audio_scope_lost": "Systeemaudio kan ook geluid van andere apps bevatten omdat de audio van de vergaderapp niet beschikbaar was.",
+  "backend.microphone_owner_no_speech": "Deze vergadering bevat geen bruikbare spraak van je eigen microfoon.",
+  "backend.microphone_owner_manual_conflict": "Controleer eerst de bestaande handmatige sprekerstoewijzingen voor deze microfoon voordat je de eigenaar bevestigt."
 }

@@ -31,6 +31,7 @@ export function sameSegment(left: Segment, right: Segment): boolean {
     && left.attribution_revision === right.attribution_revision
     && left.correction_review_required === right.correction_review_required
     && left.confirmed_speaker_name === right.confirmed_speaker_name
+    && left.automatic_speaker_name === right.automatic_speaker_name
     && JSON.stringify(left.attribution ?? null) === JSON.stringify(right.attribution ?? null);
 }
 

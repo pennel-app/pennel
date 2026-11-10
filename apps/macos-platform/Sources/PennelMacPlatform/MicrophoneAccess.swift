@@ -52,6 +52,33 @@ enum MeetingMicrophoneStartup {
     }
 }
 
+enum MeetingMicrophoneFormatReadiness {
+    /// Voice-processing teardown can leave the new default-device aggregate temporarily empty.
+    /// Wait only while a real default input remains available; permission and missing-device errors
+    /// stay specific, and a persistent route failure remains a bounded startup failure.
+    static func resolve<Format>(
+        attempts: Int,
+        configure: () -> Void = {},
+        read: () -> Format,
+        usable: (Format) -> Bool,
+        defaultInputAvailable: () -> Bool,
+        checkAccess: () throws -> Void,
+        pause: () -> Void
+    ) throws -> Format {
+        guard attempts > 0 else { throw MicrophoneStartError.failed }
+        try checkAccess()
+        configure()
+        for attempt in 0..<attempts {
+            try checkAccess()
+            let format = read()
+            if usable(format) { return format }
+            guard defaultInputAvailable() else { throw NoInputDevice() }
+            if attempt + 1 < attempts { pause() }
+        }
+        throw MicrophoneStartError.failed
+    }
+}
+
 final class MeetingMicrophoneConfigurationObserver {
     private let center: NotificationCenter
     private var observer: NSObjectProtocol?

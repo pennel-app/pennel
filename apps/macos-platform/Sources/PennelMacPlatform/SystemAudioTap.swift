@@ -6,9 +6,22 @@ struct SystemAudioTapError: Error {
     let status: OSStatus
 }
 
+/// Nil/empty process resolution is explicitly global, rather than an implicit targeted tap.
+struct SystemAudioTapSelection: Equatable {
+    let processes: [AudioObjectID]?
+
+    init(processes: [AudioObjectID]?) {
+        let resolved = processes?.filter { $0 != kAudioObjectUnknown } ?? []
+        self.processes = resolved.isEmpty ? nil : resolved
+    }
+
+    var appScoped: Bool { processes != nil }
+}
+
 /// Captures everything the Mac plays (except Pennel itself) via a Core Audio process tap,
 /// which only needs the "System Audio Recording Only" permission, not Screen Recording.
 final class SystemAudioTap: @unchecked Sendable {
+    private let log = Diagnostics("system-audio")
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
@@ -29,9 +42,14 @@ final class SystemAudioTap: @unchecked Sendable {
     /// Construct the aggregate before resolving the tap's effective input format. Bluetooth
     /// profiles can leave the tap ASBD at 48 kHz while the aggregate actually delivers 24 kHz.
     func prepare(processes: [AudioObjectID]? = nil) throws -> AVAudioFormat {
+        try prepare(selection: SystemAudioTapSelection(processes: processes))
+    }
+
+    func prepare(selection: SystemAudioTapSelection) throws -> AVAudioFormat {
         stop()
         do {
-            let description = if let processes, !processes.isEmpty {
+            log.notice("tap selection: app_scoped=\(selection.appScoped), process_count=\(selection.processes?.count ?? 0)")
+            let description = if let processes = selection.processes {
                 CATapDescription(stereoMixdownOfProcesses: processes)
             } else {
                 CATapDescription(stereoGlobalTapButExcludeProcesses: ownProcessObject().map { [$0] } ?? [])
@@ -56,7 +74,7 @@ final class SystemAudioTap: @unchecked Sendable {
                                                  kAudioSubTapUIDKey: description.uuid.uuidString]],
             ]
             try check("create aggregate device", AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID))
-            let resolved = try inputLayout()
+            let resolved = try inputLayout(diagnose: true)
             layout = resolved
             let code = (try? property(outputID, kAudioDevicePropertyTransportType, initial: UInt32(0))) ?? 0
             transport = CaptureDeviceTransport.name(code)
@@ -158,14 +176,34 @@ final class SystemAudioTap: @unchecked Sendable {
         }
     }
 
-    private func inputLayout() throws -> TapInputLayout {
+    private func inputLayout(diagnose: Bool = false) throws -> TapInputLayout {
         let tap = try tapFormat()
         let rate = try property(aggregateID, kAudioDevicePropertyNominalSampleRate, initial: Double(0))
         let inputStreams = try streams(aggregateID, scope: kAudioObjectPropertyScopeInput)
         let starts = try inputStreams.map { Int(try property($0, kAudioStreamPropertyStartingChannel, initial: UInt32(0))) }
         let formats = try inputStreams.map { try property($0, kAudioStreamPropertyVirtualFormat, initial: AudioStreamBasicDescription()) }
-        let hardwareChannels = (try? bufferChannels(outputID, scope: kAudioObjectPropertyScopeInput).reduce(0, +)) ?? 0
+        // An output-only backing device can legitimately expose no input streams. A failed
+        // hardware query is not proof of zero microphone channels and must not select tap buffers.
+        let hardwareStreams = try streams(outputID, scope: kAudioObjectPropertyScopeInput)
+        let hardwareChannels = hardwareStreams.isEmpty ? 0
+            : try bufferChannels(outputID, scope: kAudioObjectPropertyScopeInput).reduce(0, +)
         let channels = try bufferChannels(aggregateID, scope: kAudioObjectPropertyScopeInput)
+        if diagnose {
+            func format(_ value: AudioStreamBasicDescription) -> [String: Any] {
+                ["rate": value.mSampleRate.isFinite ? value.mSampleRate as Any : "nonfinite",
+                 "channels": value.mChannelsPerFrame, "id": value.mFormatID, "flags": value.mFormatFlags,
+                 "bits": value.mBitsPerChannel, "bytes_per_frame": value.mBytesPerFrame]
+            }
+            let snapshot: [String: Any] = [
+                "tap": format(tap), "aggregate_rate": rate.isFinite ? rate as Any : "nonfinite",
+                "hardware_input_channels": hardwareChannels, "stream_count": inputStreams.count,
+                "stream_starts": Array(starts.prefix(32)), "stream_formats": Array(formats.prefix(32)).map(format),
+                "buffer_channels": Array(channels.prefix(32)),
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys]) {
+                log.notice("tap input layout: \(String(decoding: data, as: UTF8.self))")
+            }
+        }
         guard let resolved = TapInputLayout.resolve(tap: tap, deviceRate: rate, hardwareChannels: hardwareChannels,
                                                    streamStarts: starts, streamFormats: formats, bufferChannels: channels) else {
             throw SystemAudioTapError(step: "resolve input streams", status: -1)

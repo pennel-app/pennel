@@ -1677,6 +1677,7 @@ mod tests {
         rows[0].metadata.attribution.kind = crate::AttributionKind::Single;
         rows[0].metadata.attribution.voices = vec![1];
         rows[1].metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("Canonical Noor".into()),
             voice: Some(2),
             source_fingerprint: rows[1].metadata.source_fingerprint.clone(),
@@ -1694,6 +1695,7 @@ mod tests {
         rows[6].metadata.attribution.voices = vec![3];
         rows[6].metadata.attribution.provisional = true;
         rows[8].metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("STALE_CORRECTION_2b16".into()),
             voice: Some(2),
             source_fingerprint: "0".repeat(64),

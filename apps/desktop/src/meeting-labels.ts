@@ -30,6 +30,8 @@ export function speakerLabel(segment: Segment, detail?: Pick<MeetingDetail, "spe
 
 export function speakerUiLabel(segment: Segment, detail?: Pick<MeetingDetail, "speakers">): UiText {
   if (segment.confirmed_speaker_name) return segment.confirmed_speaker_name;
+  if (segment.automatic_speaker_name && segment.attribution?.kind === "single" && !segment.attribution.provisional)
+    return l("meetings.speaker_teams_estimate", { name: segment.automatic_speaker_name });
   if (segment.attribution) return liveText(() => speakerLabel(segment, detail));
   if (segment.speaker === "me") return l("meetings.speaker_me");
   if (segment.voice === null) return l("meetings.speaker_others");

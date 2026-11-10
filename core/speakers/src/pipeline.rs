@@ -22,8 +22,8 @@ pub struct Models<'a> {
 pub struct Options {
     pub threads: i32,
     pub cluster_threshold: f32,
-    /// Step of the 10 s segmentation window, as a fraction of it. 0.25 is four times faster than the
-    /// default 0.1 and found the same speakers on the reference recordings.
+    /// Step of the segmentation window, as a fraction of it. Smaller shifts require more compute;
+    /// real-call evaluation compares the existing 0.25 setting with the upstream 0.1 setting.
     pub window_shift: f32,
 }
 
@@ -140,8 +140,33 @@ impl Diarizer {
     }
 
     pub fn process(&self, samples: &[f32]) -> Result<Diarization, Error> {
+        let turns = self.raw_turns(samples)?;
+        crate::clean_windows::reconcile(&turns, |start, end| {
+            self.embedder.embed_spans(samples, &[(start, end)])
+        })
+    }
+
+    /// Native turns and legacy whole-cluster clean voiceprints, retained for offline baseline
+    /// comparisons. Production instead reconciles independently embedded clean windows.
+    pub fn process_unreconciled(&self, samples: &[f32]) -> Result<Diarization, Error> {
+        let turns = self.raw_turns(samples)?;
+        let count = turns.iter().map(|turn| turn.speaker + 1).max().unwrap_or(0);
+        let speakers = (0..count)
+            .map(|speaker| {
+                let spans = voiceprint_spans(&turns, speaker, VOICEPRINT_BUDGET_MS);
+                Ok(Speaker {
+                    speaker,
+                    speech_ms: speech_ms(&turns, speaker),
+                    embedding: self.embedder.embed_spans(samples, &spans)?,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(Diarization { turns, speakers })
+    }
+
+    fn raw_turns(&self, samples: &[f32]) -> Result<Vec<crate::Turn>, Error> {
         if samples.len() < SAMPLE_RATE as usize {
-            return Ok(Diarization::default());
+            return Ok(Vec::new());
         }
         let result = self
             .diarizer
@@ -154,18 +179,7 @@ impl Diarizer {
                 i64::from(segment.speaker),
             )
         });
-        let (turns, count) = renumber(raw);
-        let speakers = (0..count as u32)
-            .map(|speaker| {
-                let spans = voiceprint_spans(&turns, speaker, VOICEPRINT_BUDGET_MS);
-                Ok(Speaker {
-                    speaker,
-                    speech_ms: speech_ms(&turns, speaker),
-                    embedding: self.embedder.embed_spans(samples, &spans)?,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        Ok(Diarization { turns, speakers })
+        Ok(renumber(raw).0)
     }
 }
 
@@ -226,6 +240,13 @@ mod tests {
             result.turns.len()
         );
         assert!(result.speakers.len() >= 2);
-        assert!(result.speakers.iter().all(|s| !s.embedding.is_empty()));
+        assert!(
+            result
+                .speakers
+                .iter()
+                .filter(|s| !s.embedding.is_empty())
+                .count()
+                >= 2
+        );
     }
 }

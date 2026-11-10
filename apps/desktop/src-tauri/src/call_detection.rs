@@ -24,12 +24,70 @@ pub struct RecordPrompt {
     attendees: Vec<String>,
     #[serde(skip)]
     calendar_context: Option<serde_json::Value>,
+    #[serde(skip)]
+    detected_call: DetectedCall,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DetectedCall {
+    pub(crate) app_id: String,
+    revision: u64,
 }
 
 #[derive(Default)]
 pub struct DetectionState {
     pub prompt: Mutex<Option<RecordPrompt>>,
-    active: Mutex<Option<String>>,
+    active: Mutex<Option<DetectedCall>>,
+    next_revision: AtomicU64,
+    clean_end_reset: Mutex<Option<DetectedCall>>,
+}
+
+impl DetectionState {
+    fn begin_episode(&self, app_id: String) -> DetectedCall {
+        let call = DetectedCall {
+            app_id,
+            revision: self.next_revision.fetch_add(1, Ordering::SeqCst) + 1,
+        };
+        *self.active.lock().unwrap() = Some(call.clone());
+        call
+    }
+
+    fn matches(&self, call: &DetectedCall) -> bool {
+        self.active.lock().unwrap().as_ref() == Some(call)
+    }
+
+    fn finish_episode(&self, call: &DetectedCall) -> bool {
+        let mut active = self.active.lock().unwrap();
+        if active.as_ref() != Some(call) {
+            return false;
+        }
+        active.take();
+        *self.clean_end_reset.lock().unwrap() = Some(call.clone());
+        true
+    }
+}
+
+/// Called only after the runtime accepted a clean stop for the original coordinator session.
+pub(crate) fn recorded_call_ended(app: &AppHandle, call: &DetectedCall) {
+    if let Some(state) = app.try_state::<DetectionState>() {
+        // The accepted recording's prompt was already dismissed. A delayed completion must
+        // never emit a dismissal that could hide a replacement episode's prompt.
+        state.finish_episode(call);
+    }
+}
+
+fn reset_ended_episode(
+    detector: &mut CallDetector,
+    active: &mut Option<DetectedCall>,
+    ended: &DetectedCall,
+    own_app_id: &str,
+) -> bool {
+    if active.as_ref() != Some(ended) || detector.active_call() != Some(ended.app_id.as_str()) {
+        return false;
+    }
+    *detector = CallDetector::new(own_app_id);
+    *active = None;
+    true
 }
 
 fn now_ms() -> u64 {
@@ -97,7 +155,7 @@ fn revalidated_calendar_context(
     Some(saved)
 }
 
-fn offer(app: &AppHandle, shared: &Arc<Shared>, app_id: String) {
+fn offer(app: &AppHandle, shared: &Arc<Shared>, detected_call: DetectedCall) {
     if shared.updating.load(Ordering::SeqCst)
         || shared.quitting.load(Ordering::SeqCst)
         || shared.recording.lock().unwrap().is_busy()
@@ -105,6 +163,7 @@ fn offer(app: &AppHandle, shared: &Arc<Shared>, app_id: String) {
         return;
     }
     let settings = shared.settings();
+    let app_id = detected_call.app_id.clone();
     let calendar = if settings.calendar_enabled {
         calendar()
     } else {
@@ -136,10 +195,11 @@ fn offer(app: &AppHandle, shared: &Arc<Shared>, app_id: String) {
     match pennel_core::decide_recording(settings, app_id.clone(), calendar_id, title.clone()) {
         RecordAction::Never => {}
         RecordAction::Always => {
-            if crate::meeting_runtime::start_with_calendar(
+            if crate::meeting_runtime::start_detected_with_calendar(
+                app,
                 shared,
                 title.unwrap_or_else(|| "Meeting".into()),
-                Some(app_id),
+                detected_call,
                 attendees,
                 calendar_context,
             )
@@ -160,6 +220,7 @@ fn offer(app: &AppHandle, shared: &Arc<Shared>, app_id: String) {
                 expires_at_ms: now_ms() + 60_000,
                 attendees,
                 calendar_context,
+                detected_call,
             };
             *app.state::<DetectionState>().prompt.lock().unwrap() = Some(prompt.clone());
             crate::show_window(app, "prompt", None);
@@ -204,7 +265,7 @@ pub fn answer(
         pending.take().expect("validated prompt")
     };
     dismiss(app);
-    if state.active.lock().unwrap().as_deref() != Some(&prompt.app_id) {
+    if !state.matches(&prompt.detected_call) {
         return Err("The detected meeting has ended".into());
     }
     match answer {
@@ -220,10 +281,11 @@ pub fn answer(
             } else {
                 Vec::new()
             };
-            let started = crate::meeting_runtime::start_with_calendar(
+            let started = crate::meeting_runtime::start_detected_with_calendar(
+                app,
                 shared,
                 prompt.title.unwrap_or_else(|| "Meeting".into()),
-                Some(prompt.app_id),
+                prompt.detected_call,
                 attendees,
                 calendar_context,
             );
@@ -271,6 +333,7 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>) {
             let mut detector = CallDetector::new(app.config().identifier.clone());
             let started = Instant::now();
             let mut was_enabled = false;
+            let mut active_episode: Option<DetectedCall> = None;
             loop {
                 #[cfg(target_os = "macos")]
                 crate::refresh_hotkey(&app, &shared);
@@ -280,17 +343,37 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>) {
                     .load(Ordering::SeqCst);
                 let enabled = shared.settings().auto_detect && !quitting;
                 if enabled {
+                    if let Some(ended) = app
+                        .state::<DetectionState>()
+                        .clean_end_reset
+                        .lock()
+                        .unwrap()
+                        .take()
+                    {
+                        reset_ended_episode(
+                            &mut detector,
+                            &mut active_episode,
+                            &ended,
+                            &app.config().identifier,
+                        );
+                    }
                     if let Ok(users) = snapshot() {
                         for event in detector.update(&users, started.elapsed().as_secs_f64()) {
                             match event {
                                 CallEvent::Started { app_id } => {
-                                    *app.state::<DetectionState>().active.lock().unwrap() =
-                                        Some(app_id.clone());
-                                    offer(&app, &shared, app_id);
+                                    let episode =
+                                        app.state::<DetectionState>().begin_episode(app_id);
+                                    active_episode = Some(episode.clone());
+                                    offer(&app, &shared, episode);
                                 }
                                 CallEvent::Ended { app_id } => {
-                                    app.state::<DetectionState>().active.lock().unwrap().take();
-                                    dismiss(&app);
+                                    if let Some(episode) = active_episode.take()
+                                        && episode.app_id == app_id
+                                        && app.state::<DetectionState>().matches(&episode)
+                                    {
+                                        app.state::<DetectionState>().active.lock().unwrap().take();
+                                        dismiss(&app);
+                                    }
                                     let _ = crate::meeting_runtime::stop(
                                         app.clone(),
                                         shared.clone(),
@@ -312,6 +395,7 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>) {
                     }
                 } else if was_enabled {
                     detector = CallDetector::new(app.config().identifier.clone());
+                    active_episode = None;
                     app.state::<DetectionState>().active.lock().unwrap().take();
                     dismiss(&app);
                 }
@@ -363,10 +447,68 @@ mod tests {
             expires_at_ms: 100,
             attendees: vec!["Els".into()],
             calendar_context: Some(json!({"participants":[{"email":"private@example.test"}]})),
+            detected_call: DetectedCall {
+                app_id: "call-app".into(),
+                revision: 1,
+            },
         };
         let payload = serde_json::to_string(&prompt).unwrap();
         assert!(!payload.contains("private@example.test"));
         assert!(!payload.contains("attendees"));
         assert!(!payload.contains("calendar_context"));
+        assert!(!payload.contains("detected_call"));
+        assert!(!payload.contains("revision"));
+    }
+
+    #[test]
+    fn old_same_app_episode_cannot_clear_or_reset_a_replacement_call() {
+        let state = DetectionState::default();
+        let first = state.begin_episode("com.microsoft.teams2".into());
+        let replacement = state.begin_episode("com.microsoft.teams2".into());
+        assert_ne!(first, replacement);
+        assert!(!state.finish_episode(&first));
+        assert!(state.matches(&replacement));
+        assert!(state.clean_end_reset.lock().unwrap().is_none());
+        assert!(state.finish_episode(&replacement));
+        assert!(!state.finish_episode(&replacement));
+        assert_eq!(
+            state.clean_end_reset.lock().unwrap().take(),
+            Some(replacement)
+        );
+    }
+
+    #[test]
+    fn a_clean_end_reset_allows_a_new_call_but_not_a_prejoin_observation() {
+        let state = DetectionState::default();
+        let mut detector = CallDetector::new("pennel");
+        let playing = |is_call| CallObservation {
+            app_id: "com.microsoft.teams2".into(),
+            is_call,
+            is_playing: true,
+        };
+        detector.update(&[playing(true)], 0.0);
+        assert!(matches!(
+            detector.update(&[playing(true)], 5.0).as_slice(),
+            [CallEvent::Started { .. }]
+        ));
+        let episode = state.begin_episode("com.microsoft.teams2".into());
+        assert!(state.finish_episode(&episode));
+        let reset = state.clean_end_reset.lock().unwrap().take().unwrap();
+        assert_eq!(reset, episode);
+        assert_eq!(detector.active_call(), Some(reset.app_id.as_str()));
+        let mut active = Some(episode);
+        assert!(reset_ended_episode(
+            &mut detector,
+            &mut active,
+            &reset,
+            "pennel"
+        ));
+        assert!(detector.update(&[playing(false)], 10.0).is_empty());
+        assert!(detector.update(&[playing(false)], 20.0).is_empty());
+        assert!(detector.update(&[playing(true)], 21.0).is_empty());
+        assert!(matches!(
+            detector.update(&[playing(true)], 26.0).as_slice(),
+            [CallEvent::Started { .. }]
+        ));
     }
 }

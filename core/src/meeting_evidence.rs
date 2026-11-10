@@ -4,14 +4,34 @@ use sha2::{Digest, Sha256};
 
 use crate::{Passage, PassageKind, Segment, Speaker};
 
+pub(crate) const AUTOMATIC_NAME_ESTIMATE_RULE: &str = "Names marked Teams estimate are revisable estimates, not confirmed identities or action owners. A first-person commitment under an estimated label alone does not establish who owns it. Keep an owner unknown unless the source independently supports the assignment. Preserve estimate qualifications in intermediate and final summaries or answers.";
+
 enum UtteranceSpeakerLabel {
     Name(String),
+    TeamsEstimate(String),
     Number(u32),
     SelfVoice,
     Unknown,
     NeedsReview,
     Mixed,
     Overlap,
+}
+
+pub(crate) fn automatic_utterance_speaker_name(row: &crate::MeetingUtterance) -> Option<&str> {
+    row.metadata
+        .automatic_name
+        .as_ref()
+        .filter(|proof| {
+            row.metadata.manual.is_none()
+                && row.metadata.unresolved_manual.is_empty()
+                && row.metadata.attribution.kind == crate::AttributionKind::Single
+                && row.metadata.attribution.voices.len() == 1
+                && !row.metadata.attribution.self_voice
+                && !row.metadata.attribution.provisional
+                && proof.source_fingerprint == row.metadata.source_fingerprint
+                && proof.attribution_revision == row.metadata.attribution_revision
+        })
+        .map(|proof| proof.name.as_str())
 }
 
 fn utterance_speaker_identity(
@@ -31,6 +51,9 @@ fn utterance_speaker_identity(
         || !row.metadata.unresolved_manual.is_empty()
     {
         return UtteranceSpeakerLabel::NeedsReview;
+    }
+    if let Some(name) = automatic_utterance_speaker_name(row) {
+        return UtteranceSpeakerLabel::TeamsEstimate(name.into());
     }
     let voice = manual.and_then(|manual| manual.voice).or_else(|| {
         (row.metadata.attribution.kind == crate::AttributionKind::Single
@@ -62,6 +85,11 @@ pub(crate) fn utterance_speaker_label(
 ) -> String {
     let label = match utterance_speaker_identity(row, names) {
         UtteranceSpeakerLabel::Name(name) => name,
+        UtteranceSpeakerLabel::TeamsEstimate(name) => crate::ui_text(
+            crate::InterfaceLanguage::English,
+            "meetings.speaker_teams_estimate",
+            &[("name", &name)],
+        ),
         UtteranceSpeakerLabel::Number(voice) => format!("Speaker {voice}"),
         UtteranceSpeakerLabel::SelfVoice => "Me".into(),
         UtteranceSpeakerLabel::Unknown => "Unknown speaker".into(),
@@ -96,6 +124,13 @@ fn localized_settled_utterance_speaker_label(
 ) -> String {
     let key = match utterance_speaker_identity(row, names) {
         UtteranceSpeakerLabel::Name(name) => return name,
+        UtteranceSpeakerLabel::TeamsEstimate(name) => {
+            return crate::ui_text(
+                language,
+                "meetings.speaker_teams_estimate",
+                &[("name", &name)],
+            );
+        }
         UtteranceSpeakerLabel::Number(voice) => {
             return crate::ui_text(
                 language,
@@ -522,6 +557,7 @@ mod tests {
             );
         }
         row.metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("Ada".into()),
             voice: Some(3),
             source_fingerprint: row.metadata.source_fingerprint.clone(),
@@ -606,6 +642,7 @@ mod tests {
         assert_eq!(fingerprint, utterance_evidence_revision(&row));
         row.metadata.attribution.provisional = true;
         row.metadata.manual = Some(crate::ManualCorrection {
+            self_voice: false,
             name: Some("Ada".into()),
             voice: None,
             source_fingerprint: row.metadata.source_fingerprint.clone(),

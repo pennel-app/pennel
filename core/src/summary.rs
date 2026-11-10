@@ -12,6 +12,7 @@ Never invent facts that are not in the transcript or notes.";
 const LANGUAGE_RULE: &str = "Determine the predominant meeting language from the transcript content, ignoring speaker labels, template wording and interface language. If there is no transcript, use the notes. If the language is indeterminate, use English. Write generated prose and empty-section text in that language. Use \"- None\" in English or \"- Geen\" in Dutch for empty generated sections, or the equivalent in the meeting language.";
 const DEFAULT_SECTION_RULE: &str = "Use Markdown with exactly these semantic sections, translating their headings into the meeting language: Summary, Decisions, Action items. English headings: ## Summary, ## Decisions, ## Action items. Dutch headings: ## Samenvatting, ## Beslissingen, ## Actiepunten. These examples do not determine the meeting language.";
 const MAP_PROMPT: &str = "Summarize this part of a meeting transcript as concise bullet points: facts, decisions and action items with who is responsible. Keep the predominant language of the source content, ignoring speaker labels. If the language is indeterminate, use English. In legacy transcripts, \"Ik\" labels the user; \"Me\" is an explicit own-voice estimate. Unknown, mixed and overlapping speech does not establish a named owner. Speaker labels marked provisional are revisable estimates, not confirmed identities or ownership. Never infer a person from an audio track; keep unsupported owners unknown.";
+const AGREEMENT_RULE: &str = "Preserve the distinction between confirmed decisions, proposals, assumptions and unresolved questions. Statements such as 'we assume', 'maybe', 'to investigate' and 'I will double-check' stay tentative and must not appear as confirmed decisions. Only a later explicit confirmation can promote a tentative statement to a decision. The confirmation must clearly refer to that proposal; a vague acknowledgment is not confirmation. Carry unresolved checks and qualifications into intermediate summaries so the final summary cannot lose them. Do not invent owners or deadlines for tentative follow-up work.";
 
 fn section_is(section: &str, english: &str, dutch: &str) -> bool {
     let section = section.trim();
@@ -30,7 +31,10 @@ fn notes_section(spec: &TemplateSpec) -> &str {
 
 pub fn summary_messages(spec: &TemplateSpec, notes: &str, transcript: &str) -> Vec<ChatMessage> {
     let notes = notes.trim();
-    let mut system = format!("{SYSTEM_PROMPT}\n{LANGUAGE_RULE}\n");
+    let mut system = format!(
+        "{SYSTEM_PROMPT}\n{}\n{AGREEMENT_RULE}\n{LANGUAGE_RULE}\n",
+        crate::meeting_evidence::AUTOMATIC_NAME_ESTIMATE_RULE
+    );
     if spec.default_sections {
         system.push_str(DEFAULT_SECTION_RULE);
         system.push('\n');
@@ -88,7 +92,10 @@ pub fn chunk_messages(part: &str) -> Vec<ChatMessage> {
     vec![
         ChatMessage {
             role: "system",
-            content: MAP_PROMPT.into(),
+            content: format!(
+                "{MAP_PROMPT}\n{}\n{AGREEMENT_RULE}",
+                crate::meeting_evidence::AUTOMATIC_NAME_ESTIMATE_RULE
+            ),
         },
         ChatMessage {
             role: "user",
@@ -267,6 +274,43 @@ mod tests {
     }
 
     #[test]
+    fn both_summary_passes_preserve_automatic_name_qualification_and_unknown_owners() {
+        for source in [
+            "[00:00] Sam (Teams estimate): I will prepare it.",
+            "[00:00] Sam (Teams estimate): Ik zal het voorbereiden.",
+        ] {
+            for messages in [
+                summary_messages(&spec("algemeen"), "", source),
+                chunk_messages(source),
+            ] {
+                assert!(messages[0].content.contains("Names marked Teams estimate are revisable estimates, not confirmed identities or action owners"));
+                assert!(messages[0].content.contains(
+                    "Preserve estimate qualifications in intermediate and final summaries"
+                ));
+                assert!(messages[1].content.contains(source));
+            }
+        }
+    }
+
+    #[test]
+    fn both_summary_passes_preserve_tentative_status_until_explicit_confirmation() {
+        let tentative = "[02:20] Speaker 1: We will assume the radio stays visible across filters.\n[02:36] Speaker 2: I still need to double-check that.";
+        let confirmed = format!(
+            "{tentative}\n[12:00] Speaker 2: I checked it. We agree to keep the radio visible across filters."
+        );
+        for source in [tentative, confirmed.as_str()] {
+            for messages in [
+                summary_messages(&spec("algemeen"), "", source),
+                chunk_messages(source),
+            ] {
+                assert!(messages[0].content.contains("Preserve the distinction between confirmed decisions, proposals, assumptions and unresolved questions"));
+                assert!(messages[0].content.contains("Only a later explicit confirmation can promote a tentative statement to a decision"));
+                assert!(messages[1].content.contains(source));
+            }
+        }
+    }
+
+    #[test]
     fn prompt_with_notes_keeps_lines_verbatim() {
         let messages = summary_messages(
             &spec("algemeen"),
@@ -433,6 +477,7 @@ mod tests {
             voice: Some(3),
             source_fingerprint: rows[3].metadata.source_fingerprint.clone(),
             review_required: false,
+            self_voice: false,
         });
         let snapshot = crate::MeetingTranscriptSnapshot {
             meeting_uid: "uid".into(),

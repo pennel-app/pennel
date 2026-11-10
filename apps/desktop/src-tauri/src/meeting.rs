@@ -24,6 +24,105 @@ const LOG: Log = Log::new("meeting");
 #[cfg(any(not(target_os = "macos"), test))]
 const BATCH: usize = 16_000;
 
+#[cfg(any(target_os = "macos", test))]
+#[derive(Clone, Debug)]
+struct NativeCaptureClock {
+    started: Instant,
+    verified: bool,
+    uncertainty_ms: Option<f64>,
+    native_elapsed_ms: Option<f64>,
+    status_round_trip_ms: Option<f64>,
+    observation_valid: bool,
+    probe_count: u8,
+    selected_probe: Option<u8>,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl NativeCaptureClock {
+    fn probe_startup<T>(
+        capture: (Instant, Instant),
+        mut read: impl FnMut() -> ((Instant, Instant), Option<f64>, T),
+    ) -> (Self, T) {
+        let mut best: Option<Self> = None;
+        let mut latest = None;
+        for probe in 1..=3 {
+            let (status, elapsed, value) = read();
+            let mut clock = Self::align(capture, status, elapsed);
+            clock.probe_count = probe;
+            clock.selected_probe = clock.observation_valid.then_some(probe);
+            if clock.verified {
+                return (clock, value);
+            }
+            let preferable = best.as_ref().is_none_or(|previous| {
+                clock.observation_valid
+                    && (!previous.observation_valid
+                        || clock.uncertainty_ms < previous.uncertainty_ms)
+            });
+            if preferable {
+                best = Some(clock);
+            }
+            latest = Some(value);
+        }
+        let mut clock = best.expect("startup clock probing always reads at least once");
+        clock.probe_count = 3;
+        (
+            clock,
+            latest.expect("startup clock probing always reads at least once"),
+        )
+    }
+
+    /// Queueing before native startup is not recorded audio. Bound the native origin by the
+    /// actual start RPC and the status midpoint; more than 100 ms ambiguity cannot qualify names.
+    fn align(
+        capture: (Instant, Instant),
+        status: (Instant, Instant),
+        native_elapsed_ms: Option<f64>,
+    ) -> Self {
+        let span = status.1.checked_duration_since(status.0);
+        let elapsed = native_elapsed_ms
+            .filter(|value| value.is_finite() && *value >= 0.0 && *value <= 300_000.0);
+        let round_trip = span.map(|value| value.as_secs_f64() * 1_000.0);
+        let uncertainty_ms = round_trip.map(|value| value / 2.0 + 1.0);
+        let mut clock = Self {
+            started: capture.1,
+            verified: false,
+            uncertainty_ms,
+            native_elapsed_ms: elapsed,
+            status_round_trip_ms: round_trip,
+            observation_valid: false,
+            probe_count: 1,
+            selected_probe: None,
+        };
+        let (Some(span), Some(elapsed), Some(uncertainty_ms)) = (span, elapsed, uncertainty_ms)
+        else {
+            return clock;
+        };
+        let Some(midpoint) = status.0.checked_add(span / 2) else {
+            return clock;
+        };
+        let Some(started) =
+            midpoint.checked_sub(std::time::Duration::from_secs_f64(elapsed / 1_000.0))
+        else {
+            return clock;
+        };
+        let uncertainty = std::time::Duration::from_secs_f64(uncertainty_ms / 1_000.0);
+        let (Some(earliest), Some(latest)) = (
+            capture.0.checked_sub(uncertainty),
+            capture.1.checked_add(uncertainty),
+        ) else {
+            return clock;
+        };
+        if capture.1 < capture.0 || started < earliest || started > latest {
+            return clock;
+        }
+        clock.started = started;
+        clock.observation_valid = true;
+        clock.selected_probe = Some(1);
+        clock.verified = uncertainty_ms <= 100.0;
+        clock
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 #[serde(default)]
@@ -32,6 +131,9 @@ struct MacCaptureHealth {
     microphone_error: Option<String>,
     system_audio_available: bool,
     system_audio_error: Option<String>,
+    system_audio_scope: Option<String>,
+    app_audio_scope_valid: bool,
+    audio_elapsed_ms: Option<f64>,
     echo_cancellation: bool,
     archive_error: Option<String>,
     capture_warning: Option<String>,
@@ -66,6 +168,33 @@ impl MacCaptureHealth {
         }
         (!warnings.is_empty()).then(|| warnings.join(" "))
     }
+
+    fn source_status(
+        &self,
+        clock: &NativeCaptureClock,
+        source_guard_valid: bool,
+    ) -> serde_json::Value {
+        let scope = match self.system_audio_scope.as_deref() {
+            Some("app") => "app",
+            Some("global") => "global",
+            _ => "unavailable",
+        };
+        // The initial verified origin is latched. Native elapsed freezes when hardware stops,
+        // while archive drainage and finalization can continue for much longer.
+        serde_json::json!({
+            "system_audio_scope": scope,
+            "app_audio_scope_valid": self.app_audio_scope_valid,
+            "source_guard_valid": source_guard_valid,
+            "audio_elapsed_ms": self.audio_elapsed_ms,
+            "audio_clock_verified": clock.verified,
+            "audio_clock_uncertainty_ms": clock.uncertainty_ms,
+            "audio_clock_native_initial_elapsed_ms": clock.native_elapsed_ms,
+            "audio_clock_status_rtt_ms": clock.status_round_trip_ms,
+            "audio_clock_probe_count": clock.probe_count,
+            "audio_clock_selected_probe": clock.selected_probe,
+            "audio_clock_valid_observation": clock.observation_valid,
+        })
+    }
 }
 
 /// The status ABI marshals synchronously through AppKit. Its owner polls without Shared's locks;
@@ -74,19 +203,36 @@ impl MacCaptureHealth {
 struct MacCaptureMonitor {
     capture: crate::macos::MeetingCaptureQuiescence,
     health: Arc<Mutex<MacCaptureHealth>>,
+    source_integrity: Arc<crate::meeting_speaker_evidence::AppAudioSourceIntegrity>,
+    clock: NativeCaptureClock,
     stop: Option<SyncSender<()>>,
     worker: Option<std::thread::JoinHandle<Result<(), String>>>,
 }
 
 #[cfg(target_os = "macos")]
 impl MacCaptureMonitor {
-    fn start(native: crate::macos::MeetingCapture, engine: Arc<PennelEngine>, id: String) -> Self {
+    fn start(
+        native: crate::macos::MeetingCapture,
+        engine: Arc<PennelEngine>,
+        id: String,
+        capture_bounds: (Instant, Instant),
+    ) -> Self {
         let capture = native.quiescence();
-        let health = Arc::new(Mutex::new(MacCaptureHealth::from_status(native.status())));
+        let source_integrity = native.app_audio_source();
+        // A queued AppKit status read can be much wider than the next fresh observation.
+        // Only startup probes may choose an origin; running/stopped clocks stay latched.
+        let (clock, initial) = NativeCaptureClock::probe_startup(capture_bounds, || {
+            let before = Instant::now();
+            let status = MacCaptureHealth::from_status(native.status());
+            let after = Instant::now();
+            ((before, after), status.audio_elapsed_ms, status)
+        });
+        let health = Arc::new(Mutex::new(initial));
         let next_health = health.clone();
         let (stop, receiver) = mpsc::sync_channel(1);
+        let monitor_started = clock.started;
         let worker = std::thread::spawn(move || {
-            let started = Instant::now();
+            let started = monitor_started;
             let mut last_sequence = 0;
             let mut lost_events = 0;
             loop {
@@ -127,6 +273,8 @@ impl MacCaptureMonitor {
         Self {
             capture,
             health,
+            source_integrity,
+            clock,
             stop: Some(stop),
             worker: Some(worker),
         }
@@ -416,6 +564,7 @@ pub struct MeetingRecorder {
     engine: Arc<PennelEngine>,
     pub title: String,
     started: Instant,
+    clock_verified: bool,
     quiescent_ms: Option<u64>,
     capture_failures: Vec<String>,
     #[cfg(test)]
@@ -845,7 +994,7 @@ impl MeetingRecorder {
             let heard_system = Arc::new(AtomicBool::new(false));
             let heard = heard_system.clone();
             let sink = session.clone();
-            let started = Instant::now();
+            let requested = Instant::now();
             let native = crate::macos::MeetingCapture::start(
                 std::path::Path::new(&session.dir()),
                 &microphone_path,
@@ -869,13 +1018,22 @@ impl MeetingRecorder {
                     }
                 },
             )?;
-            let native = MacCaptureMonitor::start(native, engine.clone(), session.id());
+            let completed = Instant::now();
+            let native = MacCaptureMonitor::start(
+                native,
+                engine.clone(),
+                session.id(),
+                (requested, completed),
+            );
+            let started = native.clock.started;
+            let clock_verified = native.clock.verified;
             let has_system = native.snapshot().system_audio_available;
             Ok(Self {
                 session,
                 engine,
                 title,
                 started,
+                clock_verified,
                 quiescent_ms: None,
                 capture_failures: Vec::new(),
                 #[cfg(test)]
@@ -1018,6 +1176,7 @@ impl MeetingRecorder {
                 engine,
                 title,
                 started,
+                clock_verified: true,
                 quiescent_ms: None,
                 capture_failures: Vec::new(),
                 #[cfg(test)]
@@ -1045,6 +1204,44 @@ impl MeetingRecorder {
 
     pub fn started_at(&self) -> Instant {
         self.started
+    }
+
+    pub(crate) fn evidence_clock(&self) -> crate::meeting_speaker_evidence::EvidenceClock {
+        crate::meeting_speaker_evidence::EvidenceClock {
+            started: self.started,
+            verified: self.clock_verified,
+        }
+    }
+
+    pub fn app_speaker_capture_source(
+        &self,
+    ) -> crate::meeting_speaker_evidence::CaptureSourceCheck {
+        #[cfg(target_os = "macos")]
+        if let Some(native) = &self.native {
+            return native
+                .source_integrity
+                .check(crate::meeting_speaker_evidence::TEAMS);
+        }
+        Arc::new(|| false)
+    }
+
+    pub(crate) fn audio_source_status(&self) -> serde_json::Value {
+        #[cfg(target_os = "macos")]
+        if let Some(native) = &self.native {
+            let health = native.snapshot();
+            return health.source_status(
+                &native.clock,
+                (native
+                    .source_integrity
+                    .check(crate::meeting_speaker_evidence::TEAMS))(),
+            );
+        }
+        serde_json::json!({
+            "system_audio_scope": "unavailable",
+            "app_audio_scope_valid": false,
+            "source_guard_valid": false,
+            "audio_clock_verified": false,
+        })
     }
 
     pub fn has_system_audio(&self) -> bool {
@@ -1157,6 +1354,7 @@ impl MeetingRecorder {
             engine,
             title: "Originele titel".into(),
             started: Instant::now(),
+            clock_verified: true,
             quiescent_ms: None,
             capture_failures: Vec::new(),
             quiescence_probe: Some(probe),
@@ -1304,6 +1502,214 @@ impl MeetingRecorder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_clock_removes_two_second_main_dispatch_bias_from_pcm_and_evidence() {
+        let requested = Instant::now();
+        let native_origin = requested + std::time::Duration::from_secs(2);
+        let clock = NativeCaptureClock::align(
+            (requested, requested + std::time::Duration::from_secs(3)),
+            (
+                requested + std::time::Duration::from_millis(3_100),
+                requested + std::time::Duration::from_millis(3_110),
+            ),
+            Some(1_105.0),
+        );
+        assert!(clock.verified);
+        assert_eq!(clock.started, native_origin);
+        assert_eq!(clock.uncertainty_ms, Some(6.0));
+        assert_eq!(clock.native_elapsed_ms, Some(1_105.0));
+        assert_eq!(clock.status_round_trip_ms, Some(10.0));
+        let speech = native_origin + std::time::Duration::from_secs(7);
+        assert_eq!(speech.duration_since(clock.started).as_millis(), 7_000);
+        assert_eq!(
+            speech.duration_since(requested).as_millis(),
+            9_000,
+            "the old pre-FFI origin shifts the same speech by two seconds"
+        );
+    }
+
+    #[test]
+    fn native_clock_rejects_missing_invalid_unreasonable_or_imprecise_observations() {
+        let before = Instant::now();
+        let capture = (before, before + std::time::Duration::from_millis(10));
+        let status = (
+            before + std::time::Duration::from_millis(20),
+            before + std::time::Duration::from_millis(24),
+        );
+        assert!(NativeCaptureClock::align(capture, status, Some(22.0)).verified);
+        for elapsed in [
+            None,
+            Some(-1.0),
+            Some(f64::NAN),
+            Some(f64::INFINITY),
+            Some(300_001.0),
+            Some(1_000.0),
+        ] {
+            assert!(!NativeCaptureClock::align(capture, status, elapsed).verified);
+        }
+        let slow = (
+            before + std::time::Duration::from_millis(20),
+            before + std::time::Duration::from_millis(420),
+        );
+        let clock = NativeCaptureClock::align(capture, slow, Some(220.0));
+        assert!(!clock.verified);
+        assert_eq!(clock.uncertainty_ms, Some(201.0));
+        assert!(!NativeCaptureClock::align(capture, (status.1, status.0), Some(22.0)).verified);
+    }
+
+    #[test]
+    fn startup_clock_returns_after_first_verified_actual_probe() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, status) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            assert_eq!(calls, 1);
+            (
+                (
+                    origin + std::time::Duration::from_millis(10),
+                    origin + std::time::Duration::from_millis(14),
+                ),
+                Some(12.0),
+                calls,
+            )
+        });
+        assert!(clock.verified);
+        assert_eq!(calls, 1);
+        assert_eq!(status, 1);
+        assert_eq!(clock.probe_count, 1);
+        assert_eq!(clock.selected_probe, Some(1));
+    }
+
+    #[test]
+    fn startup_clock_reprobes_a_wide_bracket_and_accepts_the_next_narrow_one() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, status) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            match calls {
+                1 => (
+                    (
+                        origin + std::time::Duration::from_micros(10_000),
+                        origin + std::time::Duration::from_micros(254_174),
+                    ),
+                    Some(132.087),
+                    calls,
+                ),
+                2 => (
+                    (
+                        origin + std::time::Duration::from_millis(260),
+                        origin + std::time::Duration::from_millis(262),
+                    ),
+                    Some(261.0),
+                    calls,
+                ),
+                _ => panic!("a verified second bracket must stop startup probing"),
+            }
+        });
+        assert_eq!(calls, 2);
+        assert_eq!(status, 2);
+        assert!(clock.verified);
+        assert_eq!(clock.uncertainty_ms, Some(2.0));
+        assert_eq!(clock.started, origin);
+        assert_eq!(clock.probe_count, 2);
+        assert_eq!(clock.selected_probe, Some(2));
+    }
+
+    #[test]
+    fn startup_clock_keeps_the_narrowest_valid_wide_probe_but_fails_closed() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, status) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            let (before, after) = match calls {
+                1 => (10, 310),
+                2 => (320, 600),
+                3 => (610, 830),
+                _ => panic!("three probes is the hard limit"),
+            };
+            (
+                (
+                    origin + std::time::Duration::from_millis(before),
+                    origin + std::time::Duration::from_millis(after),
+                ),
+                Some((before + after) as f64 / 2.0),
+                calls,
+            )
+        });
+        assert_eq!(calls, 3);
+        assert_eq!(status, 3);
+        assert!(!clock.verified);
+        assert_eq!(clock.uncertainty_ms, Some(111.0));
+        assert_eq!(clock.probe_count, 3);
+        assert_eq!(clock.selected_probe, Some(3));
+    }
+
+    #[test]
+    fn startup_clock_never_selects_a_narrow_nonfinite_or_missing_counter() {
+        let origin = Instant::now();
+        for invalid in [None, Some(f64::NAN), Some(f64::INFINITY)] {
+            let mut calls = 0;
+            let (clock, _) = NativeCaptureClock::probe_startup((origin, origin), || {
+                calls += 1;
+                assert!(calls <= 3);
+                (
+                    (
+                        origin + std::time::Duration::from_millis(calls * 10),
+                        origin + std::time::Duration::from_millis(calls * 10 + 2),
+                    ),
+                    invalid,
+                    (),
+                )
+            });
+            assert_eq!(calls, 3);
+            assert!(!clock.verified);
+            assert!(!clock.observation_valid);
+            assert_eq!(clock.probe_count, 3);
+            assert_eq!(clock.selected_probe, None);
+        }
+    }
+
+    #[test]
+    fn startup_clock_does_not_prefer_a_narrow_invalid_probe_to_a_valid_wide_one() {
+        let origin = Instant::now();
+        let mut calls = 0;
+        let (clock, _) = NativeCaptureClock::probe_startup((origin, origin), || {
+            calls += 1;
+            match calls {
+                1 => (
+                    (
+                        origin + std::time::Duration::from_millis(10),
+                        origin + std::time::Duration::from_millis(310),
+                    ),
+                    Some(160.0),
+                    (),
+                ),
+                2 => (
+                    (
+                        origin + std::time::Duration::from_millis(320),
+                        origin + std::time::Duration::from_millis(322),
+                    ),
+                    Some(f64::NAN),
+                    (),
+                ),
+                3 => (
+                    (
+                        origin + std::time::Duration::from_millis(330),
+                        origin + std::time::Duration::from_millis(550),
+                    ),
+                    Some(440.0),
+                    (),
+                ),
+                _ => panic!("three probes is the hard limit"),
+            }
+        });
+        assert_eq!(calls, 3);
+        assert!(clock.observation_valid);
+        assert!(!clock.verified);
+        assert_eq!(clock.selected_probe, Some(3));
+        assert_eq!(clock.uncertainty_ms, Some(111.0));
+    }
 
     fn preview_audio(source: Speaker, start_ms: u64) -> pennel_core::MeetingPreviewAudio {
         pennel_core::MeetingPreviewAudio {
@@ -1504,6 +1910,36 @@ mod tests {
             status.warning().as_deref(),
             Some("Only the microphone is being recorded. Echo cancellation is not active.")
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn frozen_native_elapsed_during_slow_stop_flush_keeps_the_verified_origin() {
+        let origin = Instant::now();
+        let capture = (origin, origin + std::time::Duration::from_millis(10));
+        let initial = (
+            origin + std::time::Duration::from_millis(20),
+            origin + std::time::Duration::from_millis(24),
+        );
+        let clock = NativeCaptureClock::align(capture, initial, Some(22.0));
+        assert!(clock.verified);
+        let stopped = MacCaptureHealth::from_status(serde_json::json!({
+            "system_audio_scope":"app", "app_audio_scope_valid":true, "audio_elapsed_ms":2_000.0,
+        }));
+        let late = (
+            origin + std::time::Duration::from_secs(202),
+            origin + std::time::Duration::from_millis(202_004),
+        );
+        assert!(
+            !NativeCaptureClock::align(capture, late, stopped.audio_elapsed_ms).verified,
+            "comparing a frozen elapsed value to a later Rust clock would invent a timing failure"
+        );
+        let final_status = stopped.source_status(&clock, true);
+        assert_eq!(final_status["audio_clock_verified"], true);
+        assert_eq!(final_status["audio_clock_uncertainty_ms"], 3.0);
+        assert_eq!(final_status["audio_elapsed_ms"], 2_000.0);
+        assert_eq!(clock.started, origin);
+        assert!(clock.verified);
     }
 
     #[cfg(target_os = "macos")]

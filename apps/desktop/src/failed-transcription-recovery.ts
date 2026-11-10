@@ -1,4 +1,10 @@
 import type { FailedTranscriptionRecoveryPlan } from "./api";
+import { t } from "./i18n.ts";
+
+export function transcriptDisplayText(segment: { failed: boolean; text: string }): string {
+  if (!segment.failed) return segment.text;
+  return segment.text.trim() ? `${segment.text}\n${t("meetings.transcription_partial")}` : t("meetings.transcription_failed");
+}
 
 export interface FailedRecoverySnapshot {
   meeting_uid?: string;

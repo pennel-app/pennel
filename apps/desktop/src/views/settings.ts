@@ -112,6 +112,13 @@ async function speakerSections(ctx: Context, setup: SpeakerSetup): Promise<HTMLE
   choice.setAttribute("aria-label", t("settings.speakers.route_label"));
   bindLocalization(choice, () => choice.setAttribute("aria-label", t("settings.speakers.route_label")));
   choice.options[0].disabled = !setup.local_available;
+  const namingPolicy = select<"suggest" | "automatic">([
+    ["suggest", l("settings.speakers.names_suggest")], ["automatic", l("settings.speakers.names_automatic")],
+  ], settings.meeting_app_name_policy === "automatic" ? "automatic" : "suggest",
+  value => ctx.save(next => { next.meeting_app_name_policy = value; }), "menu");
+  namingPolicy.disabled = !settings.meeting_app_speakers || locked(ctx.info.capabilities.meeting_app_speakers);
+  namingPolicy.setAttribute("aria-label", t("settings.speakers.names_policy"));
+  bindLocalization(namingPolicy, () => namingPolicy.setAttribute("aria-label", t("settings.speakers.names_policy")));
   const route = [
     setup.local_available ? null : h("p", { class: "help" }, l("settings.speakers.unavailable")),
     ...mode === "cloud"
@@ -157,6 +164,8 @@ async function speakerSections(ctx: Context, setup: SpeakerSetup): Promise<HTMLE
       toggle(l("settings.speakers.meeting_app"), settings.meeting_app_speakers,
         (value) => ctx.save((next) => { next.meeting_app_speakers = value; }), ctx.info.capabilities.meeting_app_speakers),
       h("p", { class: "help" }, l("settings.speakers.meeting_app_help")),
+      h("div", { class: "row speaker-name-policy" }, h("span", { class: "grow" }, l("settings.speakers.names_policy")), namingPolicy),
+      h("p", { class: "help" }, l("settings.speakers.names_help")),
       h("div", { class: "row speaker-route" }, choice), ...route),
     section(l("settings.voice.title"), l("settings.voice.help"),
       h("div", { class: "row" }, trained,

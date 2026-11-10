@@ -284,5 +284,11 @@
   "settings.writing.source.eligibility": "Vergaderspraak draagt alleen bij wanneer je ingeleerde stem definitief en betrouwbaar is herkend.",
   "settings.writing.sharing.connection_error": "De schrijfprofielverbinding is niet beschikbaar. Controleer je Cloud-verbinding en probeer opnieuw.",
   "settings.speakers.meeting_app": "Deelnemersnamen uit Microsoft Teams gebruiken",
-  "settings.speakers.meeting_app_help": "Tijdens de opname leest Pennel wie Teams als spreker aanduidt en stelt die namen voor bij de herkende stemmen. Jij bevestigt elke naam. Namen blijven op deze computer."
+  "settings.speakers.meeting_app_help": "Bij opnames die vanuit een gedetecteerde Teams-oproep starten, leest Pennel wie Teams als spreker aanduidt. Deelnemersobservaties blijven op deze computer.",
+  "settings.voice.incomplete": "Sprekerlabels onvolledig",
+  "settings.voice.incomplete_count": "Sprekerlabels onvolledig: {count} stemmen zonder label",
+  "settings.speakers.names_policy": "Teams-namen toepassen",
+  "settings.speakers.names_suggest": "Eerst bevestigen",
+  "settings.speakers.names_automatic": "Onderbouwde namen toepassen",
+  "settings.speakers.names_help": "Automatische namen vereisen duidelijke spreekaanwijzingen uit de opgenomen oproep. Onzekere namen blijven voorstellen. Een stem onthouden is een aparte keuze."
 }

@@ -784,5 +784,8 @@
   "backend.summary_review_before_share": "Prepare and review the document before sharing it.",
   "backend.summary_reviewed_export_only": "Copy the formatted notes or export the reviewed document to share it.",
   "backend.give_pennel_accessibility_access_to_read_meeting_participants": "Give Pennel Accessibility access to read meeting participants.",
-  "backend.meeting_participant_names_are_currently_only_read_from_microsoft_teams_on_macos": "Meeting participant names are currently only read from Microsoft Teams on macOS."
+  "backend.meeting_participant_names_are_currently_only_read_from_microsoft_teams_on_macos": "Meeting participant names are currently only read from Microsoft Teams on macOS.",
+  "backend.app_audio_scope_lost": "System audio may include other apps because the meeting app's audio was unavailable.",
+  "backend.microphone_owner_no_speech": "This meeting has no attributable personal microphone speech.",
+  "backend.microphone_owner_manual_conflict": "Review the microphone's existing manual speaker assignments before confirming its owner."
 }

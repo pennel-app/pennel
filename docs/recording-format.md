@@ -58,8 +58,11 @@ Automatic attribution carries a `provisional` flag. Manifest versions retain bot
 | 2 | Provisional | Absent |
 | 3 | Settled | Present |
 | 4 | Provisional | Present |
+| 5 | Explicit owner assertion, automatic-name provenance or retryable partial text | Preserved when present |
 
-The final reader supports schemas 1–4. The #128 backport supports 1/3 and preserves 2/4 read-only. Earlier readers preserve unsupported generations rather than treating provisional estimates as settled or overwriting completion proof. Unsupported, malformed and conflicting generations retain the existing preservation behavior.
+The current reader supports schemas 1–5. Schema 5 is written only when a row needs an explicit microphone-owner assertion, automatic display-name provenance or retained partial text. Ordinary rows continue using schemas 1–4. Readers supporting only 1–4 must preserve schema 5 read-only; they must not rewrite it while discarding those proofs. The #128 backport supports 1/3 and preserves later generations read-only. Unsupported, malformed and conflicting generations retain the existing preservation behavior.
+
+Automatic names retain the recording/window/process association, evidence revision and matching source/attribution revision separately from manual corrections. Raw participant observations remain private and are not part of portable metadata. A microphone-owner assertion is a deliberate correction for that meeting, never biometric enrollment. Retryable partial text retains pending-audio provenance and remains failed/incomplete until a complete recognition succeeds; ordinary summary/export evidence excludes it.
 
 Ordinary saves, rename, reopen and encrypted text sync retain provisional state. Actual final acoustic reconciliation can clear it and write schema 1 without recovery provenance or schema 3 with it. Refinement retains original capture/completion proof, including hidden empty dispositions; it does not downgrade a proven completion to an unproven row. Valid manual corrections remain authoritative; ambiguous automatic remapping remains unknown or requires review. The private ownership ledger and recovery journals keep their existing version: text, parts and manifest still recover as one checked generation at every journal boundary.
 

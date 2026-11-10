@@ -55,6 +55,7 @@ final class MicUsageMonitor: @unchecked Sendable {
     }
 
     private func isCall(_ app: String) -> Bool {
+        if app == MeetingSpeakerObserver.teamsBundleId, let eligible = MeetingSpeakerObserver.callEligibility(appId: app) { return eligible }
         if callApps.contains(app) { return true }
         return browsers.contains(app) && Self.browserShowsCall(app)
     }

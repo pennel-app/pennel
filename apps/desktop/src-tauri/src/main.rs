@@ -686,16 +686,25 @@ fn dispatch_cli(app: &AppHandle, arguments: &[String]) -> bool {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn hotkey_refresh_allowed(
+    capture_profile: bool,
+    active: bool,
+    accessibility_granted: impl FnOnce() -> bool,
+) -> bool {
+    !capture_profile && !active && accessibility_granted()
+}
+
 #[cfg(target_os = "macos")]
 pub fn refresh_hotkey(app: &AppHandle, shared: &Arc<Shared>) {
     macos_tray::changed();
     let active = shared.hotkey.lock().unwrap().is_some();
-    if active
-        || macos::permissions()
+    if !hotkey_refresh_allowed(capture::enabled(app), active, || {
+        macos::permissions()
             .get("accessibility")
             .and_then(|value| value.as_str())
-            != Some("granted")
-    {
+            == Some("granted")
+    }) {
         return;
     }
     static RETRYING: AtomicBool = AtomicBool::new(false);
@@ -851,6 +860,11 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         && handle.config().identifier == "dev.pennel.Pennel.capture.preview";
     #[cfg(not(target_os = "macos"))]
     let capture_profile = false;
+    #[cfg(target_os = "macos")]
+    let call_detection_enabled =
+        capture::call_detection_enabled(&handle).map_err(std::io::Error::other)?;
+    #[cfg(not(target_os = "macos"))]
+    let call_detection_enabled = true;
     app.manage(owned_dictation::Sessions::default());
     if !capture_profile {
         external_paste::start_tracking();
@@ -1009,6 +1023,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if !capture_profile {
         record_shortcut::install(&handle)?;
         record_shortcut::refresh(&handle, &shared);
+    }
+    if call_detection_enabled {
         call_detection::spawn(handle.clone(), shared.clone());
     }
     capabilities::spawn_probe(&handle);
@@ -1143,6 +1159,8 @@ fn main() {
             desktop_commands::set_desktop_command_state,
             #[cfg(target_os = "macos")]
             capture::capture_snapshot,
+            #[cfg(target_os = "macos")]
+            capture::capture_runtime_status,
             commands::app_info,
             commands::save_settings,
             writing_profile::writing_profile_status,
@@ -1228,6 +1246,8 @@ fn main() {
             commands::delete_template,
             commands::rename_speaker,
             commands::diarize_meeting,
+            commands::confirm_meeting_microphone_owner,
+            commands::speaker_processing_status,
             commands::speaker_setup,
             commands::start_voice_enrollment,
             commands::finish_voice_enrollment,
@@ -1491,5 +1511,27 @@ mod lifecycle_tests {
             exit.serialize_hide(&updating, || "prepare-hide"),
             Some("prepare-hide")
         );
+    }
+}
+
+#[cfg(test)]
+mod capture_hotkey_refresh_tests {
+    use super::hotkey_refresh_allowed;
+
+    #[test]
+    fn live_capture_never_refreshes_global_hotkeys() {
+        assert!(!hotkey_refresh_allowed(true, false, || true));
+        assert!(!hotkey_refresh_allowed(true, false, || {
+            panic!("Capture must not query permission before rejecting a global hook")
+        }));
+    }
+
+    #[test]
+    fn ordinary_hotkey_refresh_keeps_existing_permission_and_active_gates() {
+        assert!(hotkey_refresh_allowed(false, false, || true));
+        assert!(!hotkey_refresh_allowed(false, false, || false));
+        assert!(!hotkey_refresh_allowed(false, true, || {
+            panic!("An existing listener must not query permission")
+        }));
     }
 }
