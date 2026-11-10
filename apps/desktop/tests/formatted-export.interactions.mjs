@@ -184,3 +184,27 @@ export async function checkExportDialogLifecycle() {
     client.invoke = invoke; locale.setInterfaceLanguage(language);
   }
 }
+
+/** Layout-only review evidence, shared verbatim by before and after renders. */
+export async function renderExportReference() {
+  const { root, client, fixture } = await owned();
+  const original = client.invoke.bind(client);
+  const payload = { title: "Synthetic planning", markdown: "# Summary\n\nThe team confirmed next week's planning and agreed who prepares what.\n\n## Decisions\n\n- The planning is confirmed for Monday.\n- The client call moves to Thursday afternoon.\n\n## Action items\n\n- Share the agenda before Friday.\n- Confirm the next appointment.\n- Book a room for the client call.", html: "<h1>Summary</h1><p>Synthetic review payload.</p>" };
+  client.invoke = async (command, args) => command === "preview_meeting_export"
+    ? { ...payload, markdown: payload.markdown + (args.scope === "personal" ? "\n\n## Your notes\n\nPrivate synthetic preparation notes." : "") }
+    : original(command, args);
+  try {
+    root.querySelector('.meeting-export-action').click();
+    const preview = document.querySelector('.meeting-export-preview');
+    await until(() => !preview.querySelector('.meeting-export-copy-markdown').disabled, "Review payload did not load.");
+    if (fixture.options.export_reference_personal) {
+      preview.querySelector('[data-export-scope="personal"]').click();
+      await until(() => preview.querySelector('.meeting-export-copy').value.includes('Private synthetic preparation'), "Personal review payload did not load.");
+    }
+    if (fixture.options.export_reference_enlarged) {
+      const sizes=[...document.querySelectorAll('#app *, dialog[open] *')].filter(node=>node instanceof HTMLElement).map(node=>[node,parseFloat(getComputedStyle(node).fontSize)]);
+      for(const [node,size]of sizes){node.style.fontSize=`${size*2}px`;node.style.lineHeight='1.4';}
+    }
+    await settled();
+  } finally { client.invoke = original; }
+}

@@ -21,8 +21,8 @@ export async function checkMeetingDocument() {
   await import('/src/views/meetings.ts').then(module=>module.flushMeetingDrafts());
   assert((await api.meetingDetail(root.dataset.meetingId)).notes===notes.value,"The single document lost durable notes autosave.");
   selectMeetingPane(root,'summary'); doc.scrollTop=Math.min(100,doc.scrollHeight-doc.clientHeight); const scroll=doc.scrollTop;
-  root.querySelector('.meeting-export-action').click(); await until(()=>root.querySelector('.meeting-export-preview:not([hidden])'),"Share did not open the existing export route.");
-  root.querySelector('.meeting-companion-close').click(); await settle();
+  root.querySelector('.meeting-export-action').click(); await until(()=>document.querySelector('.meeting-export-dialog[open] .meeting-export-preview:not([hidden])'),"Share did not open its export dialog.");
+  document.querySelector('.meeting-export-dialog .meeting-export-cancel').click(); await settle();
   assert(!doc.hidden && doc.scrollTop===scroll && root.querySelector('.live-notes')===notes,"Returning from Share lost the document position or writer.");
   if(fixture.options.document_enlarged) {
     const sizes=[...root.querySelectorAll('*')].filter(node=>node instanceof HTMLElement).map(node=>[node,parseFloat(getComputedStyle(node).fontSize)]);
