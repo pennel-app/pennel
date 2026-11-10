@@ -53,6 +53,7 @@ export class LibrarySidebar {
   private task: WorkspaceTask;
   private readonly queries: TaskSearchQueries;
   private readonly requests = new LatestRequest();
+  private readonly runtimeRequests = new LatestRequest();
   private readonly syncQueue = new SerialQueue();
   private readonly typeahead = new ListTypeahead();
   private readonly rows = new Map<string, LibraryRow>();
@@ -191,9 +192,12 @@ export class LibrarySidebar {
       const query = this.query.trim();
       const task = this.task;
       if (task === "dictation") {
-        await this.requests.run(async () => ({ entries: query ? await api.history(200) : [], status: await api.meetingRuntimeStatus() }), ({ entries, status }) => {
+        await this.requests.run(async () => {
+          const entries = query ? await api.history(200) : [];
+          await this.refreshLive();
+          return entries;
+        }, (entries) => {
           if (task !== this.task || query !== this.query.trim()) { this.dirty = true; return; }
-          this.showLive(status);
           const matches = matchingDictations(entries, query);
           this.dictationResults.hidden = !query;
           this.dictationResults.replaceChildren(...matches.map((entry) => h("div", { role: "listitem" },
@@ -210,17 +214,16 @@ export class LibrarySidebar {
       const resolveRemote = this.syncChanged;
       const states = this.syncOn ? api.meetingSyncStates().catch(() => []) : Promise.resolve([]);
       await this.requests.run(async () => {
-        const [result, sync, status] = await Promise.all([
+        const [result, sync] = await Promise.all([
           query ? api.searchLibrary(query) : api.meetings("").then((meetings) => ({ meetings, passages: [] as Passage[] })),
-          states, api.meetingRuntimeStatus(),
+          states, this.refreshLive(),
         ]);
-        return { result, sync, status };
-      }, ({ result, sync, status }) => {
+        return { result, sync };
+      }, ({ result, sync }) => {
         if (query !== this.query.trim()) { this.dirty = true; return; }
         this.syncStates = new Map(sync.map((item) => [item.id, item.state]));
         this.shown = result.meetings;
         this.passages = result.passages;
-        this.showLive(status);
         this.draw(result.meetings, result.passages, query);
         this.highlight();
         if (resolveRemote) {
@@ -235,8 +238,9 @@ export class LibrarySidebar {
   }
 
   async refreshLive() {
-    const status = await api.meetingRuntimeStatus();
-    if (!this.disposed) this.showLive(status);
+    await this.runtimeRequests.run(api.meetingRuntimeStatus, (status) => {
+      if (!this.disposed) this.showLive(status);
+    });
   }
 
   meetings(): MeetingInfo[] {
@@ -464,6 +468,7 @@ export class LibrarySidebar {
     this.setVisible(false);
     this.disposed = true;
     this.requests.cancel();
+    this.runtimeRequests.cancel();
     window.clearTimeout(this.searchTimer);
     this.unsubscribe?.();
     this.unsubscribe = null;

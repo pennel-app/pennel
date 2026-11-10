@@ -12,6 +12,7 @@ export class RecordingActionGate {
 export class RecordingLevels {
   level = 0;
   private session: string | null = null;
+  private lastCapture: string | null = null;
   private readonly retired = new Set<string>();
   private readonly listeners = new Set<(level: number) => void>();
   subscribe(listener: (level: number) => void): () => void {
@@ -21,10 +22,12 @@ export class RecordingLevels {
   observe(status: { session_id: string | null; recording: boolean; phase: string }): boolean {
     if (status.session_id && this.retired.has(status.session_id) && (this.session !== null || status.recording)) return false;
     const session = status.recording && status.phase === "recording" ? status.session_id : null;
-    if (session !== this.session) {
-      if (this.session) this.retired.add(this.session);
-      this.session = session; this.set(0);
+    // An unversioned idle/starting snapshot cannot prove that the last capture ended.
+    if (session) {
+      if (this.lastCapture && this.lastCapture !== session) this.retired.add(this.lastCapture);
+      this.lastCapture = session;
     }
+    if (session !== this.session) { this.session = session; this.set(0); }
     return true;
   }
   stop(session: string): void {

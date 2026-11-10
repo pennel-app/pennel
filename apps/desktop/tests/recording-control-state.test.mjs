@@ -81,3 +81,23 @@ test("retired capture identities remain rejected across multiple later recording
   assert.equal(levels.accept({ session_id: "B", level: 1 }), false);
   assert.equal(levels.accept({ session_id: "C", level: .7 }), true);
 });
+
+for (const delayed of [{ session_id: null, recording: false, phase: "idle" }, { session_id: "C", recording: false, phase: "starting" }]) {
+  test(`an ambiguous ${delayed.phase} status cannot permanently retire the still-live capture`, () => {
+    const levels = new RecordingLevels();
+    levels.observe(active("C")); levels.accept({ session_id: "C", level: .6 });
+    levels.observe(delayed);
+    assert.equal(levels.observe(active("C")), true);
+    assert.equal(levels.accept({ session_id: "C", level: .8 }), true);
+    assert.equal(levels.level, .8);
+  });
+}
+
+test("a known replacement retires the previous capture even across an ambiguous snapshot", () => {
+  const levels = new RecordingLevels();
+  levels.observe(active("A"));
+  levels.observe({ session_id: null, recording: false, phase: "idle" });
+  levels.observe(active("B"));
+  assert.equal(levels.observe(active("A")), false);
+  assert.equal(levels.accept({ session_id: "B", level: .5 }), true);
+});

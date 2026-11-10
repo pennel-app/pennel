@@ -229,3 +229,46 @@ export async function checkRecordingRetiredStatusIdentity() {
     return { retiredAAfterBRejected: true, currentMeterRetained: true, stopIdentityRetained: true, syntheticOnly: true };
   } finally { api.meetingRuntimeStatus = read; client.invoke = invoke; }
 }
+
+/** Keep old runtime status waiting behind a real list/search read, then accept fresher capture state. */
+export async function checkRecordingDelayedLibraryStatus() {
+  const fixture = window.__PENNEL_FIXTURE__;
+  const { api } = await import("/src/api.ts");
+  await until(() => window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, "The toolbar did not become ready.");
+  document.querySelector(".toolbar-recording").click();
+  await until(() => document.querySelector(".toolbar-capture.is-recording") && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready && !document.querySelector(".toolbar-recording").disabled, "The synthetic capture did not start.");
+  const read = api.meetingRuntimeStatus, meetings = api.meetings, search = api.searchLibrary;
+  const current = await read(), phase = fixture.options.recording_delayed_phase;
+  const delayed = { ...current, recording: false, phase, busy: phase === "starting", ...(phase === "idle" ? { session_id: null, id: null } : {}) };
+  let oldDelivered = false, freshReads = 0, releaseList, block = true;
+  const hold = original => async query => {
+    const result = await original(query);
+    if (block) { block = false; await new Promise(resolve => { releaseList = resolve; }); }
+    return result;
+  };
+  api.meetingRuntimeStatus = async () => {
+    if (!oldDelivered) { oldDelivered = true; return delayed; }
+    const status = await read(); freshReads++; return status;
+  };
+  if (fixture.options.recording_delayed_search) api.searchLibrary = hold(search); else api.meetings = hold(meetings);
+  try {
+    if (fixture.options.recording_delayed_search) {
+      const input = document.querySelector(".library-search input"); input.value = "New"; input.dispatchEvent(new Event("input", { bubbles: true }));
+    } else fixture.emit("library-changed", null);
+    await until(() => releaseList && oldDelivered, "The library did not hold the old runtime snapshot behind its data read.");
+    window.dispatchEvent(new Event("focus"));
+    await until(() => freshReads > 0, "The independent live refresh did not obtain current capture state.");
+    await settle();
+    fixture.emit("meeting-level", { session_id: current.session_id, level: .6 }); await settle();
+    assert(document.querySelector(".toolbar-capture.is-recording"), "Fresh active status could not restore the recording capsule.");
+    const bars = () => [...document.querySelectorAll(".recording-levels i")].map(bar => bar.style.height).join();
+    const live = bars(); assert(live && live !== "3px,3px,3px,3px,3px", "Fresh active capture could not restore live bars after the ambiguous status.");
+    releaseList(); await new Promise(resolve => setTimeout(resolve, 100));
+    assert(document.querySelector(".toolbar-capture.is-recording") && bars() === live, "The delayed list/search result overwrote newer recording state.");
+    fixture.emit("meeting-level", { session_id: current.session_id, level: .8 }); await settle();
+    assert(bars() !== live && document.querySelector(".toolbar-capture-stop:not([hidden])"), "The current capture stopped accepting levels or lost Stop after the delayed response.");
+    document.querySelector(".toolbar-capture-stop").click();
+    await until(() => !document.querySelector(".toolbar-capture.is-recording"), "Stop could not finish the still-current recording.");
+    return { delayedPhase: phase, held: fixture.options.recording_delayed_search ? "search" : "list", freshCaptureRecovers: true, latestStatusRetained: true, stopWorks: true, syntheticOnly: true };
+  } finally { releaseList?.(); api.meetingRuntimeStatus = read; api.meetings = meetings; api.searchLibrary = search; }
+}
