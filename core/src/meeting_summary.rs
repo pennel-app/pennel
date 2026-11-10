@@ -561,6 +561,40 @@ impl PennelEngine {
         store.read_owner_summary(&id)
     }
 
+    /// Frozen recognition only when a successful recorded attempt matches the current transcript bytes.
+    pub fn meeting_transcript_provenance(
+        &self,
+        id: String,
+    ) -> Result<Option<crate::MeetingTranscriptProvenance>, PennelError> {
+        self.claim_library()?;
+        let store = self.meeting_store();
+        checked_directory(&store, &id)?;
+        let Some(metadata) = store.recording_metadata(&id).ok().flatten() else {
+            return Ok(None);
+        };
+        let Ok(before) = store.summary_files(&id) else {
+            return Ok(None);
+        };
+        let Ok(snapshot) = store.read_committed_transcript_snapshot(&id) else {
+            return Ok(None);
+        };
+        if snapshot.meeting_uid != before.uid {
+            return Ok(None);
+        }
+        let provenance = crate::meeting_recording::matching_transcript_provenance(
+            &metadata,
+            &before.uid,
+            &snapshot.transcript_digest,
+        );
+        let Ok(after) = store.summary_files(&id) else {
+            return Ok(None);
+        };
+        if before.uid != after.uid || before.transcript_revision != after.transcript_revision {
+            return Ok(None);
+        }
+        Ok(provenance)
+    }
+
     pub fn meeting_speaker_timeline(
         &self,
         id: String,
@@ -1796,6 +1830,143 @@ mod tests {
                 "{alteration}"
             );
             provider.assert();
+        }
+    }
+
+    fn recorded_transcript(engine: &PennelEngine) -> String {
+        let id = meeting(engine);
+        let store = engine.meeting_store();
+        store
+            .prepare_recording(
+                &id,
+                crate::RecordingEnvironment {
+                    app_version: "test".into(),
+                    build: "test".into(),
+                    platform: "macos".into(),
+                    os_version: "test".into(),
+                },
+                crate::RecordingRecognition {
+                    provider_kind: "groq".into(),
+                    model: "frozen-speech-model".into(),
+                    requested_language: Some("nl".into()),
+                    local_model_sha256: None,
+                },
+                false,
+            )
+            .unwrap();
+        store.finish_recording(&id, 1000, false).unwrap();
+        store.finish_initial_transcription(&id, true).unwrap();
+        id
+    }
+
+    #[test]
+    fn transcript_provenance_matches_current_bytes_and_ignores_unrelated_later_attempts() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let id = recorded_transcript(&engine);
+        let store = engine.meeting_store();
+        let expected_end = store
+            .recording_metadata(&id)
+            .unwrap()
+            .unwrap()
+            .transcription_attempts[0]
+            .ended_at
+            .clone()
+            .unwrap();
+        let later = crate::RecordingTranscriptionAttempt {
+            started_at: chrono::Utc::now().to_rfc3339(),
+            ended_at: Some(chrono::Utc::now().to_rfc3339()),
+            recognition: crate::RecordingRecognition {
+                provider_kind: "openai".into(),
+                model: "unrelated-model".into(),
+                requested_language: Some("en".into()),
+                local_model_sha256: None,
+            },
+            successful: Some(true),
+            transcript_sha256: Some("0".repeat(64)),
+        };
+        store.append_transcription_attempt(&id, later).unwrap();
+        let mut settings = engine.settings();
+        settings.meeting_stt.model = "current-settings-model".into();
+        engine.update_settings(settings).unwrap();
+        let actual = engine.meeting_transcript_provenance(id).unwrap().unwrap();
+        assert_eq!(actual.provider_kind, "groq");
+        assert_eq!(actual.model, "frozen-speech-model");
+        assert_eq!(actual.requested_language.as_deref(), Some("nl"));
+        assert_eq!(actual.generated_at, expected_end);
+    }
+
+    #[test]
+    fn transcript_provenance_disappears_for_edited_bytes_and_returns_for_exact_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let id = recorded_transcript(&engine);
+        let store = engine.meeting_store();
+        let path = store.dir_of(&id).join("transcript.md");
+        let original = fs::read(&path).unwrap();
+        assert!(
+            engine
+                .meeting_transcript_provenance(id.clone())
+                .unwrap()
+                .is_some()
+        );
+        fs::write(&path, [original.as_slice(), b" "].concat()).unwrap();
+        assert!(
+            engine
+                .meeting_transcript_provenance(id.clone())
+                .unwrap()
+                .is_none()
+        );
+        fs::write(&path, original).unwrap();
+        assert!(engine.meeting_transcript_provenance(id).unwrap().is_some());
+    }
+
+    #[test]
+    fn transcript_provenance_omits_legacy_foreign_future_unknown_and_unfinished_records() {
+        for invalid in [
+            "legacy",
+            "foreign",
+            "future",
+            "unknown",
+            "unfinished",
+            "failed",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let server = mockito::Server::new();
+            let engine = engine(&dir, &server);
+            let id = if invalid == "legacy" {
+                meeting(&engine)
+            } else {
+                recorded_transcript(&engine)
+            };
+            if invalid != "legacy" {
+                let path = engine
+                    .meeting_store()
+                    .dir_of(&id)
+                    .join(crate::meeting_recording::RECORDING_FILE);
+                let mut metadata: serde_json::Value =
+                    serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                match invalid {
+                    "foreign" => metadata["meeting_uid"] = uuid::Uuid::now_v7().to_string().into(),
+                    "future" => metadata["schema_version"] = 99.into(),
+                    "unknown" => {
+                        metadata["transcription_attempts"][0]["recognition"]["provider_kind"] =
+                            "unknown".into()
+                    }
+                    "unfinished" => {
+                        metadata["transcription_attempts"][0]["ended_at"] = serde_json::Value::Null
+                    }
+                    "failed" => metadata["transcription_attempts"][0]["successful"] = false.into(),
+                    _ => unreachable!(),
+                }
+                fs::write(&path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+            }
+            assert!(
+                engine.meeting_transcript_provenance(id).unwrap().is_none(),
+                "{invalid}"
+            );
         }
     }
 

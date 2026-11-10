@@ -217,6 +217,75 @@ pub struct RecordingTranscriptionAttempt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+pub struct MeetingTranscriptProvenance {
+    pub provider_kind: String,
+    pub model: String,
+    pub requested_language: Option<String>,
+    pub generated_at: String,
+}
+
+pub(crate) fn matching_transcript_provenance(
+    metadata: &MeetingRecordingMetadata,
+    meeting_uid: &str,
+    transcript_sha256: &str,
+) -> Option<MeetingTranscriptProvenance> {
+    if metadata.schema_version != 1 || metadata.meeting_uid != meeting_uid {
+        return None;
+    }
+    let recording_start = DateTime::parse_from_rfc3339(&metadata.started_at).ok()?;
+    let recording_end = DateTime::parse_from_rfc3339(metadata.ended_at.as_deref()?).ok()?;
+    if recording_end < recording_start {
+        return None;
+    }
+    // A later attempt is relevant only if it successfully produced these exact current bytes.
+    let attempt = metadata
+        .transcription_attempts
+        .iter()
+        .rev()
+        .find(|attempt| {
+            attempt.successful == Some(true)
+                && attempt.ended_at.is_some()
+                && attempt.transcript_sha256.as_deref() == Some(transcript_sha256)
+        })?;
+    let generated_at = attempt.ended_at.as_ref()?;
+    if DateTime::parse_from_rfc3339(generated_at).ok()?
+        < DateTime::parse_from_rfc3339(&attempt.started_at).ok()?
+    {
+        return None;
+    }
+    let recognition = &attempt.recognition;
+    validate_recognition(recognition).ok()?;
+    if recognition.model.trim().is_empty()
+        || recognition
+            .requested_language
+            .as_ref()
+            .is_some_and(|language| language.trim().is_empty())
+        || ![
+            ProviderKind::OpenAi,
+            ProviderKind::OpenRouter,
+            ProviderKind::Groq,
+            ProviderKind::Mistral,
+            ProviderKind::Ollama,
+            ProviderKind::LmStudio,
+            ProviderKind::Custom,
+            ProviderKind::Local,
+            ProviderKind::AppleSpeech,
+            ProviderKind::PennelCloud,
+        ]
+        .iter()
+        .any(|kind| kind.slug() == recognition.provider_kind)
+    {
+        return None;
+    }
+    Some(MeetingTranscriptProvenance {
+        provider_kind: recognition.provider_kind.clone(),
+        model: recognition.model.clone(),
+        requested_language: recognition.requested_language.clone(),
+        generated_at: generated_at.clone(),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct MeetingRecordingMetadata {
     pub schema_version: u32,
     pub meeting_uid: String,
