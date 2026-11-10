@@ -219,6 +219,10 @@ if (options.serve) {
           await new Promise(resolve => setTimeout(resolve, step.wait || 300));
         }
         const metadata = await send("Runtime.evaluate", { expression: "(()=>{const pill=document.getElementById('pill'),preview=document.getElementById('preview'),text=document.getElementById('preview-text'),bounds=pill?.getBoundingClientRect();const pillError=pill?(bounds.left<0||bounds.top<0||bounds.right>innerWidth||bounds.bottom>innerHeight?'Pill exceeds the viewport':text?.querySelector('*')?'Preview interpreted markup':window.__PENNEL_FIXTURE__.options.preview_text&&preview.hidden?'Expected preview is hidden':''):'';return {document_language:document.documentElement.lang,width:innerWidth,height:innerHeight,horizontal_overflow:document.documentElement.scrollWidth>innerWidth,unknown_commands:window.__PENNEL_FIXTURE__.unknown,calls:window.__PENNEL_FIXTURE__.calls,runtime_banner:document.querySelector('.notice-banner:not([hidden]):not([data-recovery-banner])')?.textContent||'',recovery_banner:document.querySelector('[data-recovery-banner]:not([hidden])')?.textContent||'',surface_error:pillError,pill_preview:text?{text:text.textContent,visible:!preview.hidden,height:preview.getBoundingClientRect().height}:null,body:document.body.innerText.slice(0,300)}})()", returnByValue: true });
+        for (const [selector, expected] of item.expect_font_size || []) {
+          const measured = await send("Runtime.evaluate", { expression: `(()=>{const element=document.querySelector(${JSON.stringify(selector)});return element?parseFloat(getComputedStyle(element).fontSize):null})()`, returnByValue: true });
+          if (measured.result.value !== expected) throw new Error(`${item.name}: ${selector} computed font-size ${measured.result.value} px, expected ${expected} px`);
+        }
         const acceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_LIVE_ACCEPTANCE__ || null", returnByValue: true });
         metadata.result.value.live_acceptance = acceptance.result.value;
         const peopleAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_PEOPLE_ACCEPTANCE__ || null", returnByValue: true });
