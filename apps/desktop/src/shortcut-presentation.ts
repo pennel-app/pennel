@@ -1,6 +1,13 @@
 import type { AppInfo, ShortcutRow } from './api';
+import { domBindingAvailable, keyboardLayout } from './shortcut-layout.ts';
 import { t, type TranslationKey, localizeBackendText } from './i18n.ts';
-export function shortcutRow(info: AppInfo, action: string): ShortcutRow | undefined { return info.shortcuts?.find(row => row.id === action); }
+export function shortcutRow(info: AppInfo, action: string): ShortcutRow | undefined {
+  const row = info.shortcuts?.find(row => row.id === action);
+  if (row?.scope === 'application' && info.platform !== 'macos' && row.binding && row.capability.available && !domBindingAvailable(row.binding, keyboardLayout())) {
+    return { ...row, capability: { available: false, reason: 'dom_layout_unavailable' } };
+  }
+  return row;
+}
 export function shortcutText(info: AppInfo, action: string): string {
   const row = shortcutRow(info, action);
   return row?.binding ? row.label.text : t('shortcuts.none');
@@ -13,7 +20,7 @@ export function shortcutName(action: string): string {
 export function shortcutReason(reason: string | null | undefined): string {
   if (!reason) return '';
   const reasons: Record<string, TranslationKey> = {
-    next_model_not_ready: 'shortcuts.reason.second_model', second_model_required: 'shortcuts.reason.second_model', shortcut_input_active: 'shortcuts.reason.input_active', native_shortcut_unavailable: 'shortcuts.reason.native_capture', shortcut_registration_failed: 'shortcuts.reason.registration', shortcut_release_failed: 'shortcuts.reason.registration',
+    dom_layout_unavailable: 'shortcuts.reason.layout', next_model_not_ready: 'shortcuts.reason.second_model', second_model_required: 'shortcuts.reason.second_model', shortcut_input_active: 'shortcuts.reason.input_active', native_shortcut_unavailable: 'shortcuts.reason.native_capture', shortcut_registration_failed: 'shortcuts.reason.registration', shortcut_release_failed: 'shortcuts.reason.registration',
     wayland_toggle_dictation: 'shortcuts.reason.wayland_dictation', wayland_toggle_meeting: 'shortcuts.reason.wayland_record', wayland_open_pennel: 'shortcuts.reason.wayland_open', wayland_global_shortcuts: 'shortcuts.reason.wayland',
     x11_dictate_modifier_only: 'shortcuts.reason.x11_dictate', x11_keyed_dictation: 'shortcuts.reason.x11_dictate', native_key_not_supported: 'shortcuts.reason.native_key',
     accessibility_required: 'shortcuts.reason.accessibility', native_capture_unavailable: 'shortcuts.reason.native_capture',

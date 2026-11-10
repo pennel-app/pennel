@@ -33,7 +33,7 @@ test("application shortcuts use platform modifiers and leave text navigation and
   const event = (key, changes = {}) => ({ key, metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, isComposing: false, repeat: false, ...changes });
   assert.equal(desktopShortcut(event("n"), "macos"), "new_recording");
   assert.equal(desktopShortcut(event("s", { ctrlKey: true }), "macos"), "toggle_sidebar");
-  assert.equal(desktopShortcut(event("s", { metaKey: false, ctrlKey: true, shiftKey: true }), "windows"), "toggle_sidebar");
+  assert.equal(desktopShortcut(event("S", { code: "KeyS", metaKey: false, ctrlKey: true, shiftKey: true }), "windows", undefined, false, new Map([["KeyS", "s"]])), "toggle_sidebar");
   assert.equal(desktopShortcut(event("f", { metaKey: false, ctrlKey: true }), "linux"), "find");
   assert.equal(desktopShortcut(event("1"), "macos"), "dictation");
   assert.equal(desktopShortcut(event("n", { repeat: true }), "macos"), null);
@@ -48,9 +48,10 @@ test("application shortcuts use platform modifiers and leave text navigation and
 test("effective command rows match logical keys exactly and suspend commands during capture", () => {
   const event = { key: "a", code: "KeyQ", metaKey: true, altKey: true, ctrlKey: false, shiftKey: false, repeat: false, isComposing: false };
   const rows = [{ id: "find", binding: { mods: ["alt", "meta"], code: "KeyQ", key: "a" }, capability: { available: true, reason: null } }];
-  assert.equal(desktopShortcut(event, "macos", rows), "find");
-  assert.equal(desktopShortcut({ ...event, key: "q" }, "macos", rows), null);
-  assert.equal(desktopShortcut({ ...event, shiftKey: true }, "macos", rows), null);
+  const layout = new Map([["KeyQ", "a"], ["KeyA", "q"]]);
+  assert.equal(desktopShortcut(event, "macos", rows, false, layout), "find");
+  assert.equal(desktopShortcut({ ...event, key: "q", code: "KeyA" }, "macos", rows, false, layout), null);
+  assert.equal(desktopShortcut({ ...event, shiftKey: true }, "macos", rows, false, layout), null);
   assert.equal(desktopShortcut({ ...event, keyCode: 229 }, "macos", rows), null);
   assert.equal(desktopShortcut(event, "macos", rows, true), null);
   assert.equal(desktopShortcut(event, "macos", [{ ...rows[0], binding: null }]), null);
@@ -62,7 +63,20 @@ test("Space aliases use logical characters and preserve all command guards", () 
   const row = { id: "find", binding: { mods: ["ctrl", "alt"], code: "Space", key: "Space" }, capability: { available: true, reason: null } };
   const event = { key: " ", code: "Space", ctrlKey: true, altKey: true, metaKey: false, shiftKey: false, repeat: false, isComposing: false };
   assert.equal(desktopShortcut(event, "windows", [row]), "find");
+  assert.equal(desktopShortcut({ ...event, key: "\u00a0" }, "windows", [row]), "find");
   assert.equal(desktopShortcut(event, "linux", [{ ...row, binding: { ...row.binding, key: " " } }]), "find");
   for (const patch of [{ shiftKey: true }, { repeat: true }, { isComposing: true }]) assert.equal(desktopShortcut({ ...event, ...patch }, "windows", [row]), null);
   assert.equal(desktopShortcut(event, "windows", [row], true), null);
+});
+
+test("DOM command dispatch resolves shifted digits and non-US Alt text through the same base layout",()=>{
+ const layout=new Map([["Digit1","1"],["KeyQ","a"]]);
+ const event={key:"!",code:"Digit1",ctrlKey:true,shiftKey:true,metaKey:false,altKey:false,repeat:false,isComposing:false};
+ const row={id:"find",binding:{mods:["ctrl","shift"],code:"Digit1",key:"1"},capability:{available:true,reason:null}};
+ assert.equal(desktopShortcut(event,"windows",[row],false,layout),"find");
+ assert.equal(desktopShortcut(event,"linux",[row],false,null),null);
+ const nonUS={...event,key:"æ",code:"KeyQ",shiftKey:false,altKey:true};
+ const altRow={...row,binding:{mods:["ctrl","alt"],code:"KeyQ",key:"a"}};
+ assert.equal(desktopShortcut(nonUS,"linux",[altRow],false,layout),"find");
+ assert.equal(desktopShortcut(nonUS,"linux",[altRow],false,null),null);
 });

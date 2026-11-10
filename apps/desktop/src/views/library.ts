@@ -1,3 +1,4 @@
+import { onShortcutLayoutChange } from "../shortcut-layout";
 import { shortcutRow, shortcutText } from "../shortcut-presentation";
 import { bindLocalization, getInterfaceLanguage, l, t, formatNumber, formatDateTime } from "../i18n.ts";
 import { api, type AppInfo, type MeetingInfo, type MeetingRuntimeStatus, type Passage } from "../api";
@@ -77,6 +78,7 @@ export class LibrarySidebar {
   private pendingRoute: WorkspaceRoute | null = null;
   private syncChanged = false;
   private unsubscribe: (() => void) | null = null;
+  private layoutUnsubscribe: (() => void) | null = null;
 
   constructor(private readonly host: LibraryHost) {
     this.task = workspaceTask(host.current());
@@ -111,6 +113,7 @@ export class LibrarySidebar {
       h("button", { class: "text-button library-settings", onclick: () => host.go(workspaceRoute("settings")) }, icon("settings"), l("common.settings")));
     bindLocalization(this.live, () => { if (this.status) this.showLive(this.status); });
     bindLocalization(this.search, () => this.syncTask());
+    this.layoutUnsubscribe = onShortcutLayoutChange(() => this.syncTask());
     bindLocalization(this.dictationResults, () => { if (this.task === "dictation" && this.query.trim()) void this.invalidate().catch(this.host.report); });
     bindLocalization(this.list, () => { if (!this.disposed) this.draw(this.shown, this.passages, this.query.trim()); });
     void api.onSyncChanged((report) => {
@@ -147,7 +150,7 @@ export class LibrarySidebar {
     this.search.placeholder = searchLabel;
     this.search.setAttribute("aria-label", searchLabel);
     const shortcut = shortcutRow(this.host.info(), "find");
-    this.search.title = shortcut?.binding ? `${searchLabel} (${shortcutText(this.host.info(), "find")})` : searchLabel;
+    this.search.title = shortcut?.binding && shortcut.capability.available ? `${searchLabel} (${shortcutText(this.host.info(), "find")})` : searchLabel;
     if (this.status) this.showLive(this.status); else this.live.hidden = task !== "meetings";
   }
 
@@ -475,5 +478,6 @@ export class LibrarySidebar {
     window.clearTimeout(this.searchTimer);
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.layoutUnsubscribe?.(); this.layoutUnsubscribe = null;
   }
 }

@@ -26,6 +26,7 @@ import { onboardingView } from "./views/onboarding";
 import { padView } from "./views/pad";
 import { openTaskSetupDialog, settingsTaskRows, type TaskSetupDialog } from "./views/setup";
 import type { SetupTask } from "./task-setup-state";
+import { watchKeyboardLayout } from "./shortcut-layout";
 import { shortcutCaptureActive } from "./shortcut-capture-state";
 import { appInfoContentEqual } from "./presentation";
 import { VisibilityPoll } from "./window-lifecycle";
@@ -907,6 +908,7 @@ function focusChanged(focused: boolean) {
 }
 
 function windowShortcuts() {
+  chromeCleanup.push(watchKeyboardLayout());
   window.addEventListener("keydown", (event) => {
     if (shortcutCaptureActive()) return;
     if (fixtureClient() || info.platform !== "macos") {

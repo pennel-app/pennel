@@ -1,4 +1,5 @@
 import defaultShortcuts from "../../../assets/contracts/desktop-shortcuts.json" with { type: "json" };
+import { domShortcutKey, keyboardLayout, type ShortcutLayout } from "./shortcut-layout.ts";
 import type { ShortcutRow } from "./api";
 import tokens from "../../../assets/brand/tokens.json" with { type: "json" };
 
@@ -69,21 +70,23 @@ export function desktopCommand(value: unknown): DesktopCommand | null {
   return DESKTOP_COMMANDS.includes(command as DesktopCommand) ? command as DesktopCommand : null;
 }
 
-type Shortcut = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "isComposing" | "repeat"> & { keyCode?: number };
+type Shortcut = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "isComposing" | "repeat"> & { keyCode?: number; code?: string };
 type CommandShortcut = Pick<ShortcutRow, "id" | "binding"> & Partial<Pick<ShortcutRow, "capability">>;
 
 // This fallback is a core-validated contract for browser fixtures; native AppInfo supplies effective rows.
 function logicalShortcutKey(key: string): string {
   return key === "Space" || key === "Spacebar" || key === " " ? " " : key.toLocaleLowerCase();
 }
-export function desktopShortcut(event: Shortcut, platform: string, rows?: readonly CommandShortcut[], capturing = false): DesktopCommand | null {
+export function desktopShortcut(event: Shortcut, platform: string, rows?: readonly CommandShortcut[], capturing = false, layout: ShortcutLayout | null = keyboardLayout()): DesktopCommand | null {
   if (capturing || event.isComposing || event.keyCode === 229 || event.repeat || event.key === "Dead" || event.key === "Process") return null;
+  const key = domShortcutKey(event, layout);
+  if (key === null) return null;
   const effective = rows ?? defaultShortcuts[platform === "macos" ? "macos" : platform === "windows" ? "windows" : "linux"];
   for (const row of effective) {
     const binding = row.binding;
     const command = desktopCommand(row.id);
     if (!command || !binding?.key || ("capability" in row && row.capability?.available === false)) continue;
-    if (logicalShortcutKey(binding.key) !== logicalShortcutKey(event.key)) continue;
+    if (logicalShortcutKey(binding.key) !== logicalShortcutKey(key)) continue;
     const mods = new Set(binding.mods);
     if (event.metaKey === mods.has("meta") && event.ctrlKey === mods.has("ctrl")
         && event.altKey === mods.has("alt") && event.shiftKey === mods.has("shift")) return command;
