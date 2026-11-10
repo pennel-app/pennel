@@ -53,6 +53,7 @@
   const sentence = "Zullen we morgen om tien uur afspreken?";
   const pillSnapshot = options.window === "pill" ? {
     state: options.pill_state,
+    ...options.pill_fields,
     preview: { session_id: "qa-" + options.name, revision: options.preview_text ? 7 : 0, text: options.preview_text || "" },
   } : { state: "hidden" };
   let notes = options.private_notes || "- Planning afronden\n- Volgende afspraak bevestigen";

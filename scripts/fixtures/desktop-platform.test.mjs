@@ -828,7 +828,7 @@ test("every visual scenario has a unique stable identifier and valid entry", () 
   for (const item of cases) {
     assert.match(item.name, /^[a-z][a-z0-9-]+$/);
     assert.ok(["workspace", "settings", "history", "dictation", "onboarding", "pill"].includes(item.window));
-    if (item.window === "pill") assert.ok(["listening", "working"].includes(item.pill_state));
+    if (item.window === "pill") assert.ok(["listening", "hands_free", "command", "no_sound", "working", "inserted", "copied", "problem"].includes(item.pill_state));
     else assert.ok(item.section || item.step);
   }
 });
@@ -1122,11 +1122,12 @@ test("the optional pad has an explicit route separate from the direct-dictation 
 
 test("pill snapshots provide only synthetic display text with no capture or transport calls", async () => {
   const captions = cases.filter(item => item.window === "pill");
-  assert.equal(captions.length, 4);
+  assert.equal(captions.length, 12);
   for (const item of captions) {
     const context = fixture(item.name);
     const snapshot = await context.__PENNEL_PLATFORM__.invoke("dictation_state");
     assert.equal(snapshot.state, item.pill_state);
+    for (const [field, value] of Object.entries(item.pill_fields || {})) assert.equal(snapshot[field], value);
     assert.equal(snapshot.preview.session_id, "qa-" + item.name);
     assert.equal(snapshot.preview.text, item.preview_text || "");
     assert.equal(snapshot.preview.revision, item.preview_text ? 7 : 0);
