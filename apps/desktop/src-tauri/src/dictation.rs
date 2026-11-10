@@ -1187,6 +1187,11 @@ impl Controller {
 
     fn hotkey(&mut self, event: HotkeyEvent) {
         match event {
+            HotkeyEvent::Action(3) if self.recorder.is_some() => {
+                let actions = self.gesture.cancel();
+                self.perform(actions);
+            }
+            HotkeyEvent::Action(_) => {}
             HotkeyEvent::MeetingShortcut => {
                 if self.shared.settings().record_shortcut_enabled {
                     crate::call_detection::toggle_recording(self.app.clone(), self.shared.clone());

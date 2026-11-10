@@ -2,6 +2,7 @@
 //! [`TriggerTracker`] turns those into edges for the gesture, interrupts and Shift changes.
 #![cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
@@ -16,7 +17,7 @@ mod linux;
 #[cfg(windows)]
 mod windows;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
     LeftCtrl,
     RightCtrl,
@@ -26,9 +27,10 @@ pub enum Key {
     RightSuper,
     LeftShift,
     RightShift,
-    /// Caps Lock, Fn and other keys that only modify; they never cancel a dictation.
+    Fn,
+    /// Caps/Num Lock and other modifier-only events never interrupt a hold.
     OtherModifier,
-    Other,
+    Other(u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -36,80 +38,251 @@ pub enum HotkeyEvent {
     Edge(KeyEdge, f64),
     Interrupt,
     Shift(bool),
+    /// Numeric ids cross the native boundary: 1 Record, 2 Open, 3 Cancel, 4 Next model.
+    Action(u32),
     MeetingShortcut,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerBinding {
+    pub mods: Vec<String>,
+    pub key: Option<u32>,
+}
+impl TriggerBinding {
+    pub fn resolve(
+        binding: &pennel_core::ShortcutBinding,
+        code: impl FnOnce(&str) -> Option<u32>,
+    ) -> Option<Self> {
+        Some(Self {
+            mods: binding.mods.clone(),
+            key: match binding.code.as_deref() {
+                Some(key) => Some(code(key)?),
+                None => None,
+            },
+        })
+    }
+}
+#[derive(Debug, Default)]
+pub struct RoutedKey {
+    pub events: Vec<HotkeyEvent>,
+    pub withhold: bool,
+}
+impl RoutedKey {
+    pub fn iter(&self) -> std::slice::Iter<'_, HotkeyEvent> {
+        self.events.iter()
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct TriggerTracker {
+    // Retained for the legacy platform adapters until their binding migration.
     trigger: Option<HotkeyTrigger>,
-    ctrl: [bool; 2],
-    alt: [bool; 2],
-    super_: [bool; 2],
-    shift: [bool; 2],
+    binding: Option<TriggerBinding>,
+    pressed: HashSet<Key>,
+    withheld: HashSet<Key>,
     active: bool,
+    listening: bool,
+    listening_bindings: Vec<(u32, TriggerBinding)>,
+    armed: HashMap<u32, bool>,
+    capturing: bool,
 }
-
 impl TriggerTracker {
     pub fn new(trigger: HotkeyTrigger) -> Self {
+        let binding = pennel_core::legacy_dictate(trigger, pennel_core::ShortcutPlatform::Windows);
         Self {
             trigger: Some(trigger),
+            binding: TriggerBinding::resolve(&binding, |_| None),
             ..Self::default()
         }
     }
-
-    pub fn set_trigger(&mut self, trigger: HotkeyTrigger) {
-        *self = Self::new(trigger);
+    pub fn from_binding(binding: Option<TriggerBinding>) -> Self {
+        Self {
+            binding,
+            ..Self::default()
+        }
     }
-
+    pub fn set_trigger(&mut self, trigger: HotkeyTrigger) {
+        let withheld = std::mem::take(&mut self.withheld);
+        *self = Self::new(trigger);
+        self.withheld = withheld;
+    }
+    pub fn set_binding(&mut self, binding: Option<TriggerBinding>) {
+        self.binding = binding;
+        self.trigger = None;
+        self.active = false;
+        self.armed.clear();
+    }
+    pub fn set_listening_bindings(&mut self, bindings: Vec<(u32, TriggerBinding)>) {
+        self.listening_bindings = bindings;
+        self.armed.clear();
+    }
+    pub fn set_listening(&mut self, listening: bool) {
+        if self.listening != listening {
+            self.armed.clear();
+        }
+        self.listening = listening;
+    }
+    pub fn set_capture(&mut self, capturing: bool) {
+        self.capturing = capturing;
+        self.active = false;
+        self.armed.clear();
+        if !capturing {
+            self.pressed.clear();
+        }
+    }
+    pub fn mouse_down(&mut self) {
+        self.armed.clear();
+    }
     pub fn is_active(&self) -> bool {
         self.active
     }
-
     pub fn is_shift_down(&self) -> bool {
-        self.shift.iter().any(|d| *d)
+        self.pressed.contains(&Key::LeftShift) || self.pressed.contains(&Key::RightShift)
     }
-
-    fn trigger_engaged(&self) -> bool {
-        match self.trigger.unwrap_or(HotkeyTrigger::RightControl) {
-            HotkeyTrigger::RightControl | HotkeyTrigger::Fn => self.ctrl[1],
-            HotkeyTrigger::RightOption => self.alt[1],
-            HotkeyTrigger::RightCommand => self.super_[1],
-            HotkeyTrigger::ControlSuper => {
-                self.ctrl.iter().any(|d| *d) && self.super_.iter().any(|d| *d)
-            }
+    fn modifier(&self, name: &str) -> bool {
+        let held = |key| self.pressed.contains(&key);
+        match name {
+            "ctrl" => held(Key::LeftCtrl) || held(Key::RightCtrl),
+            "left_ctrl" => held(Key::LeftCtrl),
+            "right_ctrl" => held(Key::RightCtrl),
+            "alt" => held(Key::LeftAlt) || held(Key::RightAlt),
+            "left_alt" => held(Key::LeftAlt),
+            "right_alt" => held(Key::RightAlt),
+            "meta" => held(Key::LeftSuper) || held(Key::RightSuper),
+            "left_meta" => held(Key::LeftSuper),
+            "right_meta" => held(Key::RightSuper),
+            "shift" => self.is_shift_down(),
+            "left_shift" => held(Key::LeftShift),
+            "right_shift" => held(Key::RightShift),
+            "fn" => held(Key::Fn),
+            _ => false,
         }
     }
-
+    fn matches(&self, binding: &TriggerBinding, exact: bool) -> bool {
+        if !binding.mods.iter().all(|m| self.modifier(m)) {
+            return false;
+        }
+        if binding
+            .key
+            .is_some_and(|key| !self.pressed.contains(&Key::Other(key)))
+        {
+            return false;
+        }
+        if !exact {
+            return true;
+        }
+        ["ctrl", "alt", "meta", "shift", "fn"].iter().all(|family| {
+            !self.modifier(family)
+                || binding
+                    .mods
+                    .iter()
+                    .any(|m| m == family || m.ends_with(&format!("_{family}")))
+                || (self.active
+                    && self.binding.as_ref().is_some_and(|hold| {
+                        hold.mods
+                            .iter()
+                            .any(|m| m == family || m.ends_with(&format!("_{family}")))
+                    }))
+                || (self.active && *family == "shift")
+        })
+    }
     pub fn key(&mut self, key: Key, down: bool, time: f64) -> Vec<HotkeyEvent> {
-        let slot = match key {
-            Key::LeftCtrl => Some(&mut self.ctrl[0]),
-            Key::RightCtrl => Some(&mut self.ctrl[1]),
-            Key::LeftAlt => Some(&mut self.alt[0]),
-            Key::RightAlt => Some(&mut self.alt[1]),
-            Key::LeftSuper => Some(&mut self.super_[0]),
-            Key::RightSuper => Some(&mut self.super_[1]),
-            Key::LeftShift => Some(&mut self.shift[0]),
-            Key::RightShift => Some(&mut self.shift[1]),
-            Key::OtherModifier | Key::Other => None,
+        self.route(key, down, time).events
+    }
+    pub fn route(&mut self, key: Key, down: bool, time: f64) -> RoutedKey {
+        let before: Vec<_> = self
+            .listening_bindings
+            .iter()
+            .map(|(id, b)| (*id, self.matches(b, true)))
+            .collect();
+        let changed = if down {
+            self.pressed.insert(key)
+        } else {
+            self.pressed.remove(&key)
         };
-        let changed = slot.is_some_and(|held| std::mem::replace(held, down) != down);
-        let mut events = Vec::new();
-        if matches!(key, Key::LeftShift | Key::RightShift) {
-            if changed {
-                events.push(HotkeyEvent::Shift(self.is_shift_down()));
-            }
-            return events;
+        let mut withhold = self.withheld.contains(&key);
+        if !down {
+            self.withheld.remove(&key);
         }
-        if key == Key::Other && down && self.active {
+        if self.capturing {
+            if down {
+                self.withheld.insert(key);
+            }
+            return RoutedKey {
+                events: Vec::new(),
+                withhold: true,
+            };
+        }
+        let mut events = Vec::new();
+        let mut action_key = false;
+        if self.listening {
+            // Any ordinary key or click invalidates a pending modifier-only action.
+            if matches!(key, Key::Other(_)) && down {
+                self.armed.clear();
+            }
+            for (id, binding) in &self.listening_bindings {
+                let engaged = self.matches(binding, true);
+                if let Some(code) = binding.key {
+                    if key == Key::Other(code) && down && engaged {
+                        action_key = true;
+                        withhold = true;
+                        self.withheld.insert(key);
+                        if changed {
+                            events.push(HotkeyEvent::Action(*id));
+                        }
+                    }
+                } else {
+                    let was = before
+                        .iter()
+                        .find(|(old, _)| old == id)
+                        .is_some_and(|(_, engaged)| *engaged);
+                    if engaged && !was && changed {
+                        self.armed.insert(*id, true);
+                    }
+                    if was && !engaged && self.armed.remove(id) == Some(true) && !down {
+                        events.push(HotkeyEvent::Action(*id));
+                    }
+                }
+            }
+        }
+        if matches!(key, Key::LeftShift | Key::RightShift) && changed {
+            events.push(HotkeyEvent::Shift(self.is_shift_down()));
+        }
+        let own_key = self
+            .binding
+            .as_ref()
+            .and_then(|b| b.key)
+            .is_some_and(|code| key == Key::Other(code));
+        if own_key
+            && down
+            && self
+                .binding
+                .as_ref()
+                .is_some_and(|b| self.matches(b, false))
+        {
+            withhold = true;
+            self.withheld.insert(key);
+        }
+        if matches!(key, Key::Other(_))
+            && down
+            && self.active
+            && self.binding.as_ref().is_some_and(|b| b.key.is_none())
+            && !action_key
+        {
             events.push(HotkeyEvent::Interrupt);
         }
-        let engaged = self.trigger_engaged();
+        let engaged = self
+            .binding
+            .as_ref()
+            .is_some_and(|b| self.matches(b, false));
         if engaged != self.active {
             self.active = engaged;
-            let edge = if engaged { KeyEdge::Down } else { KeyEdge::Up };
-            events.push(HotkeyEvent::Edge(edge, time));
+            events.push(HotkeyEvent::Edge(
+                if engaged { KeyEdge::Down } else { KeyEdge::Up },
+                time,
+            ));
         }
-        events
+        RoutedKey { events, withhold }
     }
 }
 
@@ -223,14 +396,14 @@ fn dispatch(
     sender: &Sender<HotkeyEvent>,
     key: Key,
     down: bool,
-) -> Vec<HotkeyEvent> {
+) -> RoutedKey {
     let mut tracker = tracker.lock().unwrap_or_else(|p| p.into_inner());
-    let events = tracker.key(key, down, now());
+    let routed = tracker.route(key, down, now());
     publish(&tracker);
-    for event in &events {
+    for event in &routed.events {
         let _ = sender.send(*event);
     }
-    events
+    routed
 }
 
 #[cfg(test)]
@@ -244,6 +417,129 @@ mod tests {
 
     fn release(t: &mut TriggerTracker, key: Key) -> Vec<HotkeyEvent> {
         t.key(key, false, 2.0)
+    }
+
+    fn keyed_hold() -> TriggerBinding {
+        TriggerBinding {
+            mods: vec!["ctrl".into(), "alt".into()],
+            key: Some(32),
+        }
+    }
+
+    #[test]
+    fn keyed_hold_withholds_repeats_and_release_after_modifier_release() {
+        let mut t = TriggerTracker::from_binding(Some(keyed_hold()));
+        press(&mut t, Key::LeftCtrl);
+        press(&mut t, Key::RightAlt);
+        let first = t.route(Key::Other(32), true, 1.0);
+        assert_eq!(first.events, [Edge(KeyEdge::Down, 1.0)]);
+        assert!(first.withhold);
+        let repeat = t.route(Key::Other(32), true, 1.1);
+        assert!(repeat.withhold);
+        assert!(repeat.events.is_empty());
+        assert_eq!(release(&mut t, Key::LeftCtrl), [Edge(KeyEdge::Up, 2.0)]);
+        assert!(t.route(Key::Other(32), false, 3.0).withhold);
+        assert!(!t.route(Key::Other(32), false, 3.1).withhold);
+    }
+
+    #[test]
+    fn keyed_hold_keeps_foreign_keys_and_listening_actions_out_of_interrupts() {
+        let mut t = TriggerTracker::from_binding(Some(keyed_hold()));
+        press(&mut t, Key::LeftCtrl);
+        press(&mut t, Key::LeftAlt);
+        press(&mut t, Key::Other(32));
+        assert_eq!(press(&mut t, Key::Other(65)), []);
+        t.set_listening_bindings(vec![(
+            3,
+            TriggerBinding {
+                mods: vec![],
+                key: Some(27),
+            },
+        )]);
+        assert!(!t.route(Key::Other(27), true, 2.0).withhold);
+        release(&mut t, Key::Other(27));
+        t.set_listening(true);
+        let cancel = t.route(Key::Other(27), true, 3.0);
+        assert!(cancel.withhold);
+        assert_eq!(cancel.events, [Action(3)]);
+        t.set_listening(false);
+        assert!(t.route(Key::Other(27), false, 3.1).withhold);
+    }
+
+    #[test]
+    fn bare_listening_modifier_fires_on_clean_release_and_capture_suspends_every_action() {
+        let mut t = TriggerTracker::from_binding(None);
+        t.set_listening_bindings(vec![(
+            4,
+            TriggerBinding {
+                mods: vec!["left_alt".into()],
+                key: None,
+            },
+        )]);
+        t.set_listening(true);
+        assert_eq!(press(&mut t, Key::LeftAlt), []);
+        assert_eq!(release(&mut t, Key::LeftAlt), [Action(4)]);
+        press(&mut t, Key::LeftAlt);
+        press(&mut t, Key::Other(65));
+        assert_eq!(release(&mut t, Key::LeftAlt), []);
+        release(&mut t, Key::Other(65));
+        press(&mut t, Key::LeftAlt);
+        t.mouse_down();
+        assert_eq!(release(&mut t, Key::LeftAlt), []);
+        t.set_capture(true);
+        assert!(t.route(Key::Other(27), true, 1.0).withhold);
+        assert!(press(&mut t, Key::RightCtrl).is_empty());
+        t.set_capture(false);
+        assert!(t.route(Key::Other(27), false, 2.0).withhold);
+    }
+
+    #[test]
+    fn compatibility_constructor_matches_all_legacy_presets() {
+        for trigger in [
+            HotkeyTrigger::Fn,
+            HotkeyTrigger::RightControl,
+            HotkeyTrigger::RightOption,
+            HotkeyTrigger::RightCommand,
+            HotkeyTrigger::ControlSuper,
+        ] {
+            let mut legacy = TriggerTracker::new(trigger);
+            let binding =
+                pennel_core::legacy_dictate(trigger, pennel_core::ShortcutPlatform::Windows);
+            let mut table =
+                TriggerTracker::from_binding(TriggerBinding::resolve(&binding, |_| None));
+            for (key, down) in [
+                (Key::LeftCtrl, true),
+                (Key::RightCtrl, true),
+                (Key::LeftSuper, true),
+                (Key::RightAlt, true),
+                (Key::RightSuper, true),
+                (Key::LeftShift, true),
+                (Key::Other(65), true),
+                (Key::Other(65), false),
+                (Key::RightCtrl, false),
+                (Key::RightSuper, false),
+                (Key::RightAlt, false),
+                (Key::LeftCtrl, false),
+                (Key::LeftSuper, false),
+            ] {
+                assert_eq!(
+                    legacy.key(key, down, 1.0),
+                    table.key(key, down, 1.0),
+                    "{trigger:?} {key:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn disabled_hold_has_no_edges_and_reconfiguration_keeps_withheld_release() {
+        let mut t = TriggerTracker::from_binding(Some(keyed_hold()));
+        press(&mut t, Key::LeftCtrl);
+        press(&mut t, Key::LeftAlt);
+        assert!(t.route(Key::Other(32), true, 1.0).withhold);
+        t.set_binding(None);
+        assert!(t.route(Key::Other(32), false, 2.0).withhold);
+        assert!(press(&mut t, Key::RightCtrl).is_empty());
     }
 
     #[test]
@@ -265,7 +561,7 @@ mod tests {
     fn other_key_while_held_interrupts() {
         let mut t = TriggerTracker::new(HotkeyTrigger::RightOption);
         press(&mut t, Key::RightAlt);
-        assert_eq!(press(&mut t, Key::Other), [Interrupt]);
+        assert_eq!(press(&mut t, Key::Other(99)), [Interrupt]);
         assert_eq!(press(&mut t, Key::LeftCtrl), []);
         assert_eq!(press(&mut t, Key::OtherModifier), []);
     }
@@ -273,7 +569,7 @@ mod tests {
     #[test]
     fn other_key_without_trigger_is_ignored() {
         let mut t = TriggerTracker::new(HotkeyTrigger::RightControl);
-        assert_eq!(press(&mut t, Key::Other), []);
+        assert_eq!(press(&mut t, Key::Other(99)), []);
     }
 
     #[test]

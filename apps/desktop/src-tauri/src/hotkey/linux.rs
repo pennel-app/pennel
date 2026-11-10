@@ -24,7 +24,7 @@ fn key_for(key: rdev::Key) -> Key {
         K::ShiftLeft => Key::LeftShift,
         K::ShiftRight => Key::RightShift,
         K::CapsLock | K::NumLock | K::ScrollLock | K::Function => Key::OtherModifier,
-        _ => Key::Other,
+        _ => Key::Other(0),
     }
 }
 
