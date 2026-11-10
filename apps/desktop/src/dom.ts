@@ -79,7 +79,7 @@ export function field(label: UiText, control: HTMLElement) {
   return h(formControl ? "label" : "div", { class: "field" }, h("span", { class: "field-label" }, label), control);
 }
 
-/** A quiet "where it runs" chip, such as a laptop for this computer or a globe for a provider. Group chips in `.chips`. */
+/** A small icon-and-label chip. Group chips in `.chips`. */
 export function chip(iconName: IconName, text: UiText): HTMLSpanElement {
   return h("span", { class: "chip" }, icon(iconName), text);
 }
