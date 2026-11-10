@@ -1,4 +1,4 @@
-//! Global one-press registration and X11 listening grabs. Policy and labels remain in core.
+//! Windows one-press registration and shared listening state. X11 keyed registration is deliberately unavailable.
 use crate::state::Shared;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -45,7 +45,7 @@ pub fn listening_action_ready(shared: &Shared, action: u32) -> bool {
     }
     #[cfg(target_os = "linux")]
     if binding.code.is_some() {
-        return portable::registered_ready(shared, action);
+        return false;
     }
     true
 }
@@ -98,7 +98,7 @@ pub fn error() -> Option<String> {
 }
 
 pub fn action_error(action: &str) -> Option<String> {
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(windows)]
     {
         let number = match action {
             "record" => 1,
@@ -113,6 +113,11 @@ pub fn action_error(action: &str) -> Option<String> {
             .errors
             .get(&number)
             .cloned()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = action;
+        None
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
@@ -131,20 +136,21 @@ pub fn action_error(action: &str) -> Option<String> {
     }
 }
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    #[cfg(target_os = "linux")]
-    if crate::linux_input::is_wayland() || !crate::linux_input::has_x11_display() {
+    #[cfg(any(windows, target_os = "linux"))]
+    if !crate::portable_shortcuts::uses_registration_backend(crate::shortcuts::platform()) {
         return Ok(());
     }
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(windows)]
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
             .with_handler(portable::event)
             .build(),
     )?;
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(windows))]
     let _ = app;
     Ok(())
 }
+
 pub fn set_listening(app: &AppHandle, shared: &Shared, listening: bool) {
     LISTENING.store(listening, Ordering::SeqCst);
     let listener = shared
@@ -187,10 +193,21 @@ pub fn refresh(app: &AppHandle, shared: &Shared) {
             }
         })
     };
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(windows)]
     let result = {
         let _ = shared;
         portable::refresh(app)
+    };
+    #[cfg(target_os = "linux")]
+    let result = {
+        let listener = shared
+            .hotkey
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        listener.map_or(Ok(()), |listener| {
+            listener.set_bindings_with_next_model(&settings, next_model_enabled())
+        })
     };
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     let result: Result<(), String> = {
@@ -209,7 +226,7 @@ pub fn refresh(app: &AppHandle, shared: &Shared) {
     }
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(windows)]
 mod portable {
     use super::*;
     use crate::portable_shortcuts::{Plan, Registration};
@@ -243,13 +260,12 @@ mod portable {
         {
             return Plan::default();
         }
-        crate::portable_shortcuts::plan_with_hold(
+        crate::portable_shortcuts::plan(
             &shared.settings(),
             crate::shortcuts::platform(),
             is_listening(),
             crate::shortcut_capture::capturing(),
             next_model_enabled(),
-            crate::hotkey::trigger_held(),
         )
     }
     fn shortcut(row: &Registration) -> Option<Shortcut> {
@@ -287,33 +303,12 @@ mod portable {
             ));
         }
         if event.state() == ShortcutState::Released {
-            // X11 invokes this from its own event thread. Never wait here for a main-thread unregister.
+            // Native release notifications may arrive off-main. Never block the callback on unregister.
             let target = app.clone();
             let _ = app.run_on_main_thread(move || {
                 let _ = refresh_now(&target);
             });
         }
-    }
-    #[cfg(target_os = "linux")]
-    pub(super) fn registered_ready(shared: &Shared, action: u32) -> bool {
-        let plan = desired(shared);
-        let wanted: Vec<_> = plan
-            .registrations
-            .iter()
-            .filter(|row| row.action == action)
-            .collect();
-        if wanted.is_empty() {
-            return false;
-        }
-        let state = store().lock().unwrap_or_else(|p| p.into_inner());
-        wanted.into_iter().all(|row| {
-            shortcut(row).is_some_and(|key| {
-                state
-                    .entries
-                    .get(&key.id())
-                    .is_some_and(|entry| entry.row == *row)
-            })
-        })
     }
     pub(super) fn refresh(app: &AppHandle) -> Result<(), String> {
         let target = app.clone();
@@ -330,10 +325,6 @@ mod portable {
         let Some(shared) = app.try_state::<Arc<Shared>>() else {
             return Err("Shortcut registration is not ready".into());
         };
-        #[cfg(target_os = "linux")]
-        if crate::linux_input::is_wayland() || !crate::linux_input::has_x11_display() {
-            return Ok(());
-        }
         let plan = desired(&shared);
         let before_errors = store()
             .lock()

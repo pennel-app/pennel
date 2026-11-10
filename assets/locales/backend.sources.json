@@ -803,5 +803,6 @@
   "backend.original_text_pasted_see_log": "Original text pasted (see log)",
   "backend.original_text_available_see_log": "Original text available (see log)",
   "backend.original_text_pasted": "Original text pasted",
-  "backend.original_text_available": "Original text available"
+  "backend.original_text_available": "Original text available",
+  "backend.x11_keyed_shortcuts_unavailable": "x11_keyed_shortcuts_unavailable"
 }
