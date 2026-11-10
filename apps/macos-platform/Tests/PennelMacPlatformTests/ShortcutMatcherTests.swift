@@ -6,6 +6,23 @@ final class ShortcutMatcherTests: XCTestCase {
     private let option: UInt64 = 0x80000
     private let fn: UInt64 = 0x800000
 
+    func testUpdatingListeningActionsPreservesTheCurrentHold() {
+        var matcher = ShortcutMatcher(table: ShortcutTable(hold: NativeShortcut(action: 0, code: nil, mods: [fn]), always: [], listening: []))
+        _ = matcher.route(.flags, code: 63, flags: fn)
+        let next = ShortcutTable(hold: NativeShortcut(action: 0, code: nil, mods: [fn]), always: [], listening: [NativeShortcut(action: 3, code: 53, mods: [])])
+        matcher.setTable(next, preserveHold: true)
+        XCTAssertTrue(matcher.isHeld)
+        XCTAssertEqual(matcher.route(.flags, code: 63, flags: 0).signals, [.up])
+    }
+
+    func testGlobalActionsUseExactModifiersAndKeepModifierHoldInterrupts() {
+        var matcher = ShortcutMatcher(table: ShortcutTable(hold: NativeShortcut(action: 0, code: nil, mods: [control]), always: [NativeShortcut(action: 1, code: 53, mods: [control])], listening: [NativeShortcut(action: 3, code: 53, mods: [])]))
+        matcher.setListening(true)
+        _ = matcher.route(.flags, code: 59, flags: control | 0x1)
+        let result = matcher.route(.down, code: 53, flags: control | 0x1)
+        XCTAssertEqual(result.signals, [.action(1), .interrupt]); XCTAssertTrue(result.withhold)
+    }
+
     func testBareActionAccommodatesAnExistingKeyedDictationHold() {
         var matcher = ShortcutMatcher(table: ShortcutTable(hold: NativeShortcut(action: 0, code: 49, mods: [control]), always: [], listening: [NativeShortcut(action: 4, code: nil, mods: [0x20])]))
         matcher.setListening(true)

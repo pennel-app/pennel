@@ -40,7 +40,6 @@ pub enum HotkeyEvent {
     Shift(bool),
     /// Numeric ids cross the native boundary: 1 Record, 2 Open, 3 Cancel, 4 Next model.
     Action(u32),
-    MeetingShortcut,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,21 +66,15 @@ pub struct RoutedKey {
     pub events: Vec<HotkeyEvent>,
     pub withhold: bool,
 }
-impl RoutedKey {
-    pub fn iter(&self) -> std::slice::Iter<'_, HotkeyEvent> {
-        self.events.iter()
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct TriggerTracker {
-    // Retained for the legacy platform adapters until their binding migration.
-    trigger: Option<HotkeyTrigger>,
     binding: Option<TriggerBinding>,
     pressed: HashSet<Key>,
     withheld: HashSet<Key>,
     active: bool,
     listening: bool,
+    always_bindings: Vec<(u32, TriggerBinding)>,
     listening_bindings: Vec<(u32, TriggerBinding)>,
     armed: HashMap<u32, bool>,
     dirty: HashSet<u32>,
@@ -92,7 +85,6 @@ impl TriggerTracker {
     pub fn new(trigger: HotkeyTrigger) -> Self {
         let binding = pennel_core::legacy_dictate(trigger, pennel_core::ShortcutPlatform::Windows);
         Self {
-            trigger: Some(trigger),
             binding: TriggerBinding::resolve(&binding, |_| None),
             ..Self::default()
         }
@@ -109,8 +101,10 @@ impl TriggerTracker {
         self.withheld = withheld;
     }
     pub fn set_binding(&mut self, binding: Option<TriggerBinding>) {
+        if self.binding == binding {
+            return;
+        }
         self.binding = binding;
-        self.trigger = None;
         self.active = false;
         self.hold_suppressed = self
             .binding
@@ -118,9 +112,16 @@ impl TriggerTracker {
             .is_some_and(|binding| self.matches(binding, false));
         self.armed.clear();
     }
+    pub fn set_always_bindings(&mut self, bindings: Vec<(u32, TriggerBinding)>) {
+        self.always_bindings = bindings;
+    }
     pub fn set_listening_bindings(&mut self, bindings: Vec<(u32, TriggerBinding)>) {
+        if self.listening_bindings == bindings {
+            return;
+        }
         self.listening_bindings = bindings;
         self.armed.clear();
+        self.dirty.clear();
     }
     pub fn set_listening(&mut self, listening: bool) {
         if self.listening != listening {
@@ -168,6 +169,50 @@ impl TriggerTracker {
             .iter()
             .any(|modifier| modifier == side || modifier == family)
     }
+    pub fn needs_key_names(&self) -> bool {
+        self.capturing
+            || (self.listening
+                && self
+                    .listening_bindings
+                    .iter()
+                    .any(|(_, binding)| binding.key.is_some()))
+    }
+    pub fn capture_active(&self) -> bool {
+        self.capturing
+    }
+    pub fn capture_modifiers(&self) -> Vec<String> {
+        [
+            (Key::LeftCtrl, "left_ctrl"),
+            (Key::RightCtrl, "right_ctrl"),
+            (Key::LeftAlt, "left_alt"),
+            (Key::RightAlt, "right_alt"),
+            (Key::LeftShift, "left_shift"),
+            (Key::RightShift, "right_shift"),
+            (Key::LeftSuper, "left_meta"),
+            (Key::RightSuper, "right_meta"),
+            (Key::Fn, "fn"),
+        ]
+        .into_iter()
+        .filter(|(key, _)| self.pressed.contains(key))
+        .map(|(_, name)| name.to_owned())
+        .collect()
+    }
+    pub fn menu_mask_needed(&self, key: Key, down: bool) -> bool {
+        down && matches!(
+            key,
+            Key::LeftAlt | Key::RightAlt | Key::LeftSuper | Key::RightSuper
+        ) && ((self.active
+            && self
+                .binding
+                .as_ref()
+                .is_some_and(|binding| binding.key.is_none() && Self::owns_modifier(binding, key)))
+            || (self.listening
+                && self.listening_bindings.iter().any(|(id, binding)| {
+                    binding.key.is_none()
+                        && Self::owns_modifier(binding, key)
+                        && self.armed.contains_key(id)
+                })))
+    }
     pub fn is_active(&self) -> bool {
         self.active
     }
@@ -206,19 +251,23 @@ impl TriggerTracker {
         if !exact {
             return true;
         }
+        self.modifier_families_match(binding, true)
+    }
+    fn modifier_families_match(&self, binding: &TriggerBinding, allow_hold: bool) -> bool {
         ["ctrl", "alt", "meta", "shift", "fn"].iter().all(|family| {
             !self.modifier(family)
                 || binding
                     .mods
                     .iter()
                     .any(|m| m == family || m.ends_with(&format!("_{family}")))
-                || (self.active
+                || (allow_hold
+                    && self.active
                     && self.binding.as_ref().is_some_and(|hold| {
                         hold.mods
                             .iter()
                             .any(|m| m == family || m.ends_with(&format!("_{family}")))
                     }))
-                || (self.active && *family == "shift")
+                || (allow_hold && self.active && *family == "shift")
         })
     }
     pub fn key(&mut self, key: Key, down: bool, time: f64) -> Vec<HotkeyEvent> {
@@ -249,7 +298,36 @@ impl TriggerTracker {
             };
         }
         let mut events = Vec::new();
-        let mut action_key = false;
+        let key_action = if down {
+            self.always_bindings
+                .iter()
+                .chain(self.listening_bindings.iter().filter(|_| self.listening))
+                .find(|(_, b)| {
+                    b.key.is_some_and(|code| key == Key::Other(code))
+                        && self.matches(b, false)
+                        && self.modifier_families_match(b, false)
+                })
+                .or_else(|| {
+                    self.listening_bindings
+                        .iter()
+                        .filter(|_| self.listening)
+                        .find(|(_, b)| {
+                            b.key.is_some_and(|code| key == Key::Other(code))
+                                && self.matches(b, true)
+                        })
+                })
+                .map(|(id, _)| *id)
+        } else {
+            None
+        };
+        let action_key = key_action.is_some_and(|id| matches!(id, 3 | 4));
+        if let Some(action) = key_action {
+            withhold = true;
+            self.withheld.insert(key);
+            if changed {
+                events.push(HotkeyEvent::Action(action));
+            }
+        }
         if self.listening {
             // Any ordinary key or click invalidates a pending modifier-only action.
             if matches!(key, Key::Other(_)) && down {
@@ -257,16 +335,7 @@ impl TriggerTracker {
             }
             for (id, binding) in &self.listening_bindings {
                 let engaged = self.matches(binding, true);
-                if let Some(code) = binding.key {
-                    if key == Key::Other(code) && down && engaged {
-                        action_key = true;
-                        withhold = true;
-                        self.withheld.insert(key);
-                        if changed {
-                            events.push(HotkeyEvent::Action(*id));
-                        }
-                    }
-                } else {
+                if binding.key.is_none() {
                     let was = before
                         .iter()
                         .find(|(old, _)| old == id)
@@ -402,7 +471,7 @@ impl Listener {
         #[cfg(target_os = "macos")]
         {
             use crate::macos::NativeHotkeyEvent as Native;
-            let bindings = crate::native_shortcuts::mac_table(settings, false);
+            let bindings = crate::native_shortcuts::mac_table(settings, true);
             let inner = PlatformListener::start(&bindings, move |native| {
                 let event = match native {
                     Native::Down => {
@@ -430,7 +499,7 @@ impl Listener {
         }
         #[cfg(any(windows, target_os = "linux"))]
         {
-            PlatformListener::start(settings.hotkey, sender).map(|inner| Self {
+            PlatformListener::start(settings, sender).map(|inner| Self {
                 inner: std::sync::Arc::new(inner),
             })
         }
@@ -439,24 +508,6 @@ impl Listener {
             let _ = (settings, sender);
             Err("shortcuts are not supported on this platform".into())
         }
-    }
-
-    pub fn set_trigger(&self, trigger: HotkeyTrigger) {
-        #[cfg(any(windows, target_os = "linux"))]
-        self.inner.set_trigger(trigger);
-        #[cfg(target_os = "macos")]
-        {
-            let mut settings = pennel_core::default_settings();
-            settings.hotkey = trigger;
-            let _ = self.set_bindings(&settings);
-        }
-        #[cfg(target_os = "macos")]
-        {
-            HELD.store(false, Ordering::SeqCst);
-            SHIFT.store(false, Ordering::SeqCst);
-        }
-        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-        let _ = trigger;
     }
 
     #[cfg(target_os = "macos")]
@@ -468,37 +519,86 @@ impl Listener {
                 listening: Vec::new(),
             })
     }
-    #[cfg(target_os = "macos")]
     pub fn set_bindings(&self, settings: &pennel_core::Settings) -> Result<(), String> {
-        self.inner
-            .set_bindings(&crate::native_shortcuts::mac_table(settings, false))
+        self.set_bindings_with_next_model(settings, false)
     }
-    #[cfg(target_os = "macos")]
+    /// Call record_shortcut::refresh afterwards to update an already-listening X11 grab table.
+    pub fn set_bindings_with_next_model(
+        &self,
+        settings: &pennel_core::Settings,
+        enabled: bool,
+    ) -> Result<(), String> {
+        crate::record_shortcut::set_next_model_enabled(enabled);
+        #[cfg(target_os = "macos")]
+        {
+            self.inner
+                .set_bindings(&crate::native_shortcuts::mac_table_with_next_model(
+                    settings, true, enabled,
+                ))
+        }
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            self.inner.set_bindings(settings, enabled);
+            Ok(())
+        }
+        #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+        {
+            let _ = (settings, enabled);
+            Err("Shortcuts are unavailable on this platform".into())
+        }
+    }
+    #[cfg(any(windows, target_os = "linux"))]
+    pub fn configure_portable_bindings(
+        &self,
+        settings: &pennel_core::Settings,
+        enabled: bool,
+        registered: Vec<(u32, TriggerBinding)>,
+    ) {
+        self.inner.set_bindings(settings, enabled);
+        self.inner.set_registered_bindings(registered);
+    }
     pub fn set_listening(&self, listening: bool) -> Result<(), String> {
-        self.inner.set_listening(listening)
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+        {
+            self.inner.set_listening(listening)
+        }
+        #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+        {
+            let _ = listening;
+            Ok(())
+        }
     }
-    #[cfg(target_os = "macos")]
     pub fn set_capture(
         &self,
         callback: Option<Box<dyn FnMut(serde_json::Value) + Send>>,
     ) -> Result<(), String> {
-        self.inner.set_capture(callback)
+        #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+        {
+            self.inner.set_capture(callback)
+        }
+        #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+        {
+            let _ = callback;
+            Err("Native shortcut capture is unavailable".into())
+        }
     }
 }
 
 /// Shared by the platform hooks: feeds one key event through the tracker and forwards the results.
-fn dispatch(
-    tracker: &std::sync::Mutex<TriggerTracker>,
-    sender: &Sender<HotkeyEvent>,
-    key: Key,
-    down: bool,
-) -> RoutedKey {
+type CaptureHandler = std::sync::Arc<std::sync::Mutex<Box<dyn FnMut(serde_json::Value) + Send>>>;
+pub type CaptureSlot = std::sync::Mutex<Option<CaptureHandler>>;
+fn capture_callback(slot: &CaptureSlot, value: serde_json::Value) {
+    let callback = slot.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    if let Some(callback) = callback {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            callback.lock().unwrap_or_else(|p| p.into_inner())(value);
+        }));
+    }
+}
+fn route_shared(tracker: &std::sync::Mutex<TriggerTracker>, key: Key, down: bool) -> RoutedKey {
     let mut tracker = tracker.lock().unwrap_or_else(|p| p.into_inner());
     let routed = tracker.route(key, down, now());
     publish(&tracker);
-    for event in &routed.events {
-        let _ = sender.send(*event);
-    }
     routed
 }
 
@@ -641,7 +741,6 @@ mod tests {
                         HotkeyEvent::Interrupt => "interrupt".into(),
                         HotkeyEvent::Shift(down) => format!("shift:{}", u8::from(*down)),
                         HotkeyEvent::Action(action) => format!("action:{action}"),
-                        HotkeyEvent::MeetingShortcut => "legacy".into(),
                     })
                     .collect();
                 assert_eq!(
@@ -699,6 +798,46 @@ mod tests {
     }
 
     #[test]
+    fn global_actions_latch_keys_but_keep_foreign_key_interrupts_and_exact_precedence() {
+        let mut t = TriggerTracker::new(HotkeyTrigger::RightControl);
+        t.set_always_bindings(vec![(
+            1,
+            TriggerBinding {
+                mods: vec!["ctrl".into()],
+                key: Some(27),
+            },
+        )]);
+        t.set_listening_bindings(vec![(
+            3,
+            TriggerBinding {
+                mods: vec![],
+                key: Some(27),
+            },
+        )]);
+        t.set_listening(true);
+        press(&mut t, Key::RightCtrl);
+        let first = t.route(Key::Other(27), true, 1.0);
+        assert!(first.withhold);
+        assert_eq!(first.events, [Action(1), Interrupt]);
+        assert!(t.route(Key::Other(27), true, 1.1).withhold);
+        release(&mut t, Key::RightCtrl);
+        assert!(t.route(Key::Other(27), false, 2.0).withhold);
+    }
+
+    #[test]
+    fn identical_binding_refresh_keeps_the_current_hold() {
+        let binding = keyed_hold();
+        let mut t = TriggerTracker::from_binding(Some(binding.clone()));
+        press(&mut t, Key::LeftCtrl);
+        press(&mut t, Key::LeftAlt);
+        press(&mut t, Key::Other(32));
+        t.set_binding(Some(binding));
+        assert!(t.is_active());
+        assert!(press(&mut t, Key::Other(32)).is_empty());
+        assert_eq!(release(&mut t, Key::Other(32)), [Edge(KeyEdge::Up, 2.0)]);
+    }
+
+    #[test]
     fn bare_actions_accommodate_the_existing_keyed_dictation_hold() {
         let mut t = TriggerTracker::from_binding(Some(TriggerBinding {
             mods: vec!["ctrl".into()],
@@ -746,7 +885,10 @@ mod tests {
         press(&mut tracker, Key::LeftCtrl);
         press(&mut tracker, Key::LeftAlt);
         press(&mut tracker, Key::Other(32));
-        tracker.set_binding(Some(binding));
+        tracker.set_binding(Some(TriggerBinding {
+            mods: vec!["ctrl".into()],
+            key: binding.key,
+        }));
         assert!(press(&mut tracker, Key::Other(32)).is_empty());
         assert!(release(&mut tracker, Key::Other(32)).is_empty());
         assert_eq!(
