@@ -38,5 +38,25 @@ pub fn rows(shared: &Shared) -> Vec<ShortcutRow> {
             }
         }
     }
+    if let Some(error) = crate::record_shortcut::error() {
+        for row in &mut rows {
+            if matches!(row.id.as_str(), "record" | "open_pennel") && row.capability.available {
+                row.capability.available = false;
+                row.capability.reason = Some(error.clone());
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    for row in &mut rows {
+        if row.scope != pennel_core::ShortcutScope::Application
+            && row
+                .binding
+                .as_ref()
+                .is_some_and(|binding| crate::native_shortcuts::resolve_mac(0, binding).is_none())
+        {
+            row.capability.available = false;
+            row.capability.reason = Some("native_key_not_supported".into());
+        }
+    }
     rows
 }

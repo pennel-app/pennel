@@ -177,6 +177,9 @@ pub fn install(app: &AppHandle, menu: &tauri::menu::Menu<tauri::Wry>) -> tauri::
 
 #[cfg(target_os = "macos")]
 fn accelerator(app: &AppHandle, command: DesktopCommand) -> Option<String> {
+    if crate::shortcut_capture::capturing() {
+        return None;
+    }
     let shared = app.try_state::<std::sync::Arc<crate::state::Shared>>()?;
     pennel_core::effective_shortcut(
         &shared.settings(),
@@ -218,6 +221,9 @@ pub fn set_desktop_command_state(window: WebviewWindow, state: CommandState) -> 
 }
 
 pub fn dispatch(app: &AppHandle, id: &str) {
+    if crate::shortcut_capture::capturing() {
+        return;
+    }
     let Some(id) = id.strip_prefix("desktop-") else {
         return;
     };

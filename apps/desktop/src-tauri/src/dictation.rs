@@ -253,7 +253,10 @@ impl CaptureActivity {
         {
             return None;
         }
-        if shared.updating.load(Ordering::SeqCst) || shared.quitting.load(Ordering::SeqCst) {
+        if shared.updating.load(Ordering::SeqCst)
+            || shared.quitting.load(Ordering::SeqCst)
+            || crate::shortcut_capture::capturing()
+        {
             shared.dictation_active.store(false, Ordering::SeqCst);
             return None;
         }
@@ -1186,10 +1189,19 @@ impl Controller {
     }
 
     fn hotkey(&mut self, event: HotkeyEvent) {
+        if crate::shortcut_capture::capturing() {
+            return;
+        }
         match event {
             HotkeyEvent::Action(3) if self.recorder.is_some() => {
                 let actions = self.gesture.cancel();
                 self.perform(actions);
+            }
+            HotkeyEvent::Action(1) => {
+                crate::call_detection::toggle_recording(self.app.clone(), self.shared.clone());
+            }
+            HotkeyEvent::Action(2) => {
+                crate::open_default(&self.app);
             }
             HotkeyEvent::Action(_) => {}
             HotkeyEvent::MeetingShortcut => {
@@ -1393,11 +1405,25 @@ impl Controller {
                 return self.notify("Recording failed");
             }
         }
+        #[cfg(target_os = "macos")]
+        {
+            let listener = self.shared.hotkey.lock().unwrap().clone();
+            if let Some(listener) = listener {
+                let _ = listener.set_listening(true);
+            }
+        }
         self.capture_activity = Some(activity);
         self.shared.set_meeting_dictating(true);
     }
 
     fn stop_recording(&mut self) -> Vec<f32> {
+        #[cfg(target_os = "macos")]
+        {
+            let listener = self.shared.hotkey.lock().unwrap().clone();
+            if let Some(listener) = listener {
+                let _ = listener.set_listening(false);
+            }
+        }
         let samples = self.recorder.take().map(Recorder::stop).unwrap_or_default();
         #[cfg(target_os = "macos")]
         if let Some(preview) = self.apple_preview.take()
