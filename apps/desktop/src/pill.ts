@@ -2,6 +2,7 @@ import "./fonts.css";
 import "./pill.css";
 import { api, listen, listenToWindow, type AppInfo, type PillPreview, type PillState } from "./api";
 import { icon } from "./icons";
+import { PillModelState, type PillModelPresentation } from "./pill-model-state";
 import { PillPreviewState } from "./pill-preview-state";
 import { PILL_METRICS } from "./pill-metrics.generated";
 import { hotkeyKeyLabel } from "./presentation";
@@ -14,6 +15,12 @@ const label = document.getElementById("label")!;
 const detail = document.getElementById("detail")!;
 const hint = document.getElementById("hint")!;
 const preview = document.getElementById("preview")!;
+const modelChip = document.getElementById("model-chip")!;
+const modelState = new PillModelState();
+let modelTimer: ReturnType<typeof setTimeout> | null = null;
+let nextModelKey = "";
+let providers: AppInfo["settings"]["providers"] = [];
+let indicatorKey = "";
 const previewText = document.getElementById("preview-text")!;
 const previewState = new PillPreviewState(PILL_METRICS.previewLimit);
 let visible = false;
@@ -35,6 +42,8 @@ function keycap(text: string): HTMLElement {
 }
 
 function content(state: PillState): { text: string; detail?: string; hint?: (string | Node)[] } {
+  const confirmation = modelState.confirmation(performance.now());
+  if (confirmation && listening.includes(state.state)) return { text: t("dictation.pill.model_switched", { model: confirmation }) };
   switch (state.state) {
     case "listening": return { text: t("dictation.pill.listening") };
     case "hands_free": return { text: t("dictation.pill.hands_free"), hint: doneKey ? [keycap(doneKey), t("dictation.pill.done")] : [] };
@@ -84,7 +93,10 @@ function paint(next: PillState, animate = false) {
   if (!changed) return;
   if (animate) crossfade();
   else clearOutgoing();
-  const stateChanged = shown !== next.state;
+  const confirmation = !!modelState.confirmation(performance.now()) && listening.includes(next.state);
+  const nextIndicator = `${next.state}:${confirmation}`;
+  const stateChanged = indicatorKey !== nextIndicator;
+  indicatorKey = nextIndicator;
   shown = next.state;
   pill.dataset.state = next.state;
   status.dataset.state = next.state;
@@ -94,12 +106,12 @@ function paint(next: PillState, animate = false) {
   if (hintKey !== nextHintKey) hint.replaceChildren(...parts.hint ?? []);
   hint.hidden = !parts.hint?.length;
   if (stateChanged) {
-    indicator.className = `pill-indicator ${next.state}`;
-    if (listening.includes(next.state)) {
+    indicator.className = `pill-indicator ${confirmation ? "inserted" : next.state}`;
+    if (listening.includes(next.state) && !confirmation) {
       indicator.replaceChildren(...bars);
       setLevel(0);
     } else {
-      const symbol = next.state === "inserted" ? "check" : next.state === "copied" ? "copy" : next.state === "problem" ? "warning" : null;
+      const symbol = confirmation || next.state === "inserted" ? "check" : next.state === "copied" ? "copy" : next.state === "problem" ? "warning" : null;
       indicator.replaceChildren(...symbol ? [icon(symbol)] : []);
     }
   }
@@ -121,6 +133,7 @@ function render(next: PillState) {
   const wasVisible = visible;
   visible = next.state !== "hidden";
   if (!visible) {
+    clearModelTimer(); modelState.clear();
     clearOutgoing();
     previewState.receive(null);
     shown = "hidden";
@@ -133,11 +146,41 @@ function render(next: PillState) {
     renderPreview();
     return;
   }
+  if (!listening.includes(next.state)) { clearModelTimer(); modelState.clearConfirmation(); }
+  if (next.speech_model) {
+    modelState.begin(next.speech_model.session_id);
+    modelState.receive(next.speech_model, performance.now());
+  }
   pill.classList.remove("leaving");
   pill.hidden = false;
   paint(next, wasVisible);
   if (!wasVisible) replay(pill, "entering");
-  renderPreview();
+  renderPreview(); renderModel();
+}
+
+function clearModelTimer() { if (modelTimer !== null) clearTimeout(modelTimer); modelTimer = null; }
+
+function renderModel() {
+  const model = modelState.chip;
+  modelChip.hidden = !visible || !model || !listening.includes(shown) || !!modelState.confirmation(performance.now());
+  if (model) {
+    const kind = providers.find(provider => provider.id === model.choice.provider_id)?.kind;
+    const name = document.createElement("span"); name.textContent = model.label;
+    modelChip.replaceChildren(icon(kind === "local" || kind === "apple_speech" ? "laptop" : "globe"), name);
+  } else modelChip.replaceChildren();
+  modelChip.title = model ? `${model.label}${nextModelKey ? ` · ${t("dictation.pill.switch_key", { shortcut: nextModelKey })}` : ""}` : "";
+}
+
+function receiveModel(next: PillModelPresentation | null) {
+  if (next === null) { modelState.clear(); if (previewState.snapshot) modelState.begin(previewState.snapshot.session_id); }
+  else if (!modelState.receive(next, performance.now())) return;
+  clearModelTimer();
+  const remaining = modelState.confirmationRemaining(performance.now());
+  if (remaining > 0) modelTimer = setTimeout(() => {
+    modelTimer = null;
+    if (visible && pendingState) { modelState.clearConfirmation(); paint(pendingState, true); renderModel(); }
+  }, remaining);
+  if (visible && pendingState) { paint(pendingState, true); renderModel(); }
 }
 
 function renderPreview() {
@@ -148,7 +191,9 @@ function renderPreview() {
 }
 
 function applyInfo(info: AppInfo) {
-  doneKey = hotkeyKeyLabel(info.settings.hotkey, info.platform) ?? "";
+  providers = info.settings.providers;
+  doneKey = info.shortcuts?.find(row => row.id === "dictate")?.label.text ?? hotkeyKeyLabel(info.settings.hotkey, info.platform) ?? "";
+  nextModelKey = info.shortcuts?.find(row => row.id === "next_model" && row.binding && row.capability.available)?.label.text ?? "";
   setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
   if (visible && pendingState) render(pendingState);
 }
@@ -168,9 +213,13 @@ async function boot() {
   await listenToWindow<PillState>("pill-state", (event) => { eventReceived = true; render(event.payload); });
   await listenToWindow<PillPreview | null>("pill-preview", (event) => {
     pendingPreview = event.payload;
-    if (previewState.receive(event.payload)) previewReceived = true;
+    if (previewState.receive(event.payload)) {
+      previewReceived = true;
+      if (event.payload) modelState.begin(event.payload.session_id);
+    }
     renderPreview();
   });
+  await listenToWindow<PillModelPresentation | null>("pill-model", event => receiveModel(event.payload));
   await listenToWindow<number>("pill-level", (event) => setLevel(event.payload));
   await listen("settings-changed", () => { void api.info().then(applyInfo).catch(() => {}); });
   await locale;

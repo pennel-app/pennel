@@ -193,5 +193,15 @@
   "dictation.settings.pad_target": "The destination app is captured when you start recording in Write in Pennel. The actual target is shown there; your words always stay in Pennel.",
   "dictation.settings.permission_unavailable": "Unavailable",
   "dictation.settings.permission_needed": "Access needed",
-  "dictation.settings.back": "Back to Dictation"
+  "dictation.settings.back": "Back to Dictation",
+  "dictation.pill.model_switched": "Now using {model}",
+  "dictation.pill.models": "Speech model",
+  "dictation.pill.settings_title": "The pill",
+  "dictation.pill.switch_enabled": "Switch speech model from the pill",
+  "dictation.pill.switch_help": "Shows the model when more than one is ready. Use the next-model shortcut while dictating.",
+  "dictation.pill.switch_key": "Next model: {shortcut}",
+  "dictation.pill.switch_none": "Set a next-model shortcut in Shortcuts.",
+  "dictation.pill.switch_needs_models": "Set up a second speech model to switch while dictating.",
+  "dictation.pill.model_setup": "Set up another speech model…",
+  "dictation.pill.model_unavailable": "No configured speech model is ready."
 }

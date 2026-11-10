@@ -201,3 +201,24 @@ body {
   @keyframes pill-enter { from { opacity: 0; } }
   @keyframes pill-leave { to { opacity: 0; } }
 }
+
+.pill-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 48%;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--pill-text) 14%, transparent);
+  color: var(--pill-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-caption);
+}
+.pill-model-chip[hidden] { display: none; }
+.pill-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+.pill-model-chip > .ui-icon { width: 12px; height: 12px; flex: 0 0 auto; }
+.pill-model-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

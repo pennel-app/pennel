@@ -196,3 +196,36 @@ export async function checkPillMotion({ reduced = false } = {}) {
   await finishAnimations(pill);
   return { reduced, arrivalDurationMs: reduced ? 120 : 220, arrivalOffsetPx: reduced ? 0 : 8, departureDurationMs: reduced ? 120 : 140, opacityRetained: true, syntheticOnly: true };
 }
+
+export async function checkPillModelSwitch() {
+  const { pill, fixture } = await ready();
+  const label = document.getElementById("label"), chip = document.getElementById("model-chip");
+  const { t } = await import('/src/i18n.ts');
+  const model = name => ({ choice: { provider_id: name, model: "synthetic-model" }, label: name });
+  fixture.emit("pill-state", { state: "listening" });
+  fixture.emit("pill-preview", { session_id: "model-capture", revision: 0, text: "" });
+  const first = { session_id: "model-capture", generation: 0, model: model("First model"), available_models: 2, enabled: true, switched: false };
+  fixture.emit("pill-model", first);
+  assert(!chip.hidden && chip.textContent === "First model" && !chip.matches('button,[role="button"]'), "The keyboard-only chip did not show the actual configured model.");
+  const second = { ...first, generation: 1, model: model("Second model"), switched: true };
+  fixture.emit("pill-model", second);
+  assert(label.textContent === t("dictation.pill.model_switched", { model: "Second model" }) && chip.hidden, "The selected model was not confirmed.");
+  await pause(500);
+  fixture.emit("pill-model", second);
+  fixture.emit("pill-model", { ...first, model: model("Obsolete model") });
+  await pause(450);
+  assert(label.textContent === t("dictation.pill.listening") && !chip.hidden && chip.textContent === "Second model", "Duplicates or old events extended or replaced the confirmation.");
+  fixture.emit("pill-model", { ...second, generation: 2, model: model("Third model") });
+  fixture.emit("pill-state", { state: "working" });
+  await pause(950);
+  assert(label.textContent === t("dictation.pill.working"), "An old model timer replaced the working state.");
+  fixture.emit("pill-state", { state: "hidden" });
+  fixture.emit("pill-state", { state: "listening" });
+  fixture.emit("pill-preview", { session_id: "next-model-capture", revision: 0, text: "" });
+  fixture.emit("pill-model", { ...second, generation: 99 });
+  assert(chip.hidden, "An old capture supplied a new capture's model.");
+  fixture.emit("pill-model", { ...first, session_id: "next-model-capture", enabled: false });
+  assert(chip.hidden, "The actual disabled setting did not hide the chip.");
+  await finishAnimations(pill);
+  return { actualModel: true, keyboardOnly: true, confirmationMs: 900, duplicateTimerSuppressed: true, oldCapturesRejected: true, workingStatePreserved: true, syntheticOnly: true };
+}

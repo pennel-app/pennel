@@ -118,6 +118,7 @@
   const selectedProvider = options.engine === "apple" ? "apple-speech" : options.engine === "custom" ? "openai" : "local";
   const model = selectedProvider === "apple-speech" ? "dictation" : selectedProvider === "openai" ? "gpt-4o-mini-transcribe" : "whisper-large-v3-turbo";
   let settings = {
+    dictation_models: options.dictation_models || [], pill_model_switch_enabled: options.pill_model_switch_enabled !== false,
     providers, dictation_stt: { provider_id: selectedProvider, model }, meeting_stt: { provider_id: "local", model: "whisper-large-v3-turbo" },
     llm: { provider_id: "groq", model: "llama-3.3-70b-versatile" }, decision: null, reranking: null, cleanup_verification_enabled: Boolean(options.cleanup_verification_enabled), mode: options.mode || "fast", language: "nl", ui_language: options.ui_language || "system", dictionary: ["Pennel", "Studio Noord"],
     style_rules: [{ bundle_id: "com.tinyspeck.slackmacgap", style: "casual" }, { bundle_id: "com.apple.MobileSMS", style: "casual" }, { bundle_id: "com.apple.mail", style: "formal" }, { bundle_id: "com.microsoft.Word", style: "formal" }, { bundle_id: "com.apple.Terminal", style: "literal" }, { bundle_id: "com.microsoft.VSCode", style: "literal" }], history_retention_days: 30, hotkey: "fn", local_unload_minutes: 5,
@@ -242,7 +243,17 @@
       reason_code: settings.cleanup_verification_enabled && settings.mode === "clean" ? config ? "unqualified" : "unconfigured" : "disabled",
       provider_id: config?.provider_id ?? null, model: config?.model ?? null, endpoint: account ? `${account.base_url}/decisions` : null };
   };
-  const info = () => ({ interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+  const configuredSpeechModels = () => {
+    const seen = new Set();
+    return [...(settings.dictation_models || []), settings.dictation_stt].filter(choice => {
+      const key = JSON.stringify(choice); if (seen.has(key)) return false; seen.add(key);
+      const account = settings.providers.find(provider => provider.id === choice.provider_id);
+      const definition = kinds.find(kind => kind.kind === account?.kind);
+      return account && definition?.stt && choice.model && (!definition.requires_key || keys[account.id])
+        && (account.kind !== "local" || models.some(model => model.id === choice.model && model.state.kind === "downloaded"));
+    }).map(choice => ({ choice: clone(choice), label: choice.model === "dictation" ? "Apple dictation" : models.find(model => model.id === choice.model)?.name || `${choice.model} · ${settings.providers.find(provider => provider.id === choice.provider_id).name}` }));
+  };
+  const info = () => ({ shortcuts: options.shortcuts || [{ id: "next_model", scope: "listening", binding: { mods: ["left_alt"], key: null }, default_binding: { mods: ["left_alt"], key: null }, label: { keycaps: ["⌥"], text: "⌥" }, editable: true, capability: { available: true, reason: null }, changed: false }], interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
     unsaved_history_count: history.filter(entry => entry.status === "unsaved").length,
     kinds: clone(kinds), platform: options.platform || "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
     log_path: options.preview === false ? "/QA/Pennel/pennel.log" : "/QA/Pennel Preview/pennel.log", data_dir: options.preview === false ? "/QA/Pennel" : "/QA/Pennel Preview", capabilities: clone(capabilities), recording_app_ids: options.recording_app_ids || [], diarizer_model_id: diarizer.id, preview: options.preview !== false, migration_warning: null });
@@ -963,6 +974,13 @@
         persistOwnerReview();
         emit("settings-changed", null);
         return info();
+      }
+      case "configured_dictation_models": return configuredSpeechModels();
+      case "select_dictation_model": {
+        if (!configuredSpeechModels().some(model => JSON.stringify(model.choice) === JSON.stringify(args.choice))) throw new Error("This speech model is unavailable.");
+        settings.dictation_models ||= [];
+        if (!settings.dictation_models.some(choice => JSON.stringify(choice) === JSON.stringify(settings.dictation_stt))) settings.dictation_models.push(clone(settings.dictation_stt));
+        settings.dictation_stt = clone(args.choice); emit("settings-changed", null); return info();
       }
       case "apply_task_model_choice": {
         if (!["dictation_stt", "meeting_stt", "llm"].includes(args.slot)) throw new Error("Unknown model task.");

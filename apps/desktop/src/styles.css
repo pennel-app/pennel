@@ -937,3 +937,7 @@ button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--d
 }
 
 .name-choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; max-height: 160px; overflow-y: auto; }
+
+.speech-model-picker { max-width: min(100%, 260px); }
+.speech-model-picker > .ui-icon { width: 12px; height: 12px; flex: 0 0 auto; transform: rotate(90deg); }
+.speech-model-picker .menu-button-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

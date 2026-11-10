@@ -1155,7 +1155,7 @@ test("pill snapshots provide only synthetic display text with no capture or tran
     const context = fixture(item.name);
     const snapshot = await context.__PENNEL_PLATFORM__.invoke("dictation_state");
     assert.equal(snapshot.state, item.pill_state);
-    for (const [field, value] of Object.entries(item.pill_fields || {})) assert.equal(snapshot[field], value);
+    for (const [field, value] of Object.entries(item.pill_fields || {})) assert.deepEqual(structuredClone(snapshot[field]), value);
     assert.equal(snapshot.preview.session_id, "qa-" + item.name);
     assert.equal(snapshot.preview.text, item.preview_text || "");
     assert.equal(snapshot.preview.revision, item.preview_text ? 7 : 0);

@@ -1172,6 +1172,8 @@ fn main() {
             capture::capture_runtime_status,
             commands::app_info,
             commands::save_settings,
+            commands::configured_dictation_models,
+            commands::select_dictation_model,
             writing_profile::writing_profile_status,
             writing_profile::set_writing_profile_learning,
             writing_profile::refresh_writing_profile,

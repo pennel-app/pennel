@@ -193,5 +193,15 @@
   "dictation.settings.pad_target": "De doelapp wordt vastgelegd wanneer je in Schrijf in Pennel begint met opnemen. Daar zie je het echte doel; je woorden blijven altijd in Pennel.",
   "dictation.settings.permission_unavailable": "Niet beschikbaar",
   "dictation.settings.permission_needed": "Toegang nodig",
-  "dictation.settings.back": "Terug naar Dicteren"
+  "dictation.settings.back": "Terug naar Dicteren",
+  "dictation.pill.model_switched": "Je gebruikt nu {model}",
+  "dictation.pill.models": "Spraakmodel",
+  "dictation.pill.settings_title": "De pil",
+  "dictation.pill.switch_enabled": "Spraakmodel wisselen vanuit de pil",
+  "dictation.pill.switch_help": "Toont het model als er meerdere klaar zijn. Gebruik tijdens het dicteren de sneltoets voor het volgende model.",
+  "dictation.pill.switch_key": "Volgend model: {shortcut}",
+  "dictation.pill.switch_none": "Stel bij Sneltoetsen een toets voor het volgende model in.",
+  "dictation.pill.switch_needs_models": "Stel een tweede spraakmodel in om tijdens het dicteren te wisselen.",
+  "dictation.pill.model_setup": "Nog een spraakmodel instellen…",
+  "dictation.pill.model_unavailable": "Er is geen ingesteld spraakmodel klaar."
 }

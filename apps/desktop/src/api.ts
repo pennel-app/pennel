@@ -1,3 +1,4 @@
+import type { ConfiguredDictationModel, PillModelPresentation } from "./pill-model-state";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -243,6 +244,7 @@ export interface Settings {
   providers: ProviderAccount[];
   dictation_stt: ModelChoice;
   dictation_models?: ModelChoice[];
+  pill_model_switch_enabled?: boolean;
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;
@@ -655,7 +657,7 @@ export type PillState = (
   | { state: "inserted"; app?: string | null }
   | { state: "copied"; paste_key: string }
   | { state: "problem"; title: string; detail?: string | null }
-) & { preview?: PillPreview | null; cleanup_verification?: CleanupVerificationAvailability | null };
+) & { preview?: PillPreview | null; cleanup_verification?: CleanupVerificationAvailability | null; speech_model?: PillModelPresentation | null };
 
 export interface UpdateInfo {
   available: boolean;
@@ -896,6 +898,8 @@ export const api = {
   setDesktopCommandState: (state: DesktopCommandState) => invoke<void>("set_desktop_command_state", { state }),
   info: () => invoke<AppInfo>("app_info"),
   saveSettings: (settings: Settings) => invoke<AppInfo>("save_settings", { settings }),
+  configuredDictationModels: () => invoke<ConfiguredDictationModel[]>("configured_dictation_models"),
+  selectDictationModel: (choice: ModelChoice) => invoke<AppInfo>("select_dictation_model", { choice }),
   applyTaskModelChoice: (slot: "dictation_stt" | "meeting_stt" | "llm", choice: ModelChoice) =>
     invoke<AppInfo>("apply_task_model_choice", { slot, choice }),
   addProvider: (kind: ProviderKind) => invoke<AppInfo>("add_provider", { kind }),
