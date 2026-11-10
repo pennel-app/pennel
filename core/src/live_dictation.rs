@@ -406,12 +406,14 @@ impl LiveDictationSession {
         if !self.state.accepting.load(Ordering::SeqCst) || self.outcome.lock().unwrap().is_some() {
             return Err(PennelError::Cancelled);
         }
+        let current = self.speech_model();
         let (selected, account) = self.engine.select_dictation_model_snapshot(choice, keys)?;
-        let mut recognition = self.recognition.lock().unwrap();
-        if recognition.choice == selected.choice {
+        if current == selected.choice {
             return Ok(selected);
         }
+        // Existing observers may read recognition getters while their emissions drain.
         self.state.stop(false);
+        let mut recognition = self.recognition.lock().unwrap();
         if let Some(local) = &recognition.local {
             local.stop();
         }
@@ -767,6 +769,97 @@ mod tests {
             .expect("read-only preview observer deadlocked during model switch");
         assert_eq!(observed, (DictationPreviewMode::System, next));
         worker.join().unwrap().unwrap();
+        session.cancel();
+    }
+
+    #[test]
+    fn switching_drains_in_flight_observers_without_blocking_their_read_only_getters() {
+        struct PausedObserver {
+            session: Mutex<Option<std::sync::Weak<LiveDictationSession>>>,
+            entered: std::sync::mpsc::Sender<()>,
+            proceed: Mutex<std::sync::mpsc::Receiver<()>>,
+            read: std::sync::mpsc::Sender<ModelChoice>,
+        }
+        impl DictationPreviewObserver for PausedObserver {
+            fn changed(&self, update: DictationPreviewUpdate) {
+                if update.text == "old provider update" {
+                    self.entered.send(()).unwrap();
+                    self.proceed
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(std::time::Duration::from_secs(2))
+                        .unwrap();
+                    let session = self
+                        .session
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(std::sync::Weak::upgrade)
+                        .unwrap();
+                    assert_eq!(session.mode(), DictationPreviewMode::System);
+                    self.read.send(session.speech_model()).unwrap();
+                }
+            }
+        }
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        let original = settings.dictation_stt.clone();
+        let next = ModelChoice {
+            provider_id: "second".into(),
+            model: "dictation".into(),
+        };
+        settings.providers.push(ProviderAccount {
+            id: "second".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Second".into(),
+            base_url: String::new(),
+        });
+        settings.dictation_models = vec![original.clone(), next.clone()];
+        engine.update_settings(settings).unwrap();
+        let (entered, ready) = std::sync::mpsc::channel();
+        let (proceed, release) = std::sync::mpsc::channel();
+        let (read, observed) = std::sync::mpsc::channel();
+        let observer = Arc::new(PausedObserver {
+            session: Mutex::new(None),
+            entered,
+            proceed: Mutex::new(release),
+            read,
+        });
+        let session = engine
+            .clone()
+            .begin_dictation_session(observer.clone(), false);
+        *observer.session.lock().unwrap() = Some(Arc::downgrade(&session));
+        let publishing = session.clone();
+        let publisher = std::thread::spawn(move || {
+            publishing.update_system_preview("old provider update".into())
+        });
+        ready
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let selecting = session.clone();
+        let selected = next.clone();
+        let switch =
+            std::thread::spawn(move || selecting.select_speech_model(selected, request().keys));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while engine.settings().dictation_stt != next && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(engine.settings().dictation_stt, next);
+        // Let the selector reach its emission-drain boundary before resuming the real observer.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        while std::time::Instant::now() < deadline && session.recognition.try_lock().is_ok() {
+            std::thread::yield_now();
+        }
+        proceed.send(()).unwrap();
+        assert_eq!(
+            observed
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("the in-flight observer could not read session state"),
+            original
+        );
+        publisher.join().unwrap();
+        switch.join().unwrap().unwrap();
+        assert_eq!(session.speech_model(), next);
         session.cancel();
     }
 
