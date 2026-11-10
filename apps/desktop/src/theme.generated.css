@@ -101,6 +101,7 @@
   --font-wordmark: 29px;
   --font-page-title: 28px;
   --font-display-title: 30px;
+  --font-dictation-instruction: 30px;
 }
 
 /* System appearance uses a media query supported by the minimum WebKit. */

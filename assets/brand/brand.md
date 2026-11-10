@@ -54,7 +54,7 @@ Rules
 
 ## Typography and geometry
 
-- **Inter** carries desktop navigation, body text, controls, labels and compact headings. The chrome font role follows the desktop interface font. Use Regular for prose, Medium for controls and SemiBold for short headings. Desktop UI text is about 13 px, captions start at 11 px and main titles are about 20 px.
+- **Inter** carries desktop navigation, body text, controls, labels and compact headings. The chrome font role follows the desktop interface font. Use Regular for prose, Medium for controls and SemiBold for short headings. Desktop UI text is about 13 px, captions start at 11 px, page titles are 26 px and the dictation instruction is 30 px.
 - **Figtree** carries mobile navigation, body text, buttons, labels and small section headings. **Instrument Serif** Regular carries mobile large titles, the unchanged wordmark artwork and marketing. Never fake bold or use serif type in controls. Desktop app headings use Inter.
 - Use sentence case. Base mobile sizes and geometry remain defined by the existing base tokens; desktop overrides must not change them. Enlarge text without losing critical content or actions.
 - Desktop uses 6 px outer insets, 16 px pane corners, 24 px dialogs, capsule controls and compact source lists. The toolbar band is 52 px with 36 px controls. Ordinary controls are 32 px high, compact controls 28 px, sidebar search 30 px and navigation rows at least 34 px. The sidebar defaults to 220 px, preserves saved widths within 200–320 px and remains usable at a 760×520 workspace minimum.
