@@ -1,3 +1,5 @@
+import defaultShortcuts from "../../../assets/contracts/desktop-shortcuts.json" with { type: "json" };
+import type { ShortcutRow } from "./api";
 import tokens from "../../../assets/brand/tokens.json" with { type: "json" };
 
 export const DESKTOP_COMMANDS = ["settings", "new_recording", "find", "toggle_sidebar", "dictation", "meetings", "history"] as const;
@@ -67,13 +69,21 @@ export function desktopCommand(value: unknown): DesktopCommand | null {
   return DESKTOP_COMMANDS.includes(command as DesktopCommand) ? command as DesktopCommand : null;
 }
 
-type Shortcut = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "isComposing" | "repeat">;
-export function desktopShortcut(event: Shortcut, platform: string): DesktopCommand | null {
-  if (event.isComposing || event.repeat || event.altKey) return null;
-  const key = event.key.toLowerCase();
-  const mac = platform === "macos";
-  if (key === "s" && (mac ? event.metaKey && event.ctrlKey && !event.shiftKey : event.ctrlKey && event.shiftKey && !event.metaKey)) return "toggle_sidebar";
-  if (event.shiftKey || !(mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) return null;
-  const commands: Partial<Record<string, DesktopCommand>> = { ",": "settings", n: "new_recording", f: "find", "1": "dictation", "2": "meetings", "3": "history" };
-  return commands[key] ?? null;
+type Shortcut = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "isComposing" | "repeat"> & { keyCode?: number };
+type CommandShortcut = Pick<ShortcutRow, "id" | "binding"> & Partial<Pick<ShortcutRow, "capability">>;
+
+// This fallback is a core-validated contract for browser fixtures; native AppInfo supplies effective rows.
+export function desktopShortcut(event: Shortcut, platform: string, rows?: readonly CommandShortcut[], capturing = false): DesktopCommand | null {
+  if (capturing || event.isComposing || event.keyCode === 229 || event.repeat || event.key === "Dead" || event.key === "Process") return null;
+  const effective = rows ?? defaultShortcuts[platform === "macos" ? "macos" : platform === "windows" ? "windows" : "linux"];
+  for (const row of effective) {
+    const binding = row.binding;
+    const command = desktopCommand(row.id);
+    if (!command || !binding?.key || ("capability" in row && row.capability?.available === false)) continue;
+    if (binding.key.toLocaleLowerCase() !== event.key.toLocaleLowerCase()) continue;
+    const mods = new Set(binding.mods);
+    if (event.metaKey === mods.has("meta") && event.ctrlKey === mods.has("ctrl")
+        && event.altKey === mods.has("alt") && event.shiftKey === mods.has("shift")) return command;
+  }
+  return null;
 }

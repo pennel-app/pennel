@@ -44,3 +44,15 @@ test("application shortcuts use platform modifiers and leave text navigation and
   assert.equal(desktopCommand({ command: "find" }), "find");
   assert.equal(desktopCommand("delete_all"), null);
 });
+
+test("effective command rows match logical keys exactly and suspend commands during capture", () => {
+  const event = { key: "a", code: "KeyQ", metaKey: true, altKey: true, ctrlKey: false, shiftKey: false, repeat: false, isComposing: false };
+  const rows = [{ id: "find", binding: { mods: ["alt", "meta"], code: "KeyQ", key: "a" }, capability: { available: true, reason: null } }];
+  assert.equal(desktopShortcut(event, "macos", rows), "find");
+  assert.equal(desktopShortcut({ ...event, key: "q" }, "macos", rows), null);
+  assert.equal(desktopShortcut({ ...event, shiftKey: true }, "macos", rows), null);
+  assert.equal(desktopShortcut({ ...event, keyCode: 229 }, "macos", rows), null);
+  assert.equal(desktopShortcut(event, "macos", rows, true), null);
+  assert.equal(desktopShortcut(event, "macos", [{ ...rows[0], binding: null }]), null);
+  assert.equal(desktopShortcut(event, "macos", [{ ...rows[0], capability: { available: false, reason: "unavailable" } }]), null);
+});

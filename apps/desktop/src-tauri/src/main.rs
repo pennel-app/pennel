@@ -51,6 +51,7 @@ mod record_shortcut;
 mod recording_metadata;
 mod resample;
 mod secrets;
+mod shortcuts;
 mod speakers;
 mod state;
 mod status;

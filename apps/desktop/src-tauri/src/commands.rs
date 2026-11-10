@@ -155,6 +155,7 @@ fn provider_kinds(
 
 #[derive(Serialize)]
 pub struct AppInfo {
+    shortcuts: Vec<pennel_core::ShortcutRow>,
     interface_language: pennel_core::InterfaceLanguage,
     system_interface_language: pennel_core::InterfaceLanguage,
     settings: Settings,
@@ -207,6 +208,7 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
         LOG.info("initial app information: assembling state");
     }
     Ok(AppInfo {
+        shortcuts: crate::shortcuts::rows(shared),
         interface_language: settings
             .ui_language
             .resolve(&[shared.system_interface_language.code().to_owned()]),

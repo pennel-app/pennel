@@ -129,14 +129,14 @@ pub fn install(app: &AppHandle, menu: &tauri::menu::Menu<tauri::Wry>) -> tauri::
     let native = app.state::<CommandMenus>();
     let state = native.state.lock().unwrap().clone();
     let mut items = native.items.lock().unwrap();
-    for (command, title, shortcut) in [
-        (DesktopCommand::Settings, "App", "Cmd+,"),
-        (DesktopCommand::NewRecording, "File", "Cmd+N"),
-        (DesktopCommand::Find, "Edit", "Cmd+F"),
-        (DesktopCommand::ToggleSidebar, "View", "Cmd+Ctrl+S"),
-        (DesktopCommand::Dictation, "View", "Cmd+1"),
-        (DesktopCommand::Meetings, "View", "Cmd+2"),
-        (DesktopCommand::History, "View", "Cmd+3"),
+    for (command, title) in [
+        (DesktopCommand::Settings, "App"),
+        (DesktopCommand::NewRecording, "File"),
+        (DesktopCommand::Find, "Edit"),
+        (DesktopCommand::ToggleSidebar, "View"),
+        (DesktopCommand::Dictation, "View"),
+        (DesktopCommand::Meetings, "View"),
+        (DesktopCommand::History, "View"),
     ] {
         let target = if title == "App" {
             submenus.first().cloned()
@@ -147,12 +147,13 @@ pub fn install(app: &AppHandle, menu: &tauri::menu::Menu<tauri::Wry>) -> tauri::
                 .cloned()
         };
         let Some(target) = target else { continue };
+        let shortcut = accelerator(app, command);
         let item = MenuItem::with_id(
             app,
             format!("desktop-{}", command.id()),
             command.label(crate::ui::language(), &state),
             false,
-            Some(shortcut),
+            shortcut.as_deref(),
         )?;
         match title {
             "App" => {
@@ -174,6 +175,18 @@ pub fn install(app: &AppHandle, menu: &tauri::menu::Menu<tauri::Wry>) -> tauri::
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn accelerator(app: &AppHandle, command: DesktopCommand) -> Option<String> {
+    let shared = app.try_state::<std::sync::Arc<crate::state::Shared>>()?;
+    pennel_core::effective_shortcut(
+        &shared.settings(),
+        command.id(),
+        crate::shortcuts::platform(),
+    )
+    .as_ref()
+    .and_then(pennel_core::menu_accelerator)
+}
+
 pub fn refresh(app: &AppHandle) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     if let Some(native) = app.try_state::<CommandMenus>() {
@@ -182,6 +195,7 @@ pub fn refresh(app: &AppHandle) -> tauri::Result<()> {
         let items = native.items.lock().unwrap().clone();
         for (command, item) in items {
             item.set_text(command.label(crate::ui::language(), &state))?;
+            item.set_accelerator(accelerator(app, command))?;
             item.set_enabled(state.enabled(command))?;
         }
     }
