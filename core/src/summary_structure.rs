@@ -708,5 +708,6 @@ mod tests {
         assert!(!messages[0].content.contains("verbatim"));
         assert!(messages[1].content.contains("<notes>"));
         assert!(messages[1].content.contains("<transcript>"));
+        assert!(crate::system_llm::input_bytes(&messages) < crate::system_llm::APPLE_INPUT_BYTES);
     }
 }

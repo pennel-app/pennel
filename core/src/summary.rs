@@ -717,6 +717,20 @@ mod tests {
     }
 
     #[test]
+    fn apple_reduction_drops_references_the_call_never_received() {
+        let transcript = format!("[u1 00:00] Unknown: {}", "word ".repeat(2000));
+        let calls = std::cell::Cell::new(0);
+        let messages = apple_summary_messages(&spec("algemeen"), "", &transcript, |_| {
+            calls.set(calls.get() + 1);
+            Ok("- [u999999] A short reduction".into())
+        })
+        .unwrap();
+        assert!(calls.get() > 0);
+        assert!(!messages[1].content.contains("[u999999]"));
+        assert!(crate::system_llm::input_bytes(&messages) <= crate::system_llm::APPLE_INPUT_BYTES);
+    }
+
+    #[test]
     fn apple_summary_stops_when_the_model_does_not_reduce() {
         let calls = std::cell::Cell::new(0);
         let error =
