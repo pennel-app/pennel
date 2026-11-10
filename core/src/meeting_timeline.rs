@@ -49,29 +49,9 @@ fn unidentified(kind: SpeakerTimelineKind) -> SpeakerTimelineLane {
 }
 
 fn row_lane(row: &crate::MeetingUtterance, names: &[crate::SpeakerName]) -> SpeakerTimelineLane {
-    if let Some(speaker) = crate::summary_structure::settled_speaker(row, names) {
-        let manual = row.metadata.manual.as_ref();
-        // Display names can coincide; acoustic voice identity must not be merged by a label.
-        let key = if let Some(name) = manual
-            .and_then(|manual| manual.name.as_ref())
-            .filter(|name| !name.trim().is_empty())
-        {
-            format!(
-                "manual-name:{:?}:{name}",
-                manual.and_then(|manual| manual.voice)
-            )
-        } else if manual.is_some_and(|manual| manual.self_voice)
-            || row.metadata.attribution.self_voice
-        {
-            "self".into()
-        } else if let Some(voice) = manual
-            .and_then(|manual| manual.voice)
-            .or_else(|| row.metadata.attribution.voices.first().copied())
-        {
-            format!("voice:{voice}")
-        } else {
-            return unidentified(SpeakerTimelineKind::Unknown);
-        };
+    if let Some((key, speaker)) =
+        crate::meeting_evidence::settled_utterance_speaker_identity(row, names)
+    {
         return SpeakerTimelineLane {
             key,
             speaker: Some(speaker),
@@ -104,7 +84,7 @@ pub(crate) fn speaker_timeline(
     let valid = |row: &&crate::MeetingUtterance| {
         !row.segment.failed
             && !row.segment.text.trim().is_empty()
-            && row.segment.end_ms > row.segment.start_ms
+            && row.segment.end_ms >= row.segment.start_ms
     };
     let duration_ms = recorded_duration.unwrap_or_else(|| {
         rows.iter()
@@ -342,6 +322,53 @@ mod tests {
                 .duration_ms,
             2000
         );
+    }
+
+    #[test]
+    fn review_regression_zero_width_rows_keep_the_observed_transcript_extent() {
+        let rows = vec![
+            row(0, 0, Some(1), crate::AttributionKind::Single),
+            row(600_000, 600_000, Some(1), crate::AttributionKind::Single),
+        ];
+        let timeline = speaker_timeline(&rows, &[], None);
+        assert_eq!(timeline.duration_ms, 600_000);
+        assert!(!timeline.duration_is_recorded);
+        assert!(timeline.lanes.is_empty());
+        assert_eq!(speaker_timeline(&rows, &[], Some(1000)).duration_ms, 1000);
+    }
+
+    #[test]
+    fn review_regression_manual_voice_identity_overrides_an_automatic_self_estimate() {
+        let mut own = row(0, 1000, None, crate::AttributionKind::Single);
+        own.metadata.source_id = Some("microphone".into());
+        own.metadata.attribution.self_voice = true;
+        own.metadata.refresh_fingerprints(&own.segment);
+        let mut corrected = own.clone();
+        corrected.segment.start_ms = 1000;
+        corrected.segment.end_ms = 2000;
+        corrected.metadata.refresh_fingerprints(&corrected.segment);
+        corrected.metadata.manual = Some(crate::ManualCorrection {
+            name: None,
+            voice: Some(2),
+            source_fingerprint: corrected.metadata.source_fingerprint.clone(),
+            review_required: false,
+            self_voice: false,
+        });
+        let other = row(2000, 3000, Some(2), crate::AttributionKind::Single);
+        let timeline = speaker_timeline(&[own, corrected, other], &[], None);
+        let own_lane = timeline
+            .lanes
+            .iter()
+            .find(|lane| lane.speaker.as_deref() == Some("Me"))
+            .unwrap();
+        let corrected_lane = timeline
+            .lanes
+            .iter()
+            .find(|lane| lane.speaker.as_deref() == Some("Speaker 2"))
+            .unwrap();
+        assert_eq!(own_lane.duration_ms, 1000);
+        assert_eq!(corrected_lane.duration_ms, 2000);
+        assert_ne!(own_lane.key, corrected_lane.key);
     }
 
     #[test]
