@@ -50,6 +50,7 @@ fn notice_duration(notice: &PillState) -> Duration {
 #[derive(Debug, Default)]
 pub struct DictationStatus {
     recording: Option<PillState>,
+    latest_capture: Option<String>,
     no_sound: bool,
     in_flight: u32,
     delivering: u32,
@@ -75,7 +76,15 @@ impl DictationStatus {
         }
     }
 
-    pub fn recording_started(&mut self, hands_free: bool) {
+    pub fn recording_started(&mut self, capture_id: &str, hands_free: bool) {
+        self.latest_capture = Some(capture_id.to_owned());
+        if matches!(
+            self.notice,
+            Some(PillState::Inserted { .. } | PillState::Copied { .. })
+        ) {
+            self.notice = None;
+            self.notice_until = None;
+        }
         self.no_sound = false;
         self.recording = Some(if hands_free {
             PillState::HandsFree
@@ -119,9 +128,22 @@ impl DictationStatus {
         self.delivering += 1;
     }
 
-    pub fn delivery_finished(&mut self, notice: PillState, now: Instant) {
+    pub fn delivery_finished(&mut self, capture_id: &str, notice: Option<PillState>, now: Instant) {
         self.delivering = self.delivering.saturating_sub(1);
-        self.show_notice(notice, now);
+        if let Some(notice) = notice {
+            if self
+                .latest_capture
+                .as_deref()
+                .is_some_and(|latest| latest != capture_id)
+                && matches!(
+                    notice,
+                    PillState::Inserted { .. } | PillState::Copied { .. }
+                )
+            {
+                return;
+            }
+            self.show_notice(notice, now);
+        }
     }
 
     /// A confirmation never hides a problem that is still on screen.
@@ -230,10 +252,10 @@ mod tests {
     fn recording_wins_over_work_and_notice() {
         let now = Instant::now();
         let mut s = DictationStatus::default();
-        s.recording_started(false);
+        s.recording_started("capture", false);
         s.recording_submitted();
         s.show_notice(problem("x"), now);
-        s.recording_started(true);
+        s.recording_started("capture", true);
         assert_eq!(s.pill(), PillState::HandsFree);
         s.mark_command();
         assert_eq!(s.pill(), PillState::Command);
@@ -243,9 +265,9 @@ mod tests {
     fn notice_shows_until_expired_then_work_resumes() {
         let now = Instant::now();
         let mut s = DictationStatus::default();
-        s.recording_started(false);
+        s.recording_started("capture", false);
         s.recording_submitted();
-        s.recording_started(false);
+        s.recording_started("capture", false);
         s.recording_submitted();
         s.dictation_finished(Some(problem("Mislukt")), now);
         assert_eq!(s.pill(), problem("Mislukt"));
@@ -298,19 +320,108 @@ mod tests {
     }
 
     #[test]
+    fn starting_a_recording_clears_its_predecessors_confirmation() {
+        for confirmation in [
+            inserted(),
+            PillState::Copied {
+                paste_key: "⌘V".into(),
+            },
+        ] {
+            let mut s = DictationStatus::default();
+            s.show_notice(confirmation, Instant::now());
+            s.recording_started("capture", false);
+            s.recording_cancelled();
+            assert_eq!(s.pill(), PillState::Hidden);
+            assert_eq!(s.notice_deadline(), None);
+        }
+    }
+
+    #[test]
+    fn starting_and_cancelling_a_recording_retains_an_earlier_problem() {
+        let now = Instant::now();
+        let mut s = DictationStatus::default();
+        s.show_notice(problem("Not pasted"), now);
+        s.recording_started("capture", false);
+        s.recording_cancelled();
+        assert_eq!(s.pill(), problem("Not pasted"));
+        assert_eq!(s.notice_deadline(), Some(now + PROBLEM_FOR));
+    }
+
+    #[test]
+    fn older_confirmations_are_suppressed_after_the_newer_capture_submits_or_cancels() {
+        let now = Instant::now();
+        for submit_newer in [false, true] {
+            for confirmation in [
+                inserted(),
+                PillState::Copied {
+                    paste_key: "Ctrl+V".into(),
+                },
+            ] {
+                let mut s = DictationStatus::default();
+                s.recording_started("first", false);
+                s.recording_submitted();
+                s.delivery_started();
+                s.dictation_finished(None, now);
+                s.recording_started("second", false);
+                if submit_newer {
+                    s.recording_submitted();
+                    s.dictation_finished(None, now);
+                } else {
+                    s.recording_cancelled();
+                }
+                assert_eq!(s.pill(), PillState::Working);
+                s.delivery_finished("first", Some(confirmation), now);
+                assert_eq!(s.pill(), PillState::Hidden);
+                assert_eq!(s.notice_deadline(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn older_delivery_problems_remain_recoverable_after_a_new_capture() {
+        let now = Instant::now();
+        let mut s = DictationStatus::default();
+        s.recording_started("first", false);
+        s.recording_submitted();
+        s.delivery_started();
+        s.dictation_finished(None, now);
+        s.recording_started("second", false);
+        s.delivery_finished("first", Some(problem("Not pasted")), now);
+        assert_eq!(s.pill(), PillState::Listening);
+        s.recording_cancelled();
+        assert_eq!(s.pill(), problem("Not pasted"));
+        assert_eq!(s.notice_deadline(), Some(now + PROBLEM_FOR));
+        s.expire_notice(now + PROBLEM_FOR);
+        assert_eq!(s.pill(), PillState::Hidden);
+    }
+
+    #[test]
+    fn owned_success_without_a_notice_settles_only_its_delivery() {
+        let now = Instant::now();
+        let mut s = DictationStatus::default();
+        s.delivery_started();
+        s.delivery_started();
+        s.delivery_finished("owned-first", None, now);
+        assert_eq!(s.pill(), PillState::Working);
+        s.delivery_finished("owned-second", None, now);
+        assert_eq!(s.pill(), PillState::Hidden);
+        assert_eq!(s.notice_deadline(), None);
+    }
+
+    #[test]
     fn delivery_keeps_the_pill_working_until_the_words_land() {
         let now = Instant::now();
         let mut s = DictationStatus::default();
-        s.recording_started(false);
+        s.recording_started("capture", false);
         s.recording_submitted();
         s.delivery_started();
         s.dictation_finished(None, now);
         assert_eq!(s.pill(), PillState::Working);
-        s.delivery_finished(inserted(), now);
+        s.delivery_finished("capture", Some(inserted()), now);
         assert_eq!(s.pill(), inserted());
         assert!(s.expire_notice(now + INSERTED_FOR));
         assert_eq!(s.pill(), PillState::Hidden);
-        s.delivery_finished(inserted(), now);
+        s.delivery_finished("capture", Some(inserted()), now);
         assert!(s.expire_notice(now + INSERTED_FOR));
         assert_eq!(s.pill(), PillState::Hidden);
     }
@@ -320,7 +431,7 @@ mod tests {
         let mut s = DictationStatus::default();
         s.set_no_sound(true);
         assert_eq!(s.pill(), PillState::Hidden);
-        s.recording_started(false);
+        s.recording_started("capture", false);
         s.set_no_sound(true);
         assert_eq!(s.pill(), PillState::NoSound);
         s.set_no_sound(false);
@@ -328,13 +439,13 @@ mod tests {
         s.set_no_sound(true);
         s.mark_command();
         assert_eq!(s.pill(), PillState::Command);
-        s.recording_started(true);
+        s.recording_started("capture", true);
         assert_eq!(s.pill(), PillState::HandsFree);
         s.set_no_sound(true);
         assert_eq!(s.pill(), PillState::NoSound);
         s.recording_submitted();
         assert_eq!(s.pill(), PillState::Working);
-        s.recording_started(false);
+        s.recording_started("capture", false);
         assert_eq!(s.pill(), PillState::Listening);
     }
 

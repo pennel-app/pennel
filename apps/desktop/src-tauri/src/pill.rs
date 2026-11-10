@@ -22,6 +22,8 @@ pub struct PillSnapshot {
     pub preview: Option<DictationPreviewUpdate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cleanup_verification: Option<pennel_core::CleanupVerificationAvailability>,
+    #[serde(skip)]
+    visibility_generation: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -38,11 +40,16 @@ impl Default for PillSnapshot {
             state: PillState::Hidden,
             preview: None,
             cleanup_verification: None,
+            visibility_generation: 0,
         }
     }
 }
 
 impl PillSnapshot {
+    fn may_hide(&self, generation: u64) -> bool {
+        self.state == PillState::Hidden && self.visibility_generation == generation
+    }
+
     fn processing_snapshot(&self) -> ProcessingSnapshot<'_> {
         ProcessingSnapshot {
             state: &self.state,
@@ -52,6 +59,9 @@ impl PillSnapshot {
 
     fn set_state(&mut self, state: PillState) -> bool {
         let changed = self.state != state || (state == PillState::Hidden && self.preview.is_some());
+        if (self.state == PillState::Hidden) != (state == PillState::Hidden) {
+            self.visibility_generation = self.visibility_generation.wrapping_add(1);
+        }
         self.state = state;
         if self.state == PillState::Hidden {
             self.preview = None;
@@ -115,10 +125,6 @@ impl Default for Snapshot {
             session: Arc::new(Mutex::new(None)),
         }
     }
-}
-
-pub fn snapshot(app: &AppHandle) -> PillState {
-    content_snapshot(app).state
 }
 
 pub fn content_snapshot(app: &AppHandle) -> PillSnapshot {
@@ -206,12 +212,14 @@ const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
 const LEAVE: Duration = Duration::from_millis(140);
 
 /// Orders the window out once the pill has faded, unless it was shown again meanwhile.
-fn hide_after_leaving(app: AppHandle) {
+fn hide_after_leaving(app: AppHandle, content: Arc<Mutex<PillSnapshot>>, generation: u64) {
     std::thread::spawn(move || {
         std::thread::sleep(LEAVE);
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
-            if snapshot(&handle) == PillState::Hidden
+            // Keep validation and the native action ordered against the next state change.
+            let content = content.lock().unwrap();
+            if content.may_hide(generation)
                 && let Some(window) = handle.get_webview_window(LABEL)
             {
                 platform::hide(&window);
@@ -345,6 +353,34 @@ mod tests {
     }
 
     #[test]
+    fn an_earlier_leave_cannot_hide_a_later_captures_leave() {
+        let mut content = listening();
+        content.set_state(PillState::Hidden);
+        let first_leave = content.visibility_generation;
+        assert!(content.may_hide(first_leave));
+        content.set_state(PillState::Listening);
+        assert!(!content.may_hide(first_leave));
+        content.set_state(PillState::Hidden);
+        assert!(content.may_hide(content.visibility_generation));
+        assert!(!content.may_hide(first_leave));
+    }
+
+    #[test]
+    fn repeated_hidden_emissions_do_not_restart_the_current_leave() {
+        let mut content = listening();
+        content.set_state(PillState::Hidden);
+        let leave = content.visibility_generation;
+        assert!(!content.set_state(PillState::Hidden));
+        assert!(content.may_hide(leave));
+        assert!(
+            serde_json::to_value(&content)
+                .unwrap()
+                .get("visibility_generation")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn core_caption_is_preserved_for_identical_grapheme_layout_in_both_renderers() {
         let mut content = listening();
         let text = format!("{}e\u{301}👩‍👩‍👧", "é".repeat(180));
@@ -419,7 +455,7 @@ impl Pill {
     }
 
     pub fn show(&self, state: PillState) {
-        let was_hidden = {
+        let (was_hidden, generation) = {
             let mut content = self.content.lock().unwrap();
             let was_hidden = content.state == PillState::Hidden;
             if !content.set_state(state.clone()) {
@@ -449,9 +485,9 @@ impl Pill {
             if state == PillState::Hidden {
                 self.emit_preview(&content);
             }
-            was_hidden
+            (was_hidden, content.visibility_generation)
         };
-        self.sync_visibility(was_hidden);
+        self.sync_visibility(was_hidden, generation);
     }
 
     pub fn begin_preview(
@@ -488,25 +524,28 @@ impl Pill {
         let _ = self.app.emit_to(LABEL, "pill-preview", &content.preview);
     }
 
-    fn sync_visibility(&self, position: bool) {
+    fn sync_visibility(&self, position: bool, generation: u64) {
         let app = self.app.clone();
         let handle = app.clone();
+        let content = self.content.clone();
         let _ = app.run_on_main_thread(move || {
-            let current = snapshot(&handle);
+            let latest = content.lock().unwrap();
+            if latest.visibility_generation != generation {
+                return;
+            }
             let existing = handle.get_webview_window(LABEL);
             let is_new = existing.is_none();
             let window = existing.or_else(|| {
-                (current != PillState::Hidden)
+                (latest.state != PillState::Hidden)
                     .then(|| create(&handle).ok())
                     .flatten()
             });
             let Some(window) = window else {
                 return;
             };
-            let latest = content_snapshot(&handle);
-            let _ = window.emit_to(LABEL, "pill-state", &latest);
+            let _ = window.emit_to(LABEL, "pill-state", &*latest);
             if latest.state == PillState::Hidden {
-                hide_after_leaving(handle);
+                hide_after_leaving(handle, content.clone(), generation);
             } else if position || is_new {
                 platform::show_at_bottom(&handle, &window);
             } else {
