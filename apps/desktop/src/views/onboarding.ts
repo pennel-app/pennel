@@ -430,7 +430,13 @@ class OnboardingWizard {
         const order: Engine[] = ["local", "apple", "cloud", "custom"];
         const index = order.indexOf(value);
         const next = event.key === "ArrowRight" ? (index + 1) % order.length : event.key === "ArrowLeft" ? (index + order.length - 1) % order.length : event.key === "Home" ? 0 : event.key === "End" ? order.length - 1 : -1;
-        if (next >= 0) { event.preventDefault(); const target = order[next]; if (!this.localButtons.get(target)?.disabled) void this.chooseEngine(target).then(() => this.localButtons.get(target)?.focus()).catch(this.fail); }
+        if (next >= 0) {
+          event.preventDefault(); const target = order[next];
+          if (!this.localButtons.get(target)?.disabled) {
+            if (target === "local" || target === "apple") localChoices.open = true;
+            void this.chooseEngine(target).then(() => this.localButtons.get(target)?.focus()).catch(this.fail);
+          }
+        }
       });
       if (value !== "custom") bindLocalization(button, () => { button.title = this.ctx.info.kinds.find((kind) => kind.kind === (value === "local" ? "local" : value === "cloud" ? "pennel_cloud" : "apple_speech"))?.availability.reason ?? ""; });
       this.localButtons.set(value, button);

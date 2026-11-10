@@ -68,3 +68,17 @@ export async function checkDownloadContinuation(){
  assert(fixture.info().settings.onboarding.status!=='completed','Download incorrectly completed first use.');
  assert(!fixture.calls.some(command=>['toggle_dictation','copy_text','start_meeting'].includes(command)),'Speech setup started an unrelated capture or external delivery.');
 }
+export async function checkEngineKeyboard(){
+ const root=document.querySelector('.onboarding-shell'),outer=root.querySelector('.onboarding-other-options'),local=root.querySelector('.onboarding-local-options');outer.open=true;
+ const before=JSON.stringify(window.__PENNEL_FIXTURE__.info().settings);
+ const cloud=root.querySelector('.onboarding-option-row');
+ for(const [key,engine] of [['ArrowLeft','apple'],['Home','local']]) {
+   local.open=false;cloud.click();cloud.focus();
+   cloud.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+   await until(()=>root.querySelector('.onboarding-engine-detail').dataset.engine===engine,'Keyboard engine selection did not update.');
+   const selected=root.querySelector('.engine-choice[aria-pressed="true"]');
+   await until(()=>document.activeElement===selected,'Keyboard engine selection left focus on the remote row.');
+   assert(local.open&&visible(selected),'Keyboard engine selection focused a hidden local target.');
+ }
+ assert(JSON.stringify(window.__PENNEL_FIXTURE__.info().settings)===before,'Keyboard browsing applied a model/provider setup.');
+}
