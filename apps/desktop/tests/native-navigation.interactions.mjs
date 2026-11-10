@@ -61,7 +61,7 @@ export async function checkResponsiveNavigation() {
     selectMeetingPane(mounted, "notes");
     saveBlocked = true;
     const draft = "Owned note retained through delayed durable persistence.";
-    note.value = draft; note.dispatchEvent(new Event("input", { bubbles: true }));
+    note.applyUserChange(draft);
     document.querySelector(".library-settings").click();
     await until(() => saving, "Leaving did not flush the note draft.");
     assert(document.querySelector(".live-workspace") === mounted && document.querySelector("#content").inert, "Navigation left the draft before persistence completed.");

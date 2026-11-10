@@ -27,7 +27,7 @@ export async function checkSummaryConsentCreate(){
 }
 export async function dismissSummaryConsent(){
  const{root,card,fixture,api}=await owned();
- const notes=root.querySelector('.live-notes');selectMeetingPane(root,'notes');notes.value='Synthetic private notes retained after Not now.';notes.dispatchEvent(new Event('input',{bubbles:true}));notes.setSelectionRange(3,13,'backward');selectMeetingPane(root,'summary');
+ const notes=root.querySelector('.live-notes');selectMeetingPane(root,'notes');notes.applyUserChange('Synthetic private notes retained after Not now.');notes.setSelectionRange(3,13,'backward');selectMeetingPane(root,'summary');
  if(!fixture.options.configured_text_provider){assert(card.querySelector('[data-summary-consent="create"]').disabled&&shown(card.querySelector('.summary-consent-setup')),'Missing setup is not explained and repairable.');card.querySelector('.summary-consent-setup').click();await until(()=>document.querySelector('.task-setup-dialog [data-setup-cancel]'),'Summary setup did not open.');document.querySelector('.task-setup-dialog [data-setup-cancel]').click();await until(()=>!document.querySelector('.task-setup-dialog'),'Summary setup did not cancel back to the meeting.');}
  card.querySelector('[data-summary-consent="not_now"]').click();await until(()=>card.dataset.mode==='quiet','Not now did not reveal its durable quiet action.');
  assert((await api.info()).settings.summary_automation==='unanswered'&&await api.meetingSummaryPromptDismissed(root.dataset.meetingId),'Not now changed global consent or failed to persist per meeting.');

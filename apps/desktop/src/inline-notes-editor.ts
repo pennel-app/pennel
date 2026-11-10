@@ -1,7 +1,7 @@
 import { Compartment, EditorState, Prec, StateEffect, StateField, Transaction, type Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap, placeholder, type DecorationSet } from "@codemirror/view";
 import { historyKeymap, isolateHistory, redo, standardKeymap, undo } from "@codemirror/commands";
-import { bindLocalization, l, type UiText } from "./i18n.ts";
+import { bindLocalization, type UiText } from "./i18n.ts";
 import { icon } from "./icons";
 import { noteMarkdown } from "./inline-notes-markdown";
 import { formatNote, inlineNoteState, noteSelection, quietNoteChange, quietNoteValue, userNoteValue, type NoteFormat } from "./inline-notes-state";
@@ -34,12 +34,11 @@ class Bullet extends WidgetType {
   ignoreEvent(): boolean { return false; }
 }
 class TaskMarker extends WidgetType {
-  constructor(readonly at: number, readonly checked: boolean, readonly disabled: boolean) { super(); }
-  eq(other: TaskMarker): boolean { return this.at === other.at && this.checked === other.checked && this.disabled === other.disabled; }
+  constructor(readonly at: number, readonly checked: boolean, readonly disabled: boolean, readonly label: string) { super(); }
+  eq(other: TaskMarker): boolean { return this.at === other.at && this.checked === other.checked && this.disabled === other.disabled && this.label === other.label; }
   toDOM(view: EditorView): HTMLElement {
     const box = document.createElement("span"); box.className = "cm-note-task-marker"; box.contentEditable = "false";
     const input = document.createElement("input"); input.type = "checkbox";
-    input.setAttribute("aria-label", String(l("meetings.workspace_task")));
     const mark = document.createElement("span"); mark.setAttribute("aria-hidden", "true"); mark.append(icon("check"));
     box.append(input, mark); this.updateDOM(box);
     input.addEventListener("pointerdown", event => event.preventDefault());
@@ -55,7 +54,7 @@ class TaskMarker extends WidgetType {
   updateDOM(node: HTMLElement): boolean {
     const input = node.querySelector("input")!;
     input.checked = this.checked; input.disabled = this.disabled; input.dataset.sourceOffset = String(this.at);
-    input.setAttribute("aria-label", String(l("meetings.workspace_task")));
+    input.setAttribute("aria-label", this.label);
     return true;
   }
 }
@@ -74,7 +73,7 @@ function buildDecorations(state: EditorView["state"], focused: boolean): Decorat
     if (line.heading) ranges.push(Decoration.replace({}).range(line.from, line.prefixTo));
     const marker = line.marker;
     if (marker) {
-      ranges.push(Decoration.replace({ widget: marker.kind === "task" ? new TaskMarker(marker.checkAt!, marker.checked, state.readOnly) : new Bullet() }).range(marker.from, marker.to));
+      ranges.push(Decoration.replace({ widget: marker.kind === "task" ? new TaskMarker(marker.checkAt!, marker.checked, state.readOnly, state.sliceDoc(marker.to, line.to)) : new Bullet() }).range(marker.from, marker.to));
       if (marker.checked && marker.to < line.to) ranges.push(Decoration.mark({ class: "cm-note-task-done" }).range(marker.to, line.to));
     }
     for (const mark of line.strong) {
@@ -122,14 +121,14 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
   });
   function reconfigure() { if (!destroyed) view.dispatch({ effects: behavior.reconfigure(configuration()), annotations: quietNoteChange.of(true) }); }
   function setRange(start: number, end: number, next: Direction = "none") {
-    view.dispatch({ selection: noteSelection(start, end, next, view.state.doc.length), effects: view.scrollSnapshot(), annotations: Transaction.addToHistory.of(false) });
+    view.dispatch({ selection: noteSelection(start, end, next, view.state.doc.length), annotations: Transaction.addToHistory.of(false) });
     direction = next;
   }
   function assign(value: string) {
     const change = quietNoteValue(view.state, String(value));
     if (!change) return;
-    const previous = direction, transaction = view.state.update(change), snapshot = view.scrollSnapshot().map(transaction.changes);
-    view.dispatch({ ...change, effects: snapshot ? [snapshot] : [] }); direction = previous;
+    const previous = direction;
+    view.dispatch(change); direction = previous;
   }
   function revealSelection() { view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main, { y: "center" }), annotations: Transaction.addToHistory.of(false) }); }
   Object.defineProperties(element, {
@@ -142,7 +141,7 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
     disabled: { get: () => disabled, set: (value: boolean) => { if (disabled !== Boolean(value)) { disabled = Boolean(value); reconfigure(); } } },
     readOnly: { get: () => readOnly, set: (value: boolean) => { if (readOnly !== Boolean(value)) { readOnly = Boolean(value); reconfigure(); } } },
     lang: { get: () => language, set: (value: string) => { if (language !== value) { language = value; reconfigure(); } } },
-    focus: { value: (settings?: FocusOptions) => { if (!disabled) { view.focus(); if (!settings?.preventScroll) revealSelection(); } } },
+    focus: { value: () => { if (!disabled) view.focus(); } },
     blur: { value: () => view.contentDOM.blur() },
     scrollTop: { get: () => view.scrollDOM.scrollTop, set: (value: number) => { view.scrollDOM.scrollTop = value; } },
     scrollLeft: { get: () => view.scrollDOM.scrollLeft, set: (value: number) => { view.scrollDOM.scrollLeft = value; } },
@@ -155,7 +154,7 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
     } },
     applyFormat: { value: (format: NoteFormat) => { if (composing || view.composing) return false; const change = formatNote(view.state, format); if (!change) return false; view.dispatch(change); return true; } },
     undo: { value: () => undo(view) }, redo: { value: () => redo(view) },
-    setDocumentMode: { value: (value: boolean) => { element.dataset.documentMode = String(value); view.requestMeasure(); } },
+    setDocumentMode: { value: (value: boolean) => { if (element.dataset.documentMode !== String(value)) { element.dataset.documentMode = String(value); view.requestMeasure(); } } },
     destroy: { value: () => { destroyed = true; unbind(); view.destroy(); } },
   });
   const unbind = bindLocalization(element, reconfigure);

@@ -6,6 +6,7 @@ async function until(check, message) {
   throw Error(message);
 }
 function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; }
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
@@ -30,12 +31,12 @@ export async function checkNotesFirstWorkspace() {
   const notes = root.querySelector(".live-notes");
   assert(root.querySelector('[data-live-pane="notes"]').getClientRects().length > 0, "Notes are not the initial writing surface.");
   assert(root.querySelector('[data-live-pane="questions"]').hidden && root.querySelector('[data-live-pane="transcript"]').hidden === (innerWidth < 1100), "The companion default does not match the window width.");
-  assert(root.querySelector(".live-note-controls").hidden, "Formatting details opened before they were requested.");
+  assert(root.querySelectorAll(".live-save-controls [data-live-format]").length === 4 && !root.querySelector(".live-preview-toggle"), "Inline notes did not expose their formatting footer.");
   edit(notes, "Synthetic notes while capture continues."); notes.focus(); notes.setSelectionRange(10, 15, "backward");
   root.querySelector(".live-stop").click();
   await until(() => !fixture.workspace.recording() && root.dataset.recording === "false", "Stop did not finish capture in the same workspace.");
   assert(document.querySelector(".live-workspace") === root && root.querySelector(".live-notes") === notes, "Stop replaced the meeting or notes editor.");
-  assert(notes.value === "Synthetic notes while capture continues." && notes.selectionStart === 10 && notes.selectionEnd === 15 && document.activeElement === notes,
+  assert(notes.value === "Synthetic notes while capture continues." && notes.selectionStart === 10 && notes.selectionEnd === 15 && document.activeElement === notes.contentDOM,
     "Finalization changed notes, selection or focus.");
   assert(!root.querySelector(".live-review"), "Finalization introduced a separate review transition.");
   root.querySelector('[data-live-tab="questions"]').click();

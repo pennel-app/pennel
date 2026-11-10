@@ -1,10 +1,10 @@
 import { api, fixtureClient, type MeetingStatus, type MeetingDetail, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveSourceAnchor, type Segment, type SummarySource } from "./api";
 import { SerialQueue, persistAll } from "./async";
 import { bindLocalization, l, t, localizeBackendText, formatNumber, type TranslationKey } from "./i18n";
-import { controlButton, errorText, formatClock, h, markdown, showPopupMenu, textField } from "./dom";
+import { controlButton, errorText, formatClock, h, showPopupMenu, textField } from "./dom";
 import { MeetingDraft } from "./meeting-draft";
 import { RecordingRefresh, sameSegment, segmentKeys } from "./recording-refresh";
-import { LivePaneState, LiveStatusEpoch, segmentEvidenceValue, formatSelection, type LivePane } from "./live-workspace-state";
+import { LivePaneState, LiveStatusEpoch, segmentEvidenceValue, type LivePane } from "./live-workspace-state";
 import { meetingDate, sourceSpeakerLabel, speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
 import { attributionEditable, attributionNoticeKey, segmentAudioAvailable } from "./meeting-source";
@@ -21,6 +21,9 @@ import { meetingExportPreview } from "./meeting-export-preview";
 import { meetingWorkspaceTools } from "./meeting-workspace-tools";
 import { sourceRange, transcriptSourceBlocks } from "./source-navigation";
 import { icon } from "./icons";
+import { inlineNotesEditor, type InlineNotesSurface } from "./inline-notes-editor";
+import { desktopShortcut } from "./desktop-chrome-state";
+import { shortcutCaptureActive } from "./shortcut-capture-state";
 import { FailedRecoveryContextError, FailedTranscriptionRecovery, transcriptDisplayText } from "./failed-transcription-recovery";
 import "./meeting-workspace.css";
 
@@ -79,7 +82,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   let lastReviewRefresh = -Infinity;
   const readingPositions = new Map<HTMLElement, { top: number; left: number }>();
   let suspendedReading: Map<HTMLElement, { top: number; left: number }> | null = null;
-  let suspendedSelections: { input: HTMLTextAreaElement; start: number; end: number; direction: "forward" | "backward" | "none" }[] | null = null;
+  let suspendedSelections: { input: HTMLTextAreaElement | InlineNotesSurface; start: number; end: number; direction: "forward" | "backward" | "none" }[] | null = null;
   let restoringReading = false;
   let binding = 0;
   let recoveryBindingActive = false;
@@ -87,8 +90,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   let composing = false;
   let notesTimer: number | undefined;
   let titleTimer: number | undefined;
-  let preview = false;
-  let previewValue = "";
   let sourceNavigation = 0;
   let questionSourceNavigation = 0;
   let following = initial.recording;
@@ -167,7 +168,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const closeCompanion = h("button", { class: "btn compact meeting-companion-close", hidden: true, title: l("meetings.workspace_close_companion"), "aria-label": l("meetings.workspace_close_companion"), onclick: () => returnToDocument() }, icon("close"));
   const more = h("button", { class: "btn compact meeting-workspace-more", "aria-haspopup": "menu", onclick: () => {
     showPopupMenu(more, [
-      { value: "format", label: l("meetings.workspace_formatting"), run: () => { selectPane("notes"); noteHeading.hidden = !noteHeading.hidden; } },
       { value: "people", label: l("meetings.workspace_people"), run: () => openTools("people") },
       { value: "speakers", label: l("meetings.workspace_speaker_controls"), run: () => openTools("speakers") },
       { value: "template", label: l("meetings.summary_template_change"), run: () => openTools("template") },
@@ -205,37 +205,26 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     (pane === "notes" || pane === "summary" ? writingTabs : companionTabs).append(button);
     panels.set(pane, h("section", { class: `live-pane live-${pane}-pane`, id: `live-${session}-${pane}`, "data-live-pane": pane, role: "tabpanel", "aria-labelledby": button.id }));
   }
-  const editor = h("textarea", { class: "live-notes", placeholder: l("meetings.live_notes_placeholder"), "aria-label": l("meetings.your_notes"), spellcheck: "true" });
-  const notePreview = h("div", { class: "live-note-preview markdown", hidden: true, tabindex: 0 });
+  const editor = inlineNotesEditor({ className: "live-notes", placeholder: l("meetings.live_notes_placeholder"), label: l("meetings.your_notes"),
+    deferKey: event => shortcutCaptureActive() || !!desktopShortcut(event, ctx.info.platform, ctx.info.shortcuts) });
   const saveStatus = h("span", { class: "live-save-status", role: "status", "aria-live": "polite" });
   const save = controlButton({ class: "btn compact live-save", onclick: () => { void flush().catch(showSaveError); } }, l("meetings.workspace_save"));
   const saveError = h("p", { class: "error live-save-error", hidden: true, role: "status" });
-  const sourceToggle = h("button", { class: "btn compact", "aria-pressed": "true", onclick: () => showPreview(false) }, l("meetings.workspace_source"));
-  const previewToggle = h("button", { class: "btn compact", "aria-pressed": "false", onclick: () => showPreview(true) }, l("meetings.workspace_preview"));
-  const formatting = h("div", { class: "live-formatting", role: "toolbar", "aria-label": l("meetings.workspace_source") });
+  const formatting = h("div", { class: "live-formatting", role: "toolbar", "aria-label": l("meetings.workspace_formatting") });
   for (const [format, key, text] of [["heading", "meetings.workspace_heading", "H"], ["bold", "meetings.workspace_bold", "B"], ["list", "meetings.workspace_list", null], ["task", "meetings.workspace_task", null]] as const) {
     const button = h("button", { class: "btn compact", title: l(key), "aria-label": l(key), "data-live-format": format }, text ?? l(key));
     button.addEventListener("pointerdown", event => event.preventDefault());
     button.addEventListener("click", () => {
       if (composing) return;
-      const direction = editor.selectionDirection;
-      const scroll = editor.scrollTop;
-      const changed = formatSelection(editor.value, editor.selectionStart, editor.selectionEnd, format);
-      editor.value = changed.value;
-      notes.edit(changed.value);
-      showPreview(false);
+      editor.applyFormat(format);
       editor.focus({ preventScroll: true });
-      editor.setSelectionRange(changed.start, changed.end, direction);
-      editor.scrollTop = scroll;
-      scheduleSave();
     });
     formatting.append(button);
   }
-  const noteHeading = h("div", { class: "live-note-controls", hidden: true }, h("div", { class: "live-preview-toggle" }, sourceToggle, previewToggle), formatting);
   const peopleControls = peopleNoteControls(peopleHost());
   const notesTitle = h("h2", { id: `live-${session}-notes-heading` }, l("meetings.your_notes"));
   const notesSectionHeading = h("div", { class: "meeting-notes-heading", hidden: true }, notesTitle, h("p", { class: "help" }, l("meetings.notes_private_share")));
-  panels.get("notes")!.append(notesSectionHeading, noteHeading, editor, notePreview, h("footer", { class: "live-save-controls" }, saveStatus, save), saveError);
+  panels.get("notes")!.append(notesSectionHeading, editor, h("footer", { class: "live-save-controls" }, saveStatus, formatting, save), saveError);
   const follow = controlButton({ class: "btn compact live-follow", hidden: true, onclick: resumeFollowing }, l("meetings.workspace_follow"));
   const transcriptOutput = h("div", { class: "live-transcript", tabindex: 0, "aria-label": l("meetings.workspace_transcript") });
   const transcriptEmpty = h("p", { class: "muted" }, l("meetings.empty_transcript"));
@@ -418,7 +407,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   };
 
   function updatePanes() {
-    const keepNotesVisible = finalized && root.dataset.documentLayout !== "continuous" && document.activeElement === editor;
+    const keepNotesVisible = finalized && root.dataset.documentLayout !== "continuous" && editor.contains(document.activeElement);
     const previousNotesScroll = editor.scrollTop;
     panes.setFinished(finalized);
     root.dataset.documentLayout = finalized ? "continuous" : "notes";
@@ -469,7 +458,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   }
   function suspendReading() {
     if (!root.isConnected) return;
-    for (const target of [documentSurface, ...panels.values(), editor, notePreview, transcriptOutput, history, summary.editor]) {
+    for (const target of [documentSurface, ...panels.values(), editor.scrollDOM, transcriptOutput, history, summary.editor]) {
       if (target.getClientRects().length && target.clientHeight) readingPositions.set(target, { top: target.scrollTop, left: target.scrollLeft });
     }
     for (const target of readingPositions.keys()) if (!root.contains(target)) readingPositions.delete(target);
@@ -491,13 +480,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       if (!suspendedReading.size) suspendedReading = null;
     } finally { restoringReading = false; }
   }
-  function sizeNotes() {
-    if (!finalized) { editor.style.height = ""; return; }
-    const top = documentSurface.scrollTop;
-    editor.style.height = "auto";
-    editor.style.height = `${Math.max(180, editor.scrollHeight)}px`;
-    documentSurface.scrollTop = top;
-  }
+  function sizeNotes() { editor.setDocumentMode(finalized); }
   function scrollDocumentSection(pane: "notes" | "summary") {
     const section = panels.get(pane)!;
     documentSurface.scrollTop += section.getBoundingClientRect().top - documentSurface.getBoundingClientRect().top;
@@ -518,22 +501,12 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       (retained.focus?.isConnected ? retained.focus : documentSurface).focus({ preventScroll: true });
       return;
     }
-    if (panes.primary === "notes" && !preview) editor.focus({ preventScroll: true });
+    if (panes.primary === "notes") editor.focus({ preventScroll: true });
     else if (panes.primary === "summary" && summary.editing()) summary.editor.focus({ preventScroll: true });
     else if (finalized) documentSurface.focus({ preventScroll: true });
     else tabButtons.get(panes.primary)?.focus({ preventScroll: true });
   }
   function openExport(scope: "shareable" | "personal") { if (finalized) exportPreview.open(scope); }
-  function showPreview(value: boolean) {
-    if (composing) return;
-    preview = value;
-    if (value && previewValue !== notes.value) { notePreview.replaceChildren(markdown(notes.value)); previewValue = notes.value; }
-    editor.hidden = value;
-    notePreview.hidden = !value;
-    formatting.hidden = value;
-    sourceToggle.setAttribute("aria-pressed", String(!value));
-    previewToggle.setAttribute("aria-pressed", String(value));
-  }
   function scheduleSave() { sizeNotes(); clearTimeout(notesTimer); notesTimer = window.setTimeout(() => { void saveNotes().catch(showSaveError); }, 600); }
   async function writeNotes(value: string, capturedReceipt = insertionReceipt?.text === value ? insertionReceipt.attempt : undefined) {
     if (!finalized && ["recording", "stopping", "error"].includes(status.phase)) await api.setMeetingNotes(value, session);
@@ -568,8 +541,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   function updateSaving() {
     const state = notes.status === "saving" || titleDraft.status === "saving" ? "saving" : notes.dirty || titleDraft.dirty ? "unsaved" : "saved";
     saveStatus.dataset.saveState = state;
-    saveStatus.textContent = state === "saved" && !notes.acknowledgedRevision && !titleDraft.acknowledgedRevision ? ""
-      : t(state === "saving" ? "meetings.workspace_saving" : state === "unsaved" ? "meetings.workspace_unsaved" : "meetings.workspace_saved");
+    saveStatus.textContent = t(state === "saving" ? "meetings.workspace_saving" : state === "unsaved" ? "meetings.workspace_unsaved" : "meetings.workspace_saved");
     save.disabled = state === "saving" || !notes.dirty && !titleDraft.dirty || composing;
     const failure = notes.error ?? titleDraft.error;
     if (failure) { saveError.textContent = localizeBackendText(failure); saveError.hidden = false; }
@@ -629,7 +601,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     warning.hidden = !warning.textContent;
     recovery.hidden = !next.can_retry_persistence;
     if (next.can_retry_persistence && !recovery.childElementCount) recovery.append(h("p", { class: "error" }, localizeBackendText(next.persistence_error ?? next.terminal_error ?? "")), controlButton({ class: "btn", onclick: async () => { try { await flush(); await api.retryMeetingPersistence(session); } catch (error) { showSaveError(error); } } }, l("common.retry")));
-    if (preview && !composing && previewValue !== notes.value) { const position = notePreview.scrollTop; notePreview.replaceChildren(markdown(notes.value)); notePreview.scrollTop = position; previewValue = notes.value; }
     updateTranscript(next.transcript);
     const metadataNotice = attributionNoticeKey(next.metadata_status);
     attributionNotice.textContent = metadataNotice ? t(metadataNotice) : "";
@@ -687,9 +658,10 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       notes: { current: currentNotes, flush: async () => { await saveNotes(); await writes.drain(); }, saved: (result, before) => {
         if (result.notes === undefined) return;
         if (!canAcknowledgePeopleNotes(before, currentNotes(), result.notes, session, notes.sessionId)) { showSaveError(new Error(t("people.selection_changed"))); return; }
-        ++inputRevision; notes.sync(session, result.notes); editor.value = result.notes; selectPane("notes"); showPreview(false);
-        editor.focus({ preventScroll: true });
-        editor.setSelectionRange(result.selection_start ?? before.selection_start, result.selection_end ?? before.selection_end);
+        if (!editor.applyUserChange(result.notes, { start: result.selection_start ?? before.selection_start, end: result.selection_end ?? before.selection_end })) ++inputRevision;
+        // The people command already saved these bytes; preserve editor undo without a second write.
+        notes.acknowledge(session, result.notes); clearTimeout(notesTimer);
+        selectPane("notes"); editor.focus({ preventScroll: true }); editor.revealSelection();
         updateSaving();
       } } };
   }
@@ -718,8 +690,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       flush: async () => { try { await saveNotes(); return true; } catch { return false; } }, current: currentNotes,
       stage: async (value, attempt, before) => {
         if (!finalized || !insertionStillCurrent(before, currentNotes())) return false;
-        insertionReceipt = { text: value, attempt }; ++inputRevision; notes.edit(value); editor.value = value;
-        selectPane("notes"); showPreview(false); editor.focus({ preventScroll: true }); editor.setSelectionRange(before.text.length, value.length);
+        insertionReceipt = { text: value, attempt };
+        editor.applyUserChange(value, { start: before.text.length, end: value.length });
+        selectPane("notes"); editor.focus({ preventScroll: true }); editor.revealSelection();
         try { await saveNotes(value); return true; } catch (error) { showSaveError(error); return false; }
       },
     }, openSource: openInsightSource, sourceLabel: source => {
@@ -910,7 +883,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   function applyReview(detail: MeetingDetail) {
     reviewDetail = detail;
     finalized = true;
-    if (!composing && document.activeElement !== editor && !notes.dirty && notes.status !== "saving") {
+    if (!composing && !editor.contains(document.activeElement) && !notes.dirty && notes.status !== "saving") {
       notes.sync(session, detail.notes); if (editor.value !== notes.value) editor.value = notes.value;
     }
     if (document.activeElement !== title && !titleDraft.dirty && titleDraft.status !== "saving") {
@@ -979,7 +952,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       return;
     }
     if (anchor.passage.kind === "notes") {
-      selectPane("notes", true); showPreview(false); editor.focus({ preventScroll: true }); editor.setSelectionRange(anchor.notes_start!, anchor.notes_end!);
+      selectPane("notes", true); editor.focus({ preventScroll: true }); editor.setSelectionRange(anchor.notes_start!, anchor.notes_end!); editor.revealSelection();
     } else if (anchor.passage.kind === "summary") {
       selectPane("summary", true); summary.focusSource(anchor.source_text);
     } else {
@@ -1032,7 +1005,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     let matched = false;
     if (source?.kind === "notes") {
       const range = sourceRange(editor.value, source.text);
-      if (range) { selectPane("notes", true); showPreview(false); editor.focus({ preventScroll: true }); editor.setSelectionRange(range.start, range.end); matched = true; }
+      if (range) { selectPane("notes", true); editor.focus({ preventScroll: true }); editor.setSelectionRange(range.start, range.end); editor.revealSelection(); matched = true; }
     } else if (source?.kind === "summary") {
       selectPane("summary", true); matched = summary.focusSource(source.text);
     } else {

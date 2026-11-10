@@ -76,9 +76,9 @@
         button.click();
         await paint();
         const acknowledged = button.hasAttribute("aria-current") || button.closest(".meeting-row").classList.contains("selected") || document.querySelector("#content[aria-busy=true]");
-        if (!acknowledged) await until(() => document.querySelector(".meeting-detail h1")?.textContent === target.title, "Navigation never acknowledged its target");
+        if (!acknowledged) await until(() => document.querySelector(".live-workspace .live-title")?.value === target.title, "Navigation never acknowledged its target");
         feedback.push(performance.now() - before);
-        await until(() => document.querySelector(".meeting-detail h1")?.textContent === target.title, "Meeting did not finish opening");
+        await until(() => document.querySelector(".live-workspace .live-title")?.value === target.title, "Meeting did not finish opening");
         await paint();
         contentReady.push(performance.now() - before);
       }
@@ -86,12 +86,12 @@
       metrics.measurements.navigation_content_ready = stats(contentReady);
       await sleep(150);
       const transcriptTabStart = performance.now();
-      document.querySelector('.meeting-detail [role="tab"][data-tab="transcript"]').click();
+      document.querySelector('.live-workspace [data-live-tab="transcript"]').click();
       metrics.measurements.transcript_tab_synchronous_ms = performance.now() - transcriptTabStart;
-      await until(() => document.querySelectorAll(".meeting-detail .transcript-line").length === segments.length, "Long transcript did not render");
+      await until(() => document.querySelectorAll(".live-workspace .transcript-line").length === segments.length, "Long transcript did not render");
       await paint();
       metrics.measurements.transcript_tab_to_paint_ms = performance.now() - transcriptTabStart;
-      const panel = document.querySelector(".meeting-panel");
+      const panel = document.querySelector(".live-transcript");
       const gaps = [];
       let previous;
       for (let index = 0; index < 120; index++) {
@@ -99,35 +99,33 @@
         panel.scrollTop = (panel.scrollHeight - panel.clientHeight) * index / 119;
       }
       metrics.measurements.scripted_scroll_frame_gaps = stats(gaps);
-      document.querySelector('.meeting-detail [role="tab"][data-tab="notes"]').click();
+      document.querySelector('.live-workspace .meeting-companion-close').click();
       const stableRow = document.querySelectorAll(".meeting-row")[1];
-      const beforeLibraryUpdate = document.querySelector(".meeting-detail");
+      const beforeLibraryUpdate = document.querySelector(".live-workspace");
       changedTitle = true;
       fixture.emit("meeting-updated", meetings[100].id);
       await until(() => [...document.querySelectorAll(".meeting-title")].some(node => node.textContent === "Synthetic changed title"), "Changed library metadata did not appear");
       await sleep(250);
       await paint();
       metrics.measurements.unchanged_library_row_retained = stableRow === document.querySelectorAll(".meeting-row")[1];
-      metrics.measurements.unrelated_library_update_keeps_document = beforeLibraryUpdate === document.querySelector(".meeting-detail");
-      const previousArticle = document.querySelector(".meeting-detail");
+      metrics.measurements.unrelated_library_update_keeps_document = beforeLibraryUpdate === document.querySelector(".live-workspace");
+      const previousArticle = document.querySelector(".live-workspace"), detailReads = operations.filter(row => row.command === "meeting_detail").length;
       fixture.emit("meeting-updated", meetings[6].id);
       const overlappingTabStart = performance.now();
-      document.querySelector('.meeting-detail [role="tab"][data-tab="transcript"]').click();
+      document.querySelector('.live-workspace [data-live-tab="transcript"]').click();
       metrics.measurements.transcript_during_refresh_synchronous_ms = performance.now() - overlappingTabStart;
-      await until(() => document.querySelector(".meeting-detail") !== previousArticle, "Selected meeting content-change notification did not refresh the document");
-      await until(() => document.querySelectorAll(".meeting-detail .transcript-line").length === segments.length, "Long transcript did not survive a concurrent content refresh");
+      await until(() => operations.filter(row => row.command === "meeting_detail").length > detailReads, "Selected meeting content-change notification did not refresh the document");
+      metrics.measurements.selected_library_update_keeps_document = document.querySelector(".live-workspace") === previousArticle;
+      await until(() => document.querySelectorAll(".live-workspace .transcript-line").length === segments.length, "Long transcript did not survive a concurrent content refresh");
       await paint();
       metrics.measurements.transcript_during_refresh_to_paint_ms = performance.now() - overlappingTabStart;
-      document.querySelector('.meeting-detail [role="tab"][data-tab="notes"]').click();
-      const own = document.querySelector(".meeting-detail .own-notes");
-      own.open = true;
-      const input = own.querySelector("textarea");
+      document.querySelector('.live-workspace .meeting-companion-close').click();
+      const input = document.querySelector(".live-workspace .live-notes");
       const typing = [];
       input.focus();
       for (let index = 0; index < 20; index++) {
         const before = performance.now();
-        input.value += " synthetic";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.applyUserChange(input.value + " synthetic");
         await paint();
         typing.push(performance.now() - before);
       }
@@ -156,9 +154,9 @@
       await until(() => document.querySelectorAll(".live-recording .transcript-line").length === segments.length, "New live segment did not appear");
       metrics.measurements.unchanged_transcript_row_retained = stableRow === document.querySelector(".live-recording .transcript-line");
       const notes = document.querySelector(".live-notes");
-      notes.focus(); notes.value += " synthetic note"; notes.dispatchEvent(new Event("input", { bubbles: true }));
+      notes.focus(); notes.applyUserChange(notes.value + " synthetic note");
       await paint();
-      metrics.measurements.live_note_focus_retained = document.activeElement === notes;
+      metrics.measurements.live_note_focus_retained = document.activeElement === notes.contentDOM;
     }
     metrics.commands = commandSummary(0);
     metrics.unknown_commands = fixture.unknown;
