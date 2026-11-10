@@ -892,14 +892,14 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 :is(.segmented button, .engine-choice, .providers .list > button, details > summary) { transition: background-color var(--da-motion-feedback) var(--da-motion-easing), color var(--da-motion-feedback) var(--da-motion-easing); }
 button.btn:hover:not(:disabled):not(.primary), summary.btn:hover, .menu-button:hover:not(:disabled):not([aria-expanded="true"]) { background: var(--hover); }
 button.btn.primary:hover:not(:disabled) { opacity: .94; }
-button.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 14%, var(--danger-soft)); }
+button.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 4%, var(--danger-soft)); }
 .button-icon:hover:not(:disabled), .library-ask:hover:not(:disabled) { background: var(--hover); color: var(--foreground); }
 .meeting-row:not(.selected):hover { background: var(--hover); }
 details:not(.own-notes) > summary:not(.btn):hover:not([aria-disabled="true"]) { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
 details:not(.own-notes) > summary:not(.btn):active:not([aria-disabled="true"]) { background: var(--selection); text-decoration: none; }
 button.btn:active:not(:disabled):not(.primary), summary.btn:active { background: var(--selection); }
 button.btn.primary:active:not(:disabled) { opacity: .82; }
-button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--danger) 22%, var(--danger-soft)); }
+button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--danger) 8%, var(--danger-soft)); }
 .text-button:active:not(:disabled) { text-decoration: underline; text-underline-offset: 2px; opacity: .7; }
 .button-icon:active:not(:disabled), .menu-button:active:not(:disabled), .meeting-row:not(.selected):active { background: var(--selection); }
 :is(.library-shortcuts > button, .library-settings, .library-ask, .settings-categories > button, .list > button, .recent-dictation, .dictation-search-result, .conversation-starter, .dictation-navigation > button, .setup-model-option, .live-tabs .tab, .meeting-workspace-nav .tab, .own-notes > summary):active:not(:disabled):not([aria-disabled="true"]) { background: var(--selection); opacity: 1; text-decoration: none; }

@@ -138,26 +138,46 @@ const appearanceOf = element => {
 };
 const selectionOf = element => Object.fromEntries(["aria-checked", "aria-pressed", "aria-selected", "aria-current"].map(name => [name, element.getAttribute(name)]));
 const acceptance = (name, value) => { (window.__PENNEL_CONTROL_ACCEPTANCE__ ??= {})[name] = value; };
-function checkProviderTextContrast(state, interaction) {
-  const secondary = state.element.querySelector(".provider-kind");
-  if (!secondary) return;
+function colourChannels(colour) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext("2d");
+  context.fillStyle = colour;
+  context.fillRect(0, 0, 1, 1);
+  return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+}
+function textContrast(text, fill) {
   const luminance = colour => {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const context = canvas.getContext("2d");
-    context.fillStyle = colour;
-    context.fillRect(0, 0, 1, 1);
-    const channels = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map(value => {
+    const channels = colourChannels(colour).map(value => {
       const channel = value / 255;
       return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
     });
     return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
   };
-  const text = luminance(getComputedStyle(secondary).color);
-  const fill = luminance(getComputedStyle(state.element).backgroundColor);
-  const ratio = (Math.max(text, fill) + .05) / (Math.min(text, fill) + .05);
+  const a = luminance(text), b = luminance(fill);
+  return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+}
+function checkProviderTextContrast(state, interaction) {
+  const secondary = state.element.querySelector(".provider-kind");
+  if (!secondary) return;
+  const ratio = textContrast(getComputedStyle(secondary).color, getComputedStyle(state.element).backgroundColor);
   assert(ratio >= 4.5, `Provider secondary text contrast is ${ratio.toFixed(2)}:1 while ${interaction}; expected at least 4.5:1.`);
   acceptance("provider_text_contrast", { ...window.__PENNEL_CONTROL_ACCEPTANCE__?.provider_text_contrast, [interaction]: ratio });
+}
+
+/** Measures the real provider removal control rather than the synthetic danger-style probe. */
+export function checkDestructiveContrast(interaction) {
+  const state = control();
+  assert(state.element.matches(".providers > :not(.list) > .row > button.btn.danger"), "The destructive contrast check needs the real provider removal button.");
+  const style = getComputedStyle(state.element);
+  const ratio = textContrast(style.color, style.backgroundColor);
+  assert(style.color === colorOf("var(--danger)"), `The ${interaction} destructive label lost the Danger role.`);
+  assert(parseFloat(style.opacity) === 1, `The ${interaction} destructive control dims its label.`);
+  const [red, green] = colourChannels(style.backgroundColor);
+  assert(red > green, `The ${interaction} destructive control lost its red tint.`);
+  assert(ratio >= 4.5, `Destructive label contrast is ${ratio.toFixed(2)}:1 while ${interaction}; expected at least 4.5:1.`);
+  acceptance("destructive_text_contrast", { ...window.__PENNEL_CONTROL_ACCEPTANCE__?.destructive_text_contrast,
+    [interaction]: { label: state.element.textContent.trim(), color: style.color, background: style.backgroundColor, font_size: style.fontSize, contrast: ratio } });
 }
 function control() {
   const state = window.__controlTarget;
