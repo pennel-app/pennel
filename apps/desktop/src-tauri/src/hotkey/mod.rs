@@ -460,6 +460,15 @@ impl Listener {
     }
 
     #[cfg(target_os = "macos")]
+    pub fn suspend_bindings(&self) -> Result<(), String> {
+        self.inner
+            .set_bindings(&crate::native_shortcuts::MacShortcutTable {
+                hold: None,
+                always: Vec::new(),
+                listening: Vec::new(),
+            })
+    }
+    #[cfg(target_os = "macos")]
     pub fn set_bindings(&self, settings: &pennel_core::Settings) -> Result<(), String> {
         self.inner
             .set_bindings(&crate::native_shortcuts::mac_table(settings, false))

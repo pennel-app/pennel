@@ -51,7 +51,13 @@ pub fn refresh(app: &AppHandle, shared: &Shared) {
     #[cfg(target_os = "macos")]
     let result = {
         let listener = shared.hotkey.lock().unwrap().clone();
-        listener.map_or(Ok(()), |listener| listener.set_bindings(&shared.settings()))
+        listener.map_or(Ok(()), |listener| {
+            if crate::shortcut_capture::capturing() {
+                listener.suspend_bindings()
+            } else {
+                listener.set_bindings(&shared.settings())
+            }
+        })
     };
     #[cfg(any(windows, target_os = "linux"))]
     let result = {

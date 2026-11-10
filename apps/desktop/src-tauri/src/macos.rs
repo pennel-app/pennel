@@ -434,7 +434,8 @@ unsafe extern "C" fn hotkey_event(context: *mut c_void, kind: u32, value: u32) {
     }));
 }
 
-type ShortcutCaptureCallback = Mutex<Option<Box<dyn FnMut(Value) + Send>>>;
+type ShortcutCaptureHandler = Arc<Mutex<Box<dyn FnMut(Value) + Send>>>;
+type ShortcutCaptureCallback = Mutex<Option<ShortcutCaptureHandler>>;
 unsafe extern "C" fn shortcut_capture_event(
     context: *mut c_void,
     value: *const c_char,
@@ -447,8 +448,10 @@ unsafe extern "C" fn shortcut_capture_event(
     };
     let callback = unsafe { &*context.cast::<ShortcutCaptureCallback>() };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if let Some(callback) = callback.lock().unwrap_or_else(|p| p.into_inner()).as_mut() {
-            callback(value);
+        // A completion may stop capture synchronously. Keep the handler alive without holding its slot.
+        let handler = callback.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        if let Some(handler) = handler {
+            handler.lock().unwrap_or_else(|p| p.into_inner())(value);
         }
     }));
 }
@@ -512,7 +515,8 @@ impl Hotkey {
             *self
                 .capture_callback
                 .lock()
-                .unwrap_or_else(|p| p.into_inner()) = callback;
+                .unwrap_or_else(|p| p.into_inner()) =
+                callback.map(|callback| Arc::new(Mutex::new(callback)));
         }
         let context = (&*self.capture_callback as *const ShortcutCaptureCallback)
             .cast_mut()
@@ -1195,6 +1199,31 @@ mod tests {
                 pennel_core::SpeechTranscript::plain("café")
             );
         }
+    }
+
+    #[test]
+    fn capture_ffi_callback_can_stop_reentrantly_without_locking_itself() {
+        let callbacks = Arc::new(Mutex::new(None));
+        let clear = callbacks.clone();
+        *callbacks.lock().unwrap() = Some(Arc::new(Mutex::new(Box::new(move |_event: Value| {
+            *clear.lock().unwrap() = None;
+        })
+            as Box<dyn FnMut(Value) + Send>)));
+        let (done, received) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let value = CString::new(r#"{"done":true}"#).unwrap();
+            unsafe {
+                shortcut_capture_event(
+                    Arc::as_ptr(&callbacks).cast_mut().cast(),
+                    value.as_ptr(),
+                    std::ptr::null(),
+                );
+            }
+            done.send(()).unwrap();
+        });
+        received
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("capture completion must not deadlock its callback slot");
     }
 
     #[test]
