@@ -29,7 +29,7 @@ export async function checkNotesFirstWorkspace() {
   const { root, fixture } = await owned();
   const notes = root.querySelector(".live-notes");
   assert(root.querySelector('[data-live-pane="notes"]').getClientRects().length > 0, "Notes are not the initial writing surface.");
-  for (const name of ["transcript", "questions"]) assert(root.querySelector(`[data-live-pane="${name}"]`).hidden, "A companion opened without a choice.");
+  assert(root.querySelector('[data-live-pane="questions"]').hidden && root.querySelector('[data-live-pane="transcript"]').hidden === (innerWidth < 1100), "The companion default does not match the window width.");
   assert(root.querySelector(".live-note-controls").hidden, "Formatting details opened before they were requested.");
   edit(notes, "Synthetic notes while capture continues."); notes.focus(); notes.setSelectionRange(10, 15, "backward");
   root.querySelector(".live-stop").click();
@@ -43,7 +43,7 @@ export async function checkNotesFirstWorkspace() {
   assert(!questionPanel.hidden, "Questions did not open on request.");
   root.querySelector(".meeting-companion-close").click();
   assert(questionPanel.hidden && !root.classList.contains("live-companion-open"), "Closing the companion did not restore notes.");
-  return record("notesFirstUnifiedLifecycle", { sameWorkspace: true, sameEditor: true, defaultClosed: true, stopPreservedSelection: true, syntheticOnly: true });
+  return record("notesFirstUnifiedLifecycle", { sameWorkspace: true, sameEditor: true, defaultMatchesViewport: true, stopPreservedSelection: true, syntheticOnly: true });
 }
 
 export async function checkSummaryEditingAndCandidate() {

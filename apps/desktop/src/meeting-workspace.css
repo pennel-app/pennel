@@ -10,7 +10,8 @@
 .meeting-workspace-more .ui-icon, .meeting-companion-close .ui-icon { width: 15px; height: 15px; }
 .meeting-companion-close { padding-inline: 7px; }
 .meeting-notes-first .live-workspace-panes { display: flex; gap: 0; }
-.meeting-notes-first.live-wide.live-companion-open .live-workspace-panes { display: grid; gap: 10px; grid-template-columns: minmax(0, calc((100% - 28px) * var(--live-notes-ratio, .6))) 8px minmax(0, 1fr); }
+/* The 340 px companion includes its 22 px inner edge; retain the existing split bounds. */
+.meeting-notes-first.live-wide.live-companion-open .live-workspace-panes { display: grid; gap: 10px; grid-template-columns: minmax(0, min(calc((100% - 28px) * .75), calc(100% - 346px))) 8px minmax(0, 1fr); }
 .meeting-notes-first.live-wide .live-summary-pane { grid-column: 1; grid-row: 1; }
 .meeting-notes-first.live-wide .live-tools-pane { grid-column: 3; grid-row: 1; }
 .meeting-notes-first .live-tools-pane, .meeting-notes-first .live-summary-pane { overflow-y: auto; scrollbar-gutter: stable; }
@@ -106,3 +107,31 @@
 @media (max-width: 800px) { .meeting-heading-row { gap: 8px; flex-wrap: wrap; } .meeting-header-actions { margin-left: auto; } }
 .meeting-heading-row .live-title { height: auto; min-height: 1.4em; }
 .meeting-finished-document .meeting-summary-rendered { font-size: var(--font-content); }
+
+.meeting-primary-column { display: flex; flex: 1; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; grid-column: 1; grid-row: 1; }
+.meeting-notes-first .live-workspace-panes { position: relative; }
+.meeting-companion { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; grid-column: 3; grid-row: 1; margin: -20px -22px -16px 0; padding: 20px 16px 16px; border-inline-start: 1px solid var(--border); background: var(--surface); }
+.meeting-companion-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; flex-wrap: wrap; gap: 8px; }
+.meeting-companion-tabs.segmented { display: flex; flex-shrink: 0; flex-wrap: wrap; max-width: 100%; gap: 2px; padding: 3px; border-radius: var(--radius-pill); background: var(--subtle); }
+.meeting-companion-tabs.segmented .tab { min-height: 28px; padding: 3px 10px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--muted); font: 500 var(--font-body)/1.4 var(--chrome-ui); white-space: nowrap; }
+.meeting-companion-tabs.segmented .tab[aria-selected="true"] { background: var(--surface); color: var(--foreground); box-shadow: 0 1px 3px var(--shadow); }
+.meeting-companion-tabs.segmented .tab:hover { color: var(--foreground); background: var(--hover); }
+.meeting-companion-tabs.segmented .tab[aria-selected="true"]:hover { background: var(--surface); }
+.meeting-companion > .live-pane { flex: 1; min-height: 0; }
+.meeting-companion .live-captions { flex: none; max-height: none; overflow: visible; margin-top: 8px; padding-top: 8px; }
+.meeting-companion .live-caption-interim { color: var(--live); font-weight: 600; }
+.meeting-companion .live-transcript { display: block; }
+.live-overlay .meeting-companion { position: absolute; z-index: 5; inset: -20px -22px -16px auto; width: min(340px, calc(100% + 22px)); margin: 0; box-shadow: -12px 0 24px var(--shadow); animation: companion-enter var(--da-motion-move) var(--da-motion-easing); }
+.meeting-companion-backdrop { position: absolute; z-index: 4; inset: -20px -22px -16px -28px; background: transparent; }
+@keyframes companion-enter { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .live-overlay .meeting-companion { animation: none; } }
+:root[data-reduce-motion="true"] .live-overlay .meeting-companion { animation: none; }
+.meeting-notes-first.live-wide.live-companion-open[data-split-custom="true"] .live-workspace-panes { grid-template-columns: minmax(0, calc((100% - 28px) * var(--live-notes-ratio, .6))) 8px minmax(0, 1fr); }
+
+.meeting-companion .transcript-line { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+.meeting-companion .live-transcript-speaker { grid-column: 1; grid-row: 1; }
+.meeting-companion .transcript-stamp { grid-column: 2; grid-row: 1; }
+.meeting-companion .transcript-copy { grid-column: 1 / -1; grid-row: 2; }
+.meeting-companion .transcript-correction-review { grid-column: 1 / -1; }
+.meeting-companion :is(.transcript-copy, .live-caption-copy) { font-size: var(--font-content); line-height: 1.6; }
+.meeting-primary-column .meeting-heading-row { flex-wrap: wrap; }

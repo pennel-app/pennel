@@ -75,12 +75,17 @@ export async function checkLiveCaptions() {
   fixture.workspace.preview("others", { text: "Latest computer sentinel", chunk_start_ms: 930000, start_ms: 930000, end_ms: 933000 });
   await until(() => system.textContent === "Latest computer sentinel", "Preview refresh stopped while reading older text.");
   assert(selection.toString() === selected && Math.abs(output.scrollTop - scroll) < 2, "Preview updates changed transcript selection or reading position.");
+  selection.removeAllRanges(); root.querySelector(".live-follow").click();
+  fixture.workspace.preview("me", { text: "Growing live caption ".repeat(12), chunk_start_ms: 940000, start_ms: 940000, end_ms: 943000 });
+  await until(() => microphone.textContent.includes("Growing live caption"), "The followed provisional line did not grow.");
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  assert(Math.abs(output.scrollHeight - output.clientHeight - output.scrollTop) < 2, "Follow live did not include the growing inline provisional line.");
   tab(root, "questions");
   root.querySelector(".citation").click();
   await until(() => root.querySelector(".live-source-highlight"), "Caption updates invalidated a finalized source.");
   root.querySelector(".live-source-back").click();
   assert(!root.querySelector('[data-live-pane="questions"]').hidden, "Source return lost the originating question pane.");
-  root.querySelector(".live-stop").click();
+  (root.classList.contains("live-overlay") ? document.querySelector(".toolbar-capture-stop") : root.querySelector(".live-stop")).click();
   await until(() => !fixture.workspace.recording() && root.dataset.recording === "false", "Stop did not quiesce during preview updates.");
   assert(root.querySelector(".live-captions").hidden && microphone.textContent === "" && system.textContent === "", "Stopped previews remain visible or retain caption text.");
   assert(!JSON.stringify(fixture.workspace.requests()).includes("sentinel"), "Interim text entered stored question evidence.");
