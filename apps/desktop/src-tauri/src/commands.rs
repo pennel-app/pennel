@@ -156,6 +156,7 @@ fn provider_kinds(
 #[derive(Serialize)]
 pub struct AppInfo {
     shortcuts: Vec<pennel_core::ShortcutRow>,
+    pill_position_supported: bool,
     interface_language: pennel_core::InterfaceLanguage,
     system_interface_language: pennel_core::InterfaceLanguage,
     settings: Settings,
@@ -209,6 +210,7 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
     }
     Ok(AppInfo {
         shortcuts: crate::shortcuts::rows(shared),
+        pill_position_supported: crate::pill::position_supported(),
         interface_language: settings
             .ui_language
             .resolve(&[shared.system_interface_language.code().to_owned()]),

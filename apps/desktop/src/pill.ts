@@ -8,6 +8,8 @@ import { PILL_METRICS } from "./pill-metrics.generated";
 import { hotkeyKeyLabel } from "./presentation";
 import { bindLocalization, getInterfaceLanguage, localizeBackendText, setInterfaceLanguage, t } from "./i18n.ts";
 
+type RenderState = PillState | { state: "preview"; speech_model?: PillModelPresentation; preview?: null };
+const previewOnly = new URLSearchParams(location.search).get("preview") === "1";
 const pill = document.getElementById("pill")!;
 const status = document.getElementById("status")!;
 const indicator = document.getElementById("indicator")!;
@@ -24,15 +26,15 @@ const previewText = document.getElementById("preview-text")!;
 const previewState = new PillPreviewState(PILL_METRICS.previewLimit);
 let visible = false;
 let localeReady = false;
-let pendingState: PillState | null = null;
-let shown: PillState["state"] = "hidden";
+let pendingState: RenderState | null = null;
+let shown: RenderState["state"] = "hidden";
 let doneKey = "";
 let messageKey = "";
 let hintKey = "";
 let outgoing: HTMLElement | null = null;
 const weights = [0.5, 0.8, 1, 0.75, 0.45];
 const bars = weights.map(() => document.createElement("i"));
-const listening: PillState["state"][] = ["listening", "hands_free", "command", "no_sound"];
+const listening: RenderState["state"][] = ["listening", "hands_free", "command", "no_sound"];
 
 function keycap(text: string): HTMLElement {
   const key = document.createElement("kbd");
@@ -40,10 +42,11 @@ function keycap(text: string): HTMLElement {
   return key;
 }
 
-function content(state: PillState): { text: string; detail?: string; hint?: (string | Node)[] } {
+function content(state: RenderState): { text: string; detail?: string; hint?: (string | Node)[] } {
   const confirmation = modelState.confirmation(performance.now());
   if (confirmation && listening.includes(state.state)) return { text: t("dictation.pill.model_switched", { model: confirmation }) };
   switch (state.state) {
+    case "preview": return { text: t("dictation.pill.preview") };
     case "listening": return { text: t("dictation.pill.listening") };
     case "hands_free": return { text: t("dictation.pill.hands_free"), hint: [
       ...doneKey ? [keycap(doneKey), t("dictation.pill.done")] : [],
@@ -87,7 +90,7 @@ function crossfade() {
   outgoing = layer;
 }
 
-function paint(next: PillState, animate = false) {
+function paint(next: RenderState, animate = false) {
   const parts = content(next);
   const nextHintKey = JSON.stringify((parts.hint ?? []).map(part => typeof part === "string" ? part : part.textContent));
   const nextMessageKey = JSON.stringify([parts.text, parts.detail ?? "", nextHintKey]);
@@ -113,7 +116,7 @@ function paint(next: PillState, animate = false) {
       indicator.replaceChildren(...bars);
       setLevel(0);
     } else {
-      const symbol = confirmation || next.state === "inserted" ? "check" : next.state === "copied" ? "copy" : next.state === "problem" ? "warning" : null;
+      const symbol = next.state === "preview" ? "audioLines" : confirmation || next.state === "inserted" ? "check" : next.state === "copied" ? "copy" : next.state === "problem" ? "warning" : null;
       indicator.replaceChildren(...symbol ? [icon(symbol)] : []);
     }
   }
@@ -129,7 +132,7 @@ function replay(element: HTMLElement, name: string) {
   element.classList.add(name);
 }
 
-function render(next: PillState) {
+function render(next: RenderState) {
   pendingState = next;
   if (!localeReady) return;
   const wasVisible = visible;
@@ -164,7 +167,7 @@ function clearModelTimer() { if (modelTimer !== null) clearTimeout(modelTimer); 
 
 function renderModel() {
   const model = modelState.chip;
-  modelChip.hidden = !visible || !model || !listening.includes(shown) || !!modelState.confirmation(performance.now());
+  modelChip.hidden = !visible || !model || (!listening.includes(shown) && shown !== "preview") || !!modelState.confirmation(performance.now());
   if (model) {
     const kind = providers.find(provider => provider.id === model.choice.provider_id)?.kind;
     const name = document.createElement("span"); name.textContent = model.label;
@@ -194,13 +197,45 @@ function renderPreview() {
 }
 
 function applyInfo(info: AppInfo) {
+  document.documentElement.dataset.pillColour = info.settings.pill_colour ?? "ink";
+  document.documentElement.dataset.pillAppearance = info.settings.appearance;
+  document.documentElement.dataset.pillSize = info.settings.pill_size ?? "regular";
+  document.documentElement.dataset.pillPosition = info.settings.pill_position ?? "bottom_centre";
   providers = info.settings.providers;
   doneKey = info.shortcuts?.find(row => row.id === "dictate")?.label.text ?? hotkeyKeyLabel(info.settings.hotkey, info.platform) ?? "";
   setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
   if (visible && pendingState) render(pendingState);
 }
 
+let infoRevision = 0;
+async function refreshInfo() {
+  const mine = ++infoRevision;
+  const info = await api.info();
+  if (mine === infoRevision) applyInfo(info);
+}
+
+let demoRevision = 0;
+async function refreshDemo() {
+  const mine = ++demoRevision;
+  try {
+    const info = await api.info();
+    const models = await api.configuredDictationModels();
+    if (mine !== demoRevision) return;
+    applyInfo(info);
+    const model = models.find(model => model.choice.provider_id === info.settings.dictation_stt.provider_id && model.choice.model === info.settings.dictation_stt.model);
+    if (!model) { modelState.clear(); modelState.begin("pill-preview"); }
+    render({ state: "preview", ...(model ? { speech_model: { session_id: "pill-preview", generation: 0, model, available_models: models.length, enabled: info.settings.pill_model_switch_enabled !== false, switched: false } } : {}) });
+  } catch { if (mine === demoRevision) { setInterfaceLanguage("en"); modelState.clear(); render({ state: "preview" }); } }
+}
+
 async function boot() {
+  if (previewOnly) {
+    localeReady = true;
+    bindLocalization(status, () => { if (pendingState) render(pendingState); });
+    await listen("settings-changed", () => { void refreshDemo(); });
+    await refreshDemo();
+    return;
+  }
   pill.addEventListener("animationend", (event) => {
     if (event.target === pill && event.animationName === "pill-leave" && !visible) {
       pill.classList.remove("leaving");
@@ -208,7 +243,7 @@ async function boot() {
     }
   });
   bindLocalization(status, () => { if (visible && pendingState) render(pendingState); });
-  const locale = api.info().then(applyInfo).catch(() => { setInterfaceLanguage("en"); });
+  const locale = refreshInfo().catch(() => { setInterfaceLanguage("en"); });
   let eventReceived = false;
   let previewReceived = false;
   let pendingPreview: PillPreview | null | undefined;
@@ -230,7 +265,7 @@ async function boot() {
   });
   await listenToWindow<PillModelPresentation | null>("pill-model", event => receiveModel(event.payload));
   await listenToWindow<number>("pill-level", (event) => setLevel(event.payload));
-  await listen("settings-changed", () => { void api.info().then(applyInfo).catch(() => {}); });
+  await listen("settings-changed", () => { void refreshInfo().catch(() => {}); });
   await locale;
   document.documentElement.lang = getInterfaceLanguage();
   localeReady = true;
@@ -244,4 +279,5 @@ async function boot() {
   }
 }
 
+window.addEventListener("pagehide", () => { clearModelTimer(); modelState.clear(); infoRevision++; demoRevision++; });
 void boot();

@@ -28,7 +28,7 @@ body {
   border-radius: var(--radius-pill);
   background: var(--pill-background);
   color: var(--pill-text);
-  font: 500 var(--font-label)/1.2 var(--ui);
+  font: 500 var(--pill-label-size)/1.2 var(--ui);
   box-shadow: 0 var(--pill-shadow-y) var(--pill-shadow-blur) var(--shadow);
   transform-origin: 50% 100%;
 }
@@ -110,7 +110,7 @@ body {
   border-radius: 5px;
   background: color-mix(in srgb, var(--pill-text) 16%, transparent);
   color: var(--pill-text);
-  font: 600 var(--font-caption)/1 var(--ui);
+  font: 600 var(--pill-caption-size)/1 var(--ui);
 }
 
 #preview {
@@ -119,7 +119,7 @@ body {
   justify-content: flex-end;
   max-height: calc(var(--pill-preview-line-height) * var(--pill-preview-lines));
   overflow: hidden;
-  font: 400 var(--font-content)/var(--pill-preview-line-height) var(--ui);
+  font: 400 var(--pill-content-size)/var(--pill-preview-line-height) var(--ui);
 }
 
 #preview[hidden] { display: none; }
@@ -215,10 +215,24 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--font-caption);
+  font-size: var(--pill-caption-size);
 }
 .pill-model-chip[hidden] { display: none; }
 .pill-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 
 .pill-model-chip > .ui-icon { width: 12px; height: 12px; flex: 0 0 auto; }
 .pill-model-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+:root[data-pill-position="top_centre"] body,
+:root[data-pill-position="near_cursor"] body { align-items: flex-start; }
+.pill-indicator.preview { color: var(--pill-accent); }
+
+/* A compositor may shrink the window below the selected size; retain its recovery message. */
+@media (max-height: 140px) {
+  :root, :root[data-pill-size] {
+    --pill-outer-inset: 8px;
+    --pill-label-size: 12px;
+    --pill-caption-size: 11px;
+  }
+  #preview { display: none; }
+}

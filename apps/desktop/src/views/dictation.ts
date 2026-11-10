@@ -97,12 +97,12 @@ export function dictationView(ctx: Context): HTMLElement {
   const modelSwitch = toggle(l("dictation.pill.switch_enabled"), ctx.info.settings.pill_model_switch_enabled !== false, value => save(settings => { settings.pill_model_switch_enabled = value; }));
   const modelSwitchLabel = modelSwitch.querySelector("label")!;
   modelSwitchLabel.replaceChildren(modelSwitch.querySelector("input")!, h("span", { class: "visually-hidden" }, l("dictation.pill.switch_enabled")));
-  const modelSwitchReason = h("p", { class: "help", role: "status" });
+  const modelSwitchReason = h("p", { class: "help", role: "status", "data-model-switch-reason": true });
   const refreshModels = () => {
     const revision = ++speechRevision;
     void api.configuredDictationModels().then(models => {
       if (disposed || revision !== speechRevision) return;
-      speechModels = models;
+      speechModels = models; refreshPill();
       const selected = models.find(model => sameChoice(model.choice) === sameChoice(ctx.info.settings.dictation_stt));
       speechPickerLabel.textContent = selected?.label ?? t("dictation.pill.models");
       speechPicker.disabled = models.length === 0;
@@ -123,6 +123,35 @@ export function dictationView(ctx: Context): HTMLElement {
       else modelSwitchReason.textContent = t(next && !next.binding ? "dictation.pill.switch_none" : "dictation.pill.switch_unavailable");
     }).catch(error => { if (!disposed && revision === speechRevision) { speechModels = []; speechPicker.disabled = true; modelSwitchReason.textContent = errorText(error); } });
   };
+  const pillColour = select([["ink", l("dictation.pill.colour.ink")], ["light", l("dictation.pill.colour.light")], ["system", l("dictation.pill.colour.system")]], ctx.info.settings.pill_colour ?? "ink", value => save(settings => { settings.pill_colour = value; }), "segmented");
+  const pillSize = select([["compact", l("dictation.pill.size.compact")], ["regular", l("dictation.pill.size.regular")], ["large", l("dictation.pill.size.large")]], ctx.info.settings.pill_size ?? "regular", value => save(settings => { settings.pill_size = value; }), "segmented");
+  const pillPosition = select([["bottom_centre", l("dictation.pill.position.bottom")], ["top_centre", l("dictation.pill.position.top")], ["near_cursor", l("dictation.pill.position.cursor")]], ctx.info.settings.pill_position ?? "bottom_centre", value => save(settings => { settings.pill_position = value; }), "menu");
+  const positionReason = h("p", { class: "help", hidden: true }, l("dictation.pill.position.wayland"));
+  const sampleModel = h("span", { class: "pill-sample-model", hidden: true });
+  const pillPreview = h("div", { class: "pill-settings-preview", "data-pill-preview": true, "aria-label": l("dictation.pill.preview") },
+    h("div", { class: "pill-sample" }, icon("audioLines"), h("span", {}, l("dictation.pill.preview")), sampleModel),
+    h("div", { class: "pill-display-preview", "aria-hidden": true }, h("span", { class: "pill-position-mark" })));
+  const liveLabel = live.querySelector("label")!; liveLabel.replaceChildren(live.querySelector("input")!, h("span", { class: "visually-hidden" }, l("settings.live_text.enabled")));
+  const previewResponse = h("p", { class: "help", role: "status", hidden: true });
+  let responseTimer: ReturnType<typeof setTimeout> | null = null;
+  const showPill = controlButton({ class: "btn", "data-show-pill": true, onclick: async () => {
+    showPill.disabled = true; previewResponse.hidden = true;
+    if (responseTimer !== null) clearTimeout(responseTimer);
+    try {
+      await api.showPillPreview();
+      if (!disposed) { previewResponse.textContent = t("dictation.pill.preview_shown"); previewResponse.hidden = false; responseTimer = setTimeout(() => { responseTimer = null; previewResponse.hidden = true; }, 2400); }
+    } catch (error) { if (!disposed) { previewResponse.textContent = errorText(error); previewResponse.hidden = false; } }
+    finally { if (!disposed) showPill.disabled = false; }
+  } }, l("dictation.pill.show"));
+  const refreshPill = () => {
+    const settings = ctx.info.settings;
+    pillColour.value = settings.pill_colour ?? "ink"; pillSize.value = settings.pill_size ?? "regular"; pillPosition.value = settings.pill_position ?? "bottom_centre";
+    pillColour.setAttribute("aria-label", t("dictation.pill.colour")); pillSize.setAttribute("aria-label", t("dictation.pill.size")); pillPosition.setAttribute("aria-label", t("dictation.pill.position"));
+    pillPreview.dataset.pillColour = settings.pill_colour ?? "ink"; pillPreview.dataset.pillAppearance = settings.appearance; pillPreview.dataset.pillSize = settings.pill_size ?? "regular"; pillPreview.dataset.position = settings.pill_position ?? "bottom_centre";
+    pillPosition.disabled = ctx.info.pill_position_supported === false; positionReason.hidden = !pillPosition.disabled;
+    const selected = speechModels.find(model => sameChoice(model.choice) === sameChoice(settings.dictation_stt));
+    sampleModel.hidden = speechModels.length < 2 || settings.pill_model_switch_enabled === false || !selected; sampleModel.textContent = selected?.label ?? "";
+  };
   const taskRows = settingsTaskRows(ctx, ["dictation_stt", "llm"]);
   const speechSetupAction = taskRows.querySelector<HTMLElement>('[data-task-row="dictation_stt"] [data-setup-task]');
   taskRows.querySelector('[data-task-row="dictation_stt"]')?.append(speechPicker);
@@ -133,10 +162,15 @@ export function dictationView(ctx: Context): HTMLElement {
       preference(l("dictation.settings.result"), l("dictation.settings.result_help"), mode, "result"),
       preference(l("dictation.shortcut.title"), l("dictation.shortcut.help"), h("div", { class: "dictation-shortcut-controls" }, key, shortcut, shortcutReason, shortcutError), "shortcut"),
       preference(l("dictation.language.title"), null, language, "language"),
-      preference(l("settings.live_text.title"), l("settings.live_text.help"), live, "live-text"),
       preference(l("dictation.verification.title"), l("dictation.verification.help"), h("div", { "data-cleanup-verification": true }, verify, verificationState, verificationDestination, h("button", { class: "text-button", onclick: () => ctx.navigate("models") }, l("navigation.models"))), "verification"),
       preference(l("dictation.pad.title"), l("dictation.pad.preference_help"), h("div", {}, paste, h("p", { class: "help" }, l("dictation.settings.pad_target")), pasteReason), "pad")),
-    group("pill", l("dictation.pill.settings_title"), preference(l("dictation.pill.switch_enabled"), l("dictation.pill.switch_help"), h("div", {}, modelSwitch, modelSwitchReason), "model-switch")),
+    group("pill", l("dictation.pill.settings_title"), pillPreview,
+      preference(l("dictation.pill.colour"), l("dictation.pill.colour.follow_help"), pillColour, "pill-colour"),
+      preference(l("dictation.pill.size"), null, pillSize, "pill-size"),
+      preference(l("dictation.pill.position"), null, h("div", {}, pillPosition, positionReason), "pill-position"),
+      preference(l("dictation.pill.live_text"), l("settings.live_text.help"), live, "live-text"),
+      preference(l("dictation.pill.switch_enabled"), l("dictation.pill.switch_help"), h("div", {}, modelSwitch, modelSwitchReason), "model-switch"),
+      preference(l("dictation.pill.show_help"), null, h("div", {}, showPill, previewResponse), "show-pill")),
     group("words", l("dictation.settings.words"), destination("dictionary", l("dictation.dictionary.title"), l("dictation.dictionary.help")), destination("styles", l("dictation.style.title"), l("dictation.settings.style_help")), preference(l("dictation.history.retention"), null, retention, "history")),
     group("permissions", l("dictation.access.title"), permissions, permissionError, h("button", { class: "text-button dictation-permission-repair", onclick: () => api.showWindow("onboarding", "dictation-permissions") }, l("dictation.access.check_ellipsis"))));
   const refresh = () => {
@@ -158,10 +192,10 @@ export function dictationView(ctx: Context): HTMLElement {
     shortcutReason.textContent = ctx.info.capabilities.global_hotkey.reason ? localizeBackendText(ctx.info.capabilities.global_hotkey.reason) : ""; shortcutReason.hidden = !shortcutReason.textContent;
     shortcutError.textContent = ctx.info.hotkey_error ? localizeBackendText(ctx.info.hotkey_error) : ""; shortcutError.hidden = !shortcutError.textContent;
     modelSwitch.querySelector<HTMLInputElement>("input")!.checked = settings.pill_model_switch_enabled !== false;
-    refreshModels();
+    refreshPill(); refreshModels();
     updatePermissions(); refreshPermissions();
   };
-  ctx.onInfoChange(refresh); ctx.onFocusChange(focused => { if (focused) refresh(); }); ctx.onDispose(() => { disposed = true; permissionRevision++; speechRevision++; });
+  ctx.onInfoChange(refresh); ctx.onFocusChange(focused => { if (focused) refresh(); }); ctx.onDispose(() => { disposed = true; permissionRevision++; speechRevision++; if (responseTimer !== null) clearTimeout(responseTimer); });
   bindLocalization(root, refresh); refresh();
   return root;
 }

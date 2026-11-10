@@ -245,6 +245,9 @@ export interface Settings {
   dictation_stt: ModelChoice;
   dictation_models?: ModelChoice[];
   pill_model_switch_enabled?: boolean;
+  pill_colour?: "ink" | "light" | "system";
+  pill_size?: "compact" | "regular" | "large";
+  pill_position?: "bottom_centre" | "top_centre" | "near_cursor";
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;
@@ -305,6 +308,7 @@ export interface ShortcutRow {
 }
 export interface AppInfo {
   shortcuts?: ShortcutRow[];
+  pill_position_supported?: boolean;
   interface_language: "en" | "nl";
   system_interface_language: "en" | "nl";
   settings: Settings;
@@ -898,6 +902,7 @@ export const api = {
   setDesktopCommandState: (state: DesktopCommandState) => invoke<void>("set_desktop_command_state", { state }),
   info: () => invoke<AppInfo>("app_info"),
   saveSettings: (settings: Settings) => invoke<AppInfo>("save_settings", { settings }),
+  showPillPreview: () => invoke<void>("show_pill_preview"),
   configuredDictationModels: () => invoke<ConfiguredDictationModel[]>("configured_dictation_models"),
   selectDictationModel: (choice: ModelChoice) => invoke<AppInfo>("select_dictation_model", { choice }),
   applyTaskModelChoice: (slot: "dictation_stt" | "meeting_stt" | "llm", choice: ModelChoice) =>

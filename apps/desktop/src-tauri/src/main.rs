@@ -1173,6 +1173,7 @@ fn main() {
             commands::app_info,
             commands::save_settings,
             commands::configured_dictation_models,
+            pill::show_pill_preview,
             commands::select_dictation_model,
             writing_profile::writing_profile_status,
             writing_profile::set_writing_profile_learning,

@@ -810,6 +810,8 @@
   "backend.next_model_hook_unavailable": "De sneltoets voor het volgende model is niet beschikbaar. Controleer de toetsenbordtoegang.",
   "backend.speech_model_switch_current_unavailable": "Dit spraakmodel is niet beschikbaar. Je huidige dictaat is ongewijzigd.",
   "backend.speech_model_switch_setup_required": "Dit spraakmodel is niet beschikbaar. Stel eerst spraakherkenning in.",
+  "backend.pill_preview_capture_active": "Rond het huidige dictaat af voordat je het pilvoorbeeld toont.",
+  "backend.pill_preview_open_failed": "Het pilvoorbeeld kon niet worden geopend.",
   "backend.shortcut_accessibility_required": "Geef Pennel toegankelijkheidstoegang om deze sneltoets te gebruiken.",
   "backend.shortcut_native_key_not_supported": "Deze toets kan niet worden ingesteld op dit systeem.",
   "backend.shortcut_native_shortcut_unavailable": "Toetsenbordsneltoetsen zijn op dit systeem niet beschikbaar.",

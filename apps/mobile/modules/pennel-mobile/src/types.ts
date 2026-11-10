@@ -39,6 +39,9 @@ export interface Settings {
   dictation_stt: ModelChoice;
   dictation_models?: ModelChoice[];
   pill_model_switch_enabled?: boolean;
+  pill_colour?: "ink" | "light" | "system";
+  pill_size?: "compact" | "regular" | "large";
+  pill_position?: "bottom_centre" | "top_centre" | "near_cursor";
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;

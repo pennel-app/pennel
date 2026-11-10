@@ -152,7 +152,12 @@ unsafe extern "C" {
     fn pennel_mac_stop_audio();
     fn pennel_mac_configure_panel(window: *mut c_void, interactive: bool);
     fn pennel_mac_show_panel(window: *mut c_void);
-    fn pennel_mac_show_panel_at_bottom(window: *mut c_void, width: f64, height: f64);
+    fn pennel_mac_show_pill_at_position(
+        window: *mut c_void,
+        width: f64,
+        height: f64,
+        position: i32,
+    );
     fn pennel_mac_show_panel_at_top_right(
         window: *mut c_void,
         width: f64,
@@ -1091,10 +1096,10 @@ pub unsafe fn show_panel(window: *mut c_void) {
     unsafe { pennel_mac_show_panel(window) };
 }
 
-/// Shows the panel bottom-centre on the screen under the pointer, sized in points.
+/// Places the nonactivating pill on the pointer's display using shared logical dimensions.
 /// `window` must be a live NSWindow obtained from this process's Tauri window.
-pub unsafe fn show_panel_at_bottom(window: *mut c_void, width: f64, height: f64) {
-    unsafe { pennel_mac_show_panel_at_bottom(window, width, height) };
+pub unsafe fn show_pill_at_position(window: *mut c_void, width: f64, height: f64, position: i32) {
+    unsafe { pennel_mac_show_pill_at_position(window, width, height, position) };
 }
 
 /// Shows the panel top-right on the screen under the pointer, sized and inset in points.

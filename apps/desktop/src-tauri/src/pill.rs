@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow};
 use crate::status::PillState;
 
 pub const LABEL: &str = "pill";
+const DEMO_LABEL: &str = "pill-preview";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PillModelPresentation {
@@ -86,6 +87,9 @@ impl PillSnapshot {
             PillState::Listening | PillState::HandsFree | PillState::Command | PillState::NoSound
         ) {
             self.cancel_shortcut = None;
+            if let Some(model) = self.speech_model.as_mut() {
+                model.next_shortcut = None;
+            }
         }
         if self.state == PillState::Hidden {
             self.preview = None;
@@ -160,13 +164,39 @@ impl PillSnapshot {
     }
 }
 
+#[derive(Default)]
+struct DemoVisibility {
+    generation: u64,
+    active: bool,
+}
+impl DemoVisibility {
+    fn start(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.active = true;
+        self.generation
+    }
+    fn cancel(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.active = false;
+    }
+    fn end_if(&mut self, generation: u64) -> bool {
+        if !self.active || self.generation != generation {
+            return false;
+        }
+        self.active = false;
+        true
+    }
+}
+
 pub struct Snapshot {
+    demo: Arc<Mutex<DemoVisibility>>,
     content: Arc<Mutex<PillSnapshot>>,
     session: Arc<Mutex<Option<Weak<pennel_core::LiveDictationSession>>>>,
 }
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            demo: Arc::new(Mutex::new(DemoVisibility::default())),
             content: Arc::new(Mutex::new(PillSnapshot::default())),
             session: Arc::new(Mutex::new(None)),
         }
@@ -204,6 +234,10 @@ pub fn content_snapshot(app: &AppHandle) -> PillSnapshot {
         .map(|state| {
             let mut content = state.content.lock().unwrap().clone();
             content.cancel_shortcut = live_shortcut(app, &content.state, 3);
+            let next = live_shortcut(app, &content.state, 4);
+            if let Some(model) = content.speech_model.as_mut() {
+                model.next_shortcut = next;
+            }
             let session = state
                 .session
                 .lock()
@@ -237,24 +271,73 @@ struct PillMetrics {
     window_height: f64,
 }
 
-fn metrics() -> &'static PillMetrics {
+fn metrics_for(size: pennel_core::PillSize) -> &'static PillMetrics {
     #[derive(Deserialize)]
     struct Tokens {
-        pill: PillMetrics,
+        #[serde(rename = "pill-sizes")]
+        sizes: std::collections::HashMap<String, PillMetrics>,
     }
-    static METRICS: OnceLock<PillMetrics> = OnceLock::new();
-    METRICS.get_or_init(|| {
-        serde_json::from_str::<Tokens>(include_str!("../../../../assets/brand/tokens.json"))
+    static METRICS: OnceLock<Tokens> = OnceLock::new();
+    let metrics = METRICS.get_or_init(|| {
+        serde_json::from_str(include_str!("../../../../assets/brand/tokens.json"))
             .expect("checked-in pill metrics must be valid")
-            .pill
-    })
+    });
+    &metrics.sizes[match size {
+        pennel_core::PillSize::Compact => "compact",
+        pennel_core::PillSize::Regular => "regular",
+        pennel_core::PillSize::Large => "large",
+    }]
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(test)]
+fn metrics() -> &'static PillMetrics {
+    metrics_for(pennel_core::PillSize::Regular)
+}
+
+fn preferences(app: &AppHandle) -> (pennel_core::PillSize, pennel_core::PillPosition) {
+    app.try_state::<Arc<crate::state::Shared>>()
+        .map(|shared| {
+            let settings = shared.settings();
+            (settings.pill_size, settings.pill_position)
+        })
+        .unwrap_or_default()
+}
+
+pub fn position_supported() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        !crate::linux_input::is_wayland()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
+#[cfg(test)]
 fn fitted_geometry(
     origin: (i32, i32),
     size: (u32, u32),
     scale: f64,
+) -> Option<(i32, i32, u32, u32)> {
+    fitted_geometry_with(
+        origin,
+        size,
+        scale,
+        metrics(),
+        pennel_core::PillPosition::BottomCentre,
+        None,
+    )
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn fitted_geometry_with(
+    origin: (i32, i32),
+    size: (u32, u32),
+    scale: f64,
+    metrics: &PillMetrics,
+    position: pennel_core::PillPosition,
+    cursor: Option<(f64, f64)>,
 ) -> Option<(i32, i32, u32, u32)> {
     if size.0 == 0 || size.1 == 0 {
         return None;
@@ -264,17 +347,31 @@ fn fitted_geometry(
     } else {
         1.0
     };
-    let width = (metrics().window_width * scale)
+    let width = (metrics.window_width * scale)
         .round()
         .max(1.0)
         .min(f64::from(size.0)) as u32;
-    let height = (metrics().window_height * scale)
+    let height = (metrics.window_height * scale)
         .round()
         .max(1.0)
         .min(f64::from(size.1)) as u32;
+    let min_x = f64::from(origin.0);
+    let min_y = f64::from(origin.1);
+    let max_x = min_x + f64::from(size.0 - width);
+    let max_y = min_y + f64::from(size.1 - height);
+    let (x, y) = match (
+        position,
+        cursor.filter(|(x, y)| x.is_finite() && y.is_finite()),
+    ) {
+        (pennel_core::PillPosition::TopCentre, _) => ((min_x + max_x) / 2.0, min_y),
+        (pennel_core::PillPosition::NearCursor, Some((x, y))) => {
+            (x - f64::from(width) / 2.0, y + 12.0 * scale)
+        }
+        _ => ((min_x + max_x) / 2.0, max_y),
+    };
     Some((
-        origin.0 + ((size.0 - width) / 2) as i32,
-        origin.1 + (size.1 - height) as i32,
+        x.round().clamp(min_x, max_x) as i32,
+        y.round().clamp(min_y, max_y) as i32,
         width,
         height,
     ))
@@ -370,6 +467,12 @@ mod tests {
     #[test]
     fn cancel_hint_is_owned_by_listening_presentation_and_clears_before_processing() {
         let mut content = listening();
+        let mut current = model(0);
+        current.next_shortcut = Some(pennel_core::ShortcutLabel {
+            keycaps: vec!["Ctrl".into(), "M".into()],
+            text: "Ctrl+M".into(),
+        });
+        content.update_model(current);
         content.cancel_shortcut = Some(pennel_core::ShortcutLabel {
             keycaps: vec!["Ctrl".into(), "X".into()],
             text: "Ctrl+X".into(),
@@ -380,6 +483,14 @@ mod tests {
         );
         content.set_state(PillState::Working);
         assert!(content.cancel_shortcut.is_none());
+        assert!(
+            content
+                .speech_model
+                .as_ref()
+                .unwrap()
+                .next_shortcut
+                .is_none()
+        );
         content.set_state(PillState::Hidden);
         assert!(
             serde_json::to_value(&content)
@@ -544,6 +655,61 @@ mod tests {
     }
 
     #[test]
+    fn selected_geometry_respects_scale_work_area_and_cursor_for_each_size() {
+        let regular = metrics_for(pennel_core::PillSize::Regular);
+        let top = fitted_geometry_with(
+            (-1920, 24),
+            (1920, 1056),
+            2.0,
+            regular,
+            pennel_core::PillPosition::TopCentre,
+            Some((-1900.0, 50.0)),
+        )
+        .unwrap();
+        assert_eq!(top, (-1380, 24, 840, 328));
+        let near = fitted_geometry_with(
+            (-1920, 24),
+            (1920, 1056),
+            2.0,
+            regular,
+            pennel_core::PillPosition::NearCursor,
+            Some((-1900.0, 50.0)),
+        )
+        .unwrap();
+        assert_eq!(near, (-1920, 74, 840, 328));
+        for size in [
+            pennel_core::PillSize::Compact,
+            pennel_core::PillSize::Regular,
+            pennel_core::PillSize::Large,
+        ] {
+            let fitted = fitted_geometry_with(
+                (-1400, 20),
+                (350, 100),
+                1.25,
+                metrics_for(size),
+                pennel_core::PillPosition::NearCursor,
+                Some((-1.0, -9999.0)),
+            )
+            .unwrap();
+            assert_eq!(fitted, (-1400, 20, 350, 100));
+        }
+    }
+
+    #[test]
+    fn demo_timer_cannot_hide_a_new_preview_or_resume_after_real_capture() {
+        let mut demo = DemoVisibility::default();
+        let first = demo.start();
+        let second = demo.start();
+        assert!(!demo.end_if(first));
+        assert!(demo.active);
+        demo.cancel();
+        assert!(!demo.end_if(second));
+        let third = demo.start();
+        assert!(demo.end_if(third));
+        assert!(!demo.active);
+    }
+
+    #[test]
     fn pill_geometry_stays_inside_small_scaled_and_negative_work_areas() {
         let (x, y, width, height) = fitted_geometry((-1400, 20), (350, 100), 1.25).unwrap();
         assert_eq!((x, y, width, height), (-1400, 20, 350, 100));
@@ -565,9 +731,14 @@ pub fn hide_without_focus(window: &WebviewWindow) {
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let window = tauri::WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("pill.html".into()))
+    create_window(app, LABEL, "pill.html")
+}
+
+fn create_window(app: &AppHandle, label: &str, url: &str) -> tauri::Result<WebviewWindow> {
+    let metrics = metrics_for(preferences(app).0);
+    let window = tauri::WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
         .title("Pennel")
-        .inner_size(metrics().window_width, metrics().window_height)
+        .inner_size(metrics.window_width, metrics.window_height)
         .resizable(false)
         .decorations(false)
         .transparent(true)
@@ -587,6 +758,76 @@ pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         }
     }
     Ok(window)
+}
+
+fn cancel_demo(app: &AppHandle) {
+    if let Some(snapshot) = app.try_state::<Snapshot>() {
+        snapshot.demo.lock().unwrap().cancel();
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window(DEMO_LABEL) {
+            platform::hide(&window);
+        }
+    });
+}
+
+/// A separate display-only window never receives a capture snapshot or recognition events.
+#[tauri::command]
+pub fn show_pill_preview(
+    app: AppHandle,
+    shared: tauri::State<'_, Arc<crate::state::Shared>>,
+) -> Result<(), String> {
+    let snapshot = app.state::<Snapshot>();
+    if snapshot.content.lock().unwrap().state != PillState::Hidden
+        || shared
+            .dictation_active
+            .load(std::sync::atomic::Ordering::SeqCst)
+        || shared
+            .dictation_jobs
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+    {
+        return Err("Finish the current dictation before showing the pill preview.".into());
+    }
+    let window = app
+        .get_webview_window(DEMO_LABEL)
+        .map(Ok)
+        .unwrap_or_else(|| create_window(&app, DEMO_LABEL, "pill.html?preview=1"))
+        .map_err(|_| "The pill preview could not be opened.".to_owned())?;
+    let generation = snapshot.demo.lock().unwrap().start();
+    platform::show_at_bottom(&app, &window);
+    let demo = snapshot.demo.clone();
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(2400));
+        let app = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if demo.lock().unwrap().end_if(generation)
+                && let Some(window) = app.get_webview_window(DEMO_LABEL)
+            {
+                platform::hide(&window);
+            }
+        });
+    });
+    Ok(())
+}
+
+pub fn refresh_preferences(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let snapshot = handle.state::<Snapshot>();
+        if snapshot.content.lock().unwrap().state != PillState::Hidden
+            && let Some(window) = handle.get_webview_window(LABEL)
+        {
+            platform::show_at_bottom(&handle, &window);
+        }
+        if snapshot.demo.lock().unwrap().active
+            && let Some(window) = handle.get_webview_window(DEMO_LABEL)
+        {
+            platform::show_at_bottom(&handle, &window);
+        }
+    });
 }
 
 pub struct Pill {
@@ -609,6 +850,9 @@ impl Pill {
     }
 
     pub fn show(&self, state: PillState) {
+        if state != PillState::Hidden {
+            cancel_demo(&self.app);
+        }
         let (was_hidden, generation) = {
             let mut content = self.content.lock().unwrap();
             let was_hidden = content.state == PillState::Hidden;
@@ -616,6 +860,10 @@ impl Pill {
                 return;
             }
             content.cancel_shortcut = live_shortcut(&self.app, &content.state, 3);
+            let next = live_shortcut(&self.app, &content.state, 4);
+            if let Some(model) = content.speech_model.as_mut() {
+                model.next_shortcut = next;
+            }
             if state != PillState::Hidden {
                 let session = self
                     .session
@@ -783,10 +1031,14 @@ impl Pill {
             return;
         };
         let area = monitor.work_area();
-        let Some((x, y, width, height)) = fitted_geometry(
+        let (size, position) = preferences(app);
+        let Some((x, y, width, height)) = fitted_geometry_with(
             (area.position.x, area.position.y),
             (area.size.width, area.size.height),
             monitor.scale_factor(),
+            metrics_for(size),
+            position,
+            cursor.map(|cursor| (cursor.x, cursor.y)),
         ) else {
             return;
         };
@@ -852,14 +1104,21 @@ mod platform {
     }
     /// Tauri applies position and size asynchronously on macOS, after the panel would already be
     /// ordered in at the default centred frame; the panel is placed synchronously instead.
-    pub fn show_at_bottom(_app: &tauri::AppHandle, window: &WebviewWindow) {
+    pub fn show_at_bottom(app: &tauri::AppHandle, window: &WebviewWindow) {
         if let Ok(pointer) = window.ns_window() {
-            let metrics = super::metrics();
+            let (size, position) = super::preferences(app);
+            let metrics = super::metrics_for(size);
+            let position = match position {
+                pennel_core::PillPosition::BottomCentre => 0,
+                pennel_core::PillPosition::TopCentre => 1,
+                pennel_core::PillPosition::NearCursor => 2,
+            };
             unsafe {
-                crate::macos::show_panel_at_bottom(
+                crate::macos::show_pill_at_position(
                     pointer,
                     metrics.window_width,
                     metrics.window_height,
+                    position,
                 );
             }
         }

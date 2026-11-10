@@ -26,6 +26,33 @@ pub enum AppearancePreference {
     Dark,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum PillColour {
+    #[default]
+    Ink,
+    Light,
+    System,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum PillSize {
+    Compact,
+    #[default]
+    Regular,
+    Large,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum PillPosition {
+    #[default]
+    BottomCentre,
+    TopCentre,
+    NearCursor,
+}
+
 /// Where meeting audio is split into speakers. Matching voices always happens on the device.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
@@ -162,6 +189,12 @@ pub struct Settings {
     pub dictation_models: Vec<ModelChoice>,
     #[serde(default = "enabled")]
     pub pill_model_switch_enabled: bool,
+    #[serde(default)]
+    pub pill_colour: PillColour,
+    #[serde(default)]
+    pub pill_size: PillSize,
+    #[serde(default)]
+    pub pill_position: PillPosition,
     pub meeting_stt: ModelChoice,
     pub llm: ModelChoice,
     #[serde(default)]
@@ -275,6 +308,9 @@ pub fn default_settings() -> Settings {
         dictation_stt: choice(&local, ProviderTask::DictationStt),
         dictation_models: Vec::new(),
         pill_model_switch_enabled: true,
+        pill_colour: PillColour::Ink,
+        pill_size: PillSize::Regular,
+        pill_position: PillPosition::BottomCentre,
         meeting_stt: choice(&local, ProviderTask::MeetingStt),
         llm: choice(&groq, ProviderTask::Llm),
         decision: None,
@@ -525,6 +561,33 @@ mod tests {
 
     fn ids(s: &Settings) -> Vec<&str> {
         s.providers.iter().map(|p| p.id.as_str()).collect()
+    }
+
+    #[test]
+    fn pill_preferences_upgrade_keeps_ink_regular_bottom_and_roundtrips_deliberate_choices() {
+        let original = default_settings();
+        let mut value = serde_json::to_value(&original).unwrap();
+        for field in ["pill_colour", "pill_size", "pill_position"] {
+            value.as_object_mut().unwrap().remove(field);
+        }
+        let mut restored: Settings = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.pill_colour, PillColour::Ink);
+        assert_eq!(restored.pill_size, PillSize::Regular);
+        assert_eq!(restored.pill_position, PillPosition::BottomCentre);
+        restored.pill_colour = PillColour::Light;
+        restored.pill_size = PillSize::Large;
+        restored.pill_position = PillPosition::NearCursor;
+        let reloaded: Settings =
+            serde_json::from_str(&serde_json::to_string(&restored).unwrap()).unwrap();
+        assert_eq!(reloaded, restored);
+        assert_eq!(reloaded.dictation_stt, original.dictation_stt);
+        restored.pill_colour = PillColour::System;
+        restored.pill_size = PillSize::Compact;
+        restored.pill_position = PillPosition::TopCentre;
+        assert_eq!(
+            serde_json::from_str::<Settings>(&serde_json::to_string(&restored).unwrap()).unwrap(),
+            restored
+        );
     }
 
     #[test]
