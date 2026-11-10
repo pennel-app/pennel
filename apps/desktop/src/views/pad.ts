@@ -1,5 +1,5 @@
 import { bindLocalization, l, t, localizeBackendText, formatDateTime } from "../i18n.ts";
-import { api, listen, type DictationSessionSnapshot, type HistoryEntry, type PillState, type SetupReadiness } from "../api";
+import { api, listen, type DictationSessionSnapshot, type HistoryEntry, type LocalModel, type PillState, type SetupReadiness } from "../api";
 import { SerialQueue } from "../async";
 import { controlButton, errorText, formatBytes, h } from "../dom";
 import { OwnedDictationSession } from "../dictation-session";
@@ -170,6 +170,7 @@ function dictationHome(ctx: Context): HTMLElement {
   let actionError: string | null = null;
   let activeDictation: PillState | null = null;
   let recommendedSize: string | null = null;
+  let speechModels: LocalModel[] = [];
   const timers = new Set<number>();
   const later = (action: () => void, delay: number) => {
     const timer = window.setTimeout(() => { timers.delete(timer); if (!disposed) action(); }, delay);
@@ -182,7 +183,7 @@ function dictationHome(ctx: Context): HTMLElement {
   const detail = h("p", { class: "help dictation-home-detail", hidden: true });
   const readinessText = h("span", {}, l("dictation.home.checking"));
   const readiness = h("p", { class: "dictation-home-status", role: "status", "aria-live": "polite" }, icon("mic"), readinessText);
-  const introduction = h("p", { class: "dictation-home-intro muted" }, l("dictation.home.intro"));
+  const introduction = h("p", { class: "dictation-home-intro muted", id: "home-practice-intro" }, l("dictation.home.intro"));
   const status = h("p", { class: "help home-practice-status", role: "status", "aria-live": "polite", hidden: true });
   const textarea = h("textarea", { class: "home-practice-field", value: homeDraft.value, spellcheck: true,
     lang: ctx.info.settings.language ?? "", "aria-label": l("dictation.home.message"), placeholder: l("dictation.home.message_placeholder") });
@@ -251,11 +252,13 @@ function dictationHome(ctx: Context): HTMLElement {
     h("div", { class: "home-practice-message" }, h("label", { for: "home-practice-message", class: "help" }, l("dictation.home.message")), textarea),
     practiceHint, h("div", { class: "row home-practice-actions" }, start, copyPractice), status);
   textarea.id = "home-practice-message";
-  const processing = h("div", { class: "home-processing-chips", "aria-label": l("dictation.processing.title") });
+  const changeProcessing = h("button", { class: "text-button dictation-home-settings", onclick: () => ctx.navigate("dictation") }, l("dictation.home.change"));
+  const processing = h("div", { class: "home-processing-chips", "aria-label": l("dictation.processing.title") }, changeProcessing);
   const updateChips = () => {
     const settings = ctx.info.settings;
     const stages = processingSummary(settings, "dictation", ctx.info.cleanup_verification);
-    processing.replaceChildren(...stages.map((stage, index) => {
+    processing.querySelectorAll(".home-processing-chip").forEach(chip => chip.remove());
+    for (const [index, stage] of stages.entries()) {
       const choice = index === 0 ? settings.dictation_stt : settings.llm;
       const account = settings.providers.find(provider => provider.id === choice.provider_id);
       const local = index === 1 && settings.mode === "fast" || account && ["local", "apple_speech", "apple_intelligence"].includes(account.kind);
@@ -263,9 +266,9 @@ function dictationHome(ctx: Context): HTMLElement {
         : index === 1 ? settings.mode === "fast" ? t("dictation.processing.fast") : local ? t("dictation.home.cleanup_local") : t("dictation.home.cleanup_by", { provider: account?.name ?? stage.destination })
         : `${stage.label}: ${stage.destination}`;
       const destination = `${stage.label}: ${stage.destination}`;
-      return h("span", { class: "home-processing-chip", title: destination, "aria-label": destination, "data-processing-stage": index === 0 ? "recognition" : index === 1 ? "cleanup" : "verification" },
-        icon(local ? "laptop" : "globe"), h("span", {}, label));
-    }), h("button", { class: "text-button dictation-home-settings", onclick: () => ctx.navigate("dictation") }, l("dictation.home.change")));
+      processing.insertBefore(h("span", { class: "home-processing-chip", title: destination, "aria-label": destination, "data-processing-stage": index === 0 ? "recognition" : index === 1 ? "cleanup" : "verification" },
+        icon(local ? "laptop" : "globe"), h("span", {}, label)), changeProcessing);
+    }
   };
   const recent = h("div", { class: "recent-dictations", role: "list", "data-recent-dictations": true });
   const recentError = h("span");
@@ -348,23 +351,29 @@ function dictationHome(ctx: Context): HTMLElement {
       latestReadiness = ready;
       const shortcut = shortcutAccessHint(ready, ctx.info.capabilities.global_hotkey);
       const anywhere = ready.can_record && ready.can_use_shortcut && ready.can_paste_externally;
+      const speech = ctx.info.settings.dictation_stt;
+      const account = ctx.info.settings.providers.find(provider => provider.id === speech.provider_id);
+      const provider = ctx.info.kinds.find(kind => kind.kind === account?.kind);
+      const model = speechModels.find(model => model.id === speech.model);
+      const download = !ready.configured && account?.kind === "local" && provider?.availability.status === "available"
+        && model && model.state.kind !== "downloaded";
       root.dataset.dictationReadiness = ready.can_record ? "ready" : "blocked";
       readiness.replaceChildren(icon(ready.can_record ? "check" : "warning"), readinessText);
       readinessText.textContent = t(ready.can_record ? anywhere ? "dictation.home.ready" : "dictation.home.ready_here" : "dictation.home.needs_setup");
       readiness.classList.toggle("success", ready.can_record); readiness.classList.toggle("error", !ready.can_record);
-      instructionLead.textContent = t(!ready.can_record && !ready.configured ? "dictation.home.download_title" : "dictation.home.hold");
+      instructionLead.textContent = t(!ready.can_record && !ready.configured ? download ? "dictation.home.download_title" : "dictation.home.setup_title" : "dictation.home.hold");
       key.hidden = !ready.can_record && !ready.configured; instructionTail.hidden = key.hidden;
-      introduction.textContent = !ready.can_record ? ready.configured ? ready.reason ? localizeBackendText(ready.reason) : t("dictation.home.speech_setup")
-        : t(recommendedSize ? "dictation.home.download_intro" : "dictation.home.download_intro_unknown", { size: recommendedSize ?? "" })
+      introduction.textContent = !ready.can_record ? download ? t(recommendedSize ? "dictation.home.download_intro" : "dictation.home.download_intro_unknown", { size: recommendedSize ?? "" })
+        : ready.reason ? localizeBackendText(ready.reason) : t("dictation.home.speech_setup")
         : t(!ready.can_paste_externally ? "dictation.home.copy_intro" : ready.can_use_shortcut ? "dictation.home.release_help" : "dictation.home.ready_intro");
-      detail.textContent = ready.can_record ? shortcut?.message ?? "" : ready.configured ? t("dictation.home.practice_blocked") : t("dictation.home.practice_unlock");
+      detail.textContent = ready.can_record ? shortcut?.message ?? "" : download && ready.reason ? localizeBackendText(ready.reason) : t("dictation.home.finish_to_try");
       detail.hidden = !detail.textContent;
       repair.hidden = ready.can_record && !shortcut?.recoverable;
       repair.textContent = t(ready.can_record ? "dictation.access.check" : "dictation.home.finish_setup");
       repair.classList.toggle("primary", !ready.can_record);
       practice.classList.toggle("primary", ready.can_record);
       practice.disabled = transition || !ready.can_record || session.state.busy;
-      practice.setAttribute("aria-describedby", "home-practice-readiness");
+      practice.setAttribute("aria-describedby", "home-practice-intro home-practice-readiness");
       detail.id = "home-practice-readiness";
       handsFree.disabled = transition || !ready.can_record; handsFree.hidden = !ready.can_record || session.state.busy;
       start.disabled = transition || !ready.can_record;
@@ -404,6 +413,7 @@ function dictationHome(ctx: Context): HTMLElement {
   ctx.onVisibilityChange((visible) => { if (visible) void restoreSession().catch(showError); });
   void api.localModels(ctx.info.settings.language, true).then(models => {
     if (disposed) return;
+    speechModels = models;
     const model = recommendedSpeechModel(models); recommendedSize = model ? formatBytes(model.size_bytes) : null;
     void refresh();
   }).catch(ctx.report);

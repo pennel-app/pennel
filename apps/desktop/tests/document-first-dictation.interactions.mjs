@@ -137,3 +137,50 @@ export async function checkHomeEmptyRecent() {
     assert(visible(root.querySelector('[data-action="all-history"]')), 'Empty Recent lost the History recovery route.');
   } finally { client.invoke = original; }
 }
+
+export async function checkHomeChangeRefresh() {
+  const root = await owned(), client = window.__PENNEL_PLATFORM__, original = client.invoke.bind(client);
+  const change = root.querySelector('.dictation-home-settings'), field = root.querySelector('.home-practice-field');
+  let refreshed = 0;
+  client.invoke = async (command, args) => {
+    const result = await original(command, args);
+    if (command === 'onboarding_readiness') refreshed++;
+    return result;
+  };
+  try {
+    field.value = 'A message selection stays here.';
+    field.dispatchEvent(new Event('input', {bubbles:true}));
+    field.setSelectionRange(9,17);
+    change.focus();
+    for (const refresh of [() => window.__PENNEL_FIXTURE__.emit('history-changed', null),
+      () => window.__PENNEL_FIXTURE__.emit('settings-changed', null),
+      () => { window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus')); }]) {
+      const before = refreshed;
+      refresh();
+      await until(() => refreshed > before, 'Home information did not refresh.');
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      assert(change.isConnected && root.querySelector('.dictation-home-settings') === change, 'Refresh replaced the processing Change button.');
+      assert(document.activeElement === change, 'Refresh lost keyboard focus on Change.');
+      assert(field.value === 'A message selection stays here.' && field.selectionStart === 9 && field.selectionEnd === 17, 'Refresh changed the practice draft or its selection.');
+    }
+  } finally { client.invoke = original; }
+}
+
+export async function checkHomeBlockedReason({download = false} = {}) {
+  const root = await owned();
+  const { api } = await import('/src/api.ts');
+  const { localizeBackendText, t } = await import('/src/i18n.ts');
+  const readiness = await api.onboardingReadiness('dictation_pad');
+  const reason = localizeBackendText(readiness.reason);
+  assert(root.dataset.dictationReadiness === 'blocked' && readiness.reason, 'The synthetic setup must really be blocked.');
+  assert(root.innerText.includes(reason), 'Home suppressed the actual setup reason.');
+  assert(root.querySelector('.dictation-home-practice').disabled, 'Blocked setup still allows Try it here.');
+  assert(root.querySelector('.dictation-home-repair').classList.contains('primary'), 'Finish setup lost its primary recovery action.');
+  if (download) {
+    assert(root.querySelector('h1').textContent.includes(t('dictation.home.download_title')), 'A missing local model lost its download guidance.');
+    assert(/\d+[,.]?\d* (MB|GB)/.test(root.querySelector('.dictation-home-intro').textContent), 'Missing local model has no actual recommendation size.');
+  } else {
+    assert(!root.querySelector('h1').textContent.includes(t('dictation.home.download_title')), 'Provider setup claims a mandatory local download.');
+    assert(!/\d+[,.]?\d* (MB|GB)/.test(root.querySelector('.dictation-home-intro').textContent), 'Provider setup presents an unrelated local download size.');
+  }
+}

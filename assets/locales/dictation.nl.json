@@ -179,5 +179,7 @@
   "dictation.home.speech_local": "Spraak op deze computer",
   "dictation.home.speech_by": "Spraak via {provider}",
   "dictation.home.cleanup_local": "Tekst op deze computer",
-  "dictation.home.cleanup_by": "Tekst via {provider}"
+  "dictation.home.cleanup_by": "Tekst via {provider}",
+  "dictation.home.setup_title": "Rond het instellen van dicteren af.",
+  "dictation.home.finish_to_try": "Rond het instellen af om hier te dicteren."
 }

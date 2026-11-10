@@ -179,5 +179,7 @@
   "dictation.home.speech_local": "Speech on this computer",
   "dictation.home.speech_by": "Speech by {provider}",
   "dictation.home.cleanup_local": "Cleanup on this computer",
-  "dictation.home.cleanup_by": "Cleanup by {provider}"
+  "dictation.home.cleanup_by": "Cleanup by {provider}",
+  "dictation.home.setup_title": "Finish setting up dictation.",
+  "dictation.home.finish_to_try": "Finish setup to try dictation here."
 }
