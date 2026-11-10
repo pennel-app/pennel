@@ -44,6 +44,22 @@ pub async fn meeting_summary(
 }
 
 #[tauri::command]
+pub async fn meeting_transcript_provenance(
+    id: String,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<Option<pennel_core::MeetingTranscriptProvenance>> {
+    let shared = shared.inner().clone();
+    background(move || {
+        commands::checked_meeting_dir(&shared.engine, &id)?;
+        shared
+            .engine
+            .meeting_transcript_provenance(id)
+            .map_err(error)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn meeting_speaker_timeline(
     id: String,
     shared: State<'_, Arc<Shared>>,
