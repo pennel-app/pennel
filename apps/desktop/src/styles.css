@@ -56,10 +56,8 @@ button.btn, summary.btn {
   box-shadow: inset 0 1px 0 var(--toolbar-control-highlight), 0 1px 2px var(--shadow); transition: background 120ms ease;
 }
 summary.btn::-webkit-details-marker { display: none; }
-button.btn:active:not(:disabled), summary.btn:active { background: var(--hover); }
 button.btn .ui-icon { width: 14px; height: 14px; }
 button.btn.primary { border-color: transparent; color: var(--button-text); background: var(--button); box-shadow: inset 0 1px 0 var(--toolbar-control-highlight), 0 1px 2px var(--shadow); }
-button.btn.primary:active:not(:disabled) { opacity: .88; }
 button.btn.danger { color: var(--danger); background: var(--danger-soft); }
 button:disabled, body.da-app button:disabled { color: var(--disabled-text); opacity: 1; }
 button.btn:disabled, button.btn.primary:disabled, button.btn.danger:disabled { border-color: var(--control-edge); background: var(--disabled); color: var(--disabled-text); box-shadow: none; opacity: 1; }
@@ -76,6 +74,7 @@ input[type="text"], input[type="password"], input[type="search"], input:not([typ
 }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 input:focus-visible, textarea:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 1px; }
+:is(input[type="text"], input[type="password"], input[type="search"], input:not([type]), textarea):not(.live-title, .live-notes):hover:not(:disabled, :focus-visible) { box-shadow: inset 0 0 0 1px var(--border-strong); }
 input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 textarea {
   width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius-control); resize: vertical; background: var(--field); color: var(--foreground);
@@ -91,6 +90,9 @@ input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left:
 input[type="checkbox"]:checked { background: var(--button); box-shadow: none; }
 input[type="checkbox"]:checked::after { transform: translateX(12px); }
 input[type="checkbox"]:disabled { opacity: .45; }
+input[type="checkbox"]:hover:not(:disabled, :checked) { background: var(--border-strong); }
+input[type="checkbox"]:checked:hover:not(:disabled) { opacity: .92; }
+input[type="checkbox"]:active:not(:disabled) { opacity: .82; }
 progress { width: 140px; height: 6px; accent-color: var(--accent); }
 kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; min-height: 20px; padding: 1px 6px; border-radius: 5px; background: var(--field); color: var(--foreground); font: 500 var(--font-label)/1.3 var(--chrome-ui); box-shadow: 0 0 0 .5px var(--control-edge), 0 1px 0 var(--key-shadow); }
 details > summary { cursor: default; }
@@ -100,6 +102,8 @@ details > summary { cursor: default; }
 .segmented { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 2px; min-height: var(--desktop-control-height); padding: var(--space-1); border-radius: var(--radius-segmented); background: var(--subtle); box-shadow: inset 0 0 0 .5px var(--control-edge); }
 .segmented button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; min-height: calc(var(--desktop-control-height) - var(--space-2)); padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); color: var(--muted); font: 400 var(--font-label)/var(--space-4) var(--chrome-ui); white-space: nowrap; text-align: center; }
 .segmented button:hover { color: var(--foreground); }
+.segmented button:hover:not(:disabled, [aria-selected="true"], [aria-pressed="true"], [aria-current="page"], [aria-checked="true"]) { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
+.segmented button:active:not(:disabled, [aria-selected="true"], [aria-pressed="true"], [aria-current="page"], [aria-checked="true"]) { background: color-mix(in srgb, var(--foreground) 12%, transparent); }
 .segmented button[aria-selected="true"], .segmented button[aria-pressed="true"], .segmented button[aria-current="page"], .segmented button[aria-checked="true"] { color: var(--foreground); font-weight: 500; background: var(--surface); box-shadow: 0 1px 2px var(--shadow); }
 .segmented button:focus-visible { outline: 3px solid var(--focus-ring); }
 
@@ -722,7 +726,6 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
   .task-setup-footer > .grow { display: none; }
   .task-setup-footer > .btn:first-child { margin-inline-end: auto; }
 }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 
 /* Sprekers: learning the user's voice and the speaker models */
 .enrollment-text { margin: 0; padding: var(--space-4); border-radius: var(--radius-panel); background: var(--subtle); font-size: var(--font-content); line-height: 1.6; -webkit-user-select: text; user-select: text; }
@@ -866,22 +869,28 @@ body[data-window="onboarding"] main { display: flex; overflow: hidden; }
 .live-wide .live-transcript-pane, .live-wide .live-questions-pane, .live-wide .live-suggestions-pane { grid-column: 3; grid-row: 1; }
 .live-wide .live-tabs { align-self: flex-end; width: calc((100% - 28px) * (1 - var(--live-notes-ratio, .6))); min-width: 240px; }
 @media (max-width: 800px) { .live-workspace { padding: 16px 22px 16px 28px; gap: 8px; } }
-@media (prefers-reduced-motion: reduce) { .live-workspace *, .live-workspace *::before { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
 .settings-layout > .settings-pane { border: 1px solid var(--control-edge); border-radius: var(--radius-panel); }
 .settings-pane, .workspace-body:not(:has(.settings-workspace)) { background: var(--surface); }
 .sidebar-resize { position: relative; z-index: 2; flex: 0 0 var(--desktop-shell-inset); width: var(--desktop-shell-inset); cursor: col-resize; touch-action: none; }
 .sidebar-resize::after { content: ""; position: absolute; inset: 0 auto 0 calc(var(--desktop-shell-inset) / 2); width: 1px; background: transparent; }
-.sidebar-resize:hover::after, .sidebar-resize:focus-visible::after { background: var(--control-edge); }
+.sidebar-resize:is(:hover, :active, :focus-visible)::after { background: var(--control-edge); }
 .sidebar-resize:focus-visible { outline-offset: -2px; }
 :root[data-sidebar-visible="false"] :is(.library-sidebar, .settings-categories, .sidebar-resize) { display: none; }
 :root[data-sidebar-visible="false"] .toolbar-leading { flex-basis: calc(var(--desktop-toolbar-button-size) + var(--space-2)); }
 :root[data-sidebar-visible="false"] .toolbar-section { margin-left: 0; }
-button.btn:hover:not(:disabled):not(.primary), summary.btn:hover { background: var(--hover); }
+/* Hover uses the Hover role and pressed the Selection role. Primary actions dim instead, so their label keeps its contrast; danger keeps its red tint. */
+button.btn:hover:not(:disabled):not(.primary), summary.btn:hover, .menu-button:hover:not(:disabled):not([aria-expanded="true"]) { background: var(--hover); }
 button.btn.primary:hover:not(:disabled) { opacity: .94; }
-button.btn.primary:active:not(:disabled) { opacity: .82; }
+button.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 14%, var(--danger-soft)); }
 .button-icon:hover:not(:disabled), .library-ask:hover:not(:disabled) { background: var(--hover); color: var(--foreground); }
-.button-icon:active:not(:disabled), .library-ask:active:not(:disabled), .menu-button:active:not(:disabled) { background: var(--selection); }
 .meeting-row:not(.selected):hover { background: var(--hover); }
+details:not(.own-notes) > summary:not(.btn):hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
+button.btn:active:not(:disabled):not(.primary), summary.btn:active { background: var(--selection); }
+button.btn.primary:active:not(:disabled) { opacity: .82; }
+button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--danger) 22%, var(--danger-soft)); }
+.text-button:active:not(:disabled) { text-decoration: underline; text-underline-offset: 2px; opacity: .7; }
+.button-icon:active:not(:disabled), .menu-button:active:not(:disabled), .meeting-row:not(.selected):active { background: var(--selection); }
+:is(.library-shortcuts > button, .library-settings, .library-ask, .settings-categories > button, .list > button, .recent-dictation, .dictation-search-result, .conversation-starter, .dictation-navigation > button, .setup-model-option, .live-tabs .tab, .meeting-workspace-nav .tab, .own-notes > summary):active:not(:disabled):not([aria-disabled="true"]) { background: var(--selection); opacity: 1; text-decoration: none; }
 :root[data-window-focused="false"] :is(.library-shortcuts > button[aria-current="page"], .library-ask[aria-current], .library-record[aria-current], .settings-categories > button[aria-current="page"], .history-entry.history-selected) { background: var(--subtle); }
 :root[data-native-material="opaque"] { --window-background: var(--chrome); --navigation-surface: var(--sidebar); --chrome-surface: var(--chrome); }
 :root[data-platform="macos"]:is([data-native-material="liquid_glass"], [data-native-material="vibrancy"]) body[data-window="prompt"] main { padding: 0; }
@@ -892,7 +901,9 @@ button.btn.primary:active:not(:disabled) { opacity: .82; }
 :root[data-increase-contrast="true"] :is(.btn, .menu-button, input, textarea, .segmented, [aria-current="page"], .meeting-row.selected) { box-shadow: inset 0 0 0 1px var(--foreground); }
 :root[data-increase-contrast="true"] :focus-visible { outline-width: var(--space-1); }
 :root:is([data-reduce-transparency="true"], [data-increase-contrast="true"]) :is(.menu-panel, .context-menu) { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
-:root[data-reduce-motion="true"] *, :root[data-reduce-motion="true"] *::before, :root[data-reduce-motion="true"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+/* Reduced motion drops movement, not feedback: animations stop and only fade-type properties (opacity and colour) keep the transition each rule gives them. The app's own switch and the system setting share one body. */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after, ::backdrop { animation: none !important; transition-property: opacity, color, background-color, border-color, outline-color, box-shadow, text-decoration-color, fill, stroke !important; scroll-behavior: auto !important; } }
+:root[data-reduce-motion="true"] *, :root[data-reduce-motion="true"] *::before, :root[data-reduce-motion="true"] *::after, :root[data-reduce-motion="true"] ::backdrop { animation: none !important; transition-property: opacity, color, background-color, border-color, outline-color, box-shadow, text-decoration-color, fill, stroke !important; scroll-behavior: auto !important; }
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .workspace-toolbar, .workspace-shell, .library-sidebar, .settings-categories, .record-prompt { background: var(--sidebar) !important; }
   .menu-panel, .context-menu { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
