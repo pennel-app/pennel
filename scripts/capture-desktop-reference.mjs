@@ -159,7 +159,7 @@ if (options.serve) {
         await send("Log.enable");
         await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Brussels" });
         await send("Emulation.setLocaleOverride", { locale: locale === "nl" ? "nl-BE" : "en-GB" });
-        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }] });
+        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }, ...item.reduced_motion ? [{ name: "prefers-reduced-motion", value: "reduce" }] : []] });
         connection.events.length = 0;
         const [width, height] = item.size ?? (item.window === "pill" ? [pillMetrics["window-width"], pillMetrics["window-height"]] : windowSizes[item.window]);
         await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: item.scale ?? 1, mobile: false });
@@ -195,6 +195,14 @@ if (options.serve) {
             }
             if (!ready) throw Error(`${item.name}: the owned fixture did not reopen after reload`);
             await send("Runtime.evaluate", { expression: "(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));})()", awaitPromise: true });
+          } else if (step.pointer) {
+            // Real pointer input, so :hover and :active apply: { pointer: "<selector>", action: "move" | "press" | "release" }.
+            const target = await send("Runtime.evaluate", { expression: `(()=>{const r=document.querySelector(${JSON.stringify(step.pointer)})?.getBoundingClientRect();return r&&{x:r.x+r.width/2,y:r.y+r.height/2}})()`, returnByValue: true });
+            if (!target.result.value) throw new Error(`${item.name}: no element for pointer step ${step.pointer}`);
+            const { x, y } = target.result.value;
+            const action = step.action || "move";
+            if (action === "press") await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+            await send("Input.dispatchMouseEvent", action === "move" ? { type: "mouseMoved", x, y } : { type: action === "press" ? "mousePressed" : "mouseReleased", x, y, button: "left", buttons: action === "press" ? 1 : 0, clickCount: 1 });
           } else if (step.key) {
             const key = { key: step.key, code: step.code || step.key, windowsVirtualKeyCode: step.keyCode };
             const text = step.text ?? (step.key === "Enter" ? "\r" : step.key.length === 1 ? step.key : undefined);
