@@ -42,6 +42,10 @@
   --da-control-height: var(--da-control-md);
   --da-motion-feedback: 120ms;
   --da-motion-switch: 150ms;
+  --da-motion-move: 220ms;
+  --da-motion-move-exit: 130ms;
+  --da-motion-reveal: 320ms;
+  --da-motion-reveal-exit: 190ms;
   --da-motion-dialog-enter: 160ms;
   --da-motion-dialog-exit: 100ms;
   --da-motion-easing: cubic-bezier(.2,.8,.2,1);
