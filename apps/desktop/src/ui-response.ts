@@ -39,6 +39,6 @@ export function localizeUiResponse(command: string, value: unknown): unknown {
   };
   if (["onboarding_readiness", "test_provider_task"].includes(command)) return fields(value, ["reason", "message"]);
   if (["open_dictation_session", "get_dictation_session", "toggle_dictation_session", "save_dictation_session"].includes(command)) return fields(value, ["error", "external_paste_reason"]);
-  if (command === "dictation_state" && record(value) && value.state === "error") return fields(value, ["message"]);
+  if (command === "dictation_state" && record(value) && value.state === "problem") return fields(value, ["title", "detail"]);
   return value;
 }

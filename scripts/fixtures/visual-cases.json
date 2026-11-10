@@ -386,5 +386,10 @@
   {"name": "pill-inserted", "window": "pill", "pill_state": "inserted", "pill_fields": {"app": "Mail"}},
   {"name": "pill-copied", "window": "pill", "pill_state": "copied", "pill_fields": {"paste_key": "⌘V"}},
   {"name": "pill-problem", "window": "pill", "pill_state": "problem", "pill_fields": {"title": "No connection", "detail": "Your words are kept in History"}},
-  {"name": "pill-problem-long", "window": "pill", "pill_state": "problem", "pill_fields": {"title": "Cleanup could not preserve the wording and meaning", "detail": "Original text pasted"}}
+  {"name": "pill-problem-long", "window": "pill", "pill_state": "problem", "pill_fields": {"title": "Cleanup could not preserve the wording and meaning", "detail": "Original text pasted"}},
+  {"name": "pill-status-announcements", "window": "pill", "pill_state": "listening", "steps": [{"eval": "import('/tests/pill.interactions.mjs').then(module => module.checkPillStatusAnnouncements()).then(result => window.__PENNEL_PILL_ACCEPTANCE__ = result)"}]},
+  {"name": "pill-status-crossfade", "window": "pill", "pill_state": "listening", "steps": [{"eval": "import('/tests/pill.interactions.mjs').then(module => module.checkPillCrossfade()).then(result => window.__PENNEL_PILL_ACCEPTANCE__ = result)"}]},
+  {"name": "pill-preview-lifecycle", "window": "pill", "pill_state": "listening", "steps": [{"eval": "import('/tests/pill.interactions.mjs').then(module => module.checkPillPreviewLifecycle()).then(result => window.__PENNEL_PILL_ACCEPTANCE__ = result)"}]},
+  {"name": "pill-status-motion", "window": "pill", "pill_state": "listening", "steps": [{"eval": "import('/tests/pill.interactions.mjs').then(module => module.checkPillMotion()).then(result => window.__PENNEL_PILL_ACCEPTANCE__ = result)"}]},
+  {"name": "pill-status-motion-reduced", "window": "pill", "pill_state": "listening", "reduced_motion": true, "steps": [{"eval": "import('/tests/pill.interactions.mjs').then(module => module.checkPillMotion({reduced:true})).then(result => window.__PENNEL_PILL_ACCEPTANCE__ = result)"}]}
 ]

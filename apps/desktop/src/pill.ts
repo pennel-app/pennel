@@ -21,6 +21,9 @@ let localeReady = false;
 let pendingState: PillState | null = null;
 let shown: PillState["state"] = "hidden";
 let doneKey = "";
+let messageKey = "";
+let hintKey = "";
+let outgoing: HTMLElement | null = null;
 const weights = [0.5, 0.8, 1, 0.75, 0.45];
 const bars = weights.map(() => document.createElement("i"));
 const listening: PillState["state"][] = ["listening", "hands_free", "command", "no_sound"];
@@ -50,23 +53,59 @@ function setLevel(level: number) {
   bars.forEach((bar, i) => (bar.style.transform = `scaleY(${(4 + 12 * weights[i] * gain) / 16})`));
 }
 
-function paint(next: PillState) {
+function clearOutgoing() {
+  outgoing?.remove();
+  outgoing = null;
+  status.classList.remove("switching");
+}
+
+function crossfade() {
+  clearOutgoing();
+  const layer = status.cloneNode(true) as HTMLElement;
+  for (const node of [layer, ...layer.querySelectorAll("[id], [role], [aria-live], [aria-atomic]")]) {
+    for (const attribute of ["id", "role", "aria-live", "aria-atomic"]) node.removeAttribute(attribute);
+  }
+  layer.setAttribute("aria-hidden", "true");
+  layer.classList.add("pill-status-outgoing");
+  layer.addEventListener("animationend", (event) => {
+    if (event.target !== layer) return;
+    layer.remove();
+    if (outgoing === layer) outgoing = null;
+  });
+  status.after(layer);
+  outgoing = layer;
+}
+
+function paint(next: PillState, animate = false) {
   const parts = content(next);
+  const nextHintKey = JSON.stringify((parts.hint ?? []).map(part => typeof part === "string" ? part : part.textContent));
+  const nextMessageKey = JSON.stringify([parts.text, parts.detail ?? "", nextHintKey]);
+  const changed = shown !== next.state || messageKey !== nextMessageKey;
+  if (!changed) return;
+  if (animate) crossfade();
+  else clearOutgoing();
+  const stateChanged = shown !== next.state;
   shown = next.state;
   pill.dataset.state = next.state;
-  label.textContent = parts.text;
-  detail.textContent = parts.detail ?? "";
+  status.dataset.state = next.state;
+  if (label.textContent !== parts.text) label.textContent = parts.text;
+  if (detail.textContent !== (parts.detail ?? "")) detail.textContent = parts.detail ?? "";
   detail.hidden = !parts.detail;
-  hint.replaceChildren(...parts.hint ?? []);
+  if (hintKey !== nextHintKey) hint.replaceChildren(...parts.hint ?? []);
   hint.hidden = !parts.hint?.length;
-  indicator.className = next.state;
-  if (listening.includes(next.state)) {
-    indicator.replaceChildren(...bars);
-    setLevel(0);
-  } else {
-    const symbol = next.state === "inserted" ? "check" : next.state === "copied" ? "copy" : next.state === "problem" ? "warning" : null;
-    indicator.replaceChildren(...symbol ? [icon(symbol)] : []);
+  if (stateChanged) {
+    indicator.className = `pill-indicator ${next.state}`;
+    if (listening.includes(next.state)) {
+      indicator.replaceChildren(...bars);
+      setLevel(0);
+    } else {
+      const symbol = next.state === "inserted" ? "check" : next.state === "copied" ? "copy" : next.state === "problem" ? "warning" : null;
+      indicator.replaceChildren(...symbol ? [icon(symbol)] : []);
+    }
   }
+  messageKey = nextMessageKey;
+  hintKey = nextHintKey;
+  if (animate) replay(status, "switching");
 }
 
 /** Restarts a CSS animation that is tied to a class. */
@@ -82,6 +121,7 @@ function render(next: PillState) {
   const wasVisible = visible;
   visible = next.state !== "hidden";
   if (!visible) {
+    clearOutgoing();
     previewState.receive(null);
     shown = "hidden";
     if (wasVisible) {
@@ -93,12 +133,10 @@ function render(next: PillState) {
     renderPreview();
     return;
   }
-  const changed = shown !== next.state;
   pill.classList.remove("leaving");
   pill.hidden = false;
-  paint(next);
+  paint(next, wasVisible);
   if (!wasVisible) replay(pill, "entering");
-  else if (changed) replay(status, "switching");
   renderPreview();
 }
 
@@ -110,9 +148,9 @@ function renderPreview() {
 }
 
 function applyInfo(info: AppInfo) {
-  setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
   doneKey = hotkeyKeyLabel(info.settings.hotkey, info.platform) ?? "";
-  if (visible && pendingState) paint(pendingState);
+  setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
+  if (visible && pendingState) render(pendingState);
 }
 
 async function boot() {
@@ -122,7 +160,7 @@ async function boot() {
       pill.hidden = true;
     }
   });
-  bindLocalization(label, () => { if (visible && pendingState) paint(pendingState); });
+  bindLocalization(status, () => { if (visible && pendingState) render(pendingState); });
   const locale = api.info().then(applyInfo).catch(() => { setInterfaceLanguage("en"); });
   let eventReceived = false;
   let previewReceived = false;

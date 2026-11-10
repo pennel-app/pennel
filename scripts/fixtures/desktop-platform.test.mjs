@@ -1122,7 +1122,21 @@ test("the optional pad has an explicit route separate from the direct-dictation 
 
 test("pill snapshots provide only synthetic display text with no capture or transport calls", async () => {
   const captions = cases.filter(item => item.window === "pill");
-  assert.equal(captions.length, 12);
+  const displays = captions.filter(item => !item.steps?.length);
+  for (const state of ["listening", "hands_free", "command", "no_sound", "working", "inserted", "copied", "problem"]) {
+    assert.ok(displays.some(item => item.pill_state === state), `Missing ${state} pill display coverage`);
+  }
+  assert.ok(displays.some(item => item.pill_state === "listening" && !item.preview_text), "Missing empty listening display");
+  for (const state of ["listening", "hands_free", "working"]) {
+    assert.ok(displays.some(item => item.pill_state === state && item.preview_text), `Missing ${state} preview display`);
+  }
+  for (const name of ["pill-status-announcements", "pill-status-crossfade", "pill-preview-lifecycle", "pill-status-motion", "pill-status-motion-reduced"]) {
+    const interaction = captions.find(item => item.name === name);
+    assert.ok(interaction?.steps?.some(step => typeof step.eval === "string" && step.eval.trim()), `Missing executable ${name} interaction`);
+    assert.equal(interaction.pill_state, "listening", `${name} must begin from a visible listening snapshot`);
+  }
+  assert.equal(captions.find(item => item.name === "pill-status-motion-reduced").reduced_motion, true);
+  assert.notEqual(captions.find(item => item.name === "pill-status-motion").reduced_motion, true);
   for (const item of captions) {
     const context = fixture(item.name);
     const snapshot = await context.__PENNEL_PLATFORM__.invoke("dictation_state");
