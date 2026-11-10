@@ -1,11 +1,10 @@
-import { api, fixtureClient, type MeetingStatus, type MeetingDetail, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveSourceAnchor, type Segment } from "./api";
+import { api, fixtureClient, type MeetingStatus, type MeetingDetail, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveSourceAnchor, type Segment, type SummarySource } from "./api";
 import { SerialQueue, persistAll } from "./async";
 import { bindLocalization, l, t, localizeBackendText, formatNumber, type TranslationKey } from "./i18n";
 import { controlButton, errorText, formatClock, h, markdown, showPopupMenu, textField } from "./dom";
 import { MeetingDraft } from "./meeting-draft";
 import { RecordingRefresh, sameSegment, segmentKeys } from "./recording-refresh";
 import { LivePaneState, LiveStatusEpoch, segmentEvidenceValue, formatSelection, type LivePane } from "./live-workspace-state";
-import { frozenRecognitionLabel } from "./recording-processing";
 import { meetingDate, sourceSpeakerLabel, speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
 import { attributionEditable, attributionNoticeKey, segmentAudioAvailable } from "./meeting-source";
@@ -290,6 +289,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   panels.get("suggestions")!.append(h("h2", {}, l("meetings.workspace_suggestions")), h("p", { class: "help" }, l("meetings.workspace_suggestions_unavailable")));
   const summary = meetingSummaryEditor(ctx, { id: () => owner.id, finished: () => finalized, flushNotes: async () => { await saveNotes(); await saveTitle(); }, template: () => selectedTemplate,
     processing: () => !!reviewDetail?.retranscription_status?.running,
+    sourceAvailable: source => finalized && status.metadata_status === "valid" && status.transcript.filter(segment => !segment.failed && segment.utterance_id === source.utterance_id && segment.start_ms === source.start_ms).length === 1,
+    openSource: openSummarySource, openTemplate: () => openTools("template"),
+    transcriptProvenance: api.meetingTranscriptProvenance,
     canReview: () => !composing && !notes.dirty && notes.status !== "saving" && !titleDraft.dirty && titleDraft.status !== "saving" });
   panels.get("summary")!.append(summary.root);
   const automation = summaryAutomationChoice(ctx, { compact: true, configure: () => openTools("automation") });
@@ -300,8 +302,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const exportPreview = meetingExportPreview(ctx, { id: () => owner.id, template: () => selectedTemplate, flush });
   panels.get("tools")!.append(tools.root, exportPreview.root);
   const separator = h("div", { class: "live-pane-separator", role: "separator", tabindex: 0, "aria-orientation": "vertical", "aria-label": l("meetings.workspace_split"), "aria-valuemin": 35, "aria-valuemax": 75 });
-  const transcriptProvenance = h("p", { class: "help meeting-transcript-provenance", hidden: true });
-  const documentSurface = h("div", { class: "meeting-document", "aria-label": l("meetings.document_label"), tabindex: -1 }, panels.get("summary")!, panels.get("notes")!, transcriptProvenance);
+  const documentSurface = h("div", { class: "meeting-document", "aria-label": l("meetings.document_label"), tabindex: -1 }, panels.get("summary")!, panels.get("notes")!, summary.provenance);
   let lastDocumentFocus: HTMLElement | null = null;
   let documentReturn: { scroll: number; focus: HTMLElement | null } | null = null;
   documentSurface.addEventListener("focusin", event => { if (event.target instanceof HTMLElement) lastDocumentFocus = event.target; });
@@ -700,9 +701,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       peopleSignature = signature;
       people.replaceChildren(...names.map(name => controlButton({ class: "meeting-person-chip", onclick: () => openTools("people") }, name)));
     }
-    const recognition = initial.session_id && initial.recognition && !reviewDetail?.retranscription_status ? initial.recognition : null;
-    transcriptProvenance.hidden = !finalized || !recognition || !status.transcript.some(segment => !segment.failed && segment.text.trim());
-    transcriptProvenance.textContent = recognition ? t("meetings.transcript_provenance", { destination: frozenRecognitionLabel(recognition) }) : "";
   }
   function updatePeopleLinks() {
     updateHeader();
@@ -935,7 +933,23 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     }
     return anchor.segment_keys.length > 0;
   }
-  async function openSource(turn: HTMLElement, anchor?: LiveSourceAnchor, frozenText?: string, restore?: () => void, label: TranslationKey = "meetings.workspace_back_answer") {
+  async function openSummarySource(source: SummarySource, invoker: HTMLElement) {
+    const request = ++sourceNavigation;
+    const index = status.transcript.findIndex(segment => !segment.failed && segment.utterance_id === source.utterance_id && segment.start_ms === source.start_ms);
+    const segment = status.transcript[index];
+    if (!segment || status.metadata_status !== "valid") throw new Error(t("meetings.source_changed"));
+    const keys = segmentKeys(status.transcript);
+    const stamp = await fingerprint(segment);
+    if (request !== sourceNavigation || !root.isConnected || root.contains(document.activeElement) && document.activeElement !== invoker) return;
+    const tabIndex = invoker.getAttribute("tabindex");
+    await openSource(invoker, { passage: { meeting_id: owner.id, meeting_uid: uid, title: title.value, start_iso: reviewDetail?.info?.start_iso ?? "", kind: "transcript", start_ms: segment.start_ms, text: segment.text, snippet: segment.text },
+      segment_keys: [keys[index]], segment_fingerprints: [stamp], notes_start: null, notes_end: null, source_text: segment.text }, undefined, () => {
+        if (!invoker.isConnected) return;
+        if (tabIndex === null) invoker.removeAttribute("tabindex"); else invoker.setAttribute("tabindex", tabIndex);
+        invoker.focus({ preventScroll: true });
+      }, "meetings.structured.back_summary", summary.root);
+  }
+  async function openSource(turn: HTMLElement, anchor?: LiveSourceAnchor, frozenText?: string, restore?: () => void, label: TranslationKey = "meetings.workspace_back_answer", noticeHost: HTMLElement = history) {
     const navigation = ++sourceNavigation;
     sourceReturn = { view: { selected: panes.selected, primary: panes.primary, companion: panes.companion, companionOpen: panes.companionOpen },
       questionScroll: history.scrollTop, questionPaneScroll: panels.get("questions")!.scrollTop, transcriptScroll: transcriptOutput.scrollTop, notesScroll: editor.scrollTop, documentScroll: documentSurface.scrollTop, start: editor.selectionStart, end: editor.selectionEnd, direction: editor.selectionDirection,
@@ -951,7 +965,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     if (navigation !== sourceNavigation) return;
     if (!anchor || !matches || originalSource !== currentSourceStamp(anchor)) {
       sourceNotice.replaceChildren(h("p", { class: "help" }, l("meetings.workspace_source_changed")), h("blockquote", {}, anchor?.source_text ?? frozenText ?? ""));
-      history.append(sourceNotice);
+      noticeHost.append(sourceNotice);
       sourceNotice.hidden = false;
       sourceNotice.scrollIntoView({ block: "nearest" });
       return;

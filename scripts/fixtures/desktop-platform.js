@@ -34,6 +34,7 @@
       removeItem: key => { requireCurrentReview(); rawStorage.removeItem(scopedKey(key)); }, clear: resetProfile };
     Object.defineProperty(globalThis, "localStorage", { value: scopedStorage, configurable: true });
   }
+  if (options.summary_length) globalThis.localStorage?.setItem("pennel.summary.length.v1", options.summary_length);
   let persistedSettings;
   if (profileKey) {
     try { persistedSettings = JSON.parse(globalThis.localStorage?.getItem(profileKey) || "null"); } catch {}
@@ -70,6 +71,13 @@
     { start_ms: 8000, end_ms: 14000, speaker: "me", text: "Ik bevestig de volgende afspraak.", failed: false, voice: null },
     { start_ms: 14000, end_ms: 21000, speaker: "others", text: "Dan zet ik het voorstel nog vandaag in de map.", failed: false, voice: 2 },
   ];
+  if (options.summary_structure) {
+    meeting.duration_min = 18;
+    transcript.splice(0, transcript.length,
+      { start_ms: 0, end_ms: 360000, speaker: "me", voice: null, failed: false, text: "The planning is confirmed for Monday.", confirmed_speaker_name: "Me", attribution: { kind: "single", voices: [], self_voice: true } },
+      { start_ms: 360000, end_ms: 660000, speaker: "others", voice: 1, failed: false, text: "Noor will share the agenda by Friday and confirm the invitation.", confirmed_speaker_name: "Noor" },
+      { start_ms: 660000, end_ms: 1080000, speaker: "others", voice: 2, failed: false, text: "Sam moves the client call to Thursday afternoon. Who books the room?", confirmed_speaker_name: "Sam" });
+  }
   if (options.failed_recovery) transcript.forEach((segment, index) => { if (index < 2) { segment.failed = true; segment.text = ""; } });
   if (options.insights_seeded) transcript.splice(0, transcript.length,
     { start_ms: 0, end_ms: 8000, speaker: "others", text: "Noor will send the draft on Friday.", failed: false, voice: 1 },
@@ -547,16 +555,50 @@
     if (route.source_target) throw Error("Return to the main review window to inspect this source.");
     openReviewWindow("owner-review-navigation", "workspace", route);
   };
+  const summaryRecords = new Map();
+  const summaryStamp = milliseconds => `${String(Math.floor(milliseconds / 60000)).padStart(2, "0")}:${String(Math.floor(milliseconds / 1000) % 60).padStart(2, "0")}`;
+  const structureBody = value => {
+    const escape = text => String(text).replace(/[\\[\]*_`<>#]/g, "\\$&");
+    const source = value => value ? ` (${value.speaker ? `${escape(value.speaker)}, ` : ""}${summaryStamp(value.start_ms)})` : "";
+    let body = `## ${escape(value.labels.summary)}\n\n${escape(value.lead)}`;
+    for (const topic of value.topics) body += `\n\n### ${escape(topic.title)}${topic.source ? ` (${summaryStamp(topic.source.start_ms)})` : ""}\n\n${escape(topic.body)}`;
+    for (const [label, rows] of [[value.labels.decisions, value.decisions.map(item => `- ${escape(item.text)}${source(item.source)}`)],
+      [value.labels.actions, value.actions.map(item => `- [${item.state.done ? "x" : " "}] ${item.state.owner || item.owner ? `${escape(item.state.owner || item.owner)} — ` : ""}${escape(item.text)}${item.due ? ` (${escape(item.due)})` : ""}`)],
+      [value.labels.open_questions, value.open_questions.map(item => `- ${escape(item.text)}${source(item.source)}`)]]) body += `\n\n## ${escape(label)}\n\n${rows.length ? rows.join("\n") : `- ${escape(value.labels.none)}`}`;
+    return body;
+  };
+  const fixtureStructure = (generated = false) => {
+    const source = index => ({ utterance_id: transcript[index].utterance_id, start_ms: transcript[index].start_ms, speaker: transcript[index].confirmed_speaker_name || null });
+    return { labels: { summary: "Summary", decisions: "Decisions", actions: "Action items", open_questions: "Open questions", none: "None" },
+      lead: generated ? "A new structured candidate is ready for review." : "The team confirmed next week’s planning and agreed who prepares what. The client call moves to Thursday afternoon, and a room still needs to be booked.",
+      topics: [{ title: "Planning", body: "Next week’s planning is confirmed for Monday. The agreed scope stays unchanged.", source: source(0) },
+        { title: "Agenda", body: "Noor shares the agenda by Friday so everyone can prepare. She also confirms the invitation.", source: source(1) },
+        { title: "Client call", body: "The client call moves to Thursday afternoon. Nobody has taken on booking the room.", source: source(2) }],
+      decisions: [{ text: "The planning is confirmed for Monday.", source: source(0) }, { text: "The client call moves to Thursday afternoon.", source: source(2) }],
+      actions: [{ text: "Share the agenda", owner: "Noor", due: "Friday", source: source(1), state: { done: false, owner: "Sam" } },
+        { text: "Confirm the invitation", owner: "Noor", due: null, source: source(1), state: { done: false, owner: null } },
+        { text: "Book a room for the client call", owner: null, due: null, source: null, state: { done: false, owner: null } }],
+      open_questions: [{ text: "Who books the room for the client call?", source: source(2) }] };
+  };
+  const fixtureSummaryRecord = async (id, body, structure) => ({ schema_version: 1, meeting_uid: uidFor(id), body_revision: await fingerprint(body),
+    provenance: { provider_id: "original-summary-account", provider_kind: "groq", model: "frozen-summary-model", generated_at: "2026-10-24T09:30:00Z", template_id: "algemeen" }, structure });
   const summaryDocument = async id => {
     const uid = uidFor(id), source = await summarySourceRevision(id);
     const empty = options.summary_empty || options.owner_review && !recordForId(id).info.has_summary;
-    if (!summaryDocuments.has(uid)) summaryDocuments.set(uid, { meeting_uid: uid,
-      markdown: empty ? "" : summary, revision: await fingerprint(empty ? "" : summary),
-      source_revision: source, edited: false, outdated: false });
+    if (!summaryDocuments.has(uid)) {
+      const structure = options.summary_structure && options.summary_structure !== "provenance" ? fixtureStructure() : null;
+      const body = empty ? "" : structure ? structureBody(structure) : summary;
+      let record = options.summary_structure ? await fixtureSummaryRecord(id, body, structure) : null;
+      if (options.summary_structure === "corrupt") record.structure.topics = "malformed";
+      if (options.summary_structure === "foreign") record.meeting_uid = "another-meeting";
+      if (options.summary_structure === "future") record.schema_version = 2;
+      if (record) summaryRecords.set(record.body_revision, clone(record));
+      summaryDocuments.set(uid, { meeting_uid: uid, markdown: body, revision: await fingerprint(body), source_revision: source, edited: false, outdated: false, ...(record ? { record } : {}) });
+    }
     const document = summaryDocuments.get(uid);
     return { ...document, source_revision: source, outdated: document.source_revision !== source || summaryOutdated };
   };
-  const saveSummaryDocument = async (id, args, markdown, reviewed = false, restoredSource) => {
+  const saveSummaryDocument = async (id, args, markdown, reviewed = false, restoredSource, actionRecord) => {
     if (options.owner_review ? saveFailure : options.summary_save_error) throw Error(options.summary_save_error || "Synthetic summary storage unavailable.");
     const before = await summaryDocument(id);
     requireCurrentReview();
@@ -566,7 +608,11 @@
       source_revision: before.source_revision, created_at: new ActualDate(now).toISOString() });
     summaryHistories.set(before.meeting_uid, history);
     const boundSource = restoredSource || (reviewed ? before.source_revision : summaryDocuments.get(before.meeting_uid).source_revision);
-    const saved = { ...before, markdown, revision: await fingerprint(markdown), source_revision: boundSource, edited: true, outdated: false };
+    const revision = await fingerprint(markdown);
+    let record = actionRecord || (restoredSource ? summaryRecords.get(revision) : reviewed && args.record ? args.record : before.markdown === markdown ? before.record : null);
+    if (record && (record.meeting_uid !== before.meeting_uid || record.body_revision !== revision || record.schema_version !== 1)) record = null;
+    if (record) summaryRecords.set(revision, clone(record));
+    const saved = { ...before, markdown, revision, source_revision: boundSource, edited: actionRecord ? before.edited : true, outdated: false, ...(options.summary_structure ? { record: record ? clone(record) : null } : {}) };
     requireCurrentReview();
     summaryDocuments.set(before.meeting_uid, saved);
     persistOwnerReview();
@@ -1358,6 +1404,19 @@
       }
       case "summarize_meeting": return summary;
       case "meeting_summary": return clone(await summaryDocument(args.id));
+      case "meeting_transcript_provenance": return options.summary_structure ? { provider_kind: "local", model: "frozen-transcript-model", requested_language: "en", generated_at: "2026-10-24T09:18:00Z" } : null;
+      case "meeting_speaker_timeline": {
+        if (options.summary_timeline_error) throw Error("Synthetic timeline unavailable.");
+        const rows = recordForId(args.id).transcript.filter(row => !row.failed && row.end_ms > row.start_ms);
+        return { duration_ms: Math.max(0, ...rows.map(row => row.end_ms)), duration_is_recorded: Boolean(options.summary_structure), lanes: rows.map((row, index) => ({ key: `opaque-lane-${index}`, kind: row.confirmed_speaker_name ? "person" : "unknown", speaker: row.confirmed_speaker_name || null, duration_ms: row.end_ms - row.start_ms, spans: [{ start_ms: row.start_ms, end_ms: row.end_ms }] })) };
+      }
+      case "update_meeting_summary_action": {
+        const before = await summaryDocument(args.id), record = clone(before.record);
+        if (!record?.structure?.actions[args.actionIndex]) throw Error("The summary has no attached action structure.");
+        record.structure.actions[args.actionIndex].state = { done: Boolean(args.done), owner: args.owner || null };
+        const body = structureBody(record.structure); record.body_revision = await fingerprint(body);
+        return saveSummaryDocument(args.id, args, body, false, undefined, record);
+      }
       case "save_meeting_summary": return saveSummaryDocument(args.id, args, String(args.markdown ?? ""));
       case "accept_meeting_summary": return saveSummaryDocument(args.id, args, String(args.markdown ?? ""), true);
       case "meeting_summary_history": return clone(summaryHistories.get(uidFor(args.id)) || []);
@@ -1371,6 +1430,15 @@
         if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
         requireCurrentReview();
         if (options.summary_generation_error) throw Error(options.summary_generation_error);
+        if (options.summary_structure) {
+          const structure = fixtureStructure(true);
+          for (const action of structure.actions) {
+            const saved = before.record?.structure?.actions.find(previous => previous.text === action.text && previous.source?.utterance_id === action.source?.utterance_id);
+            if (saved) action.state = clone(saved.state);
+          }
+          const body = structureBody(structure);
+          return { meeting_uid: before.meeting_uid, markdown: body, revision: before.revision, source_revision: before.source_revision, record: await fixtureSummaryRecord(args.id, body, structure) };
+        }
         return { meeting_uid: before.meeting_uid, markdown: `${summary}\n\n${record.notes}`, revision: before.revision, source_revision: before.source_revision };
       }
       case "generate_shareable_meeting_summary": {
