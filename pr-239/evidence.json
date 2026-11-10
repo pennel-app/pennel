@@ -1,0 +1,105 @@
+{
+  "task": "T5b summary consent",
+  "mock": true,
+  "source": "Owned synthetic headless fixture; no user screen",
+  "before_ref": "594dbb9c0bf40046219ebf678b960de745977632",
+  "after_ref": "513a4de2b2c415c6831589ad7cb748e362dc9fd4",
+  "rows": [
+    {
+      "phase": "before",
+      "case": "en/dark/summary-consent-reference.png",
+      "file": "before-en-dark-summary-consent-reference.png",
+      "sha256": "55338b252513efed1856e60d15204980671932868e3a82c892c4c29d621787a8"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/summary-consent-reference.png",
+      "file": "before-en-light-summary-consent-reference.png",
+      "sha256": "b4ad046f315bdf3dca719935d298b2bbbe1106a6f1d7d9d362d2aacecf37653e"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/summary-consent-reference.png",
+      "file": "before-nl-dark-summary-consent-reference.png",
+      "sha256": "22c04c254975beb19c7a6ee8d7fd4d6e16ed04f6c21b58544d73c671733f2c68"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/summary-consent-reference.png",
+      "file": "before-nl-light-summary-consent-reference.png",
+      "sha256": "6936166d73004eb15751355eff17415eebd7608066cc69cfc4c0bf6f02efd34b"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/summary-consent-enlarged.png",
+      "file": "after-en-dark-summary-consent-enlarged.png",
+      "sha256": "8c5256661bc0febdb0795bb557fbb782a827cec328ac82f8ee8f31c1a53b7dbb"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/summary-consent-reference.png",
+      "file": "after-en-dark-summary-consent-reference.png",
+      "sha256": "256fbce7f146c2d571dcd7580333f8d126df73f6548c5307e0cdb2dae93e95c7"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/summary-processing-reference.png",
+      "file": "after-en-dark-summary-processing-reference.png",
+      "sha256": "ece586ed90f557f520e7faa8d6d8d854577b2739bfc0270865026444bb78d40b"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/summary-consent-enlarged.png",
+      "file": "after-en-light-summary-consent-enlarged.png",
+      "sha256": "63a15939245100b352e28a79da8b1400098fb4624e30d5998610f446b047875a"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/summary-consent-reference.png",
+      "file": "after-en-light-summary-consent-reference.png",
+      "sha256": "9091daf61038a24f3fdfed5b4f665d904a8c9ea835c9304912de23d22752c5d5"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/summary-processing-reference.png",
+      "file": "after-en-light-summary-processing-reference.png",
+      "sha256": "64ac3b1e709b963f7505d207739bffe06e63671d71c01bdcb614c5d4f396610b"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/summary-consent-enlarged.png",
+      "file": "after-nl-dark-summary-consent-enlarged.png",
+      "sha256": "0dc3722bd941c2c5ec689eb1f306fad8b87dfaaa466cae26c1501d09d691c94f"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/summary-consent-reference.png",
+      "file": "after-nl-dark-summary-consent-reference.png",
+      "sha256": "91c22fa4f52d559f00415ba1d69798a71eaefd9b2022517f26229f3da0195f0c"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/summary-processing-reference.png",
+      "file": "after-nl-dark-summary-processing-reference.png",
+      "sha256": "e58521651f18e7a9bf461020b2890f5149fd6f2c34966c1b4d581354d857e7d9"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/summary-consent-enlarged.png",
+      "file": "after-nl-light-summary-consent-enlarged.png",
+      "sha256": "e6eea996950c5ea9c9616144c66628a7b82e2e87fdc893067936461c6d7191c5"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/summary-consent-reference.png",
+      "file": "after-nl-light-summary-consent-reference.png",
+      "sha256": "cad51f7ad07af9c98ae6faf0d2412703227f3ff27fed1bbd69d3541065f135bf"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/summary-processing-reference.png",
+      "file": "after-nl-light-summary-processing-reference.png",
+      "sha256": "7cbcf45ccad0068739684aa666ec4222a9af6e4fe02339edfa4333d55755783f"
+    }
+  ]
+}

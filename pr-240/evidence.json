@@ -1,0 +1,153 @@
+{
+  "task": "T6a Review companion",
+  "mock": true,
+  "source": "Owned synthetic headless fixture; no user screen",
+  "before_ref": "b94000ba2b263acafabdbb812d7011d79ce3ede8",
+  "after_ref": "541d2c48046932c82c63c814b61b8c948e7df23d",
+  "rows": [
+    {
+      "phase": "before",
+      "case": "en/dark/review-companion-reference.png",
+      "file": "before-en-dark-review-companion-reference.png",
+      "sha256": "8bc4b07594c329932977cdd4782386b33093deca24d54a619ac38e1399c25950"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/review-companion-reference.png",
+      "file": "before-en-light-review-companion-reference.png",
+      "sha256": "121ff373b7602c36f74ab9a514bb37aa3d10dc28e1b731b84f7df31a4cc84f93"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/review-companion-reference.png",
+      "file": "before-nl-dark-review-companion-reference.png",
+      "sha256": "115d48c14bc4ad63daa6e1377f3158b939749c63d7ddcb68ac9b4205860495d0"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/review-companion-reference.png",
+      "file": "before-nl-light-review-companion-reference.png",
+      "sha256": "30649f8b5e3c93763ca166b11b736182e12531cd97c32380d1de3818301f3aa1"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/review-companion-reference.png",
+      "file": "after-en-dark-review-companion-reference.png",
+      "sha256": "11c7070be436f304954c40c551e884f900277b94145800eb89376da36460af1a"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/review-companion-reference.png",
+      "file": "after-en-light-review-companion-reference.png",
+      "sha256": "12c181f04008f6c3fc02e7f9140b8e5a2a15e87df1f579320ac70c8289e08725"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/review-companion-reference.png",
+      "file": "after-nl-dark-review-companion-reference.png",
+      "sha256": "e997c400f917f840511018527973dacc6ca890e01a0800902fca42fb2ee87438"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/review-companion-reference.png",
+      "file": "after-nl-light-review-companion-reference.png",
+      "sha256": "385ab22dcda220fd3106c6d9ebd78f0b3082044a3e1d91d53aa6c1591617123f"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/review-companion-all-reviewed.png",
+      "file": "checked-en-dark-review-companion-all-reviewed.png",
+      "sha256": "e76e275f2667af09081ae6934130e3b3c0585ea6fb6ae8c2f45810b319493f80"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/review-companion-empty.png",
+      "file": "checked-en-dark-review-companion-empty.png",
+      "sha256": "bef7d4f45aef920c6e09ad5e8be4d40583fa34f74d3828c3350d428a02360f44"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/review-companion-enlarged.png",
+      "file": "checked-en-dark-review-companion-enlarged.png",
+      "sha256": "c23b00f49b402c848ad2619191da338d73ba543c22395d431466f80b4fa3ab93"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/review-companion-minimum.png",
+      "file": "checked-en-dark-review-companion-minimum.png",
+      "sha256": "98b2e3b2f059182bf6cd65c287376cbbef9d3eb8d41847f4fa99c9ef733a2774"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/review-companion-all-reviewed.png",
+      "file": "checked-en-light-review-companion-all-reviewed.png",
+      "sha256": "cc6ef4c0c137a9944ebf6d4b9aaf35006a649e4d2803cabd2e5deb9434054a51"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/review-companion-empty.png",
+      "file": "checked-en-light-review-companion-empty.png",
+      "sha256": "a1d22a642ed08824f914f5459b79efc22abf5e370d12aba939b9fe87709cea54"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/review-companion-enlarged.png",
+      "file": "checked-en-light-review-companion-enlarged.png",
+      "sha256": "42a9c7caf02f3fb8368aa00cf1a6cfeccbc290c247dfddaea07c3db18ec173e7"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/review-companion-minimum.png",
+      "file": "checked-en-light-review-companion-minimum.png",
+      "sha256": "6b59cdfc3f0111a3b2993d8dd259a830af821cc5a3513b4cf0dc0152e1d80cad"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/review-companion-all-reviewed.png",
+      "file": "checked-nl-dark-review-companion-all-reviewed.png",
+      "sha256": "ac3d49d5610c5788c35ca5854570ddb6c8e4d1449a16b484e8dd58a51cd2feed"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/review-companion-empty.png",
+      "file": "checked-nl-dark-review-companion-empty.png",
+      "sha256": "4dcf7cc8d9e2a29d1360ec95882b519b3ef197fbcd9f98e3a1ac2409ce48372a"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/review-companion-enlarged.png",
+      "file": "checked-nl-dark-review-companion-enlarged.png",
+      "sha256": "ff7394ed753235bafe6666ff4405a3a5c8b833bcd67ed9702dbd32b0009a1965"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/review-companion-minimum.png",
+      "file": "checked-nl-dark-review-companion-minimum.png",
+      "sha256": "725c446a77d77c3e8f37e7c80d3343dc2143ee445d164f2f4380776141c00642"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/review-companion-all-reviewed.png",
+      "file": "checked-nl-light-review-companion-all-reviewed.png",
+      "sha256": "22be545313c0800cb9cbc305a3a8c370ed32cc70a50cef25e45ac17edf4d7178"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/review-companion-empty.png",
+      "file": "checked-nl-light-review-companion-empty.png",
+      "sha256": "c50198f4581f60a8c16fdadca2f8020876990cc74c0549b72dc39d0cb6cd1e13"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/review-companion-enlarged.png",
+      "file": "checked-nl-light-review-companion-enlarged.png",
+      "sha256": "4ab684c393e0828f486c9e2f0a6a1cec6e7827b453d42a9efa9b790d229b8115"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/review-companion-minimum.png",
+      "file": "checked-nl-light-review-companion-minimum.png",
+      "sha256": "0bc0dd5102c9acc19689d0c7d2fa493b6de8efeb08df905d85e0ddb0aebaf531"
+    }
+  ]
+}
