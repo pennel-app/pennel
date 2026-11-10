@@ -3558,7 +3558,13 @@ mod tests {
         assert!(!saved.edited);
         assert!(saved.record.is_some());
         assert_eq!(engine.meeting_summary(id.clone()).unwrap(), saved);
-        let dismissed = engine.dismiss_meeting_summary_prompt(id.clone(), saved.revision.clone(), saved.source_revision.clone()).unwrap();
+        let dismissed = engine
+            .dismiss_meeting_summary_prompt(
+                id.clone(),
+                saved.revision.clone(),
+                saved.source_revision.clone(),
+            )
+            .unwrap();
         assert_eq!(dismissed.record, saved.record);
         assert_eq!(dismissed.markdown, saved.markdown);
         assert!(engine.meeting_summary_prompt_dismissed(id).unwrap());
