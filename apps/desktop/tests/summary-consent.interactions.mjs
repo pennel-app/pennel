@@ -108,3 +108,23 @@ export async function showSummaryProcessing() {
  assert(!root.querySelector('.summary-placeholders').hidden&&!modelCalls(fixture).length,'Stale completion hid progress or presentation started inference.');
  return{metadataOnlyProgress:true,staleCompletionRejected:true,noProviderOnRender:true,syntheticOnly:true};
 }
+
+export async function checkLatePromptReadAfterDismissal() {
+ const{root,fixture,api}=await owned(),client=window.__PENNEL_PLATFORM__,invoke=client.invoke.bind(client),id=root.dataset.meetingId;
+ const{meetingSummaryConsent}=await import('/src/meeting-summary-consent.ts');
+ // A stable production owner isolates the native acknowledgement from later workspace notifications.
+ const context={info:await api.info(),onInfoChange(){},onDispose(){},openSetup(){},save(){throw Error('Unintended policy write.');},mutate(){throw Error('Unintended policy mutation.');}};
+ const view=meetingSummaryConsent(context,{id:()=>id,finished:()=>true,working:()=>false,canGenerate:()=>true,canDismiss:()=>true,blockedReason:()=>'',focusTarget:root.querySelector('.meeting-summary-surface'),generate:async()=>{throw Error('Unintended inference.');},dismiss:async()=>{const before=await api.meetingSummary(id);await api.dismissMeetingSummaryPrompt(id,before.revision,before.source_revision);}});
+ root.querySelector('.summary-consent').replaceWith(view.root);view.bind(context);await until(()=>view.root.dataset.mode==='question','The production consent owner did not prime its loaded question.');
+ let releaseRead,held=false;
+ client.invoke=async(command,args)=>{const value=await invoke(command,args);if(command==='meeting_summary_prompt_dismissed'&&!held){held=true;await new Promise(resolve=>{releaseRead=resolve;});if(fixture.options.prompt_late_error)throw Error('Synthetic superseded prompt read error.');}return value;};
+ try{
+  view.bind(context);await until(()=>releaseRead,'The old false prompt read was not held.');
+  view.root.querySelector('[data-summary-consent="not_now"]').click();await until(()=>view.root.dataset.mode==='quiet','Dismissal B did not acknowledge before releasing read A.');
+  releaseRead();await new Promise(resolve=>setTimeout(resolve,100));
+  assert(view.root.dataset.mode==='quiet'&&view.root.querySelector('.error').hidden,'An older prompt read or its error replaced the durable dismissal acknowledgement.');
+  assert(await api.meetingSummaryPromptDismissed(id)&&(await api.info()).settings.summary_automation==='unanswered','The durable dismissal or global unanswered consent changed.');
+  assert(!modelCalls(fixture).length&&!fixture.calls.includes('save_settings'),'A stale prompt read started a provider or changed policy.');
+  return{latePromptValueOrErrorRejected:true,durableQuietChoiceRetained:true,noInferenceOrPolicy:true,syntheticOnly:true};
+ }finally{releaseRead?.();client.invoke=invoke;}
+}
