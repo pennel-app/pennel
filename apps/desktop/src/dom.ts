@@ -423,7 +423,7 @@ export function snippet(text: string): HTMLElement {
 
 let dialogNumber = 0;
 
-function namedDialog(title: UiText, detail: UiText) {
+export function namedDialog(title: UiText, detail: UiText = "") {
   const id = `dialog-${++dialogNumber}`;
   const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const dialog = h("dialog", { class: "editor-dialog", "aria-modal": "true", "aria-labelledby": `${id}-title`, "aria-describedby": detail ? `${id}-detail` : null });

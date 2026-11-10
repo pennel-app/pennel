@@ -519,7 +519,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     else if (finalized) documentSurface.focus({ preventScroll: true });
     else tabButtons.get(panes.primary)?.focus({ preventScroll: true });
   }
-  function openExport(scope: "shareable" | "personal") { if (!finalized) return; rememberDocument(); tools.root.hidden = true; exportPreview.open(scope); selectPane("tools"); }
+  function openExport(scope: "shareable" | "personal") { if (finalized) exportPreview.open(scope); }
   function showPreview(value: boolean) {
     if (composing) return;
     preview = value;
