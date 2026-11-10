@@ -6,6 +6,7 @@ import { controlButton, textField, askText, confirmDialog, errorText, h, section
 import { trainedLabel } from "../speaker-state";
 import { SpeakerModels, enrollmentBlocker, enrollmentDialog, speakerDownload } from "./voices";
 import type { Context } from "../main";
+import { suggestionAutomationChoice } from "../meeting-suggestion-settings";
 import { summaryAutomationChoice } from "../meeting-summary-automation";
 import { icon } from "../icons";
 import { appBadge } from "../app-icon";
@@ -186,7 +187,9 @@ export async function meetingSettingsView(ctx: Context): Promise<HTMLElement> {
   const pathLocked = ctx.info.preview || recording.busy;
   const path = h("span", { class: "grow meeting-path", "aria-label": l("settings.folder.label") }, ctx.info.preview ? l("settings.folder.preview") : settings.meetings_dir || "~/Pennel");
   return h("div", { class: "settings-pane" },
-    summaryAutomationChoice({ ...ctx, get info() { return ctx.info; }, onInfoChange: () => undefined }).root,
+    section(l("settings.after_meeting"), null, h("h3", {}, l("meetings.summary_automation_title")),
+      summaryAutomationChoice({ ...ctx, get info() { return ctx.info; }, onInfoChange: () => undefined }).root,
+      suggestionAutomationChoice(ctx).root),
     section(l("settings.folder.title"), l("settings.folder.help"),
       h("div", { class: "row" }, path,
         controlButton({ class: "btn", disabled: pathLocked, onclick: async () => {

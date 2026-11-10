@@ -279,7 +279,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     h("p", { class: "help live-source-assessment" }, l("meetings.workspace_sourcecheck_unavailable"))), questions.root);
   panels.get("suggestions")!.append(h("h2", {}, l("meetings.workspace_suggestions")), h("p", { class: "help" }, l("meetings.workspace_suggestions_unavailable")));
   let consent: ReturnType<typeof meetingSummaryConsent> | null = null;
-  const summary = meetingSummaryEditor(ctx, { meetingUid: () => uid, changed: () => consent?.refresh(), id: () => owner.id, finished: () => finalized, flushNotes: async () => { await saveNotes(); await saveTitle(); }, template: () => selectedTemplate,
+  const summary = meetingSummaryEditor(ctx, { meetingUid: () => uid, changed: () => { consent?.refresh(); insights?.readiness(); }, id: () => owner.id, finished: () => finalized, flushNotes: async () => { await saveNotes(); await saveTitle(); }, template: () => selectedTemplate,
     processing: () => !!reviewDetail?.retranscription_status?.running,
     sourceAvailable: source => finalized && status.metadata_status === "valid" && status.transcript.filter(segment => !segment.failed && segment.utterance_id === source.utterance_id && segment.start_ms === source.start_ms).length === 1,
     openSource: openSummarySource, openTemplate: () => openTools("template"),
