@@ -13,6 +13,7 @@ use serde_json::Value;
 
 type EventSink = unsafe extern "C" fn(*mut c_void, u32, bool);
 type AudioSink = unsafe extern "C" fn(*mut c_void, u32, *const f32, usize, u64);
+type LevelSink = unsafe extern "C" fn(*mut c_void, u32, f32);
 type CaptureScopeSink = unsafe extern "C" fn(*mut c_void, bool);
 type TextSink = unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char);
 
@@ -78,7 +79,7 @@ unsafe extern "C" {
         error: *mut *mut c_char,
     ) -> *mut c_void;
     fn pennel_mac_capture_stop(handle: *mut c_void);
-    fn pennel_mac_meeting_start_paths_with_scope(
+    fn pennel_mac_meeting_start_paths_with_scope_and_level(
         directory: *const c_char,
         app: *const c_char,
         microphone_path: *const c_char,
@@ -88,6 +89,8 @@ unsafe extern "C" {
         context: *mut c_void,
         scope_sink: CaptureScopeSink,
         scope_context: *mut c_void,
+        level_sink: LevelSink,
+        level_context: *mut c_void,
         error: *mut *mut c_char,
     ) -> *mut c_void;
     fn pennel_mac_meeting_status(handle: *mut c_void) -> *mut c_char;
@@ -634,7 +637,13 @@ impl Drop for Capture {
     }
 }
 
+unsafe extern "C" fn meeting_level(context: *mut c_void, source: u32, level: f32) {
+    let callback = unsafe { &*context.cast::<crate::meeting_level::LevelCallback>() };
+    callback(source, level);
+}
+
 pub struct MeetingCapture {
+    level_callback: Box<crate::meeting_level::LevelCallback>,
     handle: Option<NonNull<c_void>>,
     callback: Box<AudioCallback>,
     source_integrity: Arc<crate::meeting_speaker_evidence::AppAudioSourceIntegrity>,
@@ -683,6 +692,7 @@ impl MeetingCapture {
         app_id: Option<&str>,
         echo: bool,
         callback: impl FnMut(u32, &[f32], u64) + Send + 'static,
+        on_level: crate::meeting_level::LevelCallback,
     ) -> Result<Self, String> {
         let directory = path_string(directory)?;
         let microphone_path = path_string(microphone_path)?;
@@ -694,8 +704,11 @@ impl MeetingCapture {
         let source_integrity =
             Arc::new(crate::meeting_speaker_evidence::AppAudioSourceIntegrity::new(app_id));
         let scope_context = Arc::as_ptr(&source_integrity).cast_mut().cast();
+        let mut level_callback = Box::new(on_level);
+        let level_context =
+            (&mut *level_callback as *mut crate::meeting_level::LevelCallback).cast();
         let handle = NonNull::new(unsafe {
-            pennel_mac_meeting_start_paths_with_scope(
+            pennel_mac_meeting_start_paths_with_scope_and_level(
                 directory.as_ptr(),
                 app.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
                 microphone_path.as_ptr(),
@@ -705,6 +718,8 @@ impl MeetingCapture {
                 context,
                 meeting_capture_scope,
                 scope_context,
+                meeting_level,
+                level_context,
                 &mut error,
             )
         });
@@ -714,6 +729,7 @@ impl MeetingCapture {
         Ok(Self {
             handle: Some(handle),
             callback,
+            level_callback,
             source_integrity,
         })
     }
@@ -748,7 +764,7 @@ impl MeetingCapture {
 impl Drop for MeetingCapture {
     fn drop(&mut self) {
         let _ = self.finish();
-        let _ = &self.callback;
+        let _ = (&self.callback, &self.level_callback);
     }
 }
 

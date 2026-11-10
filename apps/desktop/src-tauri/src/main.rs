@@ -37,6 +37,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod macos_tray;
 mod meeting;
+mod meeting_level;
 mod meeting_runtime;
 mod meeting_speaker_evidence;
 mod owned_dictation;

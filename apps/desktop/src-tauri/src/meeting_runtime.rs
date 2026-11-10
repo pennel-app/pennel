@@ -273,6 +273,7 @@ fn begin_recording(shared: &Shared, detected_app: Option<String>) -> Result<Stri
 
 /// Runs on a worker: native capture initialization may need the application's main queue.
 pub fn start(
+    app: Option<&AppHandle>,
     shared: &Arc<Shared>,
     title: String,
     detected_app: Option<String>,
@@ -287,7 +288,14 @@ pub fn start(
         } else {
             (attendees, None)
         };
-    start_with_calendar(shared, title, detected_app, attendees, calendar_context)
+    start_with_calendar(
+        app,
+        shared,
+        title,
+        detected_app,
+        attendees,
+        calendar_context,
+    )
 }
 
 fn current_invitees(calendar: &serde_json::Value) -> (Vec<String>, Option<serde_json::Value>) {
@@ -315,6 +323,7 @@ fn current_invitees(calendar: &serde_json::Value) -> (Vec<String>, Option<serde_
 }
 
 pub fn start_with_calendar(
+    app: Option<&AppHandle>,
     shared: &Arc<Shared>,
     title: String,
     detected_app: Option<String>,
@@ -322,6 +331,7 @@ pub fn start_with_calendar(
     calendar_context: Option<serde_json::Value>,
 ) -> Result<String, String> {
     start_with_calendar_impl(
+        app,
         shared,
         title,
         detected_app,
@@ -340,6 +350,7 @@ pub(crate) fn start_detected_with_calendar(
     calendar_context: Option<serde_json::Value>,
 ) -> Result<String, String> {
     start_with_calendar_impl(
+        Some(app),
         shared,
         title,
         Some(detected_call.app_id.clone()),
@@ -350,6 +361,7 @@ pub(crate) fn start_detected_with_calendar(
 }
 
 fn start_with_calendar_impl(
+    app: Option<&AppHandle>,
     shared: &Arc<Shared>,
     title: String,
     detected_app: Option<String>,
@@ -426,6 +438,38 @@ fn start_with_calendar_impl(
         consent_copied: false,
         speaker_evidence: None,
     });
+    // The native callback may be inside capture admission while Stop owns the lifecycle lock.
+    // Never wait for that lock here: quiescence drains this callback before freeing its context.
+    let owner = Arc::downgrade(shared);
+    let level_app = app.cloned();
+    let level_session = token.clone();
+    let level_started = Instant::now();
+    let throttle = Mutex::new(crate::meeting_level::LevelThrottle::new(token.clone()));
+    let on_level: crate::meeting_level::LevelCallback = Arc::new(move |source, rms| {
+        let Some(shared) = owner.upgrade() else {
+            return;
+        };
+        let Ok(lifecycle) = shared.recording.try_lock() else {
+            return;
+        };
+        let state = lifecycle.snapshot();
+        let Ok(mut throttle) = throttle.try_lock() else {
+            return;
+        };
+        if let Some(level) = throttle.sample(
+            state.session_id.as_deref(),
+            state.phase == RecordingPhase::Recording,
+            source,
+            rms * 8.0,
+            level_started.elapsed(),
+        ) && let Some(app) = &level_app
+        {
+            let _ = app.emit(
+                "meeting-level",
+                serde_json::json!({ "session_id": level_session, "level": level }),
+            );
+        }
+    });
     let recorder = match MeetingRecorder::start(
         session.clone(),
         title,
@@ -433,6 +477,7 @@ fn start_with_calendar_impl(
         settings.echo_cancellation,
         shared.engine.clone(),
         &shared.version,
+        on_level,
     ) {
         Ok(recorder) => recorder,
         Err(error) => {
@@ -1377,7 +1422,7 @@ mod tests {
     #[test]
     fn an_unsaved_failed_meeting_blocks_a_new_recording_and_keeps_its_context() {
         let (_root, shared, session, token) = failed_persistence();
-        assert!(start(&shared, "Nieuwe meeting".into(), None, Vec::new()).is_err());
+        assert!(start(None, &shared, "Nieuwe meeting".into(), None, Vec::new()).is_err());
         assert_eq!(
             shared.recording.lock().unwrap().snapshot().session_id,
             Some(token.clone())

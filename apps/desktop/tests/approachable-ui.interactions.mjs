@@ -277,8 +277,8 @@ export async function checkMeetingFlow() {
     notes.blur(); await settle();
     const title = article.querySelector(".live-title").value;
     click(record);
-    await until(() => document.querySelector(".recording-view") && button(document.querySelector(".recording-view"), t("common.start_recording")), "New recording did not open the next meeting's ready-to-record surface.");
-    assert(!observed.operations.some(operation => operation.command === "start_meeting"), "Opening the next recording started capture without explicit confirmation.");
+    await until(async () => (await api.meetingStatus()).recording && document.querySelector(".toolbar-capture.is-recording"), "New recording did not immediately start the next capture.");
+    assert(observed.operations.filter(operation => operation.command === "start_meeting").length === 1, "New recording did not share one guarded start path.");
     const previousMeeting = document.querySelector(`.meeting-row[data-id="${CSS.escape(fixture.options.meeting_id)}"] .meeting-select`);
     click(previousMeeting);
     await until(() => document.querySelector(".live-workspace .live-title")?.value === title, "The previous meeting became unreachable after opening the next recording.");
@@ -296,7 +296,7 @@ export async function checkActiveRecordingFlow() {
   const observed = observeCommands();
   try {
     const record = document.querySelector(".library-record");
-    assert(visible(record) && record.textContent.includes(t("meetings.return_recording")), "An active meeting has no clear return action.");
+    assert(visible(record) && record.getAttribute("aria-label")?.includes(t("meetings.return_recording")), "An active meeting has no clear return action.");
     click(record); await settle();
     const after = await api.meetingStatus();
     assert(after.recording && after.id === before.id && after.session_id === before.session_id, "Returning to recording replaced or stopped the active session.");

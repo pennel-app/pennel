@@ -1,4 +1,5 @@
 {
+  "meetings.now": "Nu",
   "meetings.retranscribe_audio": "Opnieuw transcriberen vanaf opname",
   "meetings.retranscription_confirm_title": "Deze opname opnieuw transcriberen?",
   "meetings.retranscription_confirm": "Verwerking: {recognition}. Je bewaarde audio blijft op deze computer. Het huidige transcript wordt vervangen en als herstelkopie bewaard. De samenvatting wordt niet opnieuw gemaakt.",
@@ -117,7 +118,7 @@
   "meetings.voices_many": "{count} stemmen herkend.",
   "meetings.file_will_delete": "{name} wordt verwijderd.",
   "meetings.recording_stopped": "Opname gestopt · {time}",
-  "meetings.recording_clock": "Opname loopt · {time}",
+  "meetings.recording_clock": "Opname {time}",
   "meetings.actions_for": "Acties voor {title}",
   "meetings.delete_title": "{title} verwijderen?",
   "meetings.duration_minutes": "{count} min",

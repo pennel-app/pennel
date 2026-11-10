@@ -1048,9 +1048,13 @@ fn runtime_status(
 }
 
 #[tauri::command]
-pub async fn start_meeting(title: String, shared: State<'_, Arc<Shared>>) -> Result<String> {
+pub async fn start_meeting(
+    app: AppHandle,
+    title: String,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<String> {
     let shared = shared.inner().clone();
-    blocking(move || meeting_runtime::start(&shared, title, None, Vec::new())).await
+    blocking(move || meeting_runtime::start(Some(&app), &shared, title, None, Vec::new())).await
 }
 
 #[tauri::command]

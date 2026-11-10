@@ -1366,3 +1366,10 @@ test("saved library note writes persist by meeting without replacing active reco
   assert.equal((await api.invoke("meeting_detail", {id: savedId})).notes, written);
   assert.equal((await api.invoke("meeting_detail", {id: activeId})).notes, activeBefore.notes);
 });
+
+test("denied microphone fixture keeps recording repair reachable until access refreshes", async () => {
+  const api = fixture("recording-capsule-blocked").__PENNEL_PLATFORM__;
+  assert.equal((await api.invoke("app_info")).capabilities.microphone.status, "permission_required");
+  await api.invoke("request_permission", { kind: "microphone" });
+  assert.equal((await api.invoke("app_info")).capabilities.microphone.status, "available");
+});

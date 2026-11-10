@@ -320,7 +320,9 @@ pub fn toggle_recording(app: AppHandle, shared: Arc<Shared>) {
         let _ = crate::meeting_runtime::stop(app, shared, None);
     } else {
         crate::show_window(&app, "live", None);
-        if crate::meeting_runtime::start(&shared, "Meeting".into(), None, Vec::new()).is_err() {
+        if crate::meeting_runtime::start(Some(&app), &shared, "Meeting".into(), None, Vec::new())
+            .is_err()
+        {
             LOG.error("Recording could not start from the shortcut");
         }
     }

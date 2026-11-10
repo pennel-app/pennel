@@ -149,6 +149,9 @@
     permissions = permissions.map(permission => permission.kind === "accessibility" ? { ...permission, status: "denied" } : permission);
   }
   const updateShortcutCapabilities = () => {
+    const microphone = permissions.find(permission => permission.kind === "microphone");
+    capabilities.microphone = ["denied", "restricted", "not_determined"].includes(microphone?.status)
+      ? { status: "permission_required", reason: "Geef Pennel toegang tot je microfoon." } : available();
     const granted = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
     const status = granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
     for (const name of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[name] = clone(status);
@@ -288,7 +291,7 @@
   let recordingStorageError = Boolean(options.recording_storage_error);
   let recordingRecovered = false;
   let recordingStopped = false;
-  let ownerRecording = options.owner_review && options.section === "recording";
+  let ownerRecording = options.section === "recording";
   let meetingSequence = 0;
   let transcriptRevision = 1;
   let saveFailure = Boolean(options.live_save_error || options.owner_review && options.summary_save_error);
@@ -337,7 +340,7 @@
     return true;
   };
   const meetingStatus = (includeContent = true) => {
-    const retained = (options.owner_review ? ownerRecording : options.section === "recording") && !recordingRecovered && !recordingStopped;
+    const retained = ownerRecording && !recordingRecovered && !recordingStopped;
     const storageError = retained && recordingStorageError;
     const paused = retained && Boolean(options.transcription_paused);
     const persistenceError = storageError ? "Je opname kon niet volledig worden bewaard. Probeer opnieuw te bewaren." : null;
@@ -1297,7 +1300,7 @@
       case "choose_meetings_dir": return null;
       case "pick_style_application": return options.style_picker_cancelled ? null : { id: "com.apple.mail", name: "Mail" };
       case "start_meeting": {
-        if (!options.owner_review) return meetingId;
+        if (!options.owner_review) { ownerRecording = true; recordingStopped = false; return meetingId; }
         if (meetingStatus().recording) throw Error("Finish the current recording first.");
         const seedIndex = library.indexOf(meeting); if (seedIndex !== -1) library[seedIndex] = clone(meeting);
         retainedMeetings.set(activeMeetingId, { info: clone(meetingInfo(activeMeetingId)), meeting_uid: meetingUid, session_id: liveSession, notes, transcript: clone(transcript) });

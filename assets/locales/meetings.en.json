@@ -1,4 +1,5 @@
 {
+  "meetings.now": "Now",
   "meetings.retranscribe_audio": "Retranscribe recording",
   "meetings.retranscription_confirm_title": "Transcribe this recording again?",
   "meetings.retranscription_confirm": "Processing: {recognition}. Your saved audio stays on this computer. The current transcript will be replaced and kept as a recovery copy. The summary will not be regenerated.",
@@ -117,7 +118,7 @@
   "meetings.voices_many": "{count} voices recognized.",
   "meetings.file_will_delete": "{name} will be deleted.",
   "meetings.recording_stopped": "Recording stopped · {time}",
-  "meetings.recording_clock": "Recording · {time}",
+  "meetings.recording_clock": "Recording {time}",
   "meetings.actions_for": "Actions for {title}",
   "meetings.delete_title": "Delete {title}?",
   "meetings.duration_minutes": "{count} min",

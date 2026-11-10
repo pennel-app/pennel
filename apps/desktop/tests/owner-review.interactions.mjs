@@ -49,10 +49,9 @@ export async function checkOwnerReviewMeeting() {
   const { fixture, api } = await owned();
   const begin = async title => {
     click(document.querySelector(".library-record"));
-    await until(() => document.querySelector(".recording-view .btn.primary"), "New recording did not open its explicit start action.");
-    edit(document.querySelector(".recording-view input"), title);
-    click(document.querySelector(".recording-view .btn.primary"));
     await until(() => document.querySelector(".live-workspace .live-notes") && visible(document.querySelector(".live-stop")), "The synthetic meeting did not start in the notes workspace.");
+    const heading = document.querySelector(".live-title"); edit(heading, title); heading.blur();
+    await until(async () => (await api.meetingStatus()).title === title, "The running meeting title was not saved.");
     return api.meetingStatus();
   };
   await until(() => document.querySelector(".library-record"), "The meeting task did not open.");

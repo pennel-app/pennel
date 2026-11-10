@@ -937,3 +937,29 @@ button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--d
 }
 
 .name-choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; max-height: 160px; overflow-y: auto; }
+
+/* One persistent recording capsule owns return and Stop; Ink stays fixed in both appearances. */
+.toolbar-capture { display: flex; align-items: center; gap: 6px; border-radius: var(--radius-pill); transition: background-color var(--da-motion-feedback) var(--da-motion-easing), width var(--da-motion-move-exit) var(--da-motion-easing); }
+.toolbar-capture.is-recording { padding-right: 6px; background: var(--pill-background); color: var(--pill-text); transition-duration: var(--da-motion-feedback), var(--da-motion-move); }
+.workspace-toolbar .toolbar-capture.is-recording .toolbar-recording { max-width: none; padding-right: 4px; background: transparent; color: var(--pill-text); border-color: transparent; box-shadow: none; }
+.workspace-toolbar .toolbar-capture.is-recording .toolbar-recording:hover:not(:disabled) { background: color-mix(in srgb, var(--pill-text) 10%, transparent); }
+.workspace-toolbar .toolbar-capture.is-recording .toolbar-capture-stop { position: relative; height: var(--desktop-toolbar-button-size); min-height: var(--desktop-toolbar-button-size); padding: 0 10px; gap: 5px; background: transparent; color: var(--pill-background); border: 0; box-shadow: none; }
+.workspace-toolbar .toolbar-capture.is-recording .toolbar-capture-stop::before { content: ""; position: absolute; inset: 5px 0; border-radius: inherit; background: var(--pill-text); }
+.workspace-toolbar .toolbar-capture.is-recording .toolbar-capture-stop > * { position: relative; }
+.workspace-toolbar .toolbar-capture.is-recording .toolbar-capture-stop:hover:not(:disabled)::before { background: color-mix(in srgb, var(--pill-text) 86%, var(--pill-background)); }
+.workspace-toolbar .toolbar-capture .toolbar-capture-stop .ui-icon { width: 10px; height: 10px; fill: currentColor; }
+.workspace-toolbar .toolbar-capture .toolbar-capture-stop:disabled { opacity: .7; }
+.workspace-toolbar .toolbar-recording .library-live-title { font-variant-numeric: tabular-nums; }
+.recording-levels { display: flex; align-items: center; gap: 2px; width: 22px; height: 24px; color: var(--pill-accent); }
+.recording-levels i { display: block; flex: 0 0 3px; height: 3px; border-radius: var(--radius-pill); background: currentColor; transition: height 70ms linear; }
+.workspace-toolbar button.btn.toolbar-sidebar[aria-expanded="false"] { background: var(--selection); color: var(--foreground); }
+.meeting-row-live .meeting-meta { display: inline-flex; align-items: center; gap: 6px; color: var(--live); font-variant-numeric: tabular-nums; }
+.meeting-row-live .meeting-meta::before { content: ""; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: currentColor; }
+.meeting-row-live.selected { background: var(--surface); }
+@supports (interpolate-size: allow-keywords) {
+  .toolbar-capture { interpolate-size: allow-keywords; width: max-content; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toolbar-capture, .toolbar-capture.is-recording, .recording-levels i { transition: none; }
+}
+:root[data-reduce-motion="true"] :is(.toolbar-capture, .recording-levels i) { transition: none; }

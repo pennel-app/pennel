@@ -446,16 +446,22 @@ public func meetingStatus(_ handle: UnsafeMutableRawPointer?) -> UnsafeMutablePo
 
 @_cdecl("pennel_mac_meeting_start_paths")
 func meetingStartPaths(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: UnsafePointer<CChar>?, _ rawMicrophone: UnsafePointer<CChar>?, _ rawSystem: UnsafePointer<CChar>?, _ echo: Bool, _ sink: @escaping AudioSink, _ context: UnsafeMutableRawPointer?, _ errorOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> UnsafeMutableRawPointer? {
-    startMeetingPaths(rawDirectory, rawApp, rawMicrophone, rawSystem, echo, sink, context, nil, errorOut)
+    startMeetingPaths(rawDirectory, rawApp, rawMicrophone, rawSystem, echo, sink, context, nil, nil, errorOut)
 }
 
 @_cdecl("pennel_mac_meeting_start_paths_with_scope")
 func meetingStartPathsWithScope(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: UnsafePointer<CChar>?, _ rawMicrophone: UnsafePointer<CChar>?, _ rawSystem: UnsafePointer<CChar>?, _ echo: Bool, _ sink: @escaping AudioSink, _ context: UnsafeMutableRawPointer?, _ scopeSink: @escaping CaptureScopeSink, _ scopeContext: UnsafeMutableRawPointer?, _ errorOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> UnsafeMutableRawPointer? {
     startMeetingPaths(rawDirectory, rawApp, rawMicrophone, rawSystem, echo, sink, context,
-                      { scopeSink(scopeContext, $0) }, errorOut)
+                      { scopeSink(scopeContext, $0) }, nil, errorOut)
 }
 
-private func startMeetingPaths(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: UnsafePointer<CChar>?, _ rawMicrophone: UnsafePointer<CChar>?, _ rawSystem: UnsafePointer<CChar>?, _ echo: Bool, _ sink: @escaping AudioSink, _ context: UnsafeMutableRawPointer?, _ scopeChanged: ((Bool) -> Void)?, _ errorOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> UnsafeMutableRawPointer? {
+@_cdecl("pennel_mac_meeting_start_paths_with_scope_and_level")
+func meetingStartPathsWithScopeAndLevel(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: UnsafePointer<CChar>?, _ rawMicrophone: UnsafePointer<CChar>?, _ rawSystem: UnsafePointer<CChar>?, _ echo: Bool, _ sink: @escaping AudioSink, _ context: UnsafeMutableRawPointer?, _ scopeSink: @escaping CaptureScopeSink, _ scopeContext: UnsafeMutableRawPointer?, _ levelSink: @escaping LevelSink, _ levelContext: UnsafeMutableRawPointer?, _ errorOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> UnsafeMutableRawPointer? {
+    startMeetingPaths(rawDirectory, rawApp, rawMicrophone, rawSystem, echo, sink, context,
+                      { scopeSink(scopeContext, $0) }, { levelSink(levelContext, $0, $1) }, errorOut)
+}
+
+private func startMeetingPaths(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: UnsafePointer<CChar>?, _ rawMicrophone: UnsafePointer<CChar>?, _ rawSystem: UnsafePointer<CChar>?, _ echo: Bool, _ sink: @escaping AudioSink, _ context: UnsafeMutableRawPointer?, _ scopeChanged: ((Bool) -> Void)?, _ level: ((UInt32, Float) -> Void)?, _ errorOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> UnsafeMutableRawPointer? {
     guard let directory = decodeString(rawDirectory), let microphone = decodeString(rawMicrophone), let system = decodeString(rawSystem) else {
         errorOut?.pointee = bridgeString("No recording paths provided")
         return nil
@@ -468,7 +474,7 @@ private func startMeetingPaths(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: 
             try capture.start(directory: URL(fileURLWithPath: directory), sink: sink, context: context,
                               tapProcesses: processes, echoCancellation: echo,
                               microphoneURL: URL(fileURLWithPath: microphone), systemURL: URL(fileURLWithPath: system),
-                              scopeChanged: scopeChanged)
+                              scopeChanged: scopeChanged, level: level)
             return Unmanaged.passRetained(capture).toOpaque()
         } catch { _ = capture.stop(); writeError(errorOut, error); return nil }
     }

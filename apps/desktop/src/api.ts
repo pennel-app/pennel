@@ -5,6 +5,7 @@ import type { ClaudeStatus } from "./claude-access";
 import type { LoginPoll } from "./cloud-login";
 export type { ClaudeStatus };
 import type { WorkspaceRoute } from "./workspace-state";
+import { meetingLevels, RecordingStopGate } from "./recording-control-state";
 import { localizeUiResponse } from "./ui-response.ts";
 import type { DesktopCommandState, DesktopEnvironment } from "./desktop-chrome-state.ts";
 import type { PeopleSnapshot, PeopleRequest, PeopleUpdateResult, ContactPickResult } from "./people-state";
@@ -76,6 +77,9 @@ export type CapabilityStatus = "available" | "permission_required" | "unsupporte
 export type PermissionKind = "microphone" | "accessibility" | "calendar" | "speech" | "system_audio";
 export type PermissionStatus = "granted" | "not_determined" | "denied" | "restricted" | "not_required" | "unsupported" | "unknown";
 export type AppWindow = "library" | "settings" | "history" | "dictation" | "live" | "onboarding";
+export interface MeetingLevel { session_id: string; level: number }
+const recordingStops = new RecordingStopGate();
+
 export type MeetingPhase = "idle" | "starting" | "recording" | "stopping" | "finalizing" | "error";
 export type Speaker = "me" | "others";
 export type AppearancePreference = "system" | "light" | "dark";
@@ -960,7 +964,11 @@ export const api = {
     invoke<LiveSpeakerAttributionStatus>("set_live_speaker_attribution", { sessionId, enabled }),
   meetingRuntimeStatus: () => invoke<MeetingRuntimeStatus>("meeting_runtime_status"),
   startMeeting: (title: string) => invoke<string>("start_meeting", { title }),
-  stopMeeting: (sessionId?: string) => invoke<void>("stop_meeting", sessionId ? { sessionId } : undefined),
+  stopMeeting: (sessionId?: string) => {
+    if (!sessionId) return invoke<void>("stop_meeting");
+    meetingLevels.stop(sessionId);
+    return recordingStops.run(sessionId, () => invoke<void>("stop_meeting", { sessionId }));
+  },
   retryMeetingPersistence: (sessionId: string) => invoke<void>("retry_meeting_persistence", { sessionId }),
   setMeetingNotes: (text: string, sessionId: string) => invoke<void>("set_meeting_notes", { text, sessionId }),
   setMeetingTitle: (title: string, sessionId: string) => invoke<void>("set_meeting_title", { title, sessionId }),
@@ -1063,6 +1071,8 @@ export const api = {
   setClaudeAccess: (enabled: boolean) => invoke<ClaudeAccessView>("set_claude_access", { enabled }),
   onClaudeAccessChanged: (handler: (status: ClaudeStatus) => void): Promise<() => void> =>
     listen<ClaudeStatus>("claude-access-changed", (event) => handler(event.payload)),
+  onMeetingLevel: (handler: (level: MeetingLevel) => void): Promise<() => void> =>
+    listen<MeetingLevel>("meeting-level", (event) => handler(event.payload)),
   onSyncChanged: (handler: (report: SyncReport) => void): Promise<() => void> =>
     listen<SyncReport>("sync-changed", (event) => handler(event.payload)),
 };
