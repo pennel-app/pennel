@@ -1,0 +1,213 @@
+[
+  {
+    "name": "keyed_hold_release_latch",
+    "hold": {
+      "mods": [
+        "ctrl",
+        "alt"
+      ],
+      "key": 49
+    },
+    "listening": [],
+    "events": [
+      {
+        "kind": "flags",
+        "code": 59,
+        "flags": 262145,
+        "signals": [],
+        "withhold": false,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "flags",
+        "code": 58,
+        "flags": 786465,
+        "signals": [],
+        "withhold": false,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "down",
+        "code": 49,
+        "flags": 786465,
+        "signals": [
+          "down"
+        ],
+        "withhold": true,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "down",
+        "code": 49,
+        "flags": 786465,
+        "signals": [],
+        "withhold": true,
+        "down": true,
+        "repeating": true
+      },
+      {
+        "kind": "down",
+        "code": 0,
+        "flags": 786465,
+        "signals": [],
+        "withhold": false,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "flags",
+        "code": 59,
+        "flags": 524320,
+        "signals": [
+          "up"
+        ],
+        "withhold": false,
+        "down": false,
+        "repeating": false
+      },
+      {
+        "kind": "up",
+        "code": 49,
+        "flags": 524320,
+        "signals": [],
+        "withhold": true,
+        "down": false,
+        "repeating": false
+      },
+      {
+        "kind": "flags",
+        "code": 58,
+        "flags": 0,
+        "signals": [],
+        "withhold": false,
+        "down": false,
+        "repeating": false
+      }
+    ]
+  },
+  {
+    "name": "cancel_while_modifier_hold",
+    "hold": {
+      "mods": [
+        "fn"
+      ],
+      "key": null
+    },
+    "listening": [
+      {
+        "action": 3,
+        "mods": [],
+        "key": 53
+      }
+    ],
+    "events": [
+      {
+        "kind": "flags",
+        "code": 63,
+        "flags": 8388608,
+        "signals": [
+          "down"
+        ],
+        "withhold": false,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "down",
+        "code": 53,
+        "flags": 8388608,
+        "signals": [
+          "action:3"
+        ],
+        "withhold": true,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "up",
+        "code": 53,
+        "flags": 8388608,
+        "signals": [],
+        "withhold": true,
+        "down": false,
+        "repeating": false
+      },
+      {
+        "kind": "flags",
+        "code": 63,
+        "flags": 0,
+        "signals": [
+          "up"
+        ],
+        "withhold": false,
+        "down": false,
+        "repeating": false
+      }
+    ]
+  },
+  {
+    "name": "bare_modifier_release_and_click",
+    "hold": null,
+    "listening": [
+      {
+        "action": 4,
+        "mods": [
+          "left_alt"
+        ],
+        "key": null
+      }
+    ],
+    "events": [
+      {
+        "kind": "flags",
+        "code": 58,
+        "flags": 524320,
+        "signals": [],
+        "withhold": false,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "flags",
+        "code": 58,
+        "flags": 0,
+        "signals": [
+          "action:4"
+        ],
+        "withhold": false,
+        "down": false,
+        "repeating": false
+      },
+      {
+        "kind": "flags",
+        "code": 58,
+        "flags": 524320,
+        "signals": [],
+        "withhold": false,
+        "down": true,
+        "repeating": false
+      },
+      {
+        "kind": "mouse",
+        "code": 0,
+        "flags": 524320,
+        "signals": [],
+        "withhold": false,
+        "down": false,
+        "repeating": false
+      },
+      {
+        "kind": "flags",
+        "code": 58,
+        "flags": 0,
+        "signals": [],
+        "withhold": false,
+        "down": false,
+        "repeating": false
+      }
+    ]
+  }
+]

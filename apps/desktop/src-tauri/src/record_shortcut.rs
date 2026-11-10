@@ -46,13 +46,12 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn refresh(app: &AppHandle, shared: &Shared) {
+    #[cfg(not(target_os = "macos"))]
     let enabled = shared.settings().record_shortcut_enabled;
     #[cfg(target_os = "macos")]
     let result = {
         let listener = shared.hotkey.lock().unwrap().clone();
-        listener.map_or(Ok(()), |listener| {
-            listener.set_record_shortcut_enabled(enabled)
-        })
+        listener.map_or(Ok(()), |listener| listener.set_bindings(&shared.settings()))
     };
     #[cfg(any(windows, target_os = "linux"))]
     let result = {
