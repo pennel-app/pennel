@@ -33,10 +33,11 @@ export async function companionResizeWide(){const{root,note}=window.__PENNEL_COM
 
 export async function prepareCompanionKeyboardReopen() {
   const root = await owned();
-  press(root, "transcript");
+  const pane = window.__PENNEL_FIXTURE__.options.companion_reopen_pane ?? "transcript";
+  press(root, pane);
   root.querySelector(".meeting-companion-close").click();
   await until(() => root.querySelector(".meeting-companion").hidden, "The companion did not close before keyboard reopening.");
-  const tab = root.querySelector('[data-live-tab="transcript"]');
+  const tab = root.querySelector(`[data-live-tab="${pane}"]`);
   tab.focus();
   assert(document.activeElement === tab, "The closed segmented control could not receive keyboard focus.");
   window.__PENNEL_COMPANION_KEYBOARD__ = { root, tab };

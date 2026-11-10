@@ -181,7 +181,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   } }, l("meetings.workspace_more"), icon("more"));
   headerActions.append(more);
   const tabList = h("nav", { class: "meeting-workspace-nav" }, writingTabs, h("span", { class: "grow" }));
-  const paneNames: [LivePane, TranslationKey][] = [["notes", "meetings.your_notes"], ["summary", "meetings.workspace_summary"], ["transcript", "meetings.workspace_transcript"], ["questions", "meetings.companion_ask"], ["suggestions", "meetings.workspace_suggestions"], ["tools", "meetings.workspace_tools"]];
+  const reviewCount = h("span", { class: "review-count", hidden: true, "aria-hidden": "true" });
+  const paneNames: [LivePane, TranslationKey][] = [["notes", "meetings.your_notes"], ["summary", "meetings.workspace_summary"], ["transcript", "meetings.workspace_transcript"], ["suggestions", "meetings.companion_review"], ["questions", "meetings.companion_ask"], ["tools", "meetings.workspace_tools"]];
   const tabButtons = new Map<LivePane, HTMLButtonElement>();
   const panels = new Map<LivePane, HTMLElement>();
   for (const [pane, key] of paneNames) {
@@ -194,11 +195,12 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       }
     } }, l(key));
     button.addEventListener("keydown", event => {
-      const available = paneNames.filter(([name]) => !tabButtons.get(name)?.hidden && (pane === "notes" || pane === "summary" ? name === "notes" || name === "summary" : name === "transcript" || name === "questions")).map(([name]) => name);
+      const available = paneNames.filter(([name]) => !tabButtons.get(name)?.hidden && (pane === "notes" || pane === "summary" ? name === "notes" || name === "summary" : name === "transcript" || name === "suggestions" || name === "questions")).map(([name]) => name);
       const index = available.indexOf(pane);
       const next = event.key === "ArrowRight" ? available[(index + 1) % available.length] : event.key === "ArrowLeft" ? available[(index - 1 + available.length) % available.length] : event.key === "Home" ? available[0] : event.key === "End" ? available.at(-1) : null;
       if (next) { event.preventDefault(); selectPane(next); tabButtons.get(next)?.focus(); tabButtons.get(next)?.scrollIntoView({ block: "nearest", inline: "nearest" }); }
     });
+    if (pane === "suggestions") button.append(reviewCount);
     tabButtons.set(pane, button);
     (pane === "notes" || pane === "summary" ? writingTabs : companionTabs).append(button);
     panels.set(pane, h("section", { class: `live-pane live-${pane}-pane`, id: `live-${session}-${pane}`, "data-live-pane": pane, role: "tabpanel", "aria-labelledby": button.id }));
@@ -452,11 +454,11 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       const button = tabButtons.get(pane)!;
       const writing = pane === "notes" || pane === "summary";
       if (writing) { panel.setAttribute("role", finalized ? "region" : "tabpanel"); panel.setAttribute("aria-labelledby", finalized ? pane === "notes" ? notesTitle.id : summaryHeading.id : button.id); }
-      button.hidden = pane === "tools" || pane === "suggestions" || writing;
+      button.hidden = pane === "tools" || pane === "suggestions" && !finalized || writing;
       const selected = pane === "notes" || pane === "summary" ? pane === panes.primary && (panes.wide || pane === panes.selected)
         : panes.companionOpen && pane === panes.companion && (panes.wide || pane === panes.selected);
       button.setAttribute("aria-selected", String(selected));
-      const closedTab = ["transcript", "questions"].includes(panes.companion) ? panes.companion : "transcript";
+      const closedTab = ["transcript", "suggestions", "questions"].includes(panes.companion) ? panes.companion : "transcript";
       button.tabIndex = selected || !panes.companionOpen && pane === closedTab ? 0 : -1;
       if (!writing) button.setAttribute("aria-expanded", String(panes.companionOpen && pane === panes.companion));
     }
@@ -720,7 +722,13 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
         selectPane("notes"); showPreview(false); editor.focus({ preventScroll: true }); editor.setSelectionRange(before.text.length, value.length);
         try { await saveNotes(value); return true; } catch (error) { showSaveError(error); return false; }
       },
-    }, openSource: openInsightSource };
+    }, openSource: openInsightSource, sourceLabel: source => {
+      const segment = status.transcript.find(segment => segment.utterance_id === source.utterance_id);
+      return insightSourceMatches(source, segment, uid) && segment ? String(speakerUiLabel(segment, reviewDetail ?? undefined)) : null;
+    }, changed: count => {
+      reviewCount.textContent = formatNumber(count); reviewCount.hidden = count === 0;
+      tabButtons.get("suggestions")?.setAttribute("aria-label", t("meetings.companion_review_count", { count: formatNumber(count) }));
+    } };
   }
   async function openInsightSource(source: InsightSource, origin: HTMLElement, restore: () => void): Promise<boolean> {
     const navigation = ++sourceNavigation;

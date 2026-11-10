@@ -11,7 +11,10 @@ export class LivePaneState {
   ratio = 60;
   private finished = false;
   private companionChosen = false;
-  setFinished(finished: boolean) { this.finished = finished; }
+  setFinished(finished: boolean) {
+    this.finished = finished;
+    if (!this.companionChosen) this.companion = finished ? "suggestions" : "transcript";
+  }
   select(pane: LivePane) {
     this.selected = pane;
     if (pane === "notes" || pane === "summary") {
@@ -26,7 +29,7 @@ export class LivePaneState {
   }
   resize(width: number) {
     this.wide = width >= 1100;
-    if (!this.companionChosen) { this.companionOpen = this.wide; this.companion = "transcript"; this.selected = this.primary; }
+    if (!this.companionChosen) { this.companionOpen = this.wide; this.companion = this.finished ? "suggestions" : "transcript"; this.selected = this.primary; }
   }
   shown(pane: LivePane) {
     if (pane === "notes" || pane === "summary") return this.finished || pane === this.primary;

@@ -6,7 +6,10 @@ function edit(input, value) { input.value = value; input.dispatchEvent(new Input
 async function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic review fixture.");
   await until(() => document.querySelector(".insight-review .insight-card"), "Reviewed suggestions did not mount.");
-  return { fixture: window.__PENNEL_FIXTURE__, root: document.querySelector(".insight-review"), api: window.__PENNEL_PLATFORM__ };
+  const root = document.querySelector(".insight-review");
+  root.querySelector(".insight-analysis-details").open = true;
+  root.querySelectorAll(".insight-card-details").forEach(details => { details.open = true; });
+  return { fixture: window.__PENNEL_FIXTURE__, root, api: window.__PENNEL_PLATFORM__ };
 }
 async function store(api) { return api.invoke("insights_snapshot", { id: window.__PENNEL_FIXTURE__.options.meeting_id }); }
 async function choose(root, key) {
