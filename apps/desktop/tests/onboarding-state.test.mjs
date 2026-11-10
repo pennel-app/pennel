@@ -92,6 +92,14 @@ test("model chooser keeps a valid selection and defaults to the recommended mode
   assert.equal(modelOptionLabel(models[0], size), "Klein · 150 MB");
 });
 
+test("new model defaults use the same compatible recommendation as Settings while saved choices stay intact", async () => {
+  const { defaultModelId } = await import("../src/onboarding-state.ts");
+  const models = [{ id: "unsupported", recommended: true }, { id: "compatible", recommended: true }];
+  assert.equal(defaultModelId(models, "missing", [models[1]]), "compatible");
+  assert.equal(defaultModelId(models, "unsupported", [models[1]]), "unsupported");
+  assert.equal(defaultModelId(models, "missing", []), "missing");
+});
+
 test("saved optional voice enrollment remains addressable after practice", () => {
   assert.deepEqual(onboardingSteps.slice(-2), ["practice", "voice"]);
   assert.equal(stepIndex("voice"), 5);

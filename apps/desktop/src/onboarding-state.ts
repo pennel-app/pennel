@@ -78,9 +78,9 @@ export function manualPracticeAllowed(readiness: SetupReadiness | null, permissi
     && (!apple || speech === "granted") && !!choice?.model;
 }
 
-export function defaultModelId(models: LocalModel[], current: string): string {
+export function defaultModelId(models: LocalModel[], current: string, compatible: LocalModel[] = models): string {
   if (models.some((model) => model.id === current)) return current;
-  return recommendedSpeechModel(models)?.id ?? current;
+  return recommendedSpeechModel(compatible)?.id ?? current;
 }
 
 export function modelOptionLabel(model: LocalModel, formatSize: (bytes: number) => string): string {

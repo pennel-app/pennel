@@ -1,5 +1,6 @@
 import "./styles.css";
 import "./task-shell.css";
+import "./onboarding.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, fixtureClient, listen, listenToWindow, type AppInfo, type MeetingFinished, type MeetingRuntimeStatus, type Settings, type UpdateInfo } from "./api";
 import { LatestRequest, SerialQueue, afterPaint, fillWhenReady, persistAll } from "./async";

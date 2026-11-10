@@ -29,6 +29,7 @@ function choose(picker, value, document = globalThis.document) {
 function showOtherOptions(document = globalThis.document) {
   const alternatives = document.querySelector("details.onboarding-other-options");
   if (alternatives && !alternatives.open) alternatives.querySelector("summary").click();
+  const local = alternatives?.querySelector(".onboarding-local-options"); if (local && !local.open) local.querySelector("summary").click();
 }
 
 export async function checkInterfaceLanguageUI() {
@@ -68,7 +69,7 @@ export async function checkOnboardingLanguageUI() {
   const before = await api.info();
   assert(before.settings.ui_language === "system", "First-run interface preference does not default to System.");
   assert(document.documentElement.lang === before.system_interface_language, "First screen did not use the system language.");
-  const picker = document.querySelector('.onboarding-interface-language .choice');
+  const picker = document.querySelector('.onboarding-language .onboarding-interface-language .choice');
   assert(picker?.value === "system", "First-run language picker did not select System.");
   const next = getInterfaceLanguage() === "en" ? "nl" : "en";
   choose(picker, next);
@@ -78,7 +79,8 @@ export async function checkOnboardingLanguageUI() {
   assert(JSON.stringify((await api.info()).settings) === JSON.stringify({ ...before.settings, ui_language: next }), "Language screen changed speech/provider/model/progress settings.");
   document.querySelector('.onboarding-next').click();
   await until(() => fixture.info().settings.onboarding.resume_step === "welcome", "Language did not advance to Welcome.");
-  [...document.querySelectorAll('.onboarding-goals button')].find(node => node.textContent.trim() === t("onboarding.try_dictation")).click();
+  document.querySelector('[data-onboarding-goal="dictation"]').click();
+  document.querySelector(".onboarding-next").click();
   await until(() => fixture.info().settings.onboarding.resume_step === "engine" && document.querySelector('[aria-label]') && document.querySelector('.engine-language'), "Welcome did not advance to speech recognition.");
   showOtherOptions();
   const modelPicker = [...document.querySelectorAll('.choice[aria-label]')].find(node => node.getAttribute("aria-label")?.startsWith(t("onboarding.speech_model") + ":"));
