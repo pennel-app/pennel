@@ -39,3 +39,5 @@ A writing tendency supported by speech from several capture sessions, such as di
 
 **Trait override**:
 A person's explicit correction to a writing-profile trait, retained as further speech is learned.
+
+- **Summary structure** — optional, personal display data and frozen generation provenance attached to the exact SHA-256 revision of a canonical summary Markdown body. Versioned `pennel.summary.structure.<body_revision>.json` records remain beside immutable summary history; editing the body detaches its record, and restoring that body attaches it again. Structured action state is rendered into the Markdown, while shareable summaries never read personal records.

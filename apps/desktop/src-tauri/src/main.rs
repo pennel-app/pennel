@@ -1226,6 +1226,7 @@ fn main() {
             summaries::meeting_summary,
             summaries::save_meeting_summary,
             summaries::accept_meeting_summary,
+            summaries::update_meeting_summary_action,
             summaries::meeting_summary_history,
             summaries::restore_meeting_summary,
             summaries::generate_meeting_summary,
