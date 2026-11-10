@@ -564,6 +564,7 @@ pub struct MeetingRecorder {
     engine: Arc<PennelEngine>,
     pub title: String,
     started: Instant,
+    #[cfg(target_os = "macos")]
     clock_verified: bool,
     quiescent_ms: Option<u64>,
     capture_failures: Vec<String>,
@@ -1176,7 +1177,6 @@ impl MeetingRecorder {
                 engine,
                 title,
                 started,
-                clock_verified: true,
                 quiescent_ms: None,
                 capture_failures: Vec::new(),
                 #[cfg(test)]
@@ -1208,7 +1208,9 @@ impl MeetingRecorder {
 
     pub(crate) fn evidence_clock(&self) -> crate::meeting_speaker_evidence::EvidenceClock {
         crate::meeting_speaker_evidence::EvidenceClock {
+            #[cfg(target_os = "macos")]
             started: self.started,
+            #[cfg(target_os = "macos")]
             verified: self.clock_verified,
         }
     }
@@ -1225,6 +1227,7 @@ impl MeetingRecorder {
         Arc::new(|| false)
     }
 
+    #[cfg(target_os = "macos")]
     pub(crate) fn audio_source_status(&self) -> serde_json::Value {
         #[cfg(target_os = "macos")]
         if let Some(native) = &self.native {
@@ -1354,6 +1357,7 @@ impl MeetingRecorder {
             engine,
             title: "Originele titel".into(),
             started: Instant::now(),
+            #[cfg(target_os = "macos")]
             clock_verified: true,
             quiescent_ms: None,
             capture_failures: Vec::new(),
