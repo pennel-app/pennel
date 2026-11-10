@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 import { conversationRequests as requests } from "../../../assets/contracts/meeting-conversations.ts";
 
 const assert = (value, message) => { if (!value) throw Error(message); };
@@ -353,7 +354,7 @@ export function finishConversationKeyboard() {
 
 async function preparationProbe() {
   const state = await owned(), { root, fixture } = state;
-  document.querySelector('[data-live-tab="notes"]').click();
+  selectMeetingPane(document.querySelector(".live-workspace"), "notes");
   const editor = document.querySelector(".live-notes");
   fixture.workspace.notesDelay(30000); edit(editor, "Acknowledged notes prepared for this synthetic question.");
   questions();
@@ -430,7 +431,7 @@ export async function checkConversationCancelBeforeAdmissionReply() {
 
 export async function checkConversationUnicodeNoteSource() {
   const { root, fixture } = await owned();
-  document.querySelector('[data-live-tab="notes"]').click();
+  selectMeetingPane(document.querySelector(".live-workspace"), "notes");
   const editor = document.querySelector(".live-notes");
   edit(editor, "Préface 😀\nRepeated source.\nRepeated source.\n"); questions();
   const request = await ask(root, fixture, "Which second repeated note supports this answer?");

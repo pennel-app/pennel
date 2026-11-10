@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -15,7 +16,7 @@ async function owned() {
   return { root, fixture: window.__PENNEL_FIXTURE__, api: (await import("/src/api.ts")).api, id: () => root.dataset.meetingId };
 }
 async function summarySurface(root) {
-  root.querySelector('[data-live-tab="summary"]').click();
+  selectMeetingPane(root, "summary");
   await until(() => !root.querySelector(".meeting-summary-editor").disabled, "The saved summary did not load.");
   assert(root.querySelector(".meeting-summary-rendered").getClientRects().length > 0, "Completed summary did not open as readable content.");
   root.querySelector(".meeting-summary-edit").click();
@@ -105,7 +106,7 @@ export async function checkScopedCopyPreview() {
   const privateSummary = "PRIVATE_SYNTHETIC_OWNER_SUMMARY";
   edit(editor, privateSummary);
   await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
-  root.querySelector('[data-live-tab="notes"]').click();
+  selectMeetingPane(root, "notes");
   root.querySelector(".meeting-export-action").click();
   const preview = root.querySelector(".meeting-export-preview"), body = preview.querySelector(".meeting-export-copy");
   await until(() => !preview.hidden && !preview.querySelector(".meeting-export-generate").disabled, "The default shareable preview did not open.");

@@ -91,3 +91,12 @@ test("rich evidence uses Rust Unicode White_Space boundaries and preserves liter
     speaker: "others", voice: null, failed: false, text: "\u00a0\ufeffalpha\u2003beta\n😀\ufeff\u00a0" };
   assert.deepEqual(segmentEvidenceValue(utterance), ["u-bom", "microphone", 0, 1000, "\ufeffalpha beta 😀\ufeff", false]);
 });
+
+test("a finished document keeps Summary and Your notes in one writing surface", () => {
+  const panes = new LivePaneState(); panes.resize(1000); panes.setFinished(true);
+  assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
+  panes.select("summary"); assert.equal(panes.shown("notes"), true);
+  panes.select("questions"); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
+  panes.resize(700); assert.equal(panes.shown("summary"), false); assert.equal(panes.shown("questions"), true);
+  panes.closeCompanion(); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
+});

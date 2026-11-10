@@ -9,6 +9,8 @@ export class LivePaneState {
   companionOpen = false;
   wide = false;
   ratio = 60;
+  private finished = false;
+  setFinished(finished: boolean) { this.finished = finished; }
   select(pane: LivePane) {
     this.selected = pane;
     if (pane === "notes" || pane === "summary") this.primary = pane;
@@ -20,7 +22,9 @@ export class LivePaneState {
     else this.select(pane);
   }
   resize(width: number) { this.wide = width >= 800; }
-  shown(pane: LivePane) { return this.wide ? pane === this.primary || this.companionOpen && pane === this.companion : pane === this.selected; }
+  shown(pane: LivePane) {
+    if (this.finished && (pane === "notes" || pane === "summary")) return this.wide || this.selected === "notes" || this.selected === "summary";
+    return this.wide ? pane === this.primary || this.companionOpen && pane === this.companion : pane === this.selected; }
 }
 
 export function formatSelection(value: string, start: number, end: number, format: "heading" | "bold" | "list" | "task") {

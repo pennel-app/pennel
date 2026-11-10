@@ -85,3 +85,24 @@
 .meeting-notes-first :is(.live-pane, textarea, .markdown) { scrollbar-color: var(--border) transparent; }
 @media (max-width: 1000px) { .meeting-workspace-nav .tab { padding-inline: 8px; } .meeting-workspace-nav { gap: 4px; } }
 @media (prefers-reduced-motion: reduce) { .meeting-notes-first * { scroll-behavior: auto !important; } }
+
+.meeting-heading-row { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.meeting-heading-row .live-title { flex: 1 1 180px; min-width: 0; }
+.meeting-header-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.meeting-header-metadata { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 4px; }
+.meeting-header-people { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.meeting-person-chip { min-height: 24px; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--subtle); font-size: var(--font-label); box-shadow: none; }
+.meeting-document { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; grid-column: 1; grid-row: 1; }
+.meeting-finished-document .meeting-document { display: block; overflow-y: auto; scrollbar-gutter: stable; padding-right: 6px; }
+.meeting-finished-document .meeting-document > .live-pane { flex: none; min-height: 0; overflow: visible; }
+.meeting-finished-document .meeting-summary-surface { min-height: 0; padding-bottom: 24px; }
+.meeting-finished-document .live-notes-pane { display: flex; width: 100%; padding-top: 22px; border-top: 1px solid var(--border); }
+.meeting-finished-document .live-notes { flex: none; min-height: 180px; overflow-y: hidden; }
+.meeting-notes-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.meeting-notes-heading h2 { margin: 0; font-size: var(--font-content); font-weight: 600; }
+.meeting-notes-heading p { margin: 0; }
+.meeting-transcript-provenance { margin: 24px 4px 8px; overflow-wrap: anywhere; }
+.meeting-finished-document .meeting-workspace-nav { border-bottom: 0; padding-block: 0 4px; }
+@media (max-width: 800px) { .meeting-heading-row { gap: 8px; flex-wrap: wrap; } .meeting-header-actions { margin-left: auto; } }
+.meeting-heading-row .live-title { height: auto; min-height: 1.4em; }
+.meeting-finished-document .meeting-summary-rendered { font-size: var(--font-content); }

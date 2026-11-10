@@ -1,11 +1,12 @@
 import { api, fixtureClient, type MeetingStatus, type MeetingDetail, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveSourceAnchor, type Segment } from "./api";
 import { SerialQueue, persistAll } from "./async";
-import { bindLocalization, l, t, localizeBackendText, type TranslationKey } from "./i18n";
+import { bindLocalization, l, t, localizeBackendText, formatNumber, type TranslationKey } from "./i18n";
 import { controlButton, errorText, formatClock, h, markdown, showPopupMenu, textField } from "./dom";
 import { MeetingDraft } from "./meeting-draft";
 import { RecordingRefresh, sameSegment, segmentKeys } from "./recording-refresh";
 import { LivePaneState, LiveStatusEpoch, segmentEvidenceValue, formatSelection, type LivePane } from "./live-workspace-state";
-import { sourceSpeakerLabel, speakerUiLabel } from "./meeting-labels";
+import { frozenRecognitionLabel } from "./recording-processing";
+import { meetingDate, sourceSpeakerLabel, speakerUiLabel } from "./meeting-labels";
 import { VisibilityPoll } from "./window-lifecycle";
 import { attributionEditable, attributionNoticeKey, segmentAudioAvailable } from "./meeting-source";
 import { LiveSpeakerControl, liveSpeakerStatusKey } from "./live-speaker-state";
@@ -95,7 +96,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   let previousScroll = 0;
   let intendedScroll: number | null = null;
   let pendingTranscript: Segment[] | null = null;
-  let sourceReturn: { view: Pick<LivePaneState, "selected" | "primary" | "companion" | "companionOpen">; questionScroll: number; questionPaneScroll: number; transcriptScroll: number; notesScroll: number;
+  let sourceReturn: { view: Pick<LivePaneState, "selected" | "primary" | "companion" | "companionOpen">; questionScroll: number; questionPaneScroll: number; transcriptScroll: number; notesScroll: number; documentScroll: number;
     start: number; end: number; direction: "forward" | "backward" | "none"; summaryStart: number; summaryEnd: number; summaryDirection: "forward" | "backward" | "none"; summaryScroll: number; summaryEditing: boolean;
     turn: HTMLElement; restore?: () => void; label?: TranslationKey } | null = null;
   let insights: ReturnType<typeof reviewedInsights> | null = null;
@@ -131,9 +132,15 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const clock = h("span", { class: "live-clock" });
   const phase = h("span", { class: "live-phase", role: "status" });
   const stop = controlButton({ class: "btn live-stop", onclick: () => { void stopCapture(); } }, l("common.stop_recording"));
-  const copyExport = controlButton({ class: "btn meeting-export-action", hidden: true, onclick: () => openExport("shareable") }, l("meetings.export_default_action"));
-  const band = h("header", { class: "live-recording-band" }, title,
-    h("div", { class: "row recording-controls" }, h("span", { class: "status-dot", "aria-hidden": "true" }), phase, clock, h("span", { class: "grow" }), stop, copyExport));
+  const copyExport = controlButton({ class: "btn primary meeting-export-action", hidden: true, onclick: () => openExport("shareable") }, l("meetings.share"));
+  const headerActions = h("div", { class: "meeting-header-actions" }, copyExport);
+  const date = h("span", { class: "meeting-header-date" });
+  const duration = h("span", { class: "meeting-header-duration" });
+  const people = h("div", { class: "meeting-header-people", "aria-label": l("meetings.workspace_people") });
+  let peopleSignature = "";
+  const metadata = h("div", { class: "meeting-header-metadata help", hidden: true }, date, duration, people);
+  const recordingControls = h("div", { class: "row recording-controls" }, h("span", { class: "status-dot", "aria-hidden": "true" }), phase, clock, h("span", { class: "grow" }), stop);
+  const band = h("header", { class: "live-recording-band" }, h("div", { class: "meeting-heading-row" }, title, headerActions), metadata, recordingControls);
   const warning = h("p", { class: "live-warning help", role: "status", hidden: true });
   const recovery = h("div", { class: "live-recovery", hidden: true });
   const failedRecoveryHeading = h("strong");
@@ -157,7 +164,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const sourceNotice = h("div", { class: "live-source-notice", hidden: true });
   const writingTabs = h("div", { class: "meeting-writing-tabs", role: "tablist", "aria-label": l("meetings.workspace_notes") });
   const companionTabs = h("div", { class: "meeting-companion-tabs", role: "tablist", "aria-label": l("meetings.workspace_tools") });
-  const closeCompanion = h("button", { class: "btn compact meeting-companion-close", hidden: true, title: l("meetings.workspace_close_companion"), "aria-label": l("meetings.workspace_close_companion"), onclick: () => { ++sourceNavigation; panes.closeCompanion(); updatePanes(); } }, icon("close"));
+  const closeCompanion = h("button", { class: "btn compact meeting-companion-close", hidden: true, title: l("meetings.workspace_close_companion"), "aria-label": l("meetings.workspace_close_companion"), onclick: () => returnToDocument() }, icon("close"));
   const more = h("button", { class: "btn compact meeting-workspace-more", "aria-haspopup": "menu", onclick: () => {
     showPopupMenu(more, [
       { value: "format", label: l("meetings.workspace_formatting"), run: () => { selectPane("notes"); noteHeading.hidden = !noteHeading.hidden; } },
@@ -172,7 +179,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       { value: "personal", label: l("meetings.export_personal_action"), disabled: !finalized, title: !finalized ? l("meetings.tools_no_recording") : undefined, run: () => openExport("personal") },
     ], { report: showSaveError });
   } }, l("meetings.workspace_more"), icon("more"));
-  const tabList = h("nav", { class: "meeting-workspace-nav" }, writingTabs, h("span", { class: "grow" }), companionTabs, closeCompanion, more);
+  headerActions.append(more);
+  const tabList = h("nav", { class: "meeting-workspace-nav" }, writingTabs, h("span", { class: "grow" }), companionTabs, closeCompanion);
   const paneNames: [LivePane, TranslationKey][] = [["notes", "meetings.your_notes"], ["summary", "meetings.workspace_summary"], ["transcript", "meetings.workspace_transcript"], ["questions", "meetings.workspace_questions"], ["suggestions", "meetings.workspace_suggestions"], ["tools", "meetings.workspace_tools"]];
   const tabButtons = new Map<LivePane, HTMLButtonElement>();
   const panels = new Map<LivePane, HTMLElement>();
@@ -219,7 +227,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   }
   const noteHeading = h("div", { class: "live-note-controls", hidden: true }, h("div", { class: "live-preview-toggle" }, sourceToggle, previewToggle), formatting);
   const peopleControls = peopleNoteControls(peopleHost());
-  panels.get("notes")!.append(noteHeading, editor, notePreview, h("footer", { class: "live-save-controls" }, saveStatus, save), saveError);
+  const notesTitle = h("h2", { id: `live-${session}-notes-heading` }, l("meetings.your_notes"));
+  const notesSectionHeading = h("div", { class: "meeting-notes-heading", hidden: true }, notesTitle, h("p", { class: "help" }, l("meetings.notes_private_share")));
+  panels.get("notes")!.append(notesSectionHeading, noteHeading, editor, notePreview, h("footer", { class: "live-save-controls" }, saveStatus, save), saveError);
   const follow = controlButton({ class: "btn compact live-follow", hidden: true, onclick: resumeFollowing }, l("meetings.workspace_follow"));
   const transcriptOutput = h("div", { class: "live-transcript", tabindex: 0, "aria-label": l("meetings.workspace_transcript") });
   const transcriptEmpty = h("p", { class: "muted" }, l("meetings.empty_transcript"));
@@ -284,7 +294,14 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const exportPreview = meetingExportPreview(ctx, { id: () => owner.id, template: () => selectedTemplate, flush });
   panels.get("tools")!.append(tools.root, exportPreview.root);
   const separator = h("div", { class: "live-pane-separator", role: "separator", tabindex: 0, "aria-orientation": "vertical", "aria-label": l("meetings.workspace_split"), "aria-valuemin": 35, "aria-valuemax": 75 });
-  const content = h("div", { class: "live-workspace-panes" }, panels.get("notes")!, panels.get("summary")!, separator, panels.get("transcript")!, panels.get("questions")!, panels.get("suggestions")!, panels.get("tools")!);
+  const transcriptProvenance = h("p", { class: "help meeting-transcript-provenance", hidden: true });
+  const documentSurface = h("div", { class: "meeting-document", "aria-label": l("meetings.document_label"), tabindex: -1 }, panels.get("summary")!, panels.get("notes")!, transcriptProvenance);
+  let lastDocumentFocus: HTMLElement | null = null;
+  let documentReturn: { scroll: number; focus: HTMLElement | null } | null = null;
+  documentSurface.addEventListener("focusin", event => { if (event.target instanceof HTMLElement) lastDocumentFocus = event.target; });
+  const rememberDocument = () => { if (!documentSurface.hidden) documentReturn = { scroll: documentSurface.scrollTop, focus: lastDocumentFocus }; };
+  const summaryHeading = summary.root.querySelector("h2")!; summaryHeading.id = `live-${session}-summary-heading`;
+  const content = h("div", { class: "live-workspace-panes" }, documentSurface, separator, panels.get("transcript")!, panels.get("questions")!, panels.get("suggestions")!, panels.get("tools")!);
   root.append(band, warning, recovery, failedRecoveryNotice, sourceBack, sourceNotice, tabList, automationNudge, content);
   let resizeFrame = 0;
   const resize = new ResizeObserver(entries => {
@@ -380,6 +397,14 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   };
 
   function updatePanes() {
+    const keepNotesVisible = finalized && root.dataset.documentLayout !== "continuous" && document.activeElement === editor;
+    const previousNotesScroll = editor.scrollTop;
+    panes.setFinished(finalized);
+    root.dataset.documentLayout = finalized ? "continuous" : "notes";
+    root.classList.toggle("meeting-finished-document", finalized);
+    documentSurface.hidden = !panes.shown("notes") && !panes.shown("summary");
+    writingTabs.hidden = finalized;
+    notesSectionHeading.hidden = !finalized;
     root.classList.toggle("live-wide", panes.wide);
     root.classList.toggle("live-companion-open", panes.companionOpen);
     automationNudge.hidden = !finalized || panes.companionOpen;
@@ -392,17 +417,21 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     for (const [pane, panel] of panels) {
       panel.hidden = !panes.shown(pane);
       const button = tabButtons.get(pane)!;
-      button.hidden = pane === "tools" || pane === "suggestions" || pane === "summary" && !finalized;
+      const writing = pane === "notes" || pane === "summary";
+      if (writing) { panel.setAttribute("role", finalized ? "region" : "tabpanel"); panel.setAttribute("aria-labelledby", finalized ? pane === "notes" ? notesTitle.id : summaryHeading.id : button.id); }
+      button.hidden = pane === "tools" || pane === "suggestions" || finalized && writing || pane === "summary" && !finalized;
       const selected = pane === "notes" || pane === "summary" ? pane === panes.primary && (panes.wide || pane === panes.selected)
         : panes.companionOpen && pane === panes.companion && (panes.wide || pane === panes.selected);
       button.setAttribute("aria-selected", String(selected));
       button.tabIndex = selected || pane === panes.primary ? 0 : -1;
     }
+    sizeNotes();
+    if (keepNotesVisible) documentSurface.scrollTop += editor.getBoundingClientRect().top - documentSurface.getBoundingClientRect().top + previousNotesScroll;
     restoreReading();
   }
   function suspendReading() {
     if (!root.isConnected) return;
-    for (const target of [...panels.values(), editor, notePreview, transcriptOutput, history, summary.editor]) {
+    for (const target of [documentSurface, ...panels.values(), editor, notePreview, transcriptOutput, history, summary.editor]) {
       if (target.getClientRects().length && target.clientHeight) readingPositions.set(target, { top: target.scrollTop, left: target.scrollLeft });
     }
     for (const target of readingPositions.keys()) if (!root.contains(target)) readingPositions.delete(target);
@@ -424,16 +453,38 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       if (!suspendedReading.size) suspendedReading = null;
     } finally { restoringReading = false; }
   }
-  function selectPane(pane: LivePane, openingSource = false) { if (!openingSource) ++sourceNavigation; panes.select(pane); updatePanes(); }
-  function openTools(section?: string) { tools.root.hidden = false; exportPreview.root.hidden = true; selectPane("tools"); tools.reveal(section); }
+  function sizeNotes() {
+    if (!finalized) { editor.style.height = ""; return; }
+    const top = documentSurface.scrollTop;
+    editor.style.height = "auto";
+    editor.style.height = `${Math.max(180, editor.scrollHeight)}px`;
+    documentSurface.scrollTop = top;
+  }
+  function scrollDocumentSection(pane: "notes" | "summary") {
+    const section = panels.get(pane)!;
+    documentSurface.scrollTop += section.getBoundingClientRect().top - documentSurface.getBoundingClientRect().top;
+  }
+  function selectPane(pane: LivePane, openingSource = false) {
+    if (!openingSource) ++sourceNavigation;
+    panes.select(pane); updatePanes();
+    if (finalized && (pane === "notes" || pane === "summary")) scrollDocumentSection(pane);
+  }
+  function openTools(section?: string) { rememberDocument(); tools.root.hidden = false; exportPreview.root.hidden = true; selectPane("tools"); tools.reveal(section); }
   function returnToDocument() {
     ++sourceNavigation;
     panes.closeCompanion(); updatePanes();
+    if (finalized && documentReturn) {
+      const retained = documentReturn; documentReturn = null;
+      documentSurface.scrollTop = retained.scroll;
+      (retained.focus?.isConnected ? retained.focus : documentSurface).focus({ preventScroll: true });
+      return;
+    }
     if (panes.primary === "notes" && !preview) editor.focus({ preventScroll: true });
     else if (panes.primary === "summary" && summary.editing()) summary.editor.focus({ preventScroll: true });
+    else if (finalized) documentSurface.focus({ preventScroll: true });
     else tabButtons.get(panes.primary)?.focus({ preventScroll: true });
   }
-  function openExport(scope: "shareable" | "personal") { if (!finalized) return; tools.root.hidden = true; exportPreview.open(scope); selectPane("tools"); }
+  function openExport(scope: "shareable" | "personal") { if (!finalized) return; rememberDocument(); tools.root.hidden = true; exportPreview.open(scope); selectPane("tools"); }
   function showPreview(value: boolean) {
     if (composing) return;
     preview = value;
@@ -444,7 +495,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     sourceToggle.setAttribute("aria-pressed", String(!value));
     previewToggle.setAttribute("aria-pressed", String(value));
   }
-  function scheduleSave() { clearTimeout(notesTimer); notesTimer = window.setTimeout(() => { void saveNotes().catch(showSaveError); }, 600); }
+  function scheduleSave() { sizeNotes(); clearTimeout(notesTimer); notesTimer = window.setTimeout(() => { void saveNotes().catch(showSaveError); }, 600); }
   async function writeNotes(value: string, capturedReceipt = insertionReceipt?.text === value ? insertionReceipt.attempt : undefined) {
     if (!finalized && ["recording", "stopping", "error"].includes(status.phase)) await api.setMeetingNotes(value, session);
     else {
@@ -531,6 +582,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     stop.disabled = !next.recording || next.phase !== "recording";
     stop.hidden = !next.busy && finalized;
     copyExport.hidden = !finalized;
+    recordingControls.hidden = finalized;
+    updateHeader();
     automationNudge.hidden = !finalized;
     title.disabled = !finalized && !["recording", "stopping"].includes(next.phase);
     const messages = [next.transcription_warning, next.audio_warning, next.error].filter((value): value is string => !!value);
@@ -602,7 +655,22 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
         updateSaving();
       } } };
   }
+  function updateHeader() {
+    metadata.hidden = !finalized;
+    date.textContent = reviewDetail?.info?.start_iso ? meetingDate(reviewDetail.info.start_iso) : "";
+    duration.textContent = reviewDetail?.info ? t("meetings.duration_minutes", { count: formatNumber(reviewDetail.info.duration_min) }) : "";
+    const names = peopleSnapshot?.people.length ? peopleSnapshot.people.map(person => person.display_name) : reviewDetail?.attendees ?? [];
+    const signature = JSON.stringify(names);
+    if (signature !== peopleSignature) {
+      peopleSignature = signature;
+      people.replaceChildren(...names.map(name => controlButton({ class: "meeting-person-chip", onclick: () => openTools("people") }, name)));
+    }
+    const recognition = initial.session_id && initial.recognition && !reviewDetail?.retranscription_status ? initial.recognition : null;
+    transcriptProvenance.hidden = !finalized || !recognition || !status.transcript.some(segment => !segment.failed && segment.text.trim());
+    transcriptProvenance.textContent = recognition ? t("meetings.transcript_provenance", { destination: frozenRecognitionLabel(recognition) }) : "";
+  }
   function updatePeopleLinks() {
+    updateHeader();
     for (const row of rows.values()) {
       const linked = row.element.querySelector<HTMLElement>(".people-link-state");
       if (!linked) continue;
@@ -835,7 +903,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   async function openSource(turn: HTMLElement, anchor?: LiveSourceAnchor, frozenText?: string, restore?: () => void, label: TranslationKey = "meetings.workspace_back_answer") {
     const navigation = ++sourceNavigation;
     sourceReturn = { view: { selected: panes.selected, primary: panes.primary, companion: panes.companion, companionOpen: panes.companionOpen },
-      questionScroll: history.scrollTop, questionPaneScroll: panels.get("questions")!.scrollTop, transcriptScroll: transcriptOutput.scrollTop, notesScroll: editor.scrollTop, start: editor.selectionStart, end: editor.selectionEnd, direction: editor.selectionDirection,
+      questionScroll: history.scrollTop, questionPaneScroll: panels.get("questions")!.scrollTop, transcriptScroll: transcriptOutput.scrollTop, notesScroll: editor.scrollTop, documentScroll: documentSurface.scrollTop, start: editor.selectionStart, end: editor.selectionEnd, direction: editor.selectionDirection,
       summaryStart: summary.editor.selectionStart, summaryEnd: summary.editor.selectionEnd, summaryDirection: summary.editor.selectionDirection, summaryScroll: summary.editor.scrollTop,
       summaryEditing: summary.editing(),
       turn, restore, label };
@@ -882,6 +950,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     transcriptOutput.scrollTop = retained.transcriptScroll;
     editor.setSelectionRange(retained.start, retained.end, retained.direction);
     editor.scrollTop = retained.notesScroll;
+    documentSurface.scrollTop = retained.documentScroll;
     summary.editor.setSelectionRange(retained.summaryStart, retained.summaryEnd, retained.summaryDirection);
     summary.editor.scrollTop = retained.summaryScroll;
     summary.restorePresentation(retained.summaryEditing);

@@ -1,4 +1,7 @@
 {
+  "meetings.notes_private_share": "Private · left out when you share",
+  "meetings.document_label": "Meeting document",
+  "meetings.transcript_provenance": "Transcript · {destination}",
   "meetings.now": "Now",
   "meetings.retranscribe_audio": "Retranscribe recording",
   "meetings.retranscription_confirm_title": "Transcribe this recording again?",

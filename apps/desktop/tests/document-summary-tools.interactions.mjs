@@ -74,7 +74,7 @@ export async function checkFocusedToolsReturn() {
   const { root, fixture, client } = await owned();
   const { flushMeetingDrafts } = await import("/src/views/meetings.ts");
   selectMeetingPane(root, "notes");
-  const notes = root.querySelector(".live-notes"), pane = root.querySelector('[data-live-pane="notes"]');
+  const notes = root.querySelector(".live-notes"), pane = root.querySelector(".meeting-document");
   const text = Array.from({ length: 80 }, (_, index) => `Owned synthetic note ${index}.`).join("\n");
   notes.value = text;
   notes.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));

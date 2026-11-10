@@ -32,7 +32,7 @@ const click = node => {
   node.focus(); node.click();
 };
 const enter = (node, value) => { assert(node, "Required input is missing."); node.focus(); node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
-const selectedTab = () => document.querySelector('.meeting-writing-tabs [aria-selected="true"]')?.dataset.liveTab;
+const summaryInDocument = () => document.querySelector('.live-workspace[data-document-layout="continuous"] .live-summary-pane:not([hidden])');
 const dialog = () => document.querySelector("dialog.task-setup-dialog[open]");
 
 async function chooseSetupProvider(different = false, selector = "[data-setup-provider]") {
@@ -218,14 +218,14 @@ export async function checkMeetingFlow() {
     notes.value = synthetic; notes.dispatchEvent(new Event("input", { bubbles: true }));
     notes.focus(); notes.setSelectionRange(4, 17); await settle();
     selectMeetingPane(article, "summary"); await settle();
-    const panel = article.querySelector('.live-summary-pane');
+    const panel = article.querySelector('.meeting-document');
     panel.scrollTop = panel.scrollHeight;
-    const position = panel.scrollTop;
     const setup = article.querySelector(".meeting-summary-surface");
     const opener = button(setup, t("meetings.set_up_summaries"));
     assert(visible(setup) && setup.querySelector(".meeting-summary-destination")?.textContent.trim() && visible(opener), "An existing summary has no visible setup reason and recovery action.");
     const regenerate = article.querySelector('.meeting-summary-generate');
     assert(regenerate?.disabled, "Regeneration is enabled without a usable text service.");
+    opener.focus(); const position = panel.scrollTop;
     click(opener);
     await until(() => dialog()?.dataset.setupTask === "llm" && dialog().querySelector('input[type="password"]'), "Summary setup did not open beside the meeting.");
     assert(article.isConnected && document.querySelector(".live-workspace") === article, "Setup replaced the originating meeting.");
@@ -236,11 +236,11 @@ export async function checkMeetingFlow() {
     await until(() => !dialog(), "Escape/cancel did not return from task setup.");
     assert(!fixture.info().keys[fixture.info().settings.llm.provider_id], "Cancelling setup saved an unfinished service key.");
     assert(document.activeElement === opener && notes.isConnected && notes.value === synthetic && notes.selectionStart === 4 && notes.selectionEnd === 17, "Cancelling setup lost note content, caret or return focus.");
-    assert(panel.scrollTop === position && selectedTab() === "summary", "Cancelling setup lost the selected Summary tab or reading position.");
+    assert(panel.scrollTop === position && summaryInDocument(), `Cancelling setup lost the Summary section or document reading position: ${JSON.stringify({expected:position,actual:panel.scrollTop,summary:!!summaryInDocument(),height:panel.clientHeight,scrollHeight:panel.scrollHeight})}`);
 
     selectMeetingPane(article, "questions");
     await until(() => article.querySelector(".chat-setup"), "Questions does not expose contextual setup.");
-    assert(!visible(setup) && visible(article.querySelector(".chat-setup")), "Questions shows duplicate summary and question setup notices.");
+    assert(visible(article.querySelector(".chat-setup")) && (article.classList.contains("live-wide") || !visible(setup)), "Question setup or the narrow companion is unavailable.");
     selectMeetingPane(article, "summary");
     click(opener);
     await until(() => dialog()?.querySelector('input[type="password"]'), "Summary setup did not reveal the service key repair.");
@@ -269,7 +269,7 @@ export async function checkMeetingFlow() {
     await until(() => fixture.info().keys[fixture.info().settings.llm.provider_id] && !dialog().querySelector("[data-setup-apply]").disabled, "Retry did not save the connection key and enable explicit application.");
     click(dialog().querySelector("[data-setup-apply]"));
     await until(() => !dialog() && !regenerate.disabled, "Use this setup did not return to the repaired meeting action.");
-    assert(document.querySelector(".live-workspace") === article && notes.value === synthetic && selectedTab() === "summary", "Successful setup navigated away from the same meeting or lost its notes.");
+    assert(document.querySelector(".live-workspace") === article && notes.value === synthetic && summaryInDocument(), "Successful setup navigated away from the same meeting or lost its notes.");
     assert(!visible(opener) && !regenerate.disabled, "The repaired meeting still presents a blocked summary action.");
     assert(!observed.operations.some(operation => ["summarize_meeting", "ask_meetings", "start_meeting", "test_provider_task", "test_provider_task_choice"].includes(operation.command)), "Setup processed meeting content or started a recording without a user action.");
     selectMeetingPane(article, "notes");

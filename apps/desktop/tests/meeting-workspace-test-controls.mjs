@@ -5,6 +5,13 @@ async function until(check, message) {
 }
 
 export function selectMeetingPane(root, pane) {
+  if (root.dataset.documentLayout === "continuous" && (pane === "notes" || pane === "summary")) {
+    const document = root.querySelector(".meeting-document"), section = root.querySelector(`[data-live-pane="${pane}"]`);
+    if (document.hidden) root.querySelector(".meeting-companion-close").click();
+    assert(section && !section.hidden && !document.hidden, `The ${pane} document section is unavailable.`);
+    document.scrollTop += section.getBoundingClientRect().top - document.getBoundingClientRect().top;
+    return;
+  }
   const button = root.querySelector(`[data-live-tab="${pane}"]`);
   assert(button && !button.hidden && button.getClientRects().length, `The ${pane} tab is not a visible meeting control.`);
   const panel = root.querySelector(`[data-live-pane="${pane}"]`);

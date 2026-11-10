@@ -1,4 +1,7 @@
 {
+  "meetings.notes_private_share": "Privé · niet opgenomen wanneer je deelt",
+  "meetings.document_label": "Meetingdocument",
+  "meetings.transcript_provenance": "Transcript · {destination}",
   "meetings.now": "Nu",
   "meetings.retranscribe_audio": "Opnieuw transcriberen vanaf opname",
   "meetings.retranscription_confirm_title": "Deze opname opnieuw transcriberen?",

@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 async function until(check, message) {
@@ -7,7 +8,7 @@ async function until(check, message) {
   }
   throw new Error(message);
 }
-function selectPane(name) { const tab = document.querySelector(`[data-live-tab="${name}"]`); if (tab?.getAttribute("aria-selected") !== "true") tab?.click(); }
+function selectPane(name) { selectMeetingPane(document.querySelector(".live-workspace"), name); }
 function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__ && window.__PENNEL_PLATFORM__, "Transcript checks require the owned synthetic fixture server.");
   return window.__PENNEL_FIXTURE__;
