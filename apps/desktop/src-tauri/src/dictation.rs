@@ -30,7 +30,7 @@ use crate::hotkey::{self, HotkeyEvent};
 use crate::keys;
 #[cfg(not(target_os = "macos"))]
 use crate::keys::Shortcut;
-use crate::owned_dictation::{self, OwnedCapture, SessionKind, SessionPhase};
+use crate::owned_dictation::{self, OwnedCapture, SessionPhase};
 use crate::paste_queue::PasteQueue;
 use crate::pill::Pill;
 use crate::resample::TARGET_RATE;
@@ -1295,7 +1295,7 @@ impl Controller {
             }),
             self.recording_owned
                 .as_ref()
-                .is_some_and(|capture| capture.kind == SessionKind::Practice),
+                .is_some_and(|capture| capture.kind.onboarding_practice()),
         );
         let preview_id = session.id();
         self.recording_session = Some(session.clone());
@@ -1813,6 +1813,7 @@ impl Drop for Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::owned_dictation::SessionKind;
 
     #[derive(Default)]
     struct PendingObserver(std::sync::Mutex<Vec<DictationPreviewUpdate>>);
@@ -1865,6 +1866,62 @@ mod tests {
         settings.mode = pennel_core::DictationMode::Fast;
         engine.update_settings(settings).unwrap();
         (directory, engine)
+    }
+
+    #[test]
+    fn home_practice_uses_saved_result_and_history_without_changing_onboarding_or_retention() {
+        for retention in [0, 7, 30, 90] {
+            for mode in [
+                pennel_core::DictationMode::Fast,
+                pennel_core::DictationMode::Clean,
+            ] {
+                let (_directory, engine) = pending_engine();
+                let mut settings = engine.settings();
+                settings.mode = mode;
+                settings.history_retention_days = retention;
+                // Missing cleanup setup must retain raw text with the ordinary failure notice,
+                // rather than silently forcing onboarding's Fast result or contacting a provider.
+                settings.providers.push(pennel_core::ProviderAccount {
+                    id: "home-cleanup-missing-key".into(),
+                    kind: pennel_core::ProviderKind::Groq,
+                    name: "Synthetic cleanup".into(),
+                    base_url: "https://example.invalid/v1".into(),
+                });
+                settings.llm.provider_id = "home-cleanup-missing-key".into();
+                engine.update_settings(settings.clone()).unwrap();
+                let settings = engine.settings();
+                let (entered, _ready) = mpsc::channel();
+                let (release, waiting) = mpsc::channel();
+                engine.set_system_transcriber(Arc::new(PendingSpeech {
+                    entered,
+                    release: std::sync::Mutex::new(waiting),
+                }));
+                release.send(()).unwrap();
+                let session = engine.clone().begin_dictation_session(
+                    Arc::new(PendingObserver::default()),
+                    SessionKind::HomePractice.onboarding_practice(),
+                );
+                let result = session
+                    .finish(DictationRequest {
+                        samples: vec![0.1; 16_000],
+                        sample_rate: 16_000,
+                        app_bundle_id: None,
+                        keys: pennel_core::ApiKeys {
+                            by_provider: HashMap::new(),
+                        },
+                    })
+                    .unwrap();
+                assert_eq!(result.text, "Een laat resultaat");
+                if mode == pennel_core::DictationMode::Fast {
+                    assert_eq!(result.cleanup, CleanupStatus::Skipped);
+                } else {
+                    assert!(matches!(result.cleanup, CleanupStatus::Failed { .. }));
+                }
+                assert!(result.history_saved);
+                assert_eq!(engine.history(10).unwrap()[0].text, result.text);
+                assert_eq!(engine.settings(), settings);
+            }
+        }
     }
 
     #[test]

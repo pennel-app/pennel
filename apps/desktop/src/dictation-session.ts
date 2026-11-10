@@ -2,7 +2,7 @@ import { api, listenToWindow, type DictationSessionSnapshot } from "./api";
 import { OwnedSessionLifecycle } from "./dictation-session-state";
 
 export class OwnedDictationSession extends OwnedSessionLifecycle {
-  constructor(kind: "pad" | "practice", update: (snapshot: DictationSessionSnapshot) => void) {
+  constructor(kind: DictationSessionSnapshot["kind"], update: (snapshot: DictationSessionSnapshot) => void) {
     super(kind, update, {
       open: api.openDictationSession,
       get: api.getDictationSession,

@@ -150,7 +150,8 @@
   }
   const updateShortcutCapabilities = () => {
     const granted = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-    const status = granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
+    const status = options.copy_only ? { status: "unsupported", reason: "Wayland: configure a shortcut for pennel --toggle-dictation in your desktop settings. Pennel copies the text; paste it yourself with Ctrl+V." }
+      : granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
     for (const name of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[name] = clone(status);
   };
   updateShortcutCapabilities();
@@ -479,7 +480,8 @@
     if (session) {
       session.text = session.kind === "pad" ? `${pad}${pad ? "\n\n" : ""}${sentence}` : sentence;
       session.phase = "done"; session.error = null;
-      if (session.kind === "pad") { pad = session.text; retainDictation(sentence); }
+      if (session.kind === "pad") pad = session.text;
+      if (session.kind === "pad" || session.kind === "home_practice") retainDictation(sentence);
       emit("dictation-session", session);
     } else { retainDictation(sentence); pillSnapshot.state = "hidden"; emit("dictation-state", pillSnapshot); }
     persistOwnerReview(); return true;
@@ -997,7 +999,7 @@
           : permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
         const configured = Boolean(account && (!options.owner_review || definition?.availability.status === "available") && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
         const accessibility = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility, can_paste_externally: accessibility, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
+        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility && !options.copy_only, can_paste_externally: accessibility && !options.copy_only, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
       }
       case "pad_text": return pad;
       case "save_pad_text": {
@@ -1019,7 +1021,8 @@
         if (session.phase === "listening") {
           if (options.owner_review) { session.phase = "working"; scheduleDictation(session.session_id); }
           else { session.phase = "done"; session.text = session.kind === "pad" ? pad + "\n\n" + sentence : sentence;
-            if (session.kind === "pad") pad = session.text; }
+            if (session.kind === "pad") pad = session.text;
+            if (session.kind === "home_practice") retainDictation(sentence); }
         } else session.phase = "listening";
         emit("dictation-session", session); return null;
       }

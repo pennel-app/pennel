@@ -10,6 +10,20 @@ import { createConversationFixture } from "./meeting-conversations.mjs";
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
 
+test("home practice fixture delivers to its own field and ordinary History without onboarding or clipboard effects", async () => {
+  const api = fixture("simple-task-shell").__PENNEL_PLATFORM__;
+  const before = await api.invoke("app_info");
+  const history = await api.invoke("history", { limit: 200 });
+  const session = await api.invoke("open_dictation_session", { kind: "home_practice" });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  const result = await api.invoke("get_dictation_session", { sessionId: session.session_id });
+  assert.equal(result.phase, "done");
+  assert.ok(result.text);
+  assert.equal((await api.invoke("history", { limit: 200 })).length, history.length + 1);
+  assert.deepEqual((await api.invoke("app_info")).settings.onboarding, before.settings.onboarding);
+});
+
 test("failed transcription fixture exposes retained-chunk eligibility separately from a full archive", async () => {
   const context = fixture("meeting-notes", { failed_recovery: true, saved_audio: false });
   const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;

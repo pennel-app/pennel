@@ -14,6 +14,13 @@ use crate::state::Shared;
 pub enum SessionKind {
     Pad,
     Practice,
+    HomePractice,
+}
+
+impl SessionKind {
+    pub fn onboarding_practice(self) -> bool {
+        self == Self::Practice
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -476,7 +483,8 @@ fn close_with_policy(
 fn session_owner_allowed(kind: SessionKind, owner: &str) -> bool {
     matches!(
         (kind, owner),
-        (SessionKind::Pad, "main") | (SessionKind::Practice, "onboarding")
+        (SessionKind::Pad | SessionKind::HomePractice, "main")
+            | (SessionKind::Practice, "onboarding")
     )
 }
 
@@ -887,6 +895,35 @@ mod tests {
         assert!(!session_owner_allowed(SessionKind::Practice, "main"));
         assert!(!session_owner_allowed(SessionKind::Pad, "history"));
         assert!(!session_owner_allowed(SessionKind::Pad, "onboarding"));
+        assert!(session_owner_allowed(SessionKind::HomePractice, "main"));
+        assert!(!session_owner_allowed(
+            SessionKind::HomePractice,
+            "onboarding"
+        ));
+        assert!(!session_owner_allowed(SessionKind::HomePractice, "history"));
+        assert!(!SessionKind::HomePractice.onboarding_practice());
+        assert!(SessionKind::Practice.onboarding_practice());
+    }
+
+    #[test]
+    fn home_practice_retains_only_its_field_result_and_never_delivers_externally() {
+        let directory = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(directory.path().into());
+        let home = capture(SessionKind::HomePractice);
+        assert_eq!(
+            retain_result(&shared, &home, "Home result".into())
+                .unwrap()
+                .as_deref(),
+            Some("Home result")
+        );
+        assert!(shared.engine.dictation_pad_text().is_empty());
+        assert!(!external_allowed(&shared, &home));
+        home.live.store(false, Ordering::SeqCst);
+        assert!(
+            retain_result(&shared, &home, "Stale result".into())
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
