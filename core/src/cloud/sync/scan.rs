@@ -332,7 +332,13 @@ mod tests {
 
     #[test]
     fn exclusions_follow_the_sync_rules() {
-        for name in ["notes.md", "transcript.md", "Ideeën.txt", "foto.png"] {
+        for name in [
+            "notes.md",
+            "transcript.md",
+            "Ideeën.txt",
+            "foto.png",
+            "pennel.summary.structure.0123456789abcdef.json",
+        ] {
             assert!(is_syncable(name), "{name}");
         }
         for name in [

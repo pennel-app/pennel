@@ -571,7 +571,38 @@ export interface MeetingExport {
   html: string;
 }
 
+export interface SummaryProvenance {
+  provider_id: string;
+  provider_kind: ProviderKind;
+  model: string;
+  generated_at: string;
+  template_id: string;
+}
+export interface SummarySource { utterance_id: string; start_ms: number; speaker: string | null }
+export interface SummaryItem { text: string; source: SummarySource | null }
+export interface SummaryAction extends SummaryItem {
+  owner: string | null;
+  due: string | null;
+  state: { done: boolean; owner: string | null };
+}
+export interface SummaryStructure {
+  labels: { summary: string; decisions: string; actions: string; open_questions: string; none: string };
+  lead: string;
+  topics: { title: string; body: string; source: SummarySource | null }[];
+  decisions: SummaryItem[];
+  actions: SummaryAction[];
+  open_questions: SummaryItem[];
+}
+export interface MeetingSummaryRecord {
+  schema_version: number;
+  meeting_uid: string;
+  body_revision: string;
+  provenance: SummaryProvenance;
+  structure: SummaryStructure | null;
+}
+
 export interface MeetingSummaryDocument {
+  record?: MeetingSummaryRecord | null;
   meeting_uid: string;
   markdown: string;
   revision: string;
@@ -581,6 +612,7 @@ export interface MeetingSummaryDocument {
 }
 
 export interface MeetingSummaryCandidate {
+  record?: MeetingSummaryRecord | null;
   meeting_uid: string;
   markdown: string;
   revision: string;
@@ -987,8 +1019,10 @@ export const api = {
   meetingSummary: (id: string) => invoke<MeetingSummaryDocument>("meeting_summary", { id }),
   saveMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
     invoke<MeetingSummaryDocument>("save_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
-  acceptMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
-    invoke<MeetingSummaryDocument>("accept_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
+  acceptMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string, record?: MeetingSummaryRecord | null) =>
+    invoke<MeetingSummaryDocument>("accept_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown, record }),
+  updateMeetingSummaryAction: (id: string, expectedRevision: string, expectedSourceRevision: string, actionIndex: number, done: boolean, owner: string | null) =>
+    invoke<MeetingSummaryDocument>("update_meeting_summary_action", { id, expectedRevision, expectedSourceRevision, actionIndex, done, owner }),
   meetingSummaryHistory: (id: string) => invoke<MeetingSummaryRevision[]>("meeting_summary_history", { id }),
   restoreMeetingSummary: (id: string, revision: string, expectedRevision: string, expectedSourceRevision: string) =>
     invoke<MeetingSummaryDocument>("restore_meeting_summary", { id, revision, expectedRevision, expectedSourceRevision }),
