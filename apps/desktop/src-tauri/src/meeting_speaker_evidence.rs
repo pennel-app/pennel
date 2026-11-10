@@ -13,10 +13,43 @@ use pennel_core::{
 
 pub const TEAMS: &str = "com.microsoft.teams2";
 const INTERVAL: Duration = Duration::from_millis(500);
+const MAX_READ_DURATION: Duration = Duration::from_millis(200);
 type Consent = Arc<dyn Fn() -> bool + Send + Sync>;
 pub(crate) type CaptureSourceCheck = Arc<dyn Fn() -> bool + Send + Sync>;
 pub(crate) type CleanEndCallback = Arc<dyn Fn() + Send + Sync>;
 type SharedHealth = Arc<Mutex<SamplerHealth>>;
+
+#[derive(Clone, Copy)]
+struct ObservationTiming {
+    before: Instant,
+    midpoint: Instant,
+    started_ms: u64,
+    ended_ms: u64,
+    midpoint_ms: u64,
+    duration: Option<Duration>,
+}
+
+impl ObservationTiming {
+    fn new(origin: Instant, before: Instant, after: Instant) -> Self {
+        let duration = after.checked_duration_since(before);
+        let midpoint = duration
+            .and_then(|elapsed| before.checked_add(elapsed / 2))
+            .unwrap_or(before);
+        Self {
+            before,
+            midpoint,
+            started_ms: before.saturating_duration_since(origin).as_millis() as u64,
+            ended_ms: after.saturating_duration_since(origin).as_millis() as u64,
+            midpoint_ms: midpoint.saturating_duration_since(origin).as_millis() as u64,
+            duration,
+        }
+    }
+
+    fn bounded(self) -> bool {
+        self.duration
+            .is_some_and(|duration| duration <= MAX_READ_DURATION)
+    }
+}
 
 #[derive(Default)]
 struct SamplerHealth {
@@ -26,6 +59,10 @@ struct SamplerHealth {
     last_sample_at_ms: Option<u64>,
     last_sample_at: Option<Instant>,
     last_read_duration_ms: Option<u64>,
+    last_read_started_at_ms: Option<u64>,
+    last_read_ended_at_ms: Option<u64>,
+    last_read_uncertainty_ms: Option<f64>,
+    last_read_timing_verified: bool,
     last_sample_available: Option<bool>,
     last_read_reason: Option<String>,
     availability: AppEvidenceAvailability,
@@ -56,6 +93,7 @@ fn health_reason(reason: Option<&str>) -> Option<String> {
         "unbound_call_end",
         "invalid_call_end",
         "audio_clock_unverified",
+        "audio_observation_timing_unverified",
         "audio_capture_not_app_scoped",
         "consent_revoked",
         "speaking_state_unknown",
@@ -74,11 +112,17 @@ fn health_reason(reason: Option<&str>) -> Option<String> {
 }
 
 impl SamplerHealth {
-    fn observed(&mut self, at: Instant, started: Instant, reading: &Reading) {
+    fn observed(&mut self, timing: ObservationTiming, reading: &Reading) {
         self.sample_count = self.sample_count.saturating_add(1);
-        self.last_sample_at_ms = Some(at.saturating_duration_since(started).as_millis() as u64);
-        self.last_sample_at = Some(at);
-        self.last_read_duration_ms = Some(at.elapsed().as_millis() as u64);
+        self.last_sample_at_ms = Some(timing.midpoint_ms);
+        self.last_sample_at = Some(timing.midpoint);
+        self.last_read_started_at_ms = Some(timing.started_ms);
+        self.last_read_ended_at_ms = Some(timing.ended_ms);
+        self.last_read_duration_ms = timing.duration.map(|duration| duration.as_millis() as u64);
+        self.last_read_uncertainty_ms = timing
+            .duration
+            .map(|duration| duration.as_secs_f64() * 500.0);
+        self.last_read_timing_verified = timing.bounded();
         self.last_sample_available = Some(reading.available);
         self.last_read_reason = health_reason(reading.unavailable_reason.as_deref());
     }
@@ -116,6 +160,10 @@ impl SamplerHealth {
             "last_sample_at_ms": self.last_sample_at_ms,
             "last_sample_age_ms": self.last_sample_at.map(|at| at.elapsed().as_millis() as u64),
             "last_read_duration_ms": self.last_read_duration_ms,
+            "last_read_started_at_ms": self.last_read_started_at_ms,
+            "last_read_ended_at_ms": self.last_read_ended_at_ms,
+            "last_read_uncertainty_ms": self.last_read_uncertainty_ms,
+            "last_read_timing_verified": self.last_read_timing_verified,
             "last_sample_available": self.last_sample_available,
             "last_read_reason": self.last_read_reason,
             "availability": self.availability,
@@ -254,9 +302,100 @@ struct Sampled {
     duplicate_names: bool,
     invalidated: bool,
     ended: bool,
+    timing_unknown_until_ms: u64,
 }
 
 impl Sampled {
+    fn native_failure(&self, reading: &Reading) -> bool {
+        (!reading.available && !reading.call_active && !reading.call_ended)
+            || reading.window.is_none()
+            || self
+                .window
+                .as_ref()
+                .is_some_and(|bound| Some(bound) != reading.window.as_ref())
+    }
+
+    fn preserve_duplicate_veto(&mut self, reading: &Reading) {
+        // This boolean can only veto a name. Even a slow initial scan may conservatively
+        // retain it without establishing a window binding or accepting participant strings.
+        self.duplicate_names |= reading.duplicate_names;
+    }
+
+    fn discard_read(&mut self, timing: ObservationTiming, reading: Reading) {
+        self.exclude_read(timing);
+        if self.native_failure(&reading) || reading.call_ended {
+            self.observe(timing.ended_ms, reading);
+        } else {
+            self.preserve_duplicate_veto(&reading);
+        }
+    }
+
+    fn observe_read(&mut self, timing: ObservationTiming, reading: Reading) {
+        if self.invalidated || self.ended {
+            return;
+        }
+        // Timing uncertainty never softens a native process/window/permission failure.
+        if self.native_failure(&reading) {
+            self.observe(timing.midpoint_ms, reading);
+            return;
+        }
+        if !timing.bounded() || timing.midpoint_ms < self.timing_unknown_until_ms {
+            self.preserve_duplicate_veto(&reading);
+            if !timing.bounded() {
+                self.exclude_read(timing);
+            } else {
+                self.samples.push(SpeakingSample {
+                    at_ms: timing.midpoint_ms,
+                    available: false,
+                    speaking: Vec::new(),
+                });
+            }
+            if reading.call_ended {
+                // The native end proof still stops this exact call, even if its read was slow.
+                self.observe(timing.ended_ms, reading);
+                return;
+            }
+            if timing.bounded() {
+                // A later bounded proof can establish the first window while its labels remain
+                // quarantined; a slow initial read cannot establish that authority.
+                self.window = reading.window;
+                self.duplicate_names |= reading.duplicate_names;
+            }
+            self.unavailable_reason = Some("audio_observation_timing_unverified".into());
+            return;
+        }
+        self.observe(timing.midpoint_ms, reading);
+    }
+
+    fn exclude_read(&mut self, timing: ObservationTiming) {
+        let lag = pennel_core::app_speaker_highlight_latency_ms();
+        let start = timing.started_ms.min(timing.ended_ms);
+        let end = timing.started_ms.max(timing.ended_ms);
+        self.timing_unknown_until_ms = self.timing_unknown_until_ms.max(end.saturating_add(lag));
+        // Core shifts highlights backward. Remove any overlapping retained observation and
+        // prevent a fresh label from backfilling the slow interval after that correction.
+        for sample in &mut self.samples {
+            if sample.at_ms >= start && sample.at_ms <= self.timing_unknown_until_ms {
+                sample.available = false;
+                sample.speaking.clear();
+            }
+        }
+        self.samples.push(SpeakingSample {
+            at_ms: start,
+            available: false,
+            speaking: Vec::new(),
+        });
+        if end > start {
+            self.samples.push(SpeakingSample {
+                at_ms: end,
+                available: false,
+                speaking: Vec::new(),
+            });
+        }
+        self.samples.sort_by_key(|sample| sample.at_ms);
+        self.unavailable_reason = Some("audio_observation_timing_unverified".into());
+    }
+
     fn invalidate_clock(&mut self) {
         self.invalidate_capture_source();
         self.unavailable_reason = Some("audio_clock_unverified".into());
@@ -677,13 +816,15 @@ fn sample_until_with_end(
             sampled.invalidate_clock();
             break;
         }
-        let at = Instant::now();
+        let before = Instant::now();
         let reading = read();
+        let after = Instant::now();
+        let timing = ObservationTiming::new(started, before, after);
         if let Some(health) = health {
             health
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner())
-                .observed(at, started, &reading);
+                .observed(timing, &reading);
         }
         if disabled.load(Ordering::SeqCst) || !consent() {
             disabled.store(true, Ordering::SeqCst);
@@ -695,12 +836,10 @@ fn sample_until_with_end(
             break;
         }
         if stop.load(Ordering::SeqCst) {
+            sampled.discard_read(timing, reading);
             break;
         }
-        sampled.observe(
-            at.saturating_duration_since(started).as_millis() as u64,
-            reading,
-        );
+        sampled.observe_read(timing, reading);
         if sampled.ended {
             if !dispatch_clean_end(clean_end) {
                 sampled.invalidate_capture_source();
@@ -715,7 +854,7 @@ fn sample_until_with_end(
         if sampled.invalidated {
             break;
         }
-        std::thread::sleep(interval.saturating_sub(at.elapsed()));
+        std::thread::sleep(interval.saturating_sub(timing.before.elapsed()));
     }
     if disabled.load(Ordering::SeqCst) {
         sampled.revoke_consent();
@@ -760,6 +899,303 @@ mod tests {
             window: readable(window_id).window,
             ..Reading::default()
         }
+    }
+
+    fn read_timing(origin: Instant, from_ms: u64, to_ms: u64) -> ObservationTiming {
+        ObservationTiming::new(
+            origin,
+            origin + Duration::from_millis(from_ms),
+            origin + Duration::from_millis(to_ms),
+        )
+    }
+
+    fn supported_intervals(samples: &[SpeakingSample]) -> Vec<(u64, u64, String)> {
+        let lag = pennel_core::app_speaker_highlight_latency_ms();
+        let mut ordered: Vec<_> = samples.iter().collect();
+        ordered.sort_by_key(|sample| sample.at_ms);
+        ordered
+            .iter()
+            .enumerate()
+            .filter_map(|(index, sample)| {
+                let [name] = sample.speaking.as_slice() else {
+                    return None;
+                };
+                if !sample.available {
+                    return None;
+                }
+                let until = ordered
+                    .get(index + 1)
+                    .map_or(u64::MAX, |next| next.at_ms)
+                    .min(sample.at_ms + 1_000);
+                let start = sample.at_ms.saturating_sub(lag);
+                let end = until.saturating_sub(lag);
+                (start < end).then(|| (start, end, name.clone()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn bounded_reads_are_stamped_at_the_actual_midpoint() {
+        let origin = Instant::now();
+        let mut sampled = Sampled::default();
+        sampled.observe_read(read_timing(origin, 500, 700), readable("first"));
+        assert_eq!(sampled.samples[0].at_ms, 600);
+        assert!(sampled.samples[0].available);
+        assert!(
+            !ObservationTiming::new(
+                origin,
+                origin,
+                origin + MAX_READ_DURATION + Duration::from_nanos(1)
+            )
+            .bounded()
+        );
+    }
+
+    #[test]
+    fn two_second_alternating_slow_reads_cannot_create_swapped_names() {
+        let origin = Instant::now();
+        let mut sampled = Sampled::default();
+        for index in 0..22 {
+            let from = 400 + index * 2_000;
+            let mut reading = readable("first");
+            reading.speaking = vec![if index % 2 == 0 {
+                "Bert".into()
+            } else {
+                "Ann".into()
+            }];
+            sampled.observe_read(read_timing(origin, from, from + 2_000), reading);
+        }
+        let intervals = supported_intervals(&sampled.samples);
+        let wrong_support: u64 = (0..22)
+            .map(|index| {
+                let from = index * 2_000;
+                let wrong = if index % 2 == 0 { "Bert" } else { "Ann" };
+                intervals
+                    .iter()
+                    .filter(|(_, _, name)| name == wrong)
+                    .map(|(start, end, _)| {
+                        (*end).min(from + 2_000).saturating_sub((*start).max(from))
+                    })
+                    .sum::<u64>()
+            })
+            .sum();
+        assert_eq!(
+            wrong_support, 0,
+            "the prior timing policy manufactures22s total swapped-name evidence"
+        );
+        assert!(intervals.is_empty());
+        assert!(sampled.participants.is_empty());
+        assert!(
+            sampled.window.is_none(),
+            "slow data cannot establish the first binding"
+        );
+        assert_eq!(sampled.availability, AppEvidenceAvailability::Unavailable);
+    }
+
+    #[test]
+    fn previous_and_recovery_labels_cannot_cover_any_part_of_a_slow_read() {
+        let origin = Instant::now();
+        let mut sampled = Sampled::default();
+        sampled.observe_read(read_timing(origin, 0, 100), readable("first"));
+        let mut bert = readable("first");
+        bert.speaking = vec!["Bert".into()];
+        sampled.observe_read(read_timing(origin, 500, 2_500), bert);
+        sampled.observe_read(read_timing(origin, 2_500, 2_600), readable("first"));
+        sampled.observe_read(read_timing(origin, 3_000, 3_100), readable("first"));
+        assert_eq!(sampled.availability, AppEvidenceAvailability::Available);
+        assert!(!sampled.invalidated);
+        assert_eq!(sampled.participants, ["Ann", "Bert"]);
+        assert!(
+            supported_intervals(&sampled.samples)
+                .iter()
+                .all(|(start, end, _)| *end <= 500 || *start >= 2_500)
+        );
+        assert!(
+            !sampled
+                .samples
+                .iter()
+                .any(|sample| sample.available && sample.speaking == ["Bert"])
+        );
+    }
+
+    #[test]
+    fn fast_overlap_and_long_sampling_gaps_do_not_invent_single_speaker_support() {
+        let origin = Instant::now();
+        let mut sampled = Sampled::default();
+        sampled.observe_read(read_timing(origin, 0, 100), readable("first"));
+        let mut overlap = readable("first");
+        overlap.speaking = vec!["Ann".into(), "Bert".into()];
+        sampled.observe_read(read_timing(origin, 500, 600), overlap);
+        sampled.observe_read(read_timing(origin, 5_000, 5_100), readable("first"));
+        assert_eq!(sampled.samples[1].speaking, ["Ann", "Bert"]);
+        assert!(
+            supported_intervals(&sampled.samples)
+                .iter()
+                .all(|(start, end, _)| *end <= 1_000 || *start >= 4_500)
+        );
+    }
+
+    #[test]
+    fn slow_binding_or_permission_loss_stays_a_hard_failure() {
+        let origin = Instant::now();
+        for reading in [
+            readable("replacement"),
+            Reading {
+                unavailable_reason: Some("permission_denied".into()),
+                ..Reading::default()
+            },
+        ] {
+            let mut sampled = Sampled::default();
+            sampled.observe_read(read_timing(origin, 0, 100), readable("first"));
+            sampled.observe_read(read_timing(origin, 500, 2_500), reading);
+            assert!(sampled.invalidated);
+            assert_ne!(
+                sampled.unavailable_reason.as_deref(),
+                Some("audio_observation_timing_unverified")
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_veto_from_a_bound_slow_read_survives_fast_clean_recovery() {
+        let origin = Instant::now();
+        let mut sampled = Sampled::default();
+        sampled.observe_read(read_timing(origin, 0, 100), readable("first"));
+        let mut ambiguous = readable("first");
+        ambiguous.duplicate_names = true;
+        ambiguous.participants = vec!["Untrusted slow name".into()];
+        sampled.observe_read(read_timing(origin, 500, 2_500), ambiguous);
+        sampled.observe_read(read_timing(origin, 3_000, 3_100), readable("first"));
+        assert!(sampled.duplicate_names);
+        assert_eq!(sampled.participants, ["Ann", "Bert"]);
+        assert!(sampled.samples.iter().all(|sample| {
+            !sample
+                .speaking
+                .iter()
+                .any(|name| name == "Untrusted slow name")
+        }));
+    }
+
+    #[test]
+    fn initial_slow_duplicate_veto_does_not_grant_authority_but_stays_sticky() {
+        let origin = Instant::now();
+        let mut sampled = Sampled::default();
+        let mut ambiguous = readable("first");
+        ambiguous.duplicate_names = true;
+        sampled.observe_read(read_timing(origin, 0, 2_000), ambiguous);
+        assert!(sampled.duplicate_names);
+        assert!(sampled.window.is_none());
+        assert!(sampled.participants.is_empty());
+        sampled.observe_read(read_timing(origin, 2_500, 2_600), readable("first"));
+        assert_eq!(sampled.availability, AppEvidenceAvailability::Available);
+        assert!(sampled.duplicate_names);
+    }
+
+    #[test]
+    fn cancelling_a_slow_read_keeps_no_result_or_carry_from_that_interval() {
+        let stop = AtomicBool::new(false);
+        let disabled = AtomicBool::new(false);
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let sampled = sample_until(
+            &stop,
+            &disabled,
+            Instant::now() - Duration::from_secs(3),
+            Duration::ZERO,
+            &|| true,
+            &|| true,
+            || {
+                let mut reading = readable("first");
+                if reads.fetch_add(1, Ordering::SeqCst) == 1 {
+                    std::thread::sleep(MAX_READ_DURATION + Duration::from_millis(10));
+                    stop.store(true, Ordering::SeqCst);
+                    reading.speaking = vec!["Cancelled".into()];
+                }
+                reading
+            },
+        );
+        assert!(
+            !sampled
+                .samples
+                .iter()
+                .any(|sample| sample.speaking == ["Cancelled"])
+        );
+        assert!(!sampled.samples.last().unwrap().available);
+        assert_eq!(
+            sampled.unavailable_reason.as_deref(),
+            Some("audio_observation_timing_unverified")
+        );
+    }
+
+    #[test]
+    fn a_slow_proven_clean_end_still_dispatches_the_owned_stop() {
+        let stop = AtomicBool::new(false);
+        let disabled = AtomicBool::new(false);
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let (sent, received) = std::sync::mpsc::channel();
+        let callback: CleanEndCallback = Arc::new(move || {
+            sent.send(()).unwrap();
+        });
+        let sampled = sample_until_with_end(
+            &stop,
+            &disabled,
+            Instant::now(),
+            Duration::ZERO,
+            SamplingChecks {
+                consent: &|| true,
+                capture_source: &|| true,
+                clean_end: Some(&callback),
+                clock_verified: true,
+            },
+            || {
+                if reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                    readable("first")
+                } else {
+                    std::thread::sleep(MAX_READ_DURATION + Duration::from_millis(10));
+                    clean_end("first")
+                }
+            },
+            None,
+        );
+        received.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(sampled.ended);
+        assert!(!sampled.invalidated);
+        assert_eq!(sampled.availability, AppEvidenceAvailability::Available);
+        assert!(!sampled.samples.last().unwrap().available);
+    }
+
+    #[test]
+    fn cancellation_cannot_hide_a_genuine_permission_failure_from_the_read() {
+        let stop = AtomicBool::new(false);
+        let disabled = AtomicBool::new(false);
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let sampled = sample_until(
+            &stop,
+            &disabled,
+            Instant::now(),
+            Duration::ZERO,
+            &|| true,
+            &|| true,
+            || {
+                if reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                    readable("first")
+                } else {
+                    stop.store(true, Ordering::SeqCst);
+                    Reading {
+                        unavailable_reason: Some("permission_denied".into()),
+                        ..Reading::default()
+                    }
+                }
+            },
+        );
+        assert!(sampled.invalidated);
+        assert_eq!(
+            sampled.availability,
+            AppEvidenceAvailability::PermissionDenied
+        );
+        assert_eq!(
+            sampled.unavailable_reason.as_deref(),
+            Some("permission_denied")
+        );
     }
 
     fn wait_for_producer_exit(sampler: &EvidenceSampler) {
@@ -907,7 +1343,8 @@ mod tests {
         }
         let status = health.lock().unwrap().snapshot(false);
         assert_eq!(status["producer_running"], false);
-        assert_eq!(status["retained_sample_count"], 0);
+        assert_eq!(status["available_sample_count"], 0);
+        assert_eq!(status["binding_verified"], false);
     }
 
     #[test]

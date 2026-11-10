@@ -135,6 +135,7 @@ test("unverified recording timing suspends names with separate retry guidance", 
   assert.match(voiceNamingNotice(naming), /recording timing/);
   assert.match(voiceNamingNotice(naming), /new recording/);
   assert.doesNotMatch(voiceNamingNotice({ ...naming, status: "applied" }), /applied automatically/);
+  assert.equal(voiceNamingNotice({ ...naming, reason: "audio_observation_timing_unverified" }), voiceNamingNotice(naming));
 });
 
 test("the trained date is shown in Dutch", () => {

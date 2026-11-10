@@ -123,7 +123,7 @@ export function voiceNamingNotice(naming: VoiceNaming | null): string {
   if (naming?.reason === "consent_revoked") return t("meetings.teams_names_revoked");
   if (naming?.reason === "ambiguous_call") return t("meetings.teams_names_ambiguous_call");
   if (naming?.reason === "audio_capture_not_app_scoped") return t("meetings.teams_names_capture_scope");
-  if (naming?.reason === "audio_clock_unverified") return t("meetings.teams_names_clock");
+  if (naming?.reason === "audio_clock_unverified" || naming?.reason === "audio_observation_timing_unverified") return t("meetings.teams_names_clock");
   switch (naming?.status) {
     case "disabled": return t("meetings.teams_names_disabled");
     case "unsupported": return t("meetings.teams_names_unsupported");
