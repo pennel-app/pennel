@@ -1,0 +1,15 @@
+# T10f/g scoped recorder correction review
+
+**Both P2 findings addressed. No new actionable defect in the correction.**
+
+Reviewed frozen `b38fbfbcf3df8850e178b6b4c943196e3ad6a270` → `a9b6bbf90fe45a6296767f3aa423d4a3b471ae15`, confirmed the direct parent, and inspected `t10fg-correction-review.diff` plus the report/milestone addendum. The separately integrated X11 native correction and broader shortcut milestone were not re-audited.
+
+1. **Done/stop cancellation and Reset all: addressed.** A finishing session now retains input ownership separately from its event-valid flag and has explicit `commitAllowed` permission. Cancellation revokes that permission immediately. Completion checks both session ownership and permission after the awaited stop, so a later released stop cannot publish the old binding or overwrite reset defaults. State/error publication is also scoped to the still-current session. Release precedes the natural completed writer, preserving its idempotent self-cancel without a completion-promise self-wait. The held-stop focus/reset regressions cover the original gap, while the completed-writer regression remains.
+
+2. **Modified DOM character/base-key mismatch: addressed.** Capture and command dispatch now share `domShortcutKey`, using supplied Keyboard Map base characters for Shift/Alt printable input. No US character is inferred from physical code names. Space/NBSP remains a named key; composition/repeat/command guards remain. Missing or incomplete maps refuse ambiguous capture before a central write and explain the limitation, preserving saved settings. Windows/Linux native application candidates also check dispatch availability before saving; Mac native menu handling remains independent. Layout refresh invalidates stale maps/replies and updates recorder/search capability presentation. A function-key replacement remains recordable when a saved ambiguous binding is unavailable.
+
+The explicit no-map limitation is truthful: affected Windows/Linux Shift/Alt printable bindings remain stored but unavailable, potentially including an existing default such as Ctrl+Shift+S. This is the accepted fail-closed fallback for an unavailable safe base mapping, not a claim that hardware/layout delivery was established. Platform-specific identity semantics remain those in the exact approved ADR.
+
+Accepted the recorded actual red→green lifecycle/layout/Space/native-observation failures, **32 focused tests**, TypeScript/Vite build and **four targeted browser cases** without rerunning checks. Those cases exercise actual DOM Shift+Digit1 normalization/dispatch, supplied non-US Alt input, missing-map native/DOM refusal with settings preservation, function-key recovery and exact localized X11 capability behavior. No new dependency or core action was introduced.
+
+No source/index/HEAD changes, subagents, builds/tests, native interaction or CI actions were performed. Both original P2s are closed; signed focus/permissions, physical fn/sides/layouts, secure input, receiving-app withholding and non-Mac runtime acceptance remain separate disclosed gates.

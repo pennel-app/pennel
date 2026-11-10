@@ -1,0 +1,2828 @@
+
+> pennel-desktop@0.1.0 test
+> node --experimental-strip-types --test tests/*.test.mjs ../../scripts/fixtures/desktop-platform.test.mjs ../../scripts/fixtures/review-desktop-ux.test.mjs
+
+TAP version 13
+# Subtest: home practice fixture delivers to its own field and ordinary History without onboarding or clipboard effects
+ok 1 - home practice fixture delivers to its own field and ordinary History without onboarding or clipboard effects
+  ---
+  duration_ms: 11.852375
+  type: 'test'
+  ...
+# Subtest: failed transcription fixture exposes retained-chunk eligibility separately from a full archive
+ok 2 - failed transcription fixture exposes retained-chunk eligibility separately from a full archive
+  ---
+  duration_ms: 2.137125
+  type: 'test'
+  ...
+# Subtest: failed-only fixture preserves partial progress, zero results and notes on later retry
+ok 3 - failed-only fixture preserves partial progress, zero results and notes on later retry
+  ---
+  duration_ms: 1.807625
+  type: 'test'
+  ...
+# Subtest: partially eligible failed-recovery fixture retries only retained passages
+ok 4 - partially eligible failed-recovery fixture retries only retained passages
+  ---
+  duration_ms: 9.538167
+  type: 'test'
+  ...
+# Subtest: summary fixtures require current revisions and preserve an edited version for recovery
+ok 5 - summary fixtures require current revisions and preserve an edited version for recovery
+  ---
+  duration_ms: 3.373958
+  type: 'test'
+  ...
+# Subtest: shareable preview never falls back to private notes or legacy owner output
+ok 6 - shareable preview never falls back to private notes or legacy owner output
+  ---
+  duration_ms: 3.806625
+  type: 'test'
+  ...
+# Subtest: shareable fixture freshness follows transcript attribution and source metadata
+ok 7 - shareable fixture freshness follows transcript attribution and source metadata
+  ---
+  duration_ms: 5.301417
+  type: 'test'
+  ...
+# Subtest: shareable export localizes only appended labels and preserves canonical generation
+ok 8 - shareable export localizes only appended labels and preserves canonical generation
+  ---
+  duration_ms: 3.294625
+  type: 'test'
+  ...
+# Subtest: legacy export translates owned marker labels without translating source words
+ok 9 - legacy export translates owned marker labels without translating source words
+  ---
+  duration_ms: 3.323208
+  type: 'test'
+  ...
+# Subtest: new and upgraded synthetic profiles leave automatic summaries unanswered
+ok 10 - new and upgraded synthetic profiles leave automatic summaries unanswered
+  ---
+  duration_ms: 2.67125
+  type: 'test'
+  ...
+# Subtest: accepted review export retains provenance while note staging keeps the exact edit
+ok 11 - accepted review export retains provenance while note staging keeps the exact edit
+  ---
+  duration_ms: 5.124542
+  type: 'test'
+  ...
+# Subtest: owner review starts and stops distinct meetings and reopens saved work after reload
+ok 12 - owner review starts and stops distinct meetings and reopens saved work after reload
+  ---
+  duration_ms: 6.450791
+  type: 'test'
+  ...
+# Subtest: owner review dictation completion retains one result and cancelled late work cannot return
+ok 13 - owner review dictation completion retains one result and cancelled late work cannot return
+  ---
+  duration_ms: 1.423791
+  type: 'test'
+  ...
+# Subtest: owner review prepared output keeps labels while late transcript changes reject stale generation
+ok 14 - owner review prepared output keeps labels while late transcript changes reject stale generation
+  ---
+  duration_ms: 51.917875
+  type: 'test'
+  ...
+# Subtest: owner review ignores a delayed note save after the capture session changes
+ok 15 - owner review ignores a delayed note save after the capture session changes
+  ---
+  duration_ms: 1.305666
+  type: 'test'
+  ...
+# Subtest: owner review search filters titles and returns matching source passages
+ok 16 - owner review search filters titles and returns matching source passages
+  ---
+  duration_ms: 0.620416
+  type: 'test'
+  ...
+# Subtest: owner review reset and frontend state are confined to one synthetic profile
+ok 17 - owner review reset and frontend state are confined to one synthetic profile
+  ---
+  duration_ms: 0.79625
+  type: 'test'
+  ...
+# Subtest: owner review profile reset cancels its pending global dictation without recreating stored work
+ok 18 - owner review profile reset cancels its pending global dictation without recreating stored work
+  ---
+  duration_ms: 0.379334
+  type: 'test'
+  ...
+# Subtest: owner review download and save failures can be repaired without replacing useful work
+ok 19 - owner review download and save failures can be repaired without replacing useful work
+  ---
+  duration_ms: 3.496792
+  type: 'test'
+  ...
+# Subtest: owner review completed model downloads and explicit deletion survive profile reload
+ok 20 - owner review completed model downloads and explicit deletion survive profile reload
+  ---
+  duration_ms: 2.35825
+  type: 'test'
+  ...
+# Subtest: owner review summary history remains recoverable after profile reload
+ok 21 - owner review summary history remains recoverable after profile reload
+  ---
+  duration_ms: 1.810709
+  type: 'test'
+  ...
+# Subtest: owner review reset in another tab fences pending dictation, notes, summaries and settings
+ok 22 - owner review reset in another tab fences pending dictation, notes, summaries and settings
+  ---
+  duration_ms: 23.488583
+  type: 'test'
+  ...
+# Subtest: owner review practice opens an isolated local window sharing only its review profile
+ok 23 - owner review practice opens an isolated local window sharing only its review profile
+  ---
+  duration_ms: 1.596875
+  type: 'test'
+  ...
+# Subtest: owner review workspace bridges preserve exact History and settings destinations
+ok 24 - owner review workspace bridges preserve exact History and settings destinations
+  ---
+  duration_ms: 1.033542
+  type: 'test'
+  ...
+# Subtest: owner review saved connections and credential presence survive reload without storing key text
+ok 25 - owner review saved connections and credential presence survive reload without storing key text
+  ---
+  duration_ms: 2.08425
+  type: 'test'
+  ...
+# Subtest: owner review permission repair in a local window refreshes the parent without replacing its draft
+ok 26 - owner review permission repair in a local window refreshes the parent without replacing its draft
+  ---
+  duration_ms: 1.681834
+  type: 'test'
+  ...
+# Subtest: owner review onboarding service writes preserve newer parent workspace and service changes
+ok 27 - owner review onboarding service writes preserve newer parent workspace and service changes
+  ---
+  duration_ms: 2.766042
+  type: 'test'
+  ...
+# Subtest: owner review practice readiness resumes to practice only with a usable engine and microphone
+ok 28 - owner review practice readiness resumes to practice only with a usable engine and microphone
+  ---
+  duration_ms: 1.590875
+  type: 'test'
+  ...
+# Subtest: conversation fixture preserves selected identities and per-conversation drafts through a full reopen
+ok 29 - conversation fixture preserves selected identities and per-conversation drafts through a full reopen
+  ---
+  duration_ms: 2.19375
+  type: 'test'
+  ...
+# Subtest: conversation fixture keeps background replies in their original conversation and restores incomplete work honestly
+ok 30 - conversation fixture keeps background replies in their original conversation and restores incomplete work honestly
+  ---
+  duration_ms: 7.754792
+  type: 'test'
+  ...
+# Subtest: conversation fixture resolves stable source identity after rename and marks changed labels or deleted meetings
+ok 31 - conversation fixture resolves stable source identity after rename and marks changed labels or deleted meetings
+  ---
+  duration_ms: 8.135625
+  type: 'test'
+  ...
+# Subtest: conversation fixture note anchors use the core's UTF-16 editor offsets around Unicode
+ok 32 - conversation fixture note anchors use the core's UTF-16 editor offsets around Unicode
+  ---
+  duration_ms: 2.773667
+  type: 'test'
+  ...
+# Subtest: conversation fixture uses the shared required wire fields and refuses stale or deleted requests
+ok 33 - conversation fixture uses the shared required wire fields and refuses stale or deleted requests
+  ---
+  duration_ms: 3.035917
+  type: 'test'
+  ...
+# Subtest: conversation fixture treats an identical request retry as idempotent and rejects a different question
+ok 34 - conversation fixture treats an identical request retry as idempotent and rejects a different question
+  ---
+  duration_ms: 9.850709
+  type: 'test'
+  ...
+# Subtest: conversation fixture retains unsaved questions and answers and retries without duplicate messages
+ok 35 - conversation fixture retains unsaved questions and answers and retries without duplicate messages
+  ---
+  duration_ms: 22.494417
+  type: 'test'
+  ...
+# Subtest: conversation fixture preserves a specific temporary-storage reason without disabling ordinary questions
+ok 36 - conversation fixture preserves a specific temporary-storage reason without disabling ordinary questions
+  ---
+  duration_ms: 13.591625
+  type: 'test'
+  ...
+# Subtest: conversation fixture can hold acknowledged-note preparation before question admission
+ok 37 - conversation fixture can hold acknowledged-note preparation before question admission
+  ---
+  duration_ms: 0.743417
+  type: 'test'
+  ...
+# Subtest: conversation fixture permits scoped cancellation before its delayed admission response returns
+ok 38 - conversation fixture permits scoped cancellation before its delayed admission response returns
+  ---
+  duration_ms: 28.396625
+  type: 'test'
+  ...
+# Subtest: conversation fixture bounds conversation and message pages using opaque cursors
+ok 39 - conversation fixture bounds conversation and message pages using opaque cursors
+  ---
+  duration_ms: 394.771708
+  type: 'test'
+  ...
+# Subtest: people fixture keeps duplicate identities and speaker links separate from names and enrollment
+ok 40 - people fixture keeps duplicate identities and speaker links separate from names and enrollment
+  ---
+  duration_ms: 1.769542
+  type: 'test'
+  ...
+# Subtest: people fixture inserts only the chosen Markdown range and unlink preserves authored text
+ok 41 - people fixture inserts only the chosen Markdown range and unlink preserves authored text
+  ---
+  duration_ms: 1.371958
+  type: 'test'
+  ...
+# Subtest: people fixture relinking requires the current note revision and an untouched mention anchor
+ok 42 - people fixture relinking requires the current note revision and an untouched mention anchor
+  ---
+  duration_ms: 1.639375
+  type: 'test'
+  ...
+# Subtest: people fixture distinguishes written notes from pending mention confirmation without duplicate insertion
+ok 43 - people fixture distinguishes written notes from pending mention confirmation without duplicate insertion
+  ---
+  duration_ms: 0.996333
+  type: 'test'
+  ...
+# Subtest: people fixture can delay a durable mention response independently of its note write
+ok 44 - people fixture can delay a durable mention response independently of its note write
+  ---
+  duration_ms: 7.628791
+  type: 'test'
+  ...
+# Subtest: every visual scenario has a unique stable identifier and valid entry
+ok 45 - every visual scenario has a unique stable identifier and valid entry
+  ---
+  duration_ms: 0.440709
+  type: 'test'
+  ...
+# Subtest: live fixture freezes admitted notes and transcript through Stop and later appends
+ok 46 - live fixture freezes admitted notes and transcript through Stop and later appends
+  ---
+  duration_ms: 1.167875
+  type: 'test'
+  ...
+# Subtest: selected live fixture declares exactly its sent anchors and freezes scope through append
+ok 47 - selected live fixture declares exactly its sent anchors and freezes scope through append
+  ---
+  duration_ms: 0.864208
+  type: 'test'
+  ...
+# Subtest: live fixture refuses mismatched acknowledged notes and cancels without delivering late completion
+ok 48 - live fixture refuses mismatched acknowledged notes and cancels without delivering late completion
+  ---
+  duration_ms: 0.791417
+  type: 'test'
+  ...
+# Subtest: two-track preview fixtures stay out of question evidence and reconcile only their own chunk
+ok 49 - two-track preview fixtures stay out of question evidence and reconcile only their own chunk
+  ---
+  duration_ms: 0.881666
+  type: 'test'
+  ...
+# Subtest: durable fixture sources keep identity and content fingerprints through attribution revisions
+ok 50 - durable fixture sources keep identity and content fingerprints through attribution revisions
+  ---
+  duration_ms: 0.923166
+  type: 'test'
+  ...
+# Subtest: rich fixture fingerprints preserve BOM while collapsing only Unicode White_Space
+ok 51 - rich fixture fingerprints preserve BOM while collapsing only Unicode White_Space
+  ---
+  duration_ms: 0.6105
+  type: 'test'
+  ...
+# Subtest: live speaker fixtures require explicit session selection and reset off for the next meeting
+ok 52 - live speaker fixtures require explicit session selection and reset off for the next meeting
+  ---
+  duration_ms: 0.654417
+  type: 'test'
+  ...
+# Subtest: saved-audio retranscription reports local progress and marks the summary outdated
+ok 53 - saved-audio retranscription reports local progress and marks the summary outdated
+  ---
+  duration_ms: 0.470292
+  type: 'test'
+  ...
+# Subtest: fixture app information is synthetic and never returns an API key
+ok 54 - fixture app information is synthetic and never returns an API key
+  ---
+  duration_ms: 0.856042
+  type: 'test'
+  ...
+# Subtest: template fixtures use canonical English definitions without translating meeting content
+ok 55 - template fixtures use canonical English definitions without translating meeting content
+  ---
+  duration_ms: 0.470959
+  type: 'test'
+  ...
+# Subtest: first-use fixtures preserve the chosen task without requiring voice enrollment
+ok 56 - first-use fixtures preserve the chosen task without requiring voice enrollment
+  ---
+  duration_ms: 0.664458
+  type: 'test'
+  ...
+# Subtest: the task-choice fixture IPC updates one slot while preserving current preferences and unfinished choices
+ok 57 - the task-choice fixture IPC updates one slot while preserving current preferences and unfinished choices
+  ---
+  duration_ms: 0.681458
+  type: 'test'
+  ...
+# Subtest: task-choice fixture validation rejects invalid slots, providers, tasks and undownloaded local models without writes
+ok 58 - task-choice fixture validation rejects invalid slots, providers, tasks and undownloaded local models without writes
+  ---
+  duration_ms: 0.986792
+  type: 'test'
+  ...
+# Subtest: Windows and Linux fixtures retain native unknown microphone state after an ineffective request
+ok 59 - Windows and Linux fixtures retain native unknown microphone state after an ineffective request
+  ---
+  duration_ms: 0.887333
+  type: 'test'
+  ...
+# Subtest: pad/practice sessions emit to the fixture listener and never invoke native transport
+ok 60 - pad/practice sessions emit to the fixture listener and never invoke native transport
+  ---
+  duration_ms: 0.380917
+  type: 'test'
+  ...
+# Subtest: denied and empty states are explicit and unknown commands fail closed
+ok 61 - denied and empty states are explicit and unknown commands fail closed
+  ---
+  duration_ms: 0.738667
+  type: 'test'
+  ...
+# Subtest: visual model metadata uses the bundled core catalog rather than invented scores
+ok 62 - visual model metadata uses the bundled core catalog rather than invented scores
+  ---
+  duration_ms: 4.732125
+  type: 'test'
+  ...
+# Subtest: missing global shortcut permission does not block an existing user's manual pad
+ok 63 - missing global shortcut permission does not block an existing user's manual pad
+  ---
+  duration_ms: 0.729375
+  type: 'test'
+  ...
+# Subtest: the optional pad has an explicit route separate from the direct-dictation home
+ok 64 - the optional pad has an explicit route separate from the direct-dictation home
+  ---
+  duration_ms: 0.052375
+  type: 'test'
+  ...
+# Subtest: pill snapshots provide only synthetic display text with no capture or transport calls
+ok 65 - pill snapshots provide only synthetic display text with no capture or transport calls
+  ---
+  duration_ms: 5.488292
+  type: 'test'
+  ...
+# Subtest: cloud scenarios are synthetic: signed out by default, signed in only when requested
+ok 66 - cloud scenarios are synthetic: signed out by default, signed in only when requested
+  ---
+  duration_ms: 1.18975
+  type: 'test'
+  ...
+# Subtest: unsaved history stays temporary until an explicit save and recovery never runs recognition
+ok 67 - unsaved history stays temporary until an explicit save and recovery never runs recognition
+  ---
+  duration_ms: 0.632792
+  type: 'test'
+  ...
+# Subtest: credential revisions invalidate task verification even when key availability stays true
+ok 68 - credential revisions invalidate task verification even when key availability stays true
+  ---
+  duration_ms: 0.748834
+  type: 'test'
+  ...
+# Subtest: recording storage failure retains the session and transcript until explicit persistence retry
+ok 69 - recording storage failure retains the session and transcript until explicit persistence retry
+  ---
+  duration_ms: 0.399333
+  type: 'test'
+  ...
+# Subtest: runtime metadata preserves recording recovery without copying user content
+ok 70 - runtime metadata preserves recording recovery without copying user content
+  ---
+  duration_ms: 0.384083
+  type: 'test'
+  ...
+# Subtest: paused transcription is nonfatal while recording and recovery audio stay available
+ok 71 - paused transcription is nonfatal while recording and recovery audio stay available
+  ---
+  duration_ms: 0.3465
+  type: 'test'
+  ...
+# Subtest: active model fixtures join atomically, replay progress and do not restart after cancellation
+ok 72 - active model fixtures join atomically, replay progress and do not restart after cancellation
+  ---
+  duration_ms: 0.60025
+  type: 'test'
+  ...
+# Subtest: an active join stays pending and completion updates model ownership before the done event
+ok 73 - an active join stays pending and completion updates model ownership before the done event
+  ---
+  duration_ms: 0.551958
+  type: 'test'
+  ...
+# Subtest: task tests are explicit synthetic requests and reject unsupported task names
+ok 74 - task tests are explicit synthetic requests and reject unsupported task names
+  ---
+  duration_ms: 0.470958
+  type: 'test'
+  ...
+# Subtest: interface language defaults to the first supported system preference without changing speech
+ok 75 - interface language defaults to the first supported system preference without changing speech
+  ---
+  duration_ms: 1.998791
+  type: 'test'
+  ...
+# Subtest: saving interface preferences applies immediately, emits settings changes and retains active sessions
+ok 76 - saving interface preferences applies immediately, emits settings changes and retains active sessions
+  ---
+  duration_ms: 0.877
+  type: 'test'
+  ...
+# Subtest: an explicitly named synthetic fixture profile retains language after reopening
+ok 77 - an explicitly named synthetic fixture profile retains language after reopening
+  ---
+  duration_ms: 1.009625
+  type: 'test'
+  ...
+# Subtest: saved library note writes persist by meeting without replacing active recording notes
+ok 78 - saved library note writes persist by meeting without replacing active recording notes
+  ---
+  duration_ms: 0.395708
+  type: 'test'
+  ...
+# Subtest: denied microphone fixture keeps recording repair reachable until access refreshes
+ok 79 - denied microphone fixture keeps recording repair reachable until access refreshes
+  ---
+  duration_ms: 0.539417
+  type: 'test'
+  ...
+# Subtest: review options reject invalid flows, locale, appearance and ports
+ok 80 - review options reject invalid flows, locale, appearance and ports
+  ---
+  duration_ms: 0.7755
+  type: 'test'
+  ...
+# Subtest: review links isolate every scenario and make reset explicitly profile-scoped
+ok 81 - review links isolate every scenario and make reset explicitly profile-scoped
+  ---
+  duration_ms: 0.871792
+  type: 'test'
+  ...
+# Subtest: every review scenario is a human starting state with an owner fixture and no automatic task steps
+ok 82 - every review scenario is a human starting state with an owner fixture and no automatic task steps
+  ---
+  duration_ms: 12.911666
+  type: 'test'
+  ...
+# Subtest: logout and identity transitions invalidate in-flight secret operations
+ok 83 - logout and identity transitions invalidate in-flight secret operations
+  ---
+  duration_ms: 1.039541
+  type: 'test'
+  ...
+# Subtest: a newer recovery operation wins over an older response on the same account
+ok 84 - a newer recovery operation wins over an older response on the same account
+  ---
+  duration_ms: 0.136334
+  type: 'test'
+  ...
+# Subtest: confirmation dialogs retain identity ownership without blocking unrelated same-account work
+ok 85 - confirmation dialogs retain identity ownership without blocking unrelated same-account work
+  ---
+  duration_ms: 0.136667
+  type: 'test'
+  ...
+# Subtest: connection and setup failures have actionable copy in both interface languages
+ok 86 - connection and setup failures have actionable copy in both interface languages
+  ---
+  duration_ms: 0.722583
+  type: 'test'
+  ...
+# Subtest: unknown account errors remain localized and do not expose raw upstream text
+ok 87 - unknown account errors remain localized and do not expose raw upstream text
+  ---
+  duration_ms: 0.092375
+  type: 'test'
+  ...
+# Subtest: persistence keeps a single typed navigation guard while still attempting every save
+ok 88 - persistence keeps a single typed navigation guard while still attempting every save
+  ---
+  duration_ms: 0.970083
+  type: 'test'
+  ...
+# Subtest: overlapping settings changes read the last acknowledged settings
+ok 89 - overlapping settings changes read the last acknowledged settings
+  ---
+  duration_ms: 0.166166
+  type: 'test'
+  ...
+# Subtest: a failed save does not block later changes or commit failed state
+ok 90 - a failed save does not block later changes or commit failed state
+  ---
+  duration_ms: 0.088708
+  type: 'test'
+  ...
+# Subtest: a late search result cannot replace a newer search
+ok 91 - a late search result cannot replace a newer search
+  ---
+  duration_ms: 0.084459
+  type: 'test'
+  ...
+# Subtest: a stale failure cannot replace the current search state
+ok 92 - a stale failure cannot replace the current search state
+  ---
+  duration_ms: 0.07125
+  type: 'test'
+  ...
+# Subtest: closing a view invalidates its in-flight result
+ok 93 - closing a view invalidates its in-flight result
+  ---
+  duration_ms: 0.052959
+  type: 'test'
+  ...
+# Subtest: the current request reports failures through its own error handler
+ok 94 - the current request reports failures through its own error handler
+  ---
+  duration_ms: 0.093125
+  type: 'test'
+  ...
+# Subtest: draining waits for the queued save before reporting it finished
+ok 95 - draining waits for the queued save before reporting it finished
+  ---
+  duration_ms: 0.063542
+  type: 'test'
+  ...
+# Subtest: one failed persistence task does not skip another pending draft
+ok 96 - one failed persistence task does not skip another pending draft
+  ---
+  duration_ms: 0.247959
+  type: 'test'
+  ...
+# Subtest: successful independent persistence waits for every task
+ok 97 - successful independent persistence waits for every task
+  ---
+  duration_ms: 2.134542
+  type: 'test'
+  ...
+# Subtest: orFallback reports a failure once and returns the fallback
+ok 98 - orFallback reports a failure once and returns the fallback
+  ---
+  duration_ms: 0.57325
+  type: 'test'
+  ...
+# Subtest: afterPaint waits for the next frame, or a short fallback without frames
+ok 99 - afterPaint waits for the next frame, or a short fallback without frames
+  ---
+  duration_ms: 114.405583
+  type: 'test'
+  ...
+# Subtest: a settings tab shows its placeholder before its data arrives
+ok 100 - a settings tab shows its placeholder before its data arrives
+  ---
+  duration_ms: 0.652625
+  type: 'test'
+  ...
+# Subtest: no status line while switched off
+ok 101 - no status line while switched off
+  ---
+  duration_ms: 0.453833
+  type: 'test'
+  ...
+# Subtest: switched on shows the connection state
+ok 102 - switched on shows the connection state
+  ---
+  duration_ms: 7.630916
+  type: 'test'
+  ...
+# Subtest: instructions use the server's MCP URL
+ok 103 - instructions use the server's MCP URL
+  ---
+  duration_ms: 0.362417
+  type: 'test'
+  ...
+# Subtest: Claude status is localized without changing connector instructions
+ok 104 - Claude status is localized without changing connector instructions
+  ---
+  duration_ms: 0.172208
+  type: 'test'
+  ...
+# Subtest: configuring a decision connection never enables cleanup verification
+ok 105 - configuring a decision connection never enables cleanup verification
+  ---
+  duration_ms: 0.645375
+  type: 'test'
+  ...
+# Subtest: a saved enabled preference can always be disabled while qualification is unavailable
+ok 106 - a saved enabled preference can always be disabled while qualification is unavailable
+  ---
+  duration_ms: 0.180959
+  type: 'test'
+  ...
+# Subtest: active verification uses the frozen endpoint after settings select another server
+ok 107 - active verification uses the frozen endpoint after settings select another server
+  ---
+  duration_ms: 0.106042
+  type: 'test'
+  ...
+# Subtest: destinations hide URL secrets and explain device-local processing in English and Dutch
+ok 108 - destinations hide URL secrets and explain device-local processing in English and Dutch
+  ---
+  duration_ms: 0.156875
+  type: 'test'
+  ...
+# Subtest: a remote domain beginning with 127 is never described as processing on this computer
+ok 109 - a remote domain beginning with 127 is never described as processing on this computer
+  ---
+  duration_ms: 0.226333
+  type: 'test'
+  ...
+# Subtest: current session copy explains invalidation and Fast bypass without exposing template placeholders
+ok 110 - current session copy explains invalidation and Fast bypass without exposing template placeholders
+  ---
+  duration_ms: 0.110416
+  type: 'test'
+  ...
+# Subtest: login completes after two pending polls
+ok 111 - login completes after two pending polls
+  ---
+  duration_ms: 0.866417
+  type: 'test'
+  ...
+# Subtest: slow_down adds five seconds to every later wait
+ok 112 - slow_down adds five seconds to every later wait
+  ---
+  duration_ms: 0.099333
+  type: 'test'
+  ...
+# Subtest: login expires at the deadline without polling again
+ok 113 - login expires at the deadline without polling again
+  ---
+  duration_ms: 0.079375
+  type: 'test'
+  ...
+# Subtest: an expired answer from the server ends the login
+ok 114 - an expired answer from the server ends the login
+  ---
+  duration_ms: 0.128
+  type: 'test'
+  ...
+# Subtest: cancelling stops polling
+ok 115 - cancelling stops polling
+  ---
+  duration_ms: 0.322334
+  type: 'test'
+  ...
+# Subtest: usage is formatted in Dutch
+ok 116 - usage is formatted in Dutch
+  ---
+  duration_ms: 7.782166
+  type: 'test'
+  ...
+# Subtest: usage handles zero and sub-hour values
+ok 117 - usage handles zero and sub-hour values
+  ---
+  duration_ms: 0.215167
+  type: 'test'
+  ...
+# Subtest: recovery code confirmation is only asked while explicitly unconfirmed
+ok 118 - recovery code confirmation is only asked while explicitly unconfirmed
+  ---
+  duration_ms: 0.06475
+  type: 'test'
+  ...
+# Subtest: logging out or deleting the account clears every local trace
+ok 119 - logging out or deleting the account clears every local trace
+  ---
+  duration_ms: 0.198333
+  type: 'test'
+  ...
+# Subtest: not_signed_in leads to the signed-out screen, other errors do not
+ok 120 - not_signed_in leads to the signed-out screen, other errors do not
+  ---
+  duration_ms: 0.158209
+  type: 'test'
+  ...
+# Subtest: a failed copy shows the error instead of the success text
+ok 121 - a failed copy shows the error instead of the success text
+  ---
+  duration_ms: 0.601833
+  type: 'test'
+  ...
+# Subtest: an unchanged report does not redraw the account tab
+ok 122 - an unchanged report does not redraw the account tab
+  ---
+  duration_ms: 0.09875
+  type: 'test'
+  ...
+# Subtest: a report that stopped a manual sync updates the status part
+ok 123 - a report that stopped a manual sync updates the status part
+  ---
+  duration_ms: 0.049208
+  type: 'test'
+  ...
+# Subtest: a new status or brake within the same layout only updates the status part
+ok 124 - a new status or brake within the same layout only updates the status part
+  ---
+  duration_ms: 0.047208
+  type: 'test'
+  ...
+# Subtest: a layout change redraws the tab unless a device name is being edited
+ok 125 - a layout change redraws the tab unless a device name is being edited
+  ---
+  duration_ms: 0.0455
+  type: 'test'
+  ...
+# Subtest: signing out redraws even while a device name is being edited
+ok 126 - signing out redraws even while a device name is being edited
+  ---
+  duration_ms: 0.034042
+  type: 'test'
+  ...
+# Subtest: usage formatting follows the interface language
+ok 127 - usage formatting follows the interface language
+  ---
+  duration_ms: 0.415042
+  type: 'test'
+  ...
+# Subtest: a generated note starts below the meeting's own title
+ok 128 - a generated note starts below the meeting's own title
+  ---
+  duration_ms: 0.584916
+  type: 'test'
+  ...
+# Subtest: a sparse generated hierarchy does not skip heading ranks
+ok 129 - a sparse generated hierarchy does not skip heading ranks
+  ---
+  duration_ms: 0.057292
+  type: 'test'
+  ...
+# Subtest: separately marked summary lines retain an accessible section level
+ok 130 - separately marked summary lines retain an accessible section level
+  ---
+  duration_ms: 0.044709
+  type: 'test'
+  ...
+# Subtest: draft writes capture their conversation and use the acknowledged core revision
+ok 131 - draft writes capture their conversation and use the acknowledged core revision
+  ---
+  duration_ms: 2.65925
+  type: 'test'
+  ...
+# Subtest: a slow old-conversation read cannot replace the deliberately selected conversation
+ok 132 - a slow old-conversation read cannot replace the deliberately selected conversation
+  ---
+  duration_ms: 0.32
+  type: 'test'
+  ...
+# Subtest: question admission stays with its original conversation when selection changes
+ok 133 - question admission stays with its original conversation when selection changes
+  ---
+  duration_ms: 5.470333
+  type: 'test'
+  ...
+# Subtest: typing during a slow draft save retains the new text and advances the draft CAS revision
+ok 134 - typing during a slow draft save retains the new text and advances the draft CAS revision
+  ---
+  duration_ms: 1.046792
+  type: 'test'
+  ...
+# Subtest: a read started before a draft acknowledgement cannot erase the saved composer text
+ok 135 - a read started before a draft acknowledgement cannot erase the saved composer text
+  ---
+  duration_ms: 0.440833
+  type: 'test'
+  ...
+# Subtest: cancellation preserves the submitted question without replacing a newer draft
+ok 136 - cancellation preserves the submitted question without replacing a newer draft
+  ---
+  duration_ms: 0.869209
+  type: 'test'
+  ...
+# Subtest: a failed draft save retains text through refresh and an explicit retry without duplicate writes
+ok 137 - a failed draft save retains text through refresh and an explicit retry without duplicate writes
+  ---
+  duration_ms: 0.468417
+  type: 'test'
+  ...
+# Subtest: old pages merge once and a focused answer uses one bounded request
+ok 138 - old pages merge once and a focused answer uses one bounded request
+  ---
+  duration_ms: 0.2105
+  type: 'test'
+  ...
+# Subtest: message ordering follows the core page even when timestamps collide
+ok 139 - message ordering follows the core page even when timestamps collide
+  ---
+  duration_ms: 0.275375
+  type: 'test'
+  ...
+# Subtest: the shared wire requires draft CAS and target IDs for both platform callers
+ok 140 - the shared wire requires draft CAS and target IDs for both platform callers
+  ---
+  duration_ms: 0.322875
+  type: 'test'
+  ...
+# Subtest: typing during note preparation saves the newer draft after admission clears the submitted draft
+ok 141 - typing during note preparation saves the newer draft after admission clears the submitted draft
+  ---
+  duration_ms: 1.323916
+  type: 'test'
+  ...
+# Subtest: cancelling while notes are being prepared retains the draft without dispatching inference
+ok 142 - cancelling while notes are being prepared retains the draft without dispatching inference
+  ---
+  duration_ms: 0.318167
+  type: 'test'
+  ...
+# Subtest: cancellation reaches the core before a delayed begin response and rejects its stale acknowledgement
+ok 143 - cancellation reaches the core before a delayed begin response and rejects its stale acknowledgement
+  ---
+  duration_ms: 1.173
+  type: 'test'
+  ...
+# Subtest: a conversation stays busy until independent cancellation resolves even if begin responds first
+ok 144 - a conversation stays busy until independent cancellation resolves even if begin responds first
+  ---
+  duration_ms: 0.604875
+  type: 'test'
+  ...
+# Subtest: concurrent initial loads share legacy identity normalization instead of discarding its canonical result
+ok 145 - concurrent initial loads share legacy identity normalization instead of discarding its canonical result
+  ---
+  duration_ms: 0.134792
+  type: 'test'
+  ...
+# Subtest: native transparency requires a complete successful environment and respects accessibility
+ok 146 - native transparency requires a complete successful environment and respects accessibility
+  ---
+  duration_ms: 0.526125
+  type: 'test'
+  ...
+# Subtest: sidebar preferences recover from invalid values and remain bounded for pointer and keyboard
+ok 147 - sidebar preferences recover from invalid values and remain bounded for pointer and keyboard
+  ---
+  duration_ms: 0.230375
+  type: 'test'
+  ...
+# Subtest: application shortcuts use platform modifiers and leave text navigation and composition alone
+ok 148 - application shortcuts use platform modifiers and leave text navigation and composition alone
+  ---
+  duration_ms: 0.1735
+  type: 'test'
+  ...
+# Subtest: effective command rows match logical keys exactly and suspend commands during capture
+ok 149 - effective command rows match logical keys exactly and suspend commands during capture
+  ---
+  duration_ms: 0.074292
+  type: 'test'
+  ...
+# Subtest: Space aliases use logical characters and preserve all command guards
+ok 150 - Space aliases use logical characters and preserve all command guards
+  ---
+  duration_ms: 0.069708
+  type: 'test'
+  ...
+# Subtest: setup uses validated library access, rather than the enabled switch, to select connection role
+ok 151 - setup uses validated library access, rather than the enabled switch, to select connection role
+  ---
+  duration_ms: 0.40675
+  type: 'test'
+  ...
+# Subtest: native pending backup survives missing frontend acknowledgment bookkeeping
+ok 152 - native pending backup survives missing frontend acknowledgment bookkeeping
+  ---
+  duration_ms: 0.063291
+  type: 'test'
+  ...
+# Subtest: pairing stops polling for every terminal state and retains provisioning
+ok 153 - pairing stops polling for every terminal state and retains provisioning
+  ---
+  duration_ms: 0.838125
+  type: 'test'
+  ...
+# Subtest: QR SVG stays an inert bounded image instead of relay-controlled DOM
+ok 154 - QR SVG stays an inert bounded image instead of relay-controlled DOM
+  ---
+  duration_ms: 0.191208
+  type: 'test'
+  ...
+# Subtest: a connection failure has one message and suppresses its failed phase
+ok 155 - a connection failure has one message and suppresses its failed phase
+  ---
+  duration_ms: 0.33225
+  type: 'test'
+  ...
+# Subtest: pending connection status survives a retryable transport failure
+ok 156 - pending connection status survives a retryable transport failure
+  ---
+  duration_ms: 0.057667
+  type: 'test'
+  ...
+# Subtest: Recent contains the five newest actual nonempty results without failure placeholders
+ok 157 - Recent contains the five newest actual nonempty results without failure placeholders
+  ---
+  duration_ms: 0.661416
+  type: 'test'
+  ...
+# Subtest: each task restores its own search without sharing a meeting query with dictation history
+ok 158 - each task restores its own search without sharing a meeting query with dictation history
+  ---
+  duration_ms: 0.094667
+  type: 'test'
+  ...
+# Subtest: onboarding and task recovery share the recommended compatible speech choice
+ok 159 - onboarding and task recovery share the recommended compatible speech choice
+  ---
+  duration_ms: 0.070125
+  type: 'test'
+  ...
+# Subtest: home practice appends each completed capture once while preserving editable text and recoverable results
+ok 160 - home practice appends each completed capture once while preserving editable text and recoverable results
+  ---
+  duration_ms: 0.580167
+  type: 'test'
+  ...
+# Subtest: home practice disposal rejects late events and busy leave preserves its owner
+ok 161 - home practice disposal rejects late events and busy leave preserves its owner
+  ---
+  duration_ms: 0.452334
+  type: 'test'
+  ...
+# Subtest: home practice retains completion even when an opening race delivers only the final snapshot
+ok 162 - home practice retains completion even when an opening race delivers only the final snapshot
+  ---
+  duration_ms: 0.0565
+  type: 'test'
+  ...
+# Subtest: late results from a closed or replaced owned session are rejected
+ok 163 - late results from a closed or replaced owned session are rejected
+  ---
+  duration_ms: 0.082834
+  type: 'test'
+  ...
+# Subtest: pad and practice results cannot cross ownership and busy phases are explicit
+ok 164 - pad and practice results cannot cross ownership and busy phases are explicit
+  ---
+  duration_ms: 0.049292
+  type: 'test'
+  ...
+# Subtest: manual edits survive in-flight refreshes and saved text survives session refresh
+ok 165 - manual edits survive in-flight refreshes and saved text survives session refresh
+  ---
+  duration_ms: 0.062041
+  type: 'test'
+  ...
+# Subtest: recognized text retained after a storage error becomes an unsaved client draft
+ok 166 - recognized text retained after a storage error becomes an unsaved client draft
+  ---
+  duration_ms: 0.084916
+  type: 'test'
+  ...
+# Subtest: reopening a retained unsaved backend pad still requires a successful save
+ok 167 - reopening a retained unsaved backend pad still requires a successful save
+  ---
+  duration_ms: 0.035041
+  type: 'test'
+  ...
+# Subtest: closing during an open and immediately reopening binds a fresh replacement session
+ok 168 - closing during an open and immediately reopening binds a fresh replacement session
+  ---
+  duration_ms: 0.293625
+  type: 'test'
+  ...
+# Subtest: a delayed state request cannot regress a completed event to an older busy phase
+ok 169 - a delayed state request cannot regress a completed event to an older busy phase
+  ---
+  duration_ms: 0.29175
+  type: 'test'
+  ...
+# Subtest: a get started before a local edit/save cannot overwrite the acknowledged pad text
+ok 170 - a get started before a local edit/save cannot overwrite the acknowledged pad text
+  ---
+  duration_ms: 0.151959
+  type: 'test'
+  ...
+# Subtest: a hidden pad rebinds once when reopened and rejects results from its closed session
+ok 171 - a hidden pad rebinds once when reopened and rejects results from its closed session
+  ---
+  duration_ms: 0.130125
+  type: 'test'
+  ...
+# Subtest: leaving a busy pad keeps its capture and listener owned until explicit finish or cancellation
+ok 172 - leaving a busy pad keeps its capture and listener owned until explicit finish or cancellation
+  ---
+  duration_ms: 0.115083
+  type: 'test'
+  ...
+# Subtest: a native capture beginning during leave is not closed or detached
+ok 173 - a native capture beginning during leave is not closed or detached
+  ---
+  duration_ms: 0.115875
+  type: 'test'
+  ...
+# Subtest: failed idle leave preserves the session and can be retried without opening or closing another owner
+ok 174 - failed idle leave preserves the session and can be retried without opening or closing another owner
+  ---
+  duration_ms: 0.213
+  type: 'test'
+  ...
+# Subtest: retained partial speech is visible and stays explicitly incomplete
+ok 175 - retained partial speech is visible and stays explicitly incomplete
+  ---
+  duration_ms: 0.638375
+  type: 'test'
+  ...
+# Subtest: reopened failures stay visible and only an authoritative eligible plan enables retry
+ok 176 - reopened failures stay visible and only an authoritative eligible plan enables retry
+  ---
+  duration_ms: 0.461458
+  type: 'test'
+  ...
+# Subtest: explicit retry flushes notes, rechecks eligibility, retries once and refreshes completion
+ok 177 - explicit retry flushes notes, rechecks eligibility, retries once and refreshes completion
+  ---
+  duration_ms: 0.225291
+  type: 'test'
+  ...
+# Subtest: save failure preserves the draft and prevents any recognition or preflight
+ok 178 - save failure preserves the draft and prevents any recognition or preflight
+  ---
+  duration_ms: 0.078042
+  type: 'test'
+  ...
+# Subtest: eligibility is rechecked after notes are saved and disappearing audio cannot trigger retry
+ok 179 - eligibility is rechecked after notes are saved and disappearing audio cannot trigger retry
+  ---
+  duration_ms: 0.113583
+  type: 'test'
+  ...
+# Subtest: provider error refreshes committed partial progress without reporting complete recovery
+ok 180 - provider error refreshes committed partial progress without reporting complete recovery
+  ---
+  duration_ms: 0.108333
+  type: 'test'
+  ...
+# Subtest: zero or a positive but partial native count is not complete recovery
+ok 181 - zero or a positive but partial native count is not complete recovery
+  ---
+  duration_ms: 0.153416
+  type: 'test'
+  ...
+# Subtest: a failed refresh never turns an old eligible plan into completion or a duplicate retry
+ok 182 - a failed refresh never turns an old eligible plan into completion or a duplicate retry
+  ---
+  duration_ms: 0.07225
+  type: 'test'
+  ...
+# Subtest: double clicks share the pending guard; navigation and a replaced identity reject late results
+ok 183 - double clicks share the pending guard; navigation and a replaced identity reject late results
+  ---
+  duration_ms: 4.716917
+  type: 'test'
+  ...
+# Subtest: navigation during note flush sends no retry, while an acknowledged rename uses the new ID
+ok 184 - navigation during note flush sends no retry, while an acknowledged rename uses the new ID
+  ---
+  duration_ms: 0.34475
+  type: 'test'
+  ...
+# Subtest: a later source refresh cannot leave stale completion or zero-progress copy over changed failures
+ok 185 - a later source refresh cannot leave stale completion or zero-progress copy over changed failures
+  ---
+  duration_ms: 0.139083
+  type: 'test'
+  ...
+# Subtest: returning to History remembers the entry and action without changing stored content
+ok 186 - returning to History remembers the entry and action without changing stored content
+  ---
+  duration_ms: 0.623
+  type: 'test'
+  ...
+# Subtest: an explicit recovery target overrides memory and does not reuse another entry's action
+ok 187 - an explicit recovery target overrides memory and does not reuse another entry's action
+  ---
+  duration_ms: 0.095708
+  type: 'test'
+  ...
+# Subtest: refreshes restore only lost row focus and never take focus from another control
+ok 188 - refreshes restore only lost row focus and never take focus from another control
+  ---
+  duration_ms: 0.105167
+  type: 'test'
+  ...
+# Subtest: removed entries are forgotten and deleting a focused row has a safe heading fallback
+ok 189 - removed entries are forgotten and deleting a focused row has a safe heading fallback
+  ---
+  duration_ms: 0.050625
+  type: 'test'
+  ...
+# Subtest: History arrows and boundaries move selection while clearing another row's action
+ok 190 - History arrows and boundaries move selection while clearing another row's action
+  ---
+  duration_ms: 0.126709
+  type: 'test'
+  ...
+# Subtest: unresolved or unsupported resolved-language values fall back to English
+ok 191 - unresolved or unsupported resolved-language values fall back to English
+  ---
+  duration_ms: 0.447625
+  type: 'test'
+  ...
+# Subtest: Dutch is selectable independently and catalog keys/placeholders match
+ok 192 - Dutch is selectable independently and catalog keys/placeholders match
+  ---
+  duration_ms: 5.660583
+  type: 'test'
+  ...
+# Subtest: locale formatting changes presentation without changing stored values
+ok 193 - locale formatting changes presentation without changing stored values
+  ---
+  duration_ms: 10.6185
+  type: 'test'
+  ...
+# Subtest: live bindings update only their owned presentation and leave input content untouched
+ok 194 - live bindings update only their owned presentation and leave input content untouched
+  ---
+  duration_ms: 0.238708
+  type: 'test'
+  ...
+# Subtest: known app-owned errors relabel in both directions without translating arbitrary content
+ok 195 - known app-owned errors relabel in both directions without translating arbitrary content
+  ---
+  duration_ms: 1.587459
+  type: 'test'
+  ...
+# Subtest: legacy dictation notices retain their Dutch-to-English compatibility mappings
+ok 196 - legacy dictation notices retain their Dutch-to-English compatibility mappings
+  ---
+  duration_ms: 8.424417
+  type: 'test'
+  ...
+# Subtest: recovery diagnostics follow the interface language while provider responses stay literal
+ok 197 - recovery diagnostics follow the interface language while provider responses stay literal
+  ---
+  duration_ms: 1.598208
+  type: 'test'
+  ...
+# Subtest: microphone-owner refusals follow the interface without rewriting meeting content
+ok 198 - microphone-owner refusals follow the interface without rewriting meeting content
+  ---
+  duration_ms: 1.617125
+  type: 'test'
+  ...
+# Subtest: a view that finishes mounting after a language change catches up without rebuilding
+ok 199 - a view that finishes mounting after a language change catches up without rebuilding
+  ---
+  duration_ms: 0.268167
+  type: 'test'
+  ...
+# Subtest: old settings do not implicitly configure either inference capability
+ok 200 - old settings do not implicitly configure either inference capability
+  ---
+  duration_ms: 0.36275
+  type: 'test'
+  ...
+# Subtest: inference verification identity includes protocol, pinning, budgets, endpoint and credential revisions
+ok 201 - inference verification identity includes protocol, pinning, budgets, endpoint and credential revisions
+  ---
+  duration_ms: 0.206208
+  type: 'test'
+  ...
+# Subtest: late verification cannot verify a changed configuration
+ok 202 - late verification cannot verify a changed configuration
+  ---
+  duration_ms: 0.078291
+  type: 'test'
+  ...
+# Subtest: Cloud verification is scoped to the signed-in account epoch
+ok 203 - Cloud verification is scoped to the signed-in account epoch
+  ---
+  duration_ms: 0.117791
+  type: 'test'
+  ...
+# Subtest: managed Cloud eligibility comes from explicit capability and account metadata
+ok 204 - managed Cloud eligibility comes from explicit capability and account metadata
+  ---
+  duration_ms: 0.341125
+  type: 'test'
+  ...
+# Subtest: cancellation invalidates an old response without losing a newer request
+ok 205 - cancellation invalidates an old response without losing a newer request
+  ---
+  duration_ms: 0.056875
+  type: 'test'
+  ...
+# Subtest: missing qualification or explicit language prevents analysis without affecting reviewed content
+ok 206 - missing qualification or explicit language prevents analysis without affecting reviewed content
+  ---
+  duration_ms: 1.948584
+  type: 'test'
+  ...
+# Subtest: overlapping metadata invalidations do not discard the only owned snapshot
+ok 207 - overlapping metadata invalidations do not discard the only owned snapshot
+  ---
+  duration_ms: 0.167
+  type: 'test'
+  ...
+# Subtest: editing is protected before opening and typing during save survives the acknowledgement
+ok 208 - editing is protected before opening and typing during save survives the acknowledgement
+  ---
+  duration_ms: 0.357833
+  type: 'test'
+  ...
+# Subtest: logical cancellation does not admit replacement while the physical worker is running
+ok 209 - logical cancellation does not admit replacement while the physical worker is running
+  ---
+  duration_ms: 0.76325
+  type: 'test'
+  ...
+# Subtest: opening and blurring an unchanged editor does not manufacture a user edit
+ok 210 - opening and blurring an unchanged editor does not manufacture a user edit
+  ---
+  duration_ms: 0.099875
+  type: 'test'
+  ...
+# Subtest: flushing a retained note insertion acknowledges the original attempt instead of appending again
+ok 211 - flushing a retained note insertion acknowledges the original attempt instead of appending again
+  ---
+  duration_ms: 0.180292
+  type: 'test'
+  ...
+# Subtest: owned busy job metadata is recovered after reload without restarting inference
+ok 212 - owned busy job metadata is recovered after reload without restarting inference
+  ---
+  duration_ms: 0.107042
+  type: 'test'
+  ...
+# Subtest: unknown store revisions stay read-only until a fresh owned read confirms recovery
+ok 213 - unknown store revisions stay read-only until a fresh owned read confirms recovery
+  ---
+  duration_ms: 0.045417
+  type: 'test'
+  ...
+# Subtest: an older dirty draft cannot silently reclaim and overwrite another saved item revision
+ok 214 - an older dirty draft cannot silently reclaim and overwrite another saved item revision
+  ---
+  duration_ms: 0.33
+  type: 'test'
+  ...
+# Subtest: source matching uses exact UTF-8 quote boundaries and durable identity
+ok 215 - source matching uses exact UTF-8 quote boundaries and durable identity
+  ---
+  duration_ms: 0.445834
+  type: 'test'
+  ...
+# Subtest: explicit reassociation offers exact quotes without guessing repeated occurrences
+ok 216 - explicit reassociation offers exact quotes without guessing repeated occurrences
+  ---
+  duration_ms: 0.330833
+  type: 'test'
+  ...
+# Subtest: insertion preserves exact personal notes and aborts after text, cursor or composition changes
+ok 217 - insertion preserves exact personal notes and aborts after text, cursor or composition changes
+  ---
+  duration_ms: 0.085417
+  type: 'test'
+  ...
+# Subtest: asynchronous review acknowledgements preserve typing and conflicting drafts
+ok 218 - asynchronous review acknowledgements preserve typing and conflicting drafts
+  ---
+  duration_ms: 0.112125
+  type: 'test'
+  ...
+# Subtest: processing destination never exposes URL credentials, queries or deceptive loopback domains
+ok 219 - processing destination never exposes URL credentials, queries or deceptive loopback domains
+  ---
+  duration_ms: 0.17825
+  type: 'test'
+  ...
+# Subtest: unchanged source rows are never detached or moved during refresh
+ok 220 - unchanged source rows are never detached or moved during refresh
+  ---
+  duration_ms: 0.590667
+  type: 'test'
+  ...
+# Subtest: inserting and removing meetings preserves surviving row identities
+ok 221 - inserting and removing meetings preserves surviving row identities
+  ---
+  duration_ms: 0.1025
+  type: 'test'
+  ...
+# Subtest: reordering meeting groups moves only the rows that need to move
+ok 222 - reordering meeting groups moves only the rows that need to move
+  ---
+  duration_ms: 0.086417
+  type: 'test'
+  ...
+# Subtest: source-list arrows clamp at edges and Home/End reach the entire list
+ok 223 - source-list arrows clamp at edges and Home/End reach the entire list
+  ---
+  duration_ms: 0.097708
+  type: 'test'
+  ...
+# Subtest: type-to-select supports prefixes, repeated-letter cycling and accented titles
+ok 224 - type-to-select supports prefixes, repeated-letter cycling and accented titles
+  ---
+  duration_ms: 0.21975
+  type: 'test'
+  ...
+# Subtest: live question metadata renders the declared selected scope in English and Dutch
+ok 225 - live question metadata renders the declared selected scope in English and Dutch
+  ---
+  duration_ms: 0.502458
+  type: 'test'
+  ...
+# Subtest: shortened answers are disclosed even when all earlier turns fit
+ok 226 - shortened answers are disclosed even when all earlier turns fit
+  ---
+  duration_ms: 0.057542
+  type: 'test'
+  ...
+# Subtest: older snapshots retain cutoff and pending-speech metadata
+ok 227 - older snapshots retain cutoff and pending-speech metadata
+  ---
+  duration_ms: 0.046209
+  type: 'test'
+  ...
+# Subtest: live attribution defaults off for each meeting and never shares the previous session choice
+ok 228 - live attribution defaults off for each meeting and never shares the previous session choice
+  ---
+  duration_ms: 0.939083
+  type: 'test'
+  ...
+# Subtest: a pending toggle prevents duplicate requests and changes the displayed choice only after acknowledgement
+ok 229 - a pending toggle prevents duplicate requests and changes the displayed choice only after acknowledgement
+  ---
+  duration_ms: 0.256917
+  type: 'test'
+  ...
+# Subtest: stale status revisions, foreign sessions and late toggle acknowledgements cannot revive stopped work
+ok 230 - stale status revisions, foreign sessions and late toggle acknowledgements cannot revive stopped work
+  ---
+  duration_ms: 0.089
+  type: 'test'
+  ...
+# Subtest: unavailable setups cannot be enabled while enabled, failed or paused work can always be disabled
+ok 231 - unavailable setups cannot be enabled while enabled, failed or paused work can always be disabled
+  ---
+  duration_ms: 0.197542
+  type: 'test'
+  ...
+# Subtest: failed toggles retain the acknowledged choice and a new explicit request clears the error
+ok 232 - failed toggles retain the acknowledged choice and a new explicit request clears the error
+  ---
+  duration_ms: 0.137458
+  type: 'test'
+  ...
+# Subtest: a newer busy snapshot wins over an older toggle acknowledgement
+ok 233 - a newer busy snapshot wins over an older toggle acknowledgement
+  ---
+  duration_ms: 0.1085
+  type: 'test'
+  ...
+# Subtest: foreground speech admission and unknown backend reasons have useful localized states
+ok 234 - foreground speech admission and unknown backend reasons have useful localized states
+  ---
+  duration_ms: 0.062708
+  type: 'test'
+  ...
+# Subtest: wide windows default to Transcript while narrow windows start with the document
+ok 235 - wide windows default to Transcript while narrow windows start with the document
+  ---
+  duration_ms: 0.422584
+  type: 'test'
+  ...
+# Subtest: explicit companion choices survive resize and keep the document beneath an overlay
+ok 236 - explicit companion choices survive resize and keep the document beneath an overlay
+  ---
+  duration_ms: 0.115917
+  type: 'test'
+  ...
+# Subtest: closing a companion preserves the chosen writing section through wide and narrow layouts
+ok 237 - closing a companion preserves the chosen writing section through wide and narrow layouts
+  ---
+  duration_ms: 0.04775
+  type: 'test'
+  ...
+# Subtest: format helpers preserve source text and the selected content
+ok 238 - format helpers preserve source text and the selected content
+  ---
+  duration_ms: 0.32375
+  type: 'test'
+  ...
+# Subtest: finishing or rebinding rejects already requested status and Stop results
+ok 239 - finishing or rebinding rejects already requested status and Stop results
+  ---
+  duration_ms: 0.127709
+  type: 'test'
+  ...
+# Subtest: evidence identity survives persisted Markdown timestamps and whitespace
+ok 240 - evidence identity survives persisted Markdown timestamps and whitespace
+  ---
+  duration_ms: 0.177583
+  type: 'test'
+  ...
+# Subtest: durable source evidence excludes mutable speaker attribution but retains source timing and text
+ok 241 - durable source evidence excludes mutable speaker attribution but retains source timing and text
+  ---
+  duration_ms: 0.114
+  type: 'test'
+  ...
+# Subtest: rich evidence uses Rust Unicode White_Space boundaries and preserves literal BOM characters
+ok 242 - rich evidence uses Rust Unicode White_Space boundaries and preserves literal BOM characters
+  ---
+  duration_ms: 0.06325
+  type: 'test'
+  ...
+# Subtest: a finished document keeps Summary and Your notes in one writing surface
+ok 243 - a finished document keeps Summary and Your notes in one writing surface
+  ---
+  duration_ms: 0.190459
+  type: 'test'
+  ...
+# Subtest: opening a running meeting restores the stored notes
+ok 244 - opening a running meeting restores the stored notes
+  ---
+  duration_ms: 0.42975
+  type: 'test'
+  ...
+# Subtest: polling cannot replace unsaved notes
+ok 245 - polling cannot replace unsaved notes
+  ---
+  duration_ms: 0.062
+  type: 'test'
+  ...
+# Subtest: a save that finishes after another edit does not mark that edit saved
+ok 246 - a save that finishes after another edit does not mark that edit saved
+  ---
+  duration_ms: 0.089959
+  type: 'test'
+  ...
+# Subtest: an old meeting's save cannot acknowledge the next meeting's draft
+ok 247 - an old meeting's save cannot acknowledge the next meeting's draft
+  ---
+  duration_ms: 0.048916
+  type: 'test'
+  ...
+# Subtest: failed persistence retains the unsaved draft for an exit retry
+ok 248 - failed persistence retains the unsaved draft for an exit retry
+  ---
+  duration_ms: 0.258417
+  type: 'test'
+  ...
+# Subtest: queued persistence keeps the old session snapshot when the next meeting starts
+ok 249 - queued persistence keeps the old session snapshot when the next meeting starts
+  ---
+  duration_ms: 0.351917
+  type: 'test'
+  ...
+# Subtest: confirmed notes remain separate from a newer draft and failed storage
+ok 250 - confirmed notes remain separate from a newer draft and failed storage
+  ---
+  duration_ms: 0.142292
+  type: 'test'
+  ...
+# Subtest: draft writes are serialized without capturing text typed later
+ok 251 - draft writes are serialized without capturing text typed later
+  ---
+  duration_ms: 0.089375
+  type: 'test'
+  ...
+# Subtest: automatic names retain their origin and manual names take precedence
+ok 252 - automatic names retain their origin and manual names take precedence
+  ---
+  duration_ms: 0.583958
+  type: 'test'
+  ...
+# Subtest: interface speaker names switch while source prefixes remain stable
+ok 253 - interface speaker names switch while source prefixes remain stable
+  ---
+  duration_ms: 8.136833
+  type: 'test'
+  ...
+# Subtest: remembered speaker names remain verbatim in both interfaces
+ok 254 - remembered speaker names remain verbatim in both interfaces
+  ---
+  duration_ms: 0.091917
+  type: 'test'
+  ...
+# Subtest: rich attribution never turns a physical microphone into a person
+ok 255 - rich attribution never turns a physical microphone into a person
+  ---
+  duration_ms: 0.179875
+  type: 'test'
+  ...
+# Subtest: only uncustomized built-in template names are translated
+ok 256 - only uncustomized built-in template names are translated
+  ---
+  duration_ms: 0.122458
+  type: 'test'
+  ...
+# Subtest: meeting dates and relative groups use the interface locale
+ok 257 - meeting dates and relative groups use the interface locale
+  ---
+  duration_ms: 2.999458
+  type: 'test'
+  ...
+# Subtest: completed local recordings can be reprocessed, but missing audio and setup retain their reason
+ok 258 - completed local recordings can be reprocessed, but missing audio and setup retain their reason
+  ---
+  duration_ms: 1.520833
+  type: 'test'
+  ...
+# Subtest: an active recording or processing job blocks duplicate and conflicting actions
+ok 259 - an active recording or processing job blocks duplicate and conflicting actions
+  ---
+  duration_ms: 0.143209
+  type: 'test'
+  ...
+# Subtest: progress handles decoding and bounds late or malformed counters
+ok 260 - progress handles decoding and bounds late or malformed counters
+  ---
+  duration_ms: 0.196292
+  type: 'test'
+  ...
+# Subtest: durable playback uses physical source independently of changing speaker labels
+ok 261 - durable playback uses physical source independently of changing speaker labels
+  ---
+  duration_ms: 0.476125
+  type: 'test'
+  ...
+# Subtest: unavailable metadata is explained without replacing the transcript
+ok 262 - unavailable metadata is explained without replacing the transcript
+  ---
+  duration_ms: 0.082084
+  type: 'test'
+  ...
+# Subtest: background summary completion cannot replace typed text or a focused clean editor
+ok 263 - background summary completion cannot replace typed text or a focused clean editor
+  ---
+  duration_ms: 0.980375
+  type: 'test'
+  ...
+# Subtest: source changes never silently advance the expected revision of an active or dirty draft
+ok 264 - source changes never silently advance the expected revision of an active or dirty draft
+  ---
+  duration_ms: 0.193375
+  type: 'test'
+  ...
+# Subtest: a generated replacement is reviewable and later typing or source changes invalidate acceptance
+ok 265 - a generated replacement is reviewable and later typing or source changes invalidate acceptance
+  ---
+  duration_ms: 0.259416
+  type: 'test'
+  ...
+# Subtest: save acknowledgements advance durable revision while retaining typing done during the write
+ok 266 - save acknowledgements advance durable revision while retaining typing done during the write
+  ---
+  duration_ms: 0.07025
+  type: 'test'
+  ...
+# Subtest: explicit conflict recovery keeps the edit and dismisses the obsolete candidate
+ok 267 - explicit conflict recovery keeps the edit and dismisses the obsolete candidate
+  ---
+  duration_ms: 0.11725
+  type: 'test'
+  ...
+# Subtest: manual review is available only for the exact clean saved outdated summary
+ok 268 - manual review is available only for the exact clean saved outdated summary
+  ---
+  duration_ms: 0.067083
+  type: 'test'
+  ...
+# Subtest: native popup handles remain alive after popup resolves until selection or disposal
+ok 269 - native popup handles remain alive after popup resolves until selection or disposal
+  ---
+  duration_ms: 0.483875
+  type: 'test'
+  ...
+# Subtest: a popup whose owner leaves while it is being created never appears
+ok 270 - a popup whose owner leaves while it is being created never appears
+  ---
+  duration_ms: 0.081834
+  type: 'test'
+  ...
+# Subtest: a detached or disabled owner cannot invoke a delayed native action
+ok 271 - a detached or disabled owner cannot invoke a delayed native action
+  ---
+  duration_ms: 0.062083
+  type: 'test'
+  ...
+# Subtest: an owner that becomes unavailable while native popup is opening releases its menu
+ok 272 - an owner that becomes unavailable while native popup is opening releases its menu
+  ---
+  duration_ms: 0.110166
+  type: 'test'
+  ...
+# Subtest: popup failures release resources and propagate for the renderer fallback
+ok 273 - popup failures release resources and propagate for the renderer fallback
+  ---
+  duration_ms: 0.211167
+  type: 'test'
+  ...
+# Subtest: async and synchronous menu action failures reach the owner
+ok 274 - async and synchronous menu action failures reach the owner
+  ---
+  duration_ms: 0.343208
+  type: 'test'
+  ...
+# Subtest: popup coordinates account for Retina scale and webview zoom exactly once
+ok 275 - popup coordinates account for Retina scale and webview zoom exactly once
+  ---
+  duration_ms: 0.174667
+  type: 'test'
+  ...
+# Subtest: a provider broadcast is ignored by onboarding, history and library
+ok 276 - a provider broadcast is ignored by onboarding, history and library
+  ---
+  duration_ms: 0.630375
+  type: 'test'
+  ...
+# Subtest: the account tab is a local settings route
+ok 277 - the account tab is a local settings route
+  ---
+  duration_ms: 0.056458
+  type: 'test'
+  ...
+# Subtest: settings routes apply locally and preserve the two compatibility aliases
+ok 278 - settings routes apply locally and preserve the two compatibility aliases
+  ---
+  duration_ms: 0.052875
+  type: 'test'
+  ...
+# Subtest: the library accepts meeting identifiers but ignores other window routes
+ok 279 - the library accepts meeting identifiers but ignores other window routes
+  ---
+  duration_ms: 0.110334
+  type: 'test'
+  ...
+# Subtest: invalid meeting paths and non-string payloads are ignored
+ok 280 - invalid meeting paths and non-string payloads are ignored
+  ---
+  duration_ms: 0.053375
+  type: 'test'
+  ...
+# Subtest: a live recording route resets only its own window
+ok 281 - a live recording route resets only its own window
+  ---
+  duration_ms: 0.041875
+  type: 'test'
+  ...
+# Subtest: task settings retain Advanced and Appearance links without treating them as meeting IDs
+ok 282 - task settings retain Advanced and Appearance links without treating them as meeting IDs
+  ---
+  duration_ms: 0.107125
+  type: 'test'
+  ...
+# Subtest: unknown microphone permission permits a real manual test without global shortcut rights
+ok 283 - unknown microphone permission permits a real manual test without global shortcut rights
+  ---
+  duration_ms: 0.527584
+  type: 'test'
+  ...
+# Subtest: denied microphone and unavailable chosen recognizer do not falsely pass onboarding
+ok 284 - denied microphone and unavailable chosen recognizer do not falsely pass onboarding
+  ---
+  duration_ms: 0.053792
+  type: 'test'
+  ...
+# Subtest: Apple speech requires its own authorization, unlike local speech
+ok 285 - Apple speech requires its own authorization, unlike local speech
+  ---
+  duration_ms: 0.047583
+  type: 'test'
+  ...
+# Subtest: legacy named language and voice steps keep their meaning
+ok 286 - legacy named language and voice steps keep their meaning
+  ---
+  duration_ms: 0.300125
+  type: 'test'
+  ...
+# Subtest: new first use starts with a task choice and does not require optional voice enrollment
+ok 287 - new first use starts with a task choice and does not require optional voice enrollment
+  ---
+  duration_ms: 0.139666
+  type: 'test'
+  ...
+# Subtest: old progress defaults to dictation while a selected meeting goal survives progress updates
+ok 288 - old progress defaults to dictation while a selected meeting goal survives progress updates
+  ---
+  duration_ms: 0.077375
+  type: 'test'
+  ...
+# Subtest: explicit dictation setup and permission repair ignore the saved meeting goal without rewriting it
+ok 289 - explicit dictation setup and permission repair ignore the saved meeting goal without rewriting it
+  ---
+  duration_ms: 0.141
+  type: 'test'
+  ...
+# Subtest: dictation access repair opens relevant permissions but repairs a missing recognizer first
+ok 290 - dictation access repair opens relevant permissions but repairs a missing recognizer first
+  ---
+  duration_ms: 0.056291
+  type: 'test'
+  ...
+# Subtest: a successful initial practice snapshot completes once without an identical persistence loop
+ok 291 - a successful initial practice snapshot completes once without an identical persistence loop
+  ---
+  duration_ms: 0.196375
+  type: 'test'
+  ...
+# Subtest: replaying or skipping a completed wizard never downgrades completion
+ok 292 - replaying or skipping a completed wizard never downgrades completion
+  ---
+  duration_ms: 0.859333
+  type: 'test'
+  ...
+# Subtest: model chooser keeps a valid selection and defaults to the recommended model
+ok 293 - model chooser keeps a valid selection and defaults to the recommended model
+  ---
+  duration_ms: 0.3365
+  type: 'test'
+  ...
+# Subtest: new model defaults use the same compatible recommendation as Settings while saved choices stay intact
+ok 294 - new model defaults use the same compatible recommendation as Settings while saved choices stay intact
+  ---
+  duration_ms: 0.072458
+  type: 'test'
+  ...
+# Subtest: saved optional voice enrollment remains addressable after practice
+ok 295 - saved optional voice enrollment remains addressable after practice
+  ---
+  duration_ms: 0.0405
+  type: 'test'
+  ...
+# Subtest: meeting readiness fallback inspects the selected meeting recognizer
+ok 296 - meeting readiness fallback inspects the selected meeting recognizer
+  ---
+  duration_ms: 0.039334
+  type: 'test'
+  ...
+# Subtest: resume returns to the voice step once the practice is done
+ok 297 - resume returns to the voice step once the practice is done
+  ---
+  duration_ms: 0.025292
+  type: 'test'
+  ...
+# Subtest: finishing or skipping the voice step completes the onboarding
+ok 298 - finishing or skipping the voice step completes the onboarding
+  ---
+  duration_ms: 0.034667
+  type: 'test'
+  ...
+# Subtest: a processor too old for local models starts onboarding on a provider
+ok 299 - a processor too old for local models starts onboarding on a provider
+  ---
+  duration_ms: 0.031959
+  type: 'test'
+  ...
+# Subtest: language step persistence preserves completed status without redoing setup
+ok 300 - language step persistence preserves completed status without redoing setup
+  ---
+  duration_ms: 0.028916
+  type: 'test'
+  ...
+# Subtest: revoked shortcut rights offer recovery while manual recording remains available
+ok 301 - revoked shortcut rights offer recovery while manual recording remains available
+  ---
+  duration_ms: 1.899167
+  type: 'test'
+  ...
+# Subtest: an unavailable shortcut offers a permission/settings check
+ok 302 - an unavailable shortcut offers a permission/settings check
+  ---
+  duration_ms: 0.418291
+  type: 'test'
+  ...
+# Subtest: Wayland exposes desktop shortcut guidance without a wizard recovery loop
+ok 303 - Wayland exposes desktop shortcut guidance without a wizard recovery loop
+  ---
+  duration_ms: 1.083459
+  type: 'test'
+  ...
+# Subtest: available shortcuts need no reminder and missing speech setup is not mislabeled as access failure
+ok 304 - available shortcuts need no reminder and missing speech setup is not mislabeled as access failure
+  ---
+  duration_ms: 0.069334
+  type: 'test'
+  ...
+# Subtest: participant search preserves duplicate identities and places meeting people before chosen contacts
+ok 305 - participant search preserves duplicate identities and places meeting people before chosen contacts
+  ---
+  duration_ms: 1.622959
+  type: 'test'
+  ...
+# Subtest: mention selection converts UTF-16 selection to exact UTF-8 bytes without changing Markdown
+ok 306 - mention selection converts UTF-16 selection to exact UTF-8 bytes without changing Markdown
+  ---
+  duration_ms: 0.234833
+  type: 'test'
+  ...
+# Subtest: an asynchronous mention selection cannot replace changed text, selection or composition
+ok 307 - an asynchronous mention selection cannot replace changed text, selection or composition
+  ---
+  duration_ms: 0.076625
+  type: 'test'
+  ...
+# Subtest: a durable mention is acknowledged after selection changes only in its captured draft
+ok 308 - a durable mention is acknowledged after selection changes only in its captured draft
+  ---
+  duration_ms: 0.0655
+  type: 'test'
+  ...
+# Subtest: a late picker load cannot apply after closing or changing meeting identity
+ok 309 - a late picker load cannot apply after closing or changing meeting identity
+  ---
+  duration_ms: 0.11675
+  type: 'test'
+  ...
+# Subtest: speaker links capture stable turns without grouping unnamed or overlapping speakers
+ok 310 - speaker links capture stable turns without grouping unnamed or overlapping speakers
+  ---
+  duration_ms: 0.127209
+  type: 'test'
+  ...
+# Subtest: duplicate names get separate hints and calendar status requires a unique source record
+ok 311 - duplicate names get separate hints and calendar status requires a unique source record
+  ---
+  duration_ms: 0.117958
+  type: 'test'
+  ...
+# Subtest: native permission bundles have English fallback and complete Dutch resources
+ok 312 - native permission bundles have English fallback and complete Dutch resources
+  ---
+  duration_ms: 1.1505
+  type: 'test'
+  ...
+# Subtest: only a session begin admits later preview updates
+ok 313 - only a session begin admits later preview updates
+  ---
+  duration_ms: 0.461583
+  type: 'test'
+  ...
+# Subtest: corrections replace text without replaying old revisions or sessions
+ok 314 - corrections replace text without replaying old revisions or sessions
+  ---
+  duration_ms: 0.187709
+  type: 'test'
+  ...
+# Subtest: hiding clears ownership so late text cannot reappear
+ok 315 - hiding clears ownership so late text cannot reappear
+  ---
+  duration_ms: 0.059125
+  type: 'test'
+  ...
+# Subtest: boot snapshots recover the current revision before newer live events
+ok 316 - boot snapshots recover the current revision before newer live events
+  ---
+  duration_ms: 0.068083
+  type: 'test'
+  ...
+# Subtest: preview keeps the recent Unicode tail and treats markup as plain text
+ok 317 - preview keeps the recent Unicode tail and treats markup as plain text
+  ---
+  duration_ms: 0.172417
+  type: 'test'
+  ...
+# Subtest: invalid revisions never replace a valid preview
+ok 318 - invalid revisions never replace a valid preview
+  ---
+  duration_ms: 0.053667
+  type: 'test'
+  ...
+# Subtest: the quick theme action reverses the effective System appearance
+ok 319 - the quick theme action reverses the effective System appearance
+  ---
+  duration_ms: 0.350625
+  type: 'test'
+  ...
+# Subtest: shortcut labels describe the configured trigger rather than the platform default
+ok 320 - shortcut labels describe the configured trigger rather than the platform default
+  ---
+  duration_ms: 0.122791
+  type: 'test'
+  ...
+# Subtest: history uses app names instead of bundle and preview identifiers
+ok 321 - history uses app names instead of bundle and preview identifiers
+  ---
+  duration_ms: 0.163958
+  type: 'test'
+  ...
+# Subtest: summary setup is unavailable without the chosen provider's key or capability
+ok 322 - summary setup is unavailable without the chosen provider's key or capability
+  ---
+  duration_ms: 0.081792
+  type: 'test'
+  ...
+# Subtest: appearance-only refreshes preserve form content despite unordered server maps
+ok 323 - appearance-only refreshes preserve form content despite unordered server maps
+  ---
+  duration_ms: 5.042291
+  type: 'test'
+  ...
+# Subtest: actual dictionary and credential availability changes still refresh their views
+ok 324 - actual dictionary and credential availability changes still refresh their views
+  ---
+  duration_ms: 0.095417
+  type: 'test'
+  ...
+# Subtest: interface-only changes relabel existing views while actual settings changes still refresh
+ok 325 - interface-only changes relabel existing views while actual settings changes still refresh
+  ---
+  duration_ms: 0.158291
+  type: 'test'
+  ...
+# Subtest: processing explains local recognition and remote text processing separately
+ok 326 - processing explains local recognition and remote text processing separately
+  ---
+  duration_ms: 1.826208
+  type: 'test'
+  ...
+# Subtest: provider destinations hide credentials and do not claim a configurable server is offline
+ok 327 - provider destinations hide credentials and do not claim a configurable server is offline
+  ---
+  duration_ms: 0.263416
+  type: 'test'
+  ...
+# Subtest: task verification becomes stale after a model, endpoint, language or credential revision change
+ok 328 - task verification becomes stale after a model, endpoint, language or credential revision change
+  ---
+  duration_ms: 0.319875
+  type: 'test'
+  ...
+# Subtest: failed model catalog loads can retry and an obsolete response cannot replace newer configuration
+ok 329 - failed model catalog loads can retry and an obsolete response cannot replace newer configuration
+  ---
+  duration_ms: 0.481333
+  type: 'test'
+  ...
+# Subtest: Cloud task and draft verification follows account identity while preserving routine token refreshes
+ok 330 - Cloud task and draft verification follows account identity while preserving routine token refreshes
+  ---
+  duration_ms: 0.169375
+  type: 'test'
+  ...
+# Subtest: question content follows the selected speech language independently of interface labels
+ok 331 - question content follows the selected speech language independently of interface labels
+  ---
+  duration_ms: 0.387791
+  type: 'test'
+  ...
+# Subtest: automatic and unsupported content languages have a stable English fallback
+ok 332 - automatic and unsupported content languages have a stable English fallback
+  ---
+  duration_ms: 0.062125
+  type: 'test'
+  ...
+# Subtest: a recording start owns one pending action and releases it after failure
+ok 333 - a recording start owns one pending action and releases it after failure
+  ---
+  duration_ms: 0.653167
+  type: 'test'
+  ...
+# Subtest: only finite levels owned by the current capture can move the bars
+ok 334 - only finite levels owned by the current capture can move the bars
+  ---
+  duration_ms: 0.104541
+  type: 'test'
+  ...
+# Subtest: stopping clears the bars and a delayed recording poll cannot revive that session
+ok 335 - stopping clears the bars and a delayed recording poll cannot revive that session
+  ---
+  duration_ms: 0.064583
+  type: 'test'
+  ...
+# Subtest: stop invokes capture exactly once per session and failed requests remain retryable
+ok 336 - stop invokes capture exactly once per session and failed requests remain retryable
+  ---
+  duration_ms: 0.141041
+  type: 'test'
+  ...
+# Subtest: a delayed status from the stopped capture cannot close the next session's levels
+ok 337 - a delayed status from the stopped capture cannot close the next session's levels
+  ---
+  duration_ms: 0.101833
+  type: 'test'
+  ...
+# Subtest: idle runtime without a session clears the last capture level
+ok 338 - idle runtime without a session clears the last capture level
+  ---
+  duration_ms: 0.042875
+  type: 'test'
+  ...
+# Subtest: retired capture identities remain rejected across multiple later recordings
+ok 339 - retired capture identities remain rejected across multiple later recordings
+  ---
+  duration_ms: 0.094708
+  type: 'test'
+  ...
+# Subtest: an ambiguous idle status cannot permanently retire the still-live capture
+ok 340 - an ambiguous idle status cannot permanently retire the still-live capture
+  ---
+  duration_ms: 0.040959
+  type: 'test'
+  ...
+# Subtest: an ambiguous starting status cannot permanently retire the still-live capture
+ok 341 - an ambiguous starting status cannot permanently retire the still-live capture
+  ---
+  duration_ms: 0.2
+  type: 'test'
+  ...
+# Subtest: a known replacement retires the previous capture even across an ambiguous snapshot
+ok 342 - a known replacement retires the previous capture even across an ambiguous snapshot
+  ---
+  duration_ms: 0.239709
+  type: 'test'
+  ...
+# Subtest: live recognition describes the frozen provider, model and language rather than current settings
+ok 343 - live recognition describes the frozen provider, model and language rather than current settings
+  ---
+  duration_ms: 10.168125
+  type: 'test'
+  ...
+# Subtest: unknown recording metadata never falls back to a possibly different current speech provider
+ok 344 - unknown recording metadata never falls back to a possibly different current speech provider
+  ---
+  duration_ms: 0.097417
+  type: 'test'
+  ...
+# Subtest: processing labels remain literal and custom providers receive no offline claim
+ok 345 - processing labels remain literal and custom providers receive no offline claim
+  ---
+  duration_ms: 0.131042
+  type: 'test'
+  ...
+# Subtest: retained recording failures keep recovery separate from the new-recording form
+ok 346 - retained recording failures keep recovery separate from the new-recording form
+  ---
+  duration_ms: 0.068125
+  type: 'test'
+  ...
+# Subtest: unchanged metadata retains the transcript and does not load its content
+ok 347 - unchanged metadata retains the transcript and does not load its content
+  ---
+  duration_ms: 0.603666
+  type: 'test'
+  ...
+# Subtest: overlapping revision reads share a request and only the latest metadata is delivered
+ok 348 - overlapping revision reads share a request and only the latest metadata is delivered
+  ---
+  duration_ms: 0.119333
+  type: 'test'
+  ...
+# Subtest: a lagging full snapshot never acknowledges a revision it has not loaded
+ok 349 - a lagging full snapshot never acknowledges a revision it has not loaded
+  ---
+  duration_ms: 0.090834
+  type: 'test'
+  ...
+# Subtest: late snapshots from another session or a disposed view cannot replace content
+ok 350 - late snapshots from another session or a disposed view cannot replace content
+  ---
+  duration_ms: 0.081792
+  type: 'test'
+  ...
+# Subtest: a failed transcript read can be retried without acknowledging its revision
+ok 351 - a failed transcript read can be retried without acknowledging its revision
+  ---
+  duration_ms: 0.280958
+  type: 'test'
+  ...
+# Subtest: row identity handles simultaneous tracks and duplicate timestamps without including mutable text
+ok 352 - row identity handles simultaneous tracks and duplicate timestamps without including mutable text
+  ---
+  duration_ms: 0.351667
+  type: 'test'
+  ...
+# Subtest: durable utterance row identity survives attribution and label revisions
+ok 353 - durable utterance row identity survives attribution and label revisions
+  ---
+  duration_ms: 0.101042
+  type: 'test'
+  ...
+# Subtest: duplicate untrusted utterance IDs cannot collapse two transcript rows
+ok 354 - duplicate untrusted utterance IDs cannot collapse two transcript rows
+  ---
+  duration_ms: 0.112084
+  type: 'test'
+  ...
+# Subtest: stable UID and session permit a folder rename without replacing the transcript
+ok 355 - stable UID and session permit a folder rename without replacing the transcript
+  ---
+  duration_ms: 0.250917
+  type: 'test'
+  ...
+# Subtest: preview-only revisions retain content without loading the finalized transcript
+ok 356 - preview-only revisions retain content without loading the finalized transcript
+  ---
+  duration_ms: 1.670333
+  type: 'test'
+  ...
+# Subtest: a full finalized snapshot never regains an older runtime provisional line
+ok 357 - a full finalized snapshot never regains an older runtime provisional line
+  ---
+  duration_ms: 0.176042
+  type: 'test'
+  ...
+# Subtest: lagging transcript reads retain their own atomic preview and retry the remaining revision
+ok 358 - lagging transcript reads retain their own atomic preview and retry the remaining revision
+  ---
+  duration_ms: 0.09475
+  type: 'test'
+  ...
+# Subtest: older, incompatible and foreign preview snapshots cannot replace the current line
+ok 359 - older, incompatible and foreign preview snapshots cannot replace the current line
+  ---
+  duration_ms: 0.0555
+  type: 'test'
+  ...
+# Subtest: a delayed full snapshot cannot roll finalized utterance or live attribution revisions backwards
+ok 360 - a delayed full snapshot cannot roll finalized utterance or live attribution revisions backwards
+  ---
+  duration_ms: 0.061292
+  type: 'test'
+  ...
+# Subtest: provisional attribution becomes final without changing durable row or source identity
+ok 361 - provisional attribution becomes final without changing durable row or source identity
+  ---
+  duration_ms: 0.050667
+  type: 'test'
+  ...
+# Subtest: lightweight live-speaker revisions never trigger a transcript read or roll back acknowledged state
+ok 362 - lightweight live-speaker revisions never trigger a transcript read or roll back acknowledged state
+  ---
+  duration_ms: 0.088875
+  type: 'test'
+  ...
+# Subtest: an old recording completion cannot unlock a newer quit barrier
+ok 363 - an old recording completion cannot unlock a newer quit barrier
+  ---
+  duration_ms: 0.481458
+  type: 'test'
+  ...
+# Subtest: a delayed refresh checks the barrier again before unlocking
+ok 364 - a delayed refresh checks the barrier again before unlocking
+  ---
+  duration_ms: 0.078166
+  type: 'test'
+  ...
+# Subtest: a stale resume never starts a refresh
+ok 365 - a stale resume never starts a refresh
+  ---
+  duration_ms: 0.04675
+  type: 'test'
+  ...
+# Subtest: an old meeting cannot replace the next recording or its finished view
+ok 366 - an old meeting cannot replace the next recording or its finished view
+  ---
+  duration_ms: 0.053125
+  type: 'test'
+  ...
+# Subtest: a completed meeting is shown only after the matching session is idle
+ok 367 - a completed meeting is shown only after the matching session is idle
+  ---
+  duration_ms: 0.093125
+  type: 'test'
+  ...
+# Subtest: an old completion cannot replace a newer session error state
+ok 368 - an old completion cannot replace a newer session error state
+  ---
+  duration_ms: 0.037583
+  type: 'test'
+  ...
+# Subtest: prepare hide waits for saved drafts before closing the window-owned session
+ok 369 - prepare hide waits for saved drafts before closing the window-owned session
+  ---
+  duration_ms: 0.363792
+  type: 'test'
+  ...
+# Subtest: failed draft persistence leaves the owned session available for recovery
+ok 370 - failed draft persistence leaves the owned session available for recovery
+  ---
+  duration_ms: 0.195333
+  type: 'test'
+  ...
+# Subtest: a timed-out hide cannot close a session after the window has reopened
+ok 371 - a timed-out hide cannot close a session after the window has reopened
+  ---
+  duration_ms: 0.217083
+  type: 'test'
+  ...
+# Subtest: a native close cannot replace or complete an active quit or update barrier
+ok 372 - a native close cannot replace or complete an active quit or update barrier
+  ---
+  duration_ms: 0.272125
+  type: 'test'
+  ...
+# Subtest: a quit can supersede a pending hide while its later completion remains harmless
+ok 373 - a quit can supersede a pending hide while its later completion remains harmless
+  ---
+  duration_ms: 0.097125
+  type: 'test'
+  ...
+# Subtest: builtin template labels follow the interface while customized names stay literal
+ok 374 - builtin template labels follow the interface while customized names stay literal
+  ---
+  duration_ms: 0.701667
+  type: 'test'
+  ...
+# Subtest: owned model names relabel live while vendor names stay literal
+ok 375 - owned model names relabel live while vendor names stay literal
+  ---
+  duration_ms: 1.486625
+  type: 'test'
+  ...
+# Subtest: recording options retain stable values and language names follow the interface
+ok 376 - recording options retain stable values and language names follow the interface
+  ---
+  duration_ms: 7.382833
+  type: 'test'
+  ...
+# Subtest: native completion preserves fn/sides and ignores unrelated or late events
+ok 377 - native completion preserves fn/sides and ignores unrelated or late events
+  ---
+  duration_ms: 0.81625
+  type: 'test'
+  ...
+# Subtest: cancel during delayed activation restores backend after the late start and saves nothing
+ok 378 - cancel during delayed activation restores backend after the late start and saves nothing
+  ---
+  duration_ms: 0.111542
+  type: 'test'
+  ...
+# Subtest: events delivered before activation reply are checked against its generation
+ok 379 - events delivered before activation reply are checked against its generation
+  ---
+  duration_ms: 0.126083
+  type: 'test'
+  ...
+# Subtest: DOM fallback is explicit, application-only, compositional-safe and never records bare fn
+ok 380 - DOM fallback is explicit, application-only, compositional-safe and never records bare fn
+  ---
+  duration_ms: 0.195625
+  type: 'test'
+  ...
+# Subtest: Escape cancels native or DOM capture without replacing the saved binding
+ok 381 - Escape cancels native or DOM capture without replacing the saved binding
+  ---
+  duration_ms: 0.104833
+  type: 'test'
+  ...
+# Subtest: a completed capture can await idempotent cancellation before its central settings write
+ok 382 - a completed capture can await idempotent cancellation before its central settings write
+  ---
+  duration_ms: 0.128708
+  type: 'test'
+  ...
+# Subtest: every shortcut label follows effective core rows, including cleared and AZERTY bindings
+ok 383 - every shortcut label follows effective core rows, including cleared and AZERTY bindings
+  ---
+  duration_ms: 0.610125
+  type: 'test'
+  ...
+# Subtest: Shortcuts has its own Settings category and native/legacy deep links retain the target
+ok 384 - Shortcuts has its own Settings category and native/legacy deep links retain the target
+  ---
+  duration_ms: 0.696084
+  type: 'test'
+  ...
+# Subtest: derived Command keycaps follow the effective Dictate binding in canonical modifier order
+ok 385 - derived Command keycaps follow the effective Dictate binding in canonical modifier order
+  ---
+  duration_ms: 0.146166
+  type: 'test'
+  ...
+# Subtest: passages match full source text with whitespace normalization and original selection offsets
+ok 386 - passages match full source text with whitespace normalization and original selection offsets
+  ---
+  duration_ms: 7.082208
+  type: 'test'
+  ...
+# Subtest: ambiguous repeated source text is never assigned to an unrelated occurrence
+ok 387 - ambiguous repeated source text is never assigned to an unrelated occurrence
+  ---
+  duration_ms: 0.206666
+  type: 'test'
+  ...
+# Subtest: transcript citations verify packed speaker-labelled text at the cited timestamp
+ok 388 - transcript citations verify packed speaker-labelled text at the cited timestamp
+  ---
+  duration_ms: 0.319833
+  type: 'test'
+  ...
+# Subtest: source routes validate targets, keep their text literal and clear one-shot jumps when remembered
+ok 389 - source routes validate targets, keep their text literal and clear one-shot jumps when remembered
+  ---
+  duration_ms: 0.279
+  type: 'test'
+  ...
+# Subtest: durable transcript citations resolve exact utterances despite mutable speaker text
+ok 390 - durable transcript citations resolve exact utterances despite mutable speaker text
+  ---
+  duration_ms: 0.081667
+  type: 'test'
+  ...
+# Subtest: source routes preserve durable identity and refuse malformed identity without downgrading
+ok 391 - source routes preserve durable identity and refuse malformed identity without downgrading
+  ---
+  duration_ms: 0.135125
+  type: 'test'
+  ...
+# Subtest: the two speaker models count as one download
+ok 392 - the two speaker models count as one download
+  ---
+  duration_ms: 0.84025
+  type: 'test'
+  ...
+# Subtest: a resumed partial download counts its bytes until progress arrives
+ok 393 - a resumed partial download counts its bytes until progress arrives
+  ---
+  duration_ms: 0.07775
+  type: 'test'
+  ...
+# Subtest: speaker models are ready only when both are downloaded
+ok 394 - speaker models are ready only when both are downloaded
+  ---
+  duration_ms: 0.08275
+  type: 'test'
+  ...
+# Subtest: enrollment records, then learns, and keeps elapsed time monotonic
+ok 395 - enrollment records, then learns, and keeps elapsed time monotonic
+  ---
+  duration_ms: 0.259791
+  type: 'test'
+  ...
+# Subtest: every enrollment click shows its own state before the app answers
+ok 396 - every enrollment click shows its own state before the app answers
+  ---
+  duration_ms: 0.346083
+  type: 'test'
+  ...
+# Subtest: an enrollment error shows the core's message and can be retried
+ok 397 - an enrollment error shows the core's message and can be retried
+  ---
+  duration_ms: 2.039792
+  type: 'test'
+  ...
+# Subtest: recognition results read as one short line
+ok 398 - recognition results read as one short line
+  ---
+  duration_ms: 9.032
+  type: 'test'
+  ...
+# Subtest: capacity exhaustion stays visible instead of reporting ordinary success
+ok 399 - capacity exhaustion stays visible instead of reporting ordinary success
+  ---
+  duration_ms: 0.275417
+  type: 'test'
+  ...
+# Subtest: an incomplete no-speech result does not imply successful labeling
+ok 400 - an incomplete no-speech result does not imply successful labeling
+  ---
+  duration_ms: 0.15525
+  type: 'test'
+  ...
+# Subtest: saved processing failures and changed transcripts retain actionable guidance
+ok 401 - saved processing failures and changed transcripts retain actionable guidance
+  ---
+  duration_ms: 0.220417
+  type: 'test'
+  ...
+# Subtest: low evidence remains visible separately from exhausted identity capacity
+ok 402 - low evidence remains visible separately from exhausted identity capacity
+  ---
+  duration_ms: 0.157458
+  type: 'test'
+  ...
+# Subtest: missing and ambiguous Teams evidence never claims that names were applied
+ok 403 - missing and ambiguous Teams evidence never claims that names were applied
+  ---
+  duration_ms: 0.108417
+  type: 'test'
+  ...
+# Subtest: lost app audio scope explains why automatic names require a new detected call
+ok 404 - lost app audio scope explains why automatic names require a new detected call
+  ---
+  duration_ms: 0.05975
+  type: 'test'
+  ...
+# Subtest: unverified recording timing suspends names with separate retry guidance
+ok 405 - unverified recording timing suspends names with separate retry guidance
+  ---
+  duration_ms: 0.0915
+  type: 'test'
+  ...
+# Subtest: the trained date is shown in Dutch
+ok 406 - the trained date is shown in Dutch
+  ---
+  duration_ms: 3.305625
+  type: 'test'
+  ...
+# Subtest: speaker labels follow the interface without changing enrollment state
+ok 407 - speaker labels follow the interface without changing enrollment state
+  ---
+  duration_ms: 0.247583
+  type: 'test'
+  ...
+# Subtest: sync off shows no badge whatever the state
+ok 408 - sync off shows no badge whatever the state
+  ---
+  duration_ms: 0.406791
+  type: 'test'
+  ...
+# Subtest: each sync state has its own label
+ok 409 - each sync state has its own label
+  ---
+  duration_ms: 0.11975
+  type: 'test'
+  ...
+# Subtest: a meeting without a known state shows no badge
+ok 410 - a meeting without a known state shows no badge
+  ---
+  duration_ms: 0.073958
+  type: 'test'
+  ...
+# Subtest: an open meeting that still exists keeps its id
+ok 411 - an open meeting that still exists keeps its id
+  ---
+  duration_ms: 0.053708
+  type: 'test'
+  ...
+# Subtest: a renamed meeting is found again by its start time
+ok 412 - a renamed meeting is found again by its start time
+  ---
+  duration_ms: 0.056167
+  type: 'test'
+  ...
+# Subtest: meetings that share a start time are told apart by title
+ok 413 - meetings that share a start time are told apart by title
+  ---
+  duration_ms: 0.04725
+  type: 'test'
+  ...
+# Subtest: a vanished meeting without a match falls back to the list
+ok 414 - a vanished meeting without a match falls back to the list
+  ---
+  duration_ms: 0.0345
+  type: 'test'
+  ...
+# Subtest: sync counts as active only while the setting is on and the report is not off or signed out
+ok 415 - sync counts as active only while the setting is on and the report is not off or signed out
+  ---
+  duration_ms: 0.03975
+  type: 'test'
+  ...
+# Subtest: task readiness keeps speech independent of optional text processing
+ok 416 - task readiness keeps speech independent of optional text processing
+  ---
+  duration_ms: 0.767
+  type: 'test'
+  ...
+# Subtest: a selected local model must actually be downloaded, and an unsupported task stays unavailable
+ok 417 - a selected local model must actually be downloaded, and an unsupported task stays unavailable
+  ---
+  duration_ms: 0.182041
+  type: 'test'
+  ...
+# Subtest: draft choices preserve saved assignments and remember each provider's model
+ok 418 - draft choices preserve saved assignments and remember each provider's model
+  ---
+  duration_ms: 0.872291
+  type: 'test'
+  ...
+# Subtest: draft readiness checks the proposed provider and model without saving them
+ok 419 - draft readiness checks the proposed provider and model without saving them
+  ---
+  duration_ms: 0.159458
+  type: 'test'
+  ...
+# Subtest: an unfinished server address cannot become a ready draft
+ok 420 - an unfinished server address cannot become a ready draft
+  ---
+  duration_ms: 0.209333
+  type: 'test'
+  ...
+# Subtest: processing location distinguishes local services from remote endpoints and subscriptions
+ok 421 - processing location distinguishes local services from remote endpoints and subscriptions
+  ---
+  duration_ms: 0.148292
+  type: 'test'
+  ...
+# Subtest: unknown microphone access on Windows and Linux does not block applying a speech model
+ok 422 - unknown microphone access on Windows and Linux does not block applying a speech model
+  ---
+  duration_ms: 0.109042
+  type: 'test'
+  ...
+# Subtest: denied microphone and unknown Apple speech access still require review
+ok 423 - denied microphone and unknown Apple speech access still require review
+  ---
+  duration_ms: 0.043417
+  type: 'test'
+  ...
+# Subtest: setup scope ignores stale async views and keeps saves pending until settled
+ok 424 - setup scope ignores stale async views and keeps saves pending until settled
+  ---
+  duration_ms: 0.289959
+  type: 'test'
+  ...
+# Subtest: failed saves are observable and a successful retry clears the failure
+ok 425 - failed saves are observable and a successful retry clears the failure
+  ---
+  duration_ms: 0.439125
+  type: 'test'
+  ...
+# Subtest: a flushed settings retry clears only its own failure, never a failed credential replacement
+ok 426 - a flushed settings retry clears only its own failure, never a failed credential replacement
+  ---
+  duration_ms: 0.140375
+  type: 'test'
+  ...
+# Subtest: disposing capture-local setup invalidates its view while explicit prerequisite saves still settle
+ok 427 - disposing capture-local setup invalidates its view while explicit prerequisite saves still settle
+  ---
+  duration_ms: 0.054208
+  type: 'test'
+  ...
+# Subtest: metadata follows the response locale without changing runtime state or speech configuration
+ok 428 - metadata follows the response locale without changing runtime state or speech configuration
+  ---
+  duration_ms: 1.859542
+  type: 'test'
+  ...
+# Subtest: only known UI message fields translate; identical user words and machine states do not
+ok 429 - only known UI message fields translate; identical user words and machine states do not
+  ---
+  duration_ms: 0.557333
+  type: 'test'
+  ...
+# Subtest: meeting retranscription metadata translates without rewriting meeting content
+ok 430 - meeting retranscription metadata translates without rewriting meeting content
+  ---
+  duration_ms: 0.36125
+  type: 'test'
+  ...
+# Subtest: lightweight recording metadata localizes errors while preserving identity and revision
+ok 431 - lightweight recording metadata localizes errors while preserving identity and revision
+  ---
+  duration_ms: 1.064875
+  type: 'test'
+  ...
+# Subtest: structured pill problems localize recovery copy without changing delivery or preview data
+ok 432 - structured pill problems localize recovery copy without changing delivery or preview data
+  ---
+  duration_ms: 0.595167
+  type: 'test'
+  ...
+# Subtest: local model metadata localizes owned labels while preserving vendor names and IDs
+ok 433 - local model metadata localizes owned labels while preserving vendor names and IDs
+  ---
+  duration_ms: 1.05925
+  type: 'test'
+  ...
+# Subtest: the persistent recording action starts a new session after an ordinary finished meeting
+ok 434 - the persistent recording action starts a new session after an ordinary finished meeting
+  ---
+  duration_ms: 0.700625
+  type: 'test'
+  ...
+# Subtest: active, starting and finalizing recordings always return to their existing session
+ok 435 - active, starting and finalizing recordings always return to their existing session
+  ---
+  duration_ms: 0.109709
+  type: 'test'
+  ...
+# Subtest: retained save failures expose recovery instead of presenting a second recording
+ok 436 - retained save failures expose recovery instead of presenting a second recording
+  ---
+  duration_ms: 0.056791
+  type: 'test'
+  ...
+# Subtest: missing text setup remains actionable before and after recording
+ok 437 - missing text setup remains actionable before and after recording
+  ---
+  duration_ms: 0.117375
+  type: 'test'
+  ...
+# Subtest: text setup changes enable summary generation without replacing the meeting view
+ok 438 - text setup changes enable summary generation without replacing the meeting view
+  ---
+  duration_ms: 0.061958
+  type: 'test'
+  ...
+# Subtest: a delivered route only navigates the window that shows it
+ok 439 - a delivered route only navigates the window that shows it
+  ---
+  duration_ms: 0.360166
+  type: 'test'
+  ...
+# Subtest: events the backend sends to one window are only heard by that window
+ok 440 - events the backend sends to one window are only heard by that window
+  ---
+  duration_ms: 21.82675
+  type: 'test'
+  ...
+# Subtest: a hidden workspace does not poll, and reopening refreshes once without duplicate timers
+ok 441 - a hidden workspace does not poll, and reopening refreshes once without duplicate timers
+  ---
+  duration_ms: 0.482125
+  type: 'test'
+  ...
+# Subtest: reopening during an in-flight request refreshes immediately after that request
+ok 442 - reopening during an in-flight request refreshes immediately after that request
+  ---
+  duration_ms: 0.093375
+  type: 'test'
+  ...
+# Subtest: hiding or disposing while a request runs prevents a queued refresh
+ok 443 - hiding or disposing while a request runs prevents a queued refresh
+  ---
+  duration_ms: 0.0935
+  type: 'test'
+  ...
+# Subtest: workspace and dynamically created windows do not enable webview zoom shortcuts
+ok 444 - workspace and dynamically created windows do not enable webview zoom shortcuts
+  ---
+  duration_ms: 0.801792
+  type: 'test'
+  ...
+# Subtest: all product sections and legacy window aliases belong to the main workspace
+ok 445 - all product sections and legacy window aliases belong to the main workspace
+  ---
+  duration_ms: 1.050666
+  type: 'test'
+  ...
+# Subtest: primary navigation restores the task context while History never repeats an exact-target request
+ok 446 - primary navigation restores the task context while History never repeats an exact-target request
+  ---
+  duration_ms: 0.183292
+  type: 'test'
+  ...
+# Subtest: inline Settings returns to the originating task and remembers its last category
+ok 447 - inline Settings returns to the originating task and remembers its last category
+  ---
+  duration_ms: 0.102625
+  type: 'test'
+  ...
+# Subtest: a recording finished during Settings updates the return destination without leaving Settings
+ok 448 - a recording finished during Settings updates the return destination without leaving Settings
+  ---
+  duration_ms: 0.066834
+  type: 'test'
+  ...
+# Subtest: background meeting completion keeps History open and updates the remembered meeting
+ok 449 - background meeting completion keeps History open and updates the remembered meeting
+  ---
+  duration_ms: 0.106041
+  type: 'test'
+  ...
+# Subtest: legacy windows and settings aliases now land in one workspace
+ok 450 - legacy windows and settings aliases now land in one workspace
+  ---
+  duration_ms: 0.056333
+  type: 'test'
+  ...
+# Subtest: new Settings opens at task readiness while old advanced links stay valid
+ok 451 - new Settings opens at task readiness while old advanced links stay valid
+  ---
+  duration_ms: 0.149333
+  type: 'test'
+  ...
+# Subtest: History belongs to Dictation and recording belongs to Meetings
+ok 452 - History belongs to Dictation and recording belongs to Meetings
+  ---
+  duration_ms: 0.370166
+  type: 'test'
+  ...
+# Subtest: only a verified different active capture may bypass old retained draft persistence
+ok 453 - only a verified different active capture may bypass old retained draft persistence
+  ---
+  duration_ms: 0.279708
+  type: 'test'
+  ...
+# Subtest: five settings categories retain Dictionary and Styles as full Dictation subpages
+ok 454 - five settings categories retain Dictionary and Styles as full Dictation subpages
+  ---
+  duration_ms: 0.290709
+  type: 'test'
+  ...
+# Subtest: remembered workspace survives a launch with its Settings return and task contexts
+ok 455 - remembered workspace survives a launch with its Settings return and task contexts
+  ---
+  duration_ms: 0.246625
+  type: 'test'
+  ...
+# Subtest: persisted navigation excludes source content and one-shot History recovery requests
+ok 456 - persisted navigation excludes source content and one-shot History recovery requests
+  ---
+  duration_ms: 0.097209
+  type: 'test'
+  ...
+# Subtest: recovery opens a specific History result without putting its id in a meeting path
+ok 457 - recovery opens a specific History result without putting its id in a meeting path
+  ---
+  duration_ms: 0.1435
+  type: 'test'
+  ...
+# Subtest: targeted navigation validates meeting identifiers and timestamp jumps
+ok 458 - targeted navigation validates meeting identifiers and timestamp jumps
+  ---
+  duration_ms: 0.047167
+  type: 'test'
+  ...
+# Subtest: switching primary destinations preserves the selected meeting and settings category
+ok 459 - switching primary destinations preserves the selected meeting and settings category
+  ---
+  duration_ms: 0.052583
+  type: 'test'
+  ...
+# Subtest: recording compatibility routes do not erase the remembered meetings route
+ok 460 - recording compatibility routes do not erase the remembered meetings route
+  ---
+  duration_ms: 0.030209
+  type: 'test'
+  ...
+# Subtest: reselecting the active Pad keeps its session while same-route provider selection can remount
+ok 461 - reselecting the active Pad keeps its session while same-route provider selection can remount
+  ---
+  duration_ms: 0.032917
+  type: 'test'
+  ...
+# Subtest: the optional Pad has its own route and is remembered across workspace navigation
+ok 462 - the optional Pad has its own route and is remembered across workspace navigation
+  ---
+  duration_ms: 0.035625
+  type: 'test'
+  ...
+# Subtest: a background meeting rename updates return metadata without changing the user's destination
+ok 463 - a background meeting rename updates return metadata without changing the user's destination
+  ---
+  duration_ms: 0.054209
+  type: 'test'
+  ...
+# Subtest: both evidence gates limit readiness progress, including a large single meeting
+ok 464 - both evidence gates limit readiness progress, including a large single meeting
+  ---
+  duration_ms: 0.36
+  type: 'test'
+  ...
+# Subtest: trait controls allow only supported values and retain stable values across UI languages
+ok 465 - trait controls allow only supported values and retain stable values across UI languages
+  ---
+  duration_ms: 0.444625
+  type: 'test'
+  ...
+# Subtest: unknown failures cannot display source text or provider output
+ok 466 - unknown failures cannot display source text or provider output
+  ---
+  duration_ms: 0.1355
+  type: 'test'
+  ...
+# Subtest: sharing reflects sign-in and designated source rather than only the local switch
+ok 467 - sharing reflects sign-in and designated source rather than only the local switch
+  ---
+  duration_ms: 0.11875
+  type: 'test'
+  ...
+# Subtest: language labels relabel without changing the profile's language identity
+ok 468 - language labels relabel without changing the profile's language identity
+  ---
+  duration_ms: 7.518875
+  type: 'test'
+  ...
+# Subtest: long captures appear once while retaining their full word count and exclusion anchor
+ok 469 - long captures appear once while retaining their full word count and exclusion anchor
+  ---
+  duration_ms: 0.138834
+  type: 'test'
+  ...
+1..469
+# tests 469
+# suites 0
+# pass 469
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 859.765292

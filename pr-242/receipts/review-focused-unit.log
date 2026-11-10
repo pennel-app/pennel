@@ -1,0 +1,202 @@
+TAP version 13
+# Subtest: native transparency requires a complete successful environment and respects accessibility
+ok 1 - native transparency requires a complete successful environment and respects accessibility
+  ---
+  duration_ms: 0.510209
+  type: 'test'
+  ...
+# Subtest: sidebar preferences recover from invalid values and remain bounded for pointer and keyboard
+ok 2 - sidebar preferences recover from invalid values and remain bounded for pointer and keyboard
+  ---
+  duration_ms: 0.231125
+  type: 'test'
+  ...
+# Subtest: application shortcuts use platform modifiers and leave text navigation and composition alone
+ok 3 - application shortcuts use platform modifiers and leave text navigation and composition alone
+  ---
+  duration_ms: 0.263375
+  type: 'test'
+  ...
+# Subtest: effective command rows match logical keys exactly and suspend commands during capture
+ok 4 - effective command rows match logical keys exactly and suspend commands during capture
+  ---
+  duration_ms: 0.080334
+  type: 'test'
+  ...
+# Subtest: Space aliases use logical characters and preserve all command guards
+ok 5 - Space aliases use logical characters and preserve all command guards
+  ---
+  duration_ms: 0.114209
+  type: 'test'
+  ...
+# Subtest: DOM command dispatch resolves shifted digits and non-US Alt text through the same base layout
+ok 6 - DOM command dispatch resolves shifted digits and non-US Alt text through the same base layout
+  ---
+  duration_ms: 0.063584
+  type: 'test'
+  ...
+# Subtest: unresolved or unsupported resolved-language values fall back to English
+ok 7 - unresolved or unsupported resolved-language values fall back to English
+  ---
+  duration_ms: 0.464625
+  type: 'test'
+  ...
+# Subtest: Dutch is selectable independently and catalog keys/placeholders match
+ok 8 - Dutch is selectable independently and catalog keys/placeholders match
+  ---
+  duration_ms: 3.704
+  type: 'test'
+  ...
+# Subtest: locale formatting changes presentation without changing stored values
+ok 9 - locale formatting changes presentation without changing stored values
+  ---
+  duration_ms: 11.925334
+  type: 'test'
+  ...
+# Subtest: live bindings update only their owned presentation and leave input content untouched
+ok 10 - live bindings update only their owned presentation and leave input content untouched
+  ---
+  duration_ms: 0.260875
+  type: 'test'
+  ...
+# Subtest: known app-owned errors relabel in both directions without translating arbitrary content
+ok 11 - known app-owned errors relabel in both directions without translating arbitrary content
+  ---
+  duration_ms: 1.656208
+  type: 'test'
+  ...
+# Subtest: legacy dictation notices retain their Dutch-to-English compatibility mappings
+ok 12 - legacy dictation notices retain their Dutch-to-English compatibility mappings
+  ---
+  duration_ms: 8.962209
+  type: 'test'
+  ...
+# Subtest: recovery diagnostics follow the interface language while provider responses stay literal
+ok 13 - recovery diagnostics follow the interface language while provider responses stay literal
+  ---
+  duration_ms: 1.646209
+  type: 'test'
+  ...
+# Subtest: microphone-owner refusals follow the interface without rewriting meeting content
+ok 14 - microphone-owner refusals follow the interface without rewriting meeting content
+  ---
+  duration_ms: 1.695375
+  type: 'test'
+  ...
+# Subtest: a view that finishes mounting after a language change catches up without rebuilding
+ok 15 - a view that finishes mounting after a language change catches up without rebuilding
+  ---
+  duration_ms: 0.297625
+  type: 'test'
+  ...
+# Subtest: native completion preserves fn/sides and ignores unrelated or late events
+ok 16 - native completion preserves fn/sides and ignores unrelated or late events
+  ---
+  duration_ms: 0.92175
+  type: 'test'
+  ...
+# Subtest: cancel during delayed activation restores backend after the late start and saves nothing
+ok 17 - cancel during delayed activation restores backend after the late start and saves nothing
+  ---
+  duration_ms: 0.117666
+  type: 'test'
+  ...
+# Subtest: events delivered before activation reply are checked against its generation
+ok 18 - events delivered before activation reply are checked against its generation
+  ---
+  duration_ms: 0.083875
+  type: 'test'
+  ...
+# Subtest: DOM fallback is explicit, application-only, compositional-safe and never records bare fn
+ok 19 - DOM fallback is explicit, application-only, compositional-safe and never records bare fn
+  ---
+  duration_ms: 0.249667
+  type: 'test'
+  ...
+# Subtest: Escape cancels native or DOM capture without replacing the saved binding
+ok 20 - Escape cancels native or DOM capture without replacing the saved binding
+  ---
+  duration_ms: 0.106334
+  type: 'test'
+  ...
+# Subtest: a completed capture can await idempotent cancellation before its central settings write
+ok 21 - a completed capture can await idempotent cancellation before its central settings write
+  ---
+  duration_ms: 0.141458
+  type: 'test'
+  ...
+# Subtest: focus cancellation revokes a Done binding while its completion stop is held
+ok 22 - focus cancellation revokes a Done binding while its completion stop is held
+  ---
+  duration_ms: 0.703959
+  type: 'test'
+  ...
+# Subtest: Reset all revokes Done before its held stop can enqueue a stale settings write
+ok 23 - Reset all revokes Done before its held stop can enqueue a stale settings write
+  ---
+  duration_ms: 0.111292
+  type: 'test'
+  ...
+# Subtest: DOM fallback records a layout-derived base key for shifted digits and non-US Alt characters
+ok 24 - DOM fallback records a layout-derived base key for shifted digits and non-US Alt characters
+  ---
+  duration_ms: 0.362792
+  type: 'test'
+  ...
+# Subtest: unavailable or incomplete layout maps refuse ambiguous DOM capture without saving modified text
+ok 25 - unavailable or incomplete layout maps refuse ambiguous DOM capture without saving modified text
+  ---
+  duration_ms: 0.349042
+  type: 'test'
+  ...
+# Subtest: native observation consumes DOM defaults without constructing a second binding
+ok 26 - native observation consumes DOM defaults without constructing a second binding
+  ---
+  duration_ms: 0.113291
+  type: 'test'
+  ...
+# Subtest: layout normalization uses supplied base characters and never derives them from physical code names
+ok 27 - layout normalization uses supplied base characters and never derives them from physical code names
+  ---
+  duration_ms: 0.438458
+  type: 'test'
+  ...
+# Subtest: DOM-only application availability fails closed for transformed printable bindings without clearing them
+ok 28 - DOM-only application availability fails closed for transformed printable bindings without clearing them
+  ---
+  duration_ms: 0.174375
+  type: 'test'
+  ...
+# Subtest: missing or rejected browser layout support remains unavailable and stale layout replies cannot win
+ok 29 - missing or rejected browser layout support remains unavailable and stale layout replies cannot win
+  ---
+  duration_ms: 0.104541
+  type: 'test'
+  ...
+# Subtest: every shortcut label follows effective core rows, including cleared and AZERTY bindings
+ok 30 - every shortcut label follows effective core rows, including cleared and AZERTY bindings
+  ---
+  duration_ms: 0.631125
+  type: 'test'
+  ...
+# Subtest: Shortcuts has its own Settings category and native/legacy deep links retain the target
+ok 31 - Shortcuts has its own Settings category and native/legacy deep links retain the target
+  ---
+  duration_ms: 0.688166
+  type: 'test'
+  ...
+# Subtest: derived Command keycaps follow the effective Dictate binding in canonical modifier order
+ok 32 - derived Command keycaps follow the effective Dictate binding in canonical modifier order
+  ---
+  duration_ms: 0.156625
+  type: 'test'
+  ...
+1..32
+# tests 32
+# suites 0
+# pass 32
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 384.394833

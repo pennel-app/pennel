@@ -1,0 +1,23 @@
+
+> pennel-desktop@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v8.3.5 building client environment for production...
+transforming...
+✓ 143 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                     0.51 kB │ gzip:   0.32 kB
+dist/pill.html                                      0.89 kB │ gzip:   0.39 kB
+dist/assets/inter-latin-Dx4kXJAl.woff2             48.25 kB
+dist/assets/Figtree-Medium-CHCfXh45.ttf            57.31 kB
+dist/assets/Figtree-Regular-kp3AmmyB.ttf           57.50 kB
+dist/assets/Figtree-SemiBold-BkmwCudo.ttf          57.58 kB
+dist/assets/InstrumentSerif-Regular-DXer19By.ttf   70.01 kB
+dist/assets/pill-DtpxmPUz.css                       9.22 kB │ gzip:   2.46 kB
+dist/assets/main-BJ5CpmVy.css                     150.64 kB │ gzip:  25.69 kB
+dist/assets/pill-AwLb_43G.js                        4.82 kB │ gzip:   2.02 kB
+dist/assets/main-DHr3SODm.js                      441.05 kB │ gzip: 124.51 kB
+dist/assets/shortcut-presentation-Dck_VMrE.js     498.64 kB │ gzip: 125.06 kB
+
+✓ built in 187ms
