@@ -999,7 +999,7 @@
           : permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
         const configured = Boolean(account && (!options.owner_review || definition?.availability.status === "available") && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
         const accessibility = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility && !options.copy_only, can_paste_externally: accessibility && !options.copy_only, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
+        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility && !options.copy_only, can_paste_externally: accessibility && !options.copy_only, reason: options.home_setup_reason || (denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning."), resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
       }
       case "pad_text": return pad;
       case "save_pad_text": {
