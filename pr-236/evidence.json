@@ -1,0 +1,154 @@
+{
+  "task": "T3c responsive retained companion",
+  "mock": true,
+  "source": "Owned synthetic headless fixture; no user screen",
+  "before_ref": "528c1b7a1c37b0a2c8d1baed50d8dfcdba5cab95",
+  "after_ref": "10a50b7ffc238ab525614dc10bbe8c4ab06e1ab9",
+  "focus_correction": "eeeaaecc reorders focus/visibility, actual-CDP keyboard red-to-green separate receipt",
+  "rows": [
+    {
+      "phase": "before",
+      "case": "en/dark/meeting-companion-closed-reference.png",
+      "file": "before-en-dark-meeting-companion-closed-reference.png",
+      "sha256": "0dd7e5c68bab77b73a2806457515457b07c41eb710a4d1dce08eabe40e097582"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/meeting-companion-live-reference.png",
+      "file": "before-en-dark-meeting-companion-live-reference.png",
+      "sha256": "9cdc544031cb71d8bba6f935ae97c1cc27f5e3c9b1ff54941e4f863a8f683f0e"
+    },
+    {
+      "phase": "before",
+      "case": "en/dark/meeting-companion-review-reference.png",
+      "file": "before-en-dark-meeting-companion-review-reference.png",
+      "sha256": "85d774a0b1789d3969e859a7e7e2b12c4f02e9578491ef152fc36b88f20e927e"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/meeting-companion-closed-reference.png",
+      "file": "before-en-light-meeting-companion-closed-reference.png",
+      "sha256": "7d64f230f84bab37d36a356817d77b08062c346196c0f54bbc88baba1928d266"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/meeting-companion-live-reference.png",
+      "file": "before-en-light-meeting-companion-live-reference.png",
+      "sha256": "2a900a6e28b6341829b6d47dce46a9386b7e9c2fc31144763fa33e82b333f574"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/meeting-companion-review-reference.png",
+      "file": "before-en-light-meeting-companion-review-reference.png",
+      "sha256": "b6c769bb74e113638aaa69f1a357c6dbba1d490665677810f535fc8fb0153237"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/meeting-companion-closed-reference.png",
+      "file": "after-en-dark-meeting-companion-closed-reference.png",
+      "sha256": "a37235426e49079785e014f578afc2d1b271893f3b5bbefc1dcb2302f77c8a0b"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/meeting-companion-live-reference.png",
+      "file": "after-en-dark-meeting-companion-live-reference.png",
+      "sha256": "8c2a7f6605e6a484062fbac7aff7ef24b342e821f69ce99fe0d94dd759d18432"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/meeting-companion-review-reference.png",
+      "file": "after-en-dark-meeting-companion-review-reference.png",
+      "sha256": "9fd7d574c97cae6e49df8d00e8f5b8312ed317e3d7b42aaf1dea14f2cb92006b"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/meeting-companion-closed-reference.png",
+      "file": "after-en-light-meeting-companion-closed-reference.png",
+      "sha256": "ccceb2700e621593fc36a05ce954e916f8cae9290c1f1f6779e781f0dbddb43f"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/meeting-companion-live-reference.png",
+      "file": "after-en-light-meeting-companion-live-reference.png",
+      "sha256": "1321ec4a88bf379e4cd4276df3d0ed02bd9771e5d27bb5927a9e54a156e2c6de"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/meeting-companion-review-reference.png",
+      "file": "after-en-light-meeting-companion-review-reference.png",
+      "sha256": "06c8774b029dc9e3cd7db324ea3afd02576b4f20be826253074cda503631a560"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/meeting-companion-enlarged.png",
+      "file": "checked-en-dark-meeting-companion-enlarged.png",
+      "sha256": "c26574081fd40b3760663103eb2bcf9563956c15d5fac7885ec4e19a0f5af821"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/meeting-companion-minimum.png",
+      "file": "checked-en-dark-meeting-companion-minimum.png",
+      "sha256": "b87185f1d6ea6e94a6ffc3012980378730e04ed5f955c0c185c7ab84fa292248"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/meeting-companion-wide.png",
+      "file": "checked-en-dark-meeting-companion-wide.png",
+      "sha256": "954994f7dc85cde19fc94b9c1e8011e8bf0217bc3db618eba53ec0ed7963e1a6"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/meeting-companion-enlarged.png",
+      "file": "checked-en-light-meeting-companion-enlarged.png",
+      "sha256": "cf015d0218b281d4d74e0eea0de1d0e6e489079a0d0f15e75a17651f8a2a3b50"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/meeting-companion-minimum.png",
+      "file": "checked-en-light-meeting-companion-minimum.png",
+      "sha256": "fb6788d9cae5775a570860f24051aab772f72d0656d477508f0be57440cbc0a3"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/meeting-companion-wide.png",
+      "file": "checked-en-light-meeting-companion-wide.png",
+      "sha256": "b6db170f722eec485da948b2592dbf0442a02efe59efb49ef9499d5ac32889ec"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/meeting-companion-enlarged.png",
+      "file": "checked-nl-dark-meeting-companion-enlarged.png",
+      "sha256": "fc52e7b91db7da512e9b46913267bcebff27d0ec16a77318bc0bb71ffc9935b5"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/meeting-companion-minimum.png",
+      "file": "checked-nl-dark-meeting-companion-minimum.png",
+      "sha256": "d4cb7eeeb6244ae109960467fa65c834a2f98c5c3d07104b056963ce1c29f437"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/meeting-companion-wide.png",
+      "file": "checked-nl-dark-meeting-companion-wide.png",
+      "sha256": "442a235c530234211a744ebd8bf9bcbc5e44c91ae6b2e3c43d218f381c226b82"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/meeting-companion-enlarged.png",
+      "file": "checked-nl-light-meeting-companion-enlarged.png",
+      "sha256": "e8cc7300751c526e120f265a3def73b5c048943c912b67d655219502b892b287"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/meeting-companion-minimum.png",
+      "file": "checked-nl-light-meeting-companion-minimum.png",
+      "sha256": "ff7445c74e085b053fa4225ec62c9b8320a6c5c865a8c496a05c696d1cadc3e3"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/meeting-companion-wide.png",
+      "file": "checked-nl-light-meeting-companion-wide.png",
+      "sha256": "22048620dc8e45ad38f938e858b604e2384e50cd2f98b374301f61699a45efa6"
+    }
+  ]
+}
