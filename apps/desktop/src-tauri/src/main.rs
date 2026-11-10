@@ -2,6 +2,7 @@
 
 mod app_identity;
 mod audio;
+mod automatic_suggestions;
 mod call_detection;
 mod capabilities;
 #[cfg(target_os = "macos")]
@@ -1207,6 +1208,7 @@ fn main() {
             inference::cancel_inference,
             insights::insights_snapshot,
             insights::insights_availability,
+            automatic_suggestions::automatic_insights_availability,
             insights::begin_insights_analysis,
             insights::insights_job,
             insights::cancel_insights_analysis,

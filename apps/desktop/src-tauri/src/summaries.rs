@@ -130,6 +130,7 @@ pub async fn accept_meeting_summary(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Preserve named wire fields plus Tauri-injected app/state.
 pub async fn update_meeting_summary_action(
     id: String,
     expected_revision: String,

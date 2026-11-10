@@ -939,6 +939,7 @@ export const api = {
   onWritingProfileChanged: (handler: () => void): Promise<() => void> =>
     listen<null>("writing-profile-changed", handler),
   insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
+  automaticInsightsAvailability: (id: string) => invoke<InsightAvailability>("automatic_insights_availability", { id }),
   insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),
   beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy }),
   insightsJob: (jobId: string) => invoke<InsightJob>("insights_job", { jobId }),
