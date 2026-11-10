@@ -441,8 +441,10 @@ mark { background: none; color: inherit; font-weight: 600; }
 .provider-kind { display: block; color: var(--muted); font-size: var(--font-caption); line-height: 1.3; }
 .menu-button.provider-add { margin-top: 8px; }
 .provider-key-note { margin-top: 12px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px; border-radius: 99px; background: var(--surface); }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: 6px; background: var(--subtle); color: var(--muted); font-size: var(--font-label); line-height: 1.3; }
+.chip > .ui-icon { width: 13px; height: 13px; }
+.keycaps { display: inline-flex; align-items: center; gap: var(--space-1); }
 .model-filters { gap: 14px; font-size: var(--font-body); }
 .model-language { display: inline-flex; align-items: center; gap: 8px; }
 
