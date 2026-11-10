@@ -84,14 +84,44 @@ pub(crate) fn settled_utterance_speaker_label(
     row: &crate::MeetingUtterance,
     names: &[crate::SpeakerName],
 ) -> Option<String> {
-    (!provisional_speaker_estimate(row)
-        && matches!(
-            utterance_speaker_identity(row, names),
-            UtteranceSpeakerLabel::Name(_)
-                | UtteranceSpeakerLabel::Number(_)
-                | UtteranceSpeakerLabel::SelfVoice
-        ))
-    .then(|| utterance_speaker_label(row, names))
+    settled_utterance_speaker_identity(row, names).map(|(_, label)| label)
+}
+
+pub(crate) fn settled_utterance_speaker_identity(
+    row: &crate::MeetingUtterance,
+    names: &[crate::SpeakerName],
+) -> Option<(String, String)> {
+    if provisional_speaker_estimate(row) {
+        return None;
+    }
+    match utterance_speaker_identity(row, names) {
+        UtteranceSpeakerLabel::Name(name) => {
+            let manual = row.metadata.manual.as_ref().filter(|manual| {
+                !manual.review_required
+                    && manual.source_fingerprint == row.metadata.source_fingerprint
+            });
+            let key = if let Some(explicit) = manual
+                .and_then(|manual| manual.name.as_ref())
+                .filter(|name| !name.trim().is_empty())
+            {
+                format!(
+                    "manual-name:{:?}:{explicit}",
+                    manual.and_then(|manual| manual.voice)
+                )
+            } else {
+                let voice = manual
+                    .and_then(|manual| manual.voice)
+                    .or_else(|| row.metadata.attribution.voices.first().copied())?;
+                format!("voice:{voice}")
+            };
+            Some((key, name))
+        }
+        UtteranceSpeakerLabel::Number(voice) => {
+            Some((format!("voice:{voice}"), format!("Speaker {voice}")))
+        }
+        UtteranceSpeakerLabel::SelfVoice => Some(("self".into(), "Me".into())),
+        _ => None,
+    }
 }
 
 pub(crate) fn utterance_speaker_label(
