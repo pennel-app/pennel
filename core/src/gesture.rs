@@ -37,6 +37,7 @@ pub struct HotkeyGesture {
     phase: Phase,
     last_tap_up: Option<f64>,
     hands_free: bool,
+    trigger_down: bool,
 }
 
 impl Default for HotkeyGesture {
@@ -54,6 +55,7 @@ impl HotkeyGesture {
             phase: Phase::Idle,
             last_tap_up: None,
             hands_free: false,
+            trigger_down: false,
         }
     }
 
@@ -96,6 +98,7 @@ impl HotkeyGesture {
     }
 
     pub fn handle(&mut self, edge: KeyEdge, t: f64) -> Vec<GestureAction> {
+        self.trigger_down = edge == KeyEdge::Down;
         match (edge, self.phase) {
             (KeyEdge::Down, Phase::Idle) => {
                 if self
@@ -153,6 +156,21 @@ impl HotkeyGesture {
         }
     }
 
+    /// Cancels listening, including hands-free and button sessions. Processing has no active phase.
+    pub fn cancel(&mut self) -> Vec<GestureAction> {
+        if matches!(self.phase, Phase::Idle | Phase::AwaitingRelease) {
+            return vec![];
+        }
+        self.phase = if self.trigger_down {
+            Phase::AwaitingRelease
+        } else {
+            Phase::Idle
+        };
+        self.hands_free = false;
+        self.last_tap_up = None;
+        vec![GestureAction::Cancel]
+    }
+
     /// Another key pressed while holding means the hotkey is used as a modifier (Ctrl+C), not to dictate.
     pub fn interrupt(&mut self) -> Vec<GestureAction> {
         if !matches!(self.phase, Phase::Holding { .. }) {
@@ -193,6 +211,32 @@ mod tests {
     use super::GestureAction::*;
     use super::KeyEdge::*;
     use super::*;
+
+    #[test]
+    fn explicit_cancel_covers_hold_hands_free_and_manual_and_waits_for_release() {
+        let mut g = HotkeyGesture::default();
+        assert_eq!(g.cancel(), []);
+        g.handle(Down, 0.0);
+        assert_eq!(g.cancel(), [Cancel]);
+        assert_eq!(g.handle(Down, 0.1), []);
+        assert_eq!(g.handle(Up, 0.2), []);
+        g.handle(Down, 1.0);
+        g.handle(Up, 1.1);
+        g.handle(Down, 1.2);
+        g.handle(Up, 1.3);
+        assert!(g.is_hands_free());
+        assert_eq!(g.cancel(), [Cancel]);
+        assert!(!g.is_hands_free());
+        assert_eq!(g.handle(Down, 1.4), [Start]);
+        assert!(!g.is_hands_free());
+        g.handle(Up, 2.0);
+        g.manual_toggle(3.0);
+        g.handle(Down, 3.1);
+        assert_eq!(g.cancel(), [Cancel]);
+        assert_eq!(g.handle(Down, 3.2), []);
+        assert_eq!(g.handle(Up, 3.3), []);
+        assert_eq!(g.handle(Down, 4.0), [Start]);
+    }
 
     #[test]
     fn hold_then_release_submits() {
