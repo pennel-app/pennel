@@ -1,90 +1,83 @@
 # Speaker quality and automatic Teams names — #22 / #101
 
-PR #190 builds on merged PR #189 at `6dd72cc`. The completed 9 November phase, retained at `a511725`, validates two saved Flemish Teams recordings and the component/replay behavior below. A 10 November follow-up tests real capture-to-name behavior. The PR is draft again until that evidence and final review/checks pass; earlier component results do not qualify the new live path. #22 and #101 stay open, with #100 owning broader manual-correction work.
+PR #190 builds on merged PR #189 at `6dd72cc`. Both saved Flemish Teams recordings have been repaired and checked as described below. **The final V11 live recording-to-name positive, source-loss control and cold reopen now qualify on the same personally signed binary.** Product source is `1a3ca4772dd5b8a1b470226341705e099bad5a6f`; this final update changes evidence only. Final review and selected checks on the evidence commit still precede merge. #22 and #101 remain open for their broader acceptance criteria; #100 owns broader manual-correction work.
 
-## 10 November: real recording-to-name acceptance
+## 10 November: final live recording-to-name acceptance
 
-**Current checkpoint: v7 positive and cold reopen qualify; current-head live acceptance is blocked and remains open.** The fifth positive attempt passes both the canonical evaluator and the independent PCM supplement. It produces two expected automatic names with 29 valid SystemAudio proofs. Its same-binary/profile cold reopen also passes. A subsequent failed negative startup reveals a wide clock probe; the bounded reprobe fix is built and signed as v8. The final production head is now `0af18c3`, with additional reviewed fixes. Its v9 build/sign and local source checks are complete, but it has not been launched and still requires a fresh positive, actual scope-loss negative and cold reopen before this follow-up is complete. Started/completed failed or diagnostic attempts are not counted as qualified sessions. The first actual detector-prompt start reaches the production answer handler but fails: the echo path reports OSStatus `-10875`, and raw fallback reports no usable microphone/input format. Microphone permission and an available capability did not prove successful recording startup. The failed attempt is retained and is not counted as a positive session. After the microphone fix checkpoint (192 Swift tests), a further actual run starts microphone capture but has no valid system tap from the start: `system_audio=false` and the source guard is invalid. It is manually stopped before guests/public speech are admitted. This is another failed source-gate attempt, not a positive or scope-loss-negative test: no valid app-scoped→global transition occurred. No permission cause is inferred from the absence of a permission sheet. Those failed attempts remain separate from the later qualified controlled positive; their failures are not relabeled as successful positive or negative evidence.
+The actual production detector and prompt answer handler start a fresh recording in an isolated profile. Pennel creates its own UID, both physical audio files, local ASR, canonical turns, actual Teams observations and automatic proofs. No historical audio, reference aliases, voice enrollment or authored/model-derived observations are imported. Read-only monitors archive and score actual output.
 
-A later actual capture also remains failed: application observation breaks during the call, and the observed natural-leave stop takes 31.9 seconds, above the ten-second gate. These failures are retained separately from the earlier missing-system-tap attempt. Follow-up native checks reach 198 passing Swift tests. The signed candidate then completes the controlled positive below; v8 checks passed at that checkpoint. The later current-head checks and static reviews below are complete, but fresh final-source live runs and selected PR checks remain outstanding.
+The measured setup is English personal Teams desktop on macOS 27.0.1 with the built-in microphone, public Dutch/English synthetic guest speech and a visible call window. It does not qualify the original work-call accessibility layout, other Teams locales, enterprise layouts, shared devices or a fresh AirPods call. The two saved AirPods recordings remain separate acoustic evidence.
 
-The current live test is an English Microsoft Teams 2 desktop host with public personal-Teams guest workflow on macOS 27.0.1 and the current built-in microphone; AirPods are not present. The original two AirPods recordings remain separate acoustic/replay evidence. No original work-call accessibility context, enterprise layout, other Teams UI locale or fresh AirPods capture is inferred from this QA setup.
-
-The live profile starts empty. Historical recordings, reference aliases, voice enrollment and authored/model-derived speaking timelines are not imported. The product must create the recording UID, audio, local ASR rows, canonical turns, real Teams observations and automatic proofs itself. Read-only monitors copy actual output rather than supply any of those artifacts.
-
-| Acceptance stage | Required evidence | Current checkpoint |
-| --- | --- | --- |
-| Positive start and normal end | Real Teams host-alone detection and prompt, actual start/session/UID transition, guests joining afterward, native app-scoped audio, final ASR/diarization/names, then natural Teams hangup that preserves earlier valid evidence | v7 positive qualified, including 0.940 s natural stop; fresh final-source run required |
-| Clock and source integrity | Native PCM origin aligned through a measured RPC bracket; actual `audio_clock_verified` and uncertainty at most 100 ms; native capture scope/process recorded separately from the physical SystemAudio track | v7 positive verifies 55.952 ms; a later negative-start probe at 123.087 ms correctly fails the 100 ms bound |
-| Independent accuracy | First solo phase per voice calibrates one fixed mapping; later solo phases are held out, with three-second transition guards. Ground truth comes from controlled mute/TTS actions and fixed public voice inputs, never from observed highlights or inferred names | Positive scored from actual control UTC/RPC bounds, calibrated once and held out |
-| Automatic-name output | Zero wrong automatic names, canonical coverage reported with its limits, plus independent PCM-energy coverage described below; valid recording/process/window/source proofs, no microphone-derived automatic proof, no false naming of Mixed/Overlap/unknown text | Positive canonical and independent PCM gates passed; negative remains separate |
-| Actual scope-loss negative | A fresh recording's native source metadata demonstrates an app-scoped→global transition; post-transition SystemPCM energy and successful SystemAudio ASR demonstrate continued capture, while names/proofs remain absent and the guard remains invalid | Not qualified; a stored unavailable reason alone will not count |
-| Finalization and cold reopen | Speaker postprocessing completes after capture stops; proofs, names and policy remain valid after a cold product reopen without enrollment or source/evidence repair | v7 same-binary/profile reopen passes; final-source reopen remains required |
-| Isolation and final checks | Owned capture hotkey remains off across detector polls and recording; ordinary apps/profiles remain untouched; final-source tests, two review axes and selected PR checks pass | Current-head local checks/static reviews pass; final-source runtime and linked PR checks remain open |
-
-A supplementary PCM protocol is fixed before any qualifying public-speech run: **16 kHz mono Float32, 20 ms RMS frames at both −45 and −55 dBFS, three-second phase-edge guards, and at least ten seconds of energy-active audio per solo phase at each threshold**. The held-out denominator includes every such energy-active frame, including time with missing ASR or diarization. Correct-name credit requires a valid automatically named SystemAudio transcript interval plus matching clean single-voice source-turn support. Both thresholds must reach at least 80% correct-name coverage per actor and overall, with zero wrong automatic labels across all controlled solo phases. Row-label-only coverage is reported separately. Names are compared directly with the declared actor; an A1/B1-only anonymous mapping is diagnostic and never refitted on held-out data. Seventeen semantic negative-control tests pass for this private supplement. Its first scored qualifying real run passes both fixed-threshold gates. RMS is an energy proxy, not human speech annotation, whole-wave DER, VAD recall or WER.
-
-A control-timing correction is recorded **during capture but before name outcomes/postprocessing**: actual CUA switch-to-mark IPC gaps reach 17.53 seconds, so delayed marks cannot define the preceding phase end. Both evaluators now share one parser using actual control-before/control-after UTC brackets and conservative RPC wall/runtime epoch bounds. A1/B1 use fixed first-30-second interiors; their unrecorded actual end timestamps are explicitly unknown. A2 keeps its conservative marked start and uses the next actual switch for its end; later held-out boundaries use the new control receipts. Raw ledgers and the original protocol are preserved. RMS thresholds, frame size, coverage/error gates and three-second guards are unchanged; no timing or thresholds are fitted to naming outcomes. The qualified fresh positive records actual control brackets from its first phase and validates all six phase bounds before name outcomes; it does not rely on invented old transition times.
-
-### Qualified controlled positive
-
-The actual signed app creates its own recording UID, both physical audio files, local ASR, canonical turns, real Teams samples and final automatic-name provenance. No historical audio, model-derived observations, reference alias, manual correction or voice enrollment is imported. The tested binary is `f576cc95…`, signed with personal team `B538Q2K76C`; its 439 source inputs are pinned separately from the preceding replay candidate.
-
-| Positive result | Observed value |
-| --- | ---: |
-| Saved SystemAudio PCM duration | 639.331 s |
-| Successful nonempty ASR rows / failures | 36 / 0 |
-| Automatic names / valid Single-SystemAudio proof rows | 2 / 29 |
-| Actual Teams evidence samples / available | 1,259 / 1,240 |
-| Maximum native-clock uncertainty | 55.952 ms |
-| Natural leave→capture-off upper latency | 939.517 ms |
-| Named eligible canonical speech / all canonical detected speech | 100% / 96.84% |
-| Strict held-out PCM-energy coverage at −45 dBFS | 95.58% overall; first actor 91.46%, second 99.60% |
-| Strict held-out PCM-energy coverage at −55 dBFS | 95.19% overall; first actor 90.78%, second 99.59% |
-| Wrong automatic-name time across all controlled solo energy frames | 0 ms |
-| Automatically named Single-text words | 799 / 912 (87.61%) |
-
-Both actors exceed 80% independently at both fixed thresholds. Missing ASR/clean-turn support remains in the PCM denominator and is unnamed. Canonical held-out confusion is zero on its separately stated detected-turn denominator. Two Mixed, four Overlap and one Unknown transcript rows receive no automatic proof, and no microphone row receives one. There are no manual name corrections, remembered voices or trained self profile. Samples being unavailable/unhighlighted are not independently annotated acoustic silence. These are controlled personal-Teams/built-in-input energy-proxy results, not whole-wave human DER, WER, enterprise-layout or live AirPods qualification.
-
-The qualified v7 recording survives a cold reopen with the same binary and profile: all 18 meeting files and the complete API result stay unchanged, including two applied names and 29 Single-SystemAudio proofs, with zero manual corrections, remembered voices or self profile. No second capture or inference is requested.
-
-### Final-source access blocker
-
-The previous signed v8 candidate (`bea7ab87…`, source manifest `8a2b1937…`) remains idle/OFF and untouched. Current production head `0af18c32dd7123ee3d45b168564af6874b51cf4e` is committed and its v9 build/sign-only verification is complete. The signed binary SHA-256 is `c73e5cf1824d9081a92977a4e9619e5a32de6717eb1cc2996d7f2cd9471670ed`, source manifest `ca733639ec373ef8a34b9b8410caa4c9b44bb1b00eda2acc21ea590971027d02` over 439 product source inputs, with personal team `B538Q2K76C` and deep/strict signature verification. It uses a guarded Tauri `--no-bundle` release build and a preserved verified private capture-bundle skeleton; no new DMG, notarization or ordinary-app installation is claimed. **V9 is not launched**, the active pointer is unchanged, and the previous v8 remains idle/OFF. There is **no qualifying current-source live run**. Computer use is blocked by the locked Mac after the quota-dialog dismissal failed; manual unlock is pending. No new QA room was created, the second negative test never received GO, and no capture was started in this blocked stage. The older QA room reached the service's 60-minute limit; no paid extension was used.
-
-The successful v7 positive and cold reopen remain valid evidence for that immutable binary. They are not transferred to the current production head. Fresh final-source positive/negative/reopen testing and selected PR checks are required before any merge; static source reviews are complete, but the PR remains draft. Code review can proceed while access is unavailable. This is a live-test blocker, not a completed acceptance or a negative pass.
-
-### Current reviewed source and completed checks
-
-Production head `0af18c32dd7123ee3d45b168564af6874b51cf4e` includes the following reviewed corrections. Static standards/spec reviews have zero remaining code findings; this is not runtime live acceptance.
-
-- Shared outputs preserve automatic names as estimates, while explicit manual names take priority. A derived-cache stamp prevents old unqualified labels surviving in cached outputs; prompt rules and mobile presentation retain the distinction.
-- Two microphone-owner refusals are localized in English and Dutch, with a red-to-green localization regression and eight passing i18n tests.
-- Bounded speaker observations use the actual midpoint only for reads at most 200 ms. Wider reads make the whole observation frame unknown; the sampler also quarantines the interval affected by Core’s highlight latency. Duplicate/conflicting evidence retains its veto, and cancelled evidence commits fail closed. The read-only latency accessor does not change the policy threshold. Targeted timing checks cover 38 cases and 16 UI-state cases.
-- Clean-window reconciliation is described as average linkage; the documentation does not imply complete-link clustering.
-
-| Current-source verification | Verified checkpoint |
+| Acceptance stage | Final V11 result |
 | --- | --- |
-| Core default / lean / keyboard | 1,189 / 1,171 / 17 passed; seven/five existing ignored tests |
-| Core formatting / strict Clippy / Release | Passed; Release build 35.2 s |
-| Desktop frontend | npm ci, production build and 439 tests passed |
+| Production start and source binding | Actual detector/prompt/answer handler; app-scoped SystemAudio, native process identity, live producer and capture guard verified |
+| Native clock | 1.0951045 ms uncertainty using the second fresh startup probe; unchanged 100 ms maximum |
+| Automatic output | Two expected names, 20 valid Single-SystemAudio provenance rows; no automatic proof for microphone, Mixed, Overlap or Unknown text |
+| ASR and storage | 41 successful nonempty rows, zero failed ASR rows; postprocessing complete, zero unassigned voices, no pending recovery |
+| Independent naming correctness | Zero wrong automatic names across all controlled solo energy frames; held-out canonical confusion zero on its separately stated detected-turn denominator |
+| Canonical named coverage | 100% of eligible clean single-voice speech; 91.92% of all detected canonical SystemAudio speech |
+| Independent held-out PCM coverage, −45 dBFS | 89.74% overall; first actor 80.57%, second 100.00% rounded |
+| Independent held-out PCM coverage, −55 dBFS | 89.40% overall; first actor 80.22%, second 99.99% |
+| Normal end | Native Teams Leave, without pressing Pennel Stop; capture off within a conservative 983.881064 ms upper bound |
+| Cold reopen | Same binary/profile; both names, all proofs, complete actual API and all 18 meeting files unchanged; no inference, capture, manual correction or enrollment |
+| Source-loss negative | Same V11 binary: actual app→global fallback, continued SystemAudio PCM and successful ASR, zero names/proofs, evidence cleared and source guard invalid |
+| Isolation and cleanup | Owned detector/hotkey off and recording idle before exit; owned QA app and guests stopped, native Teams speaker mute restored at unchanged volume; ordinary apps/data preserved |
+
+The positive records 918 actual evidence samples, 913 available, and 468.028 seconds of SystemAudio PCM. Unavailable observations are not assumed to be acoustic silence. Speaker processing honestly reports `limited_evidence`; that is compatible with completion and conservative unknown attribution. Public guest inputs are not human whole-call ground truth.
+
+### Fixed scoring and declared start scenario
+
+The independent PCM protocol was sealed before qualifying public-speech tests: 16 kHz mono Float32, 20 ms RMS frames at both −45 and −55 dBFS, three-second phase-edge guards and at least ten seconds of active audio per solo phase at each threshold. Each actor and the aggregate must reach 80% strict correct-name coverage across held-out solo phases; all controlled solo phases must have zero wrong automatic labels. Missing ASR, diarization or clean source-turn support counts as unnamed. The first solo phase per actor establishes one diagnostic mapping; held-out data never refits it. Ground truth uses actual CUA mute-action UTC brackets and conservative RPC wall/runtime bounds, independently of observed Teams highlights. Both scorers use the same phase parser. The unchanged protocol and evaluator receipts are hashed in the sanitized JSON.
+
+The first actor's aggregate margin is narrow: 80.22% at −55 dBFS. One individual held-out phase is below 80%; the preregistered gate is per actor across held-out phases, not per individual phase. These are energy-proxy results, not human DER, WER, VAD recall or a claim that every spoken word is named. Missing speech remains in the denominator.
+
+The final positive starts with public guest speech already connected. This scenario amendment was recorded at **10:03:41.992650 UTC, before the final run and its name outcomes**. Production prompt/handler, source, clock, binding, naming-policy thresholds and accuracy gates remain unchanged. The original host-alone-start scorer/report is preserved and fails that extra scenario check; it is not silently discarded or counted as a host-alone pass. The amended scorer accepts connected speech only when the preregistration precedes the run and actual early runtime proves heard app-scoped audio, a verified clock, source guard and live binding. Eight semantic controls reject absent/late amendments and invalid source/clock/binding. A wholly silent app can still widen capture conservatively and lose automatic names; this is disclosed rather than represented as a qualified silent-start positive.
+
+### Same-binary source-loss control
+
+An intended V11 positive loses app scope while the native Teams speaker is off. **It remains a failed positive.** It also supplies a real source-loss control against the already frozen negative gates: actual verified app→global transition, successful native fallback diagnostic and 65.3104165 ms clock uncertainty. Guests were admitted before the first observed global state; no post-transition-admission claim is made.
+
+Only actual SystemAudio after the observed transition upper bound plus three seconds is credited: 11 successful nonempty ASR rows / 352 words and 136.100 / 144.100 seconds of energetic PCM at −45 / −55 dBFS. There are zero automatic names or proofs; evidence is cleared and naming remains unavailable with `audio_capture_not_app_scoped`. Audio capture/transcription therefore survives loss of optional naming authority. The failure classification and separate negative assessment are both retained.
+
+### Failures found and fixed
+
+Earlier attempts remain archived with their original outcomes; a passing older binary never qualifies a newer candidate.
+
+- Microphone startup initially failed despite granted permission. Correct buffer/channel handling fixes the native startup path. A later missing-system-tap attempt was stopped before public input and qualifies as neither positive nor source-loss negative.
+- An early positive lost observation and took 31.9 seconds to stop. Actual registry metadata gaps and supported call-end transitions now retain identity conservatively; the final same-binding end reconciliation has a fixed two-second monotonic deadline and never resumes naming votes after uncertainty.
+- A negative startup correctly failed 100 ms clock verification. At most three fresh probes are now allowed; all-wide probes still fail closed without widening the bound.
+- V9 positive6 failed visibility and exposed a fractional recording-tail save error. Exclusive audio ends now use consistent ceiling semantics; legacy Pending recovery requires actual sample/hash proof and preserves successful metadata and manual edits. A private-copy recovery preserves all 39 nonempty pending rows / 1,017 words and all 41 prior metadata rows; original and backup hashes are unchanged. The original failed naming run is not promoted.
+- V10 positive7 failed clean-end detection. Final V11 adds the bounded terminal-only reconciliation above; independent delta review and 202 native tests pass.
+- V11 intended positives8/9/10 lost app scope while native Teams playback was muted. They remain failed positives. After the owner's explicit authorization, the native speaker was enabled at its existing volume for the final run and restored to mute afterward. Only positive8 separately meets the frozen source-loss gates.
+
+The earlier V7 positive/cold reopen and V9 negative are retained version-specific history. Their scores are not transferred to V11. All numerical accuracy gates remain unchanged.
+
+## Final source, checks and qualification boundary
+
+Final binary SHA-256 is `df3b05ebcc78e5ea4cd548c129285bf85bc11574b774fa49ac12998cc7a96a30`, signed with personal team `B538Q2K76C`, with deep/strict signature and hardened-runtime verification. Its 439 product inputs match `1a3ca47`; source-manifest SHA-256 is `3fb301df69e1ec7b84f11f5baff332f24e8493398b3f3a9bed5d5d0fc1e69747`. The guarded Tauri `--no-bundle` Release build is assembled into a preserved verified private capture-bundle skeleton. This is not a fresh DMG, notarized release, ordinary-app installation or signed upgrade.
+
+| Verification | Final product source |
+| --- | --- |
+| Core default / lean / keyboard | 1,198 / 1,180 / 17 passed; seven/five existing ignored tests |
+| Core formatting / strict Clippy / Release | Passed |
+| Desktop frontend | npm ci, production build, typecheck and 439 tests passed |
 | Desktop backend | 333 tests, formatting and strict all-target Clippy passed |
-| Mac services | 198 tests passed on unchanged native source |
-| Mobile fast/native compatibility | Typecheck; 160 UI, 17 plugin, seven widget, 116 MobileKit, 144 runtime/service and 36 keyboard tests passed |
-| Mobile generation and products | Clean/repeated Prebuild, six pod-ownership checks, both iOS Rust targets and sequential unsigned ARM64 simulator/device Release builds passed |
-| Mobile binding/source identity | Swift/header/module-map bytes unchanged; binding SHA `a3dd7102…`; static libraries bind current Core source `5833097d…` |
+| Mac services | 202 tests passed on final native source |
+| Mobile compatibility | Typecheck; 160 UI, 17 plugin, seven widget and 116 MobileKit checks on hash-identical mobile sources; current Core rebuilt into both ARM64 static libraries |
+| Mobile generation/native | Clean/repeated Prebuild, six pod-ownership checks, sequential unsigned ARM64 simulator/device Release builds, 144 runtime/service and 36 keyboard tests passed |
+| Mobile bindings | Swift/header/module-map unchanged (`a3dd7102…`); native products bind current Core `bbe92703…` |
+| Hosted product-source CI | `ci` [42791184903](https://github.com/pennel-app/pennel/actions/runs/42791184903), `desktop` [42791185036](https://github.com/pennel-app/pennel/actions/runs/42791185036), decision evaluation [42791185154](https://github.com/pennel-app/pennel/actions/runs/42791185154), `mobile` [42791184858](https://github.com/pennel-app/pennel/actions/runs/42791184858): all successful at `1a3ca47` |
+| Code review | Standards and Spec reviews plus final persistence/native delta reviews have zero remaining material code findings; final evidence review/checks precede merge |
 
-The owned simulator is shut down. These mobile results do not establish signed physical-device, keyboard cold-start, Cloud/store or real Teams acceptance. The current Mac build/sign and final desktop verification receipt are complete; v9 is not launched and current-source live acceptance remains blocked. Existing ASR language comparison remains exploratory without annotated WER; no new ASR-quality numerical gate or accuracy claim is invented.
+Shared outputs retain automatic names as estimates, manual names win, derived caches refresh, owner refusals are localized in English/Dutch, and slow/stale/duplicate/conflicting evidence remains conservative. Average-link reconciliation is described accurately. No dependency or portable-schema change is added by the final persistence/native fixes.
 
-The first negative attempt is **not qualified**. It records an actual app-to-global transition and successful JSONL fallback diagnostic at 26.064 seconds, but initial clock uncertainty is 123.087 ms, above the unchanged 100 ms limit. The guard stays closed, evidence has zero samples, no guests/public speech are admitted, and there is no qualifying post-transition SystemAudio ASR. The v8 candidate implements a bounded maximum of three fresh startup clock probes: the first valid probe returns immediately; all-wide probes still fail closed. Five new clock regressions and 20 meeting tests pass; the signed v8 build also passes 323 desktop-backend tests, formatting and strict Clippy, with 198 native and 28 sampler tests reported by their owners. This does not promote the failed attempt to a negative pass; fresh final-source positive/negative/reopen evidence remains required.
+The [sanitized receipt](speaker-quality-22-101.json) contains the final result and preserves the superseded pre-unlock checkpoint as historical data. Private audio, participant mappings, room URLs, actual UIDs, profiles and detailed receipts stay ignored. The final owned capture app and two guests are stopped; both guests visibly left, the host microphone/camera stayed off, and Teams' speaker mute was restored at volume 6. Native Teams' ordinary main app, ordinary Pennel profiles, physical phone and Metro are preserved. The owned simulator is shut down.
 
-The separate negative-only PCM check is also sealed before a negative run (six unit tests). It reads only archived SystemAudio after the verified app-to-global transition upper bound plus three seconds, and requires a complete energetic 20 ms frame at both unchanged RMS thresholds alongside successful post-transition SystemAudio ASR. Missing actual scope/fallback/clock prerequisites suppress decoding. No negative live run has qualified yet.
+The PR gallery retains 88 matched synthetic EN/NL light/dark PNGs at `pr-assets` commit `0a3f85d3923199779b2562c16ef7cb48a632af41`: 64 earlier renders, 16 owner-refusal renders and eight explicitly marked mobile-component mocks. These show UI copy; native mobile layout/accessibility acceptance remains separate.
 
-`SystemAudio` proves the physical track, not app isolation. The positive case needs actual native scope and process identity. UTC meeting start metadata is not the PCM epoch. A missing/unverifiable clock or lost capture scope must fail naming closed. The fixed phase guard is a controlled-test allowance, not a universal network-delay guarantee.
+Broader #22/#101 criteria remain open: dense independent whole-call annotations, additional consented Flemish/English/hybrid recordings, CPU/memory coverage, broader adapters/layouts/locales/shared devices, fresh AirPods live capture, installed upgrades, accessibility and signed physical iPhone acceptance. Language-detection versus explicit-Dutch comparison remains exploratory without annotated WER. No production release or universal automatic-name reliability is claimed.
 
-The changed capture-scope/clock reasons and warning copy have **24 prepared synthetic images (12 before/after pairs)**, covering English/Dutch and light/dark from identical fixtures. Their after-source snapshot is `5b21804e…`. All 24 are published and read back on `pr-assets` at `7266a8b`. Eight further synthetic echo-warning-dedup images are published and read back at `7493c58`, using the same native capture input with only the mocked backend warning projection changed. A further 24 P2-review images are published and read back at `0a3f85d`: eight explicitly labeled mobile-component mocks and 16 English/Dutch microphone-refusal renders. Together with the earlier 32, the gallery retains 88 PR #190 PNGs. Each set remains tied to its recorded source snapshot; older snapshot hashes are not asserted as current catalog hashes after the new fixes. They show UI copy only, not native recording, real highlights or inference acceptance. The earlier 32-image set remains evidence for the preceding phase.
-
-All sections below describe the **completed 9 November baseline** unless explicitly superseded by a final live-run receipt. Its test counts, source hashes, signed binary, stopped-QA state and repaired historical copies are not claims about the in-progress candidate.
+The sections below retain the **completed 9 November baseline**. Their hashes, counts and stopped-QA statements describe that phase, independently of the final V11 live qualification above.
 
 ## Completed saved-recording repair
 
