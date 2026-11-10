@@ -102,6 +102,50 @@ impl MeetingSummaryRecord {
                 .as_ref()
                 .is_none_or(|structure| render_structure(structure) == body)
     }
+    pub(crate) fn sources_match(
+        &self,
+        snapshot: &crate::MeetingTranscriptSnapshot,
+        names: &[crate::SpeakerName],
+    ) -> bool {
+        let Some(structure) = self.structure.as_ref() else {
+            return true;
+        };
+        if snapshot.meeting_uid != self.meeting_uid
+            || crate::meeting_utterances::assert_writable(snapshot).is_err()
+        {
+            return false;
+        }
+        let mut actual = HashMap::new();
+        for row in &snapshot.utterances {
+            actual
+                .entry(row.metadata.utterance_id.as_str())
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some(row));
+        }
+        structure
+            .topics
+            .iter()
+            .map(|item| item.source.as_ref())
+            .chain(structure.decisions.iter().map(|item| item.source.as_ref()))
+            .chain(structure.actions.iter().map(|item| item.source.as_ref()))
+            .chain(
+                structure
+                    .open_questions
+                    .iter()
+                    .map(|item| item.source.as_ref()),
+            )
+            .flatten()
+            .all(|source| {
+                let Some(Some(row)) = actual.get(source.utterance_id.as_str()) else {
+                    return false;
+                };
+                !row.segment.failed
+                    && !row.segment.text.trim().is_empty()
+                    && row.segment.end_ms >= row.segment.start_ms
+                    && source.start_ms == row.segment.start_ms
+                    && source.speaker == settled_speaker(row, names)
+            })
+    }
 }
 
 pub(crate) struct SummarySources {
@@ -447,6 +491,15 @@ pub(crate) fn render_structure(structure: &SummaryStructure) -> String {
     body
 }
 pub(crate) fn carry_action_state(previous: &SummaryStructure, next: &mut SummaryStructure) {
+    let counts = |actions: &[SummaryAction]| {
+        let mut counts = HashMap::new();
+        for source in actions.iter().filter_map(|action| action.source.as_ref()) {
+            *counts.entry(source.utterance_id.clone()).or_insert(0_usize) += 1;
+        }
+        counts
+    };
+    let previous_counts = counts(&previous.actions);
+    let next_counts = counts(&next.actions);
     let mut used = HashSet::new();
     for action in &mut next.actions {
         let available: Vec<_> = previous
@@ -471,7 +524,13 @@ pub(crate) fn carry_action_state(previous: &SummaryStructure, next: &mut Summary
             .iter()
             .copied()
             .find(|(_, old)| action.text == old.text)
-            .or_else(|| (same_source.len() == 1).then(|| same_source[0]))
+            .or_else(|| {
+                let source = action.source.as_ref()?;
+                (previous_counts.get(&source.utterance_id) == Some(&1)
+                    && next_counts.get(&source.utterance_id) == Some(&1))
+                .then(|| same_source.first().copied())
+                .flatten()
+            })
             .or_else(|| {
                 available
                     .iter()
@@ -697,6 +756,30 @@ mod tests {
         assert!(parse_structure(&reply.to_string(), &sources, "").is_none());
         assert!(parse_structure("{\"lead\":42}", &sources, "").is_none());
         assert!(parse_structure("{} {}", &sources, "").is_none());
+    }
+
+    #[test]
+    fn review_regression_consumed_matches_do_not_make_shared_sources_unique() {
+        let sources = SummarySources::new(&[row()], &[]);
+        for (old_texts, new_texts) in [
+            (vec!["A", "B"], vec!["B", "C"]),
+            (vec!["A"], vec!["C", "D"]),
+        ] {
+            let make = |texts: Vec<&str>| {
+                let actions: Vec<_> = texts.iter().map(|text| serde_json::json!({"text":text,"reference":"u1","owner":null,"due":null})).collect();
+                parse_structure(&serde_json::json!({"lead":"Summary","topics":[],"decisions":[],"actions":actions,"open_questions":[]}).to_string(), &sources, "").unwrap()
+            };
+            let mut old = make(old_texts);
+            old.actions[0].state.done = true;
+            old.actions[0].state.owner = Some("Noor".into());
+            let mut next = make(new_texts);
+            carry_action_state(&old, &mut next);
+            assert!(
+                next.actions
+                    .iter()
+                    .all(|action| !action.state.done && action.state.owner.is_none())
+            );
+        }
     }
 
     #[test]

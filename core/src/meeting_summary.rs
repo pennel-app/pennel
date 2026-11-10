@@ -439,7 +439,20 @@ impl MeetingStore {
                 &serde_json::to_vec(&saved).map_err(PennelError::storage)?,
             )?;
         }
-        if let Some(record) = record.filter(|record| record.accepts(&before.uid, markdown)) {
+        let record = record.filter(|record| record.accepts(&before.uid, markdown));
+        let record = record.filter(|record| {
+            !matches!(mode, SummarySave::Accept)
+                || record.structure.is_none()
+                || regular_bytes(&directory.join("transcript.md")).is_ok_and(|bytes| {
+                    let snapshot =
+                        crate::meetings::snapshot_from_text(&directory, &before.uid, &bytes);
+                    record.sources_match(
+                        &snapshot,
+                        &crate::meetings::speaker_names_from_document(&before.raw),
+                    )
+                })
+        });
+        if let Some(record) = record {
             let path = directory.join(format!("{STRUCTURE_PREFIX}{}.json", record.body_revision));
             durable_write(
                 &path,
@@ -1118,13 +1131,10 @@ impl PennelEngine {
         if let Some(sources) = sources {
             let messages = crate::summary_structure::structured_messages(spec, notes, &source);
             let reply = ask(&messages)?;
-            // Only references surviving the reduction can be cited by the final call.
-            let allowed_reply =
-                crate::summary_structure::retain_received_references(&reply, &source);
-            // JSON references are plain uN strings: restrict resolution to exactly the final input.
+            // Resolve only the reference fields; display strings are plain meeting content.
             let restricted = sources.restricted_to(&source);
             if let Some(structure) =
-                crate::summary_structure::parse_structure(&allowed_reply, &restricted, notes)
+                crate::summary_structure::parse_structure(&reply, &restricted, notes)
             {
                 return Ok((
                     crate::summary_structure::render_structure(&structure),
@@ -1713,6 +1723,80 @@ mod tests {
         assert_eq!(structure.decisions[1].source, None);
         chunks.assert();
         final_call.assert();
+    }
+
+    #[test]
+    fn review_regression_structured_display_strings_keep_literal_bracket_text() {
+        for lead in ["Literal [u999] text", "Literal [u999 bracket text"] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut server = mockito::Server::new();
+            let engine = engine(&dir, &server);
+            let id = meeting(&engine);
+            let reply = serde_json::json!({"lead":lead,"topics":[],"decisions":[],"actions":[],"open_questions":[]}).to_string();
+            let provider = server
+                .mock("POST", "/chat/completions")
+                .with_body(response(&reply))
+                .expect(1)
+                .create();
+            let candidate = engine
+                .generate_meeting_summary(id, "algemeen".into(), keys())
+                .unwrap();
+            assert_eq!(candidate.record.unwrap().structure.unwrap().lead, lead);
+            provider.assert();
+        }
+    }
+
+    #[test]
+    fn review_regression_acceptance_drops_forged_sources_without_losing_markdown() {
+        for alteration in [
+            "valid",
+            "action_id",
+            "action_time",
+            "action_speaker",
+            "topic_id",
+            "decision_id",
+            "question_id",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut server = mockito::Server::new();
+            let engine = engine(&dir, &server);
+            let id = meeting(&engine);
+            let provider = server.mock("POST", "/chat/completions").with_body(response(r#"{"lead":"Summary","topics":[{"title":"Topic","body":"Discussion","reference":"u1"}],"decisions":[{"text":"Decision","reference":"u1"}],"actions":[{"text":"Action","reference":"u1","owner":null,"due":null}],"open_questions":[{"text":"Question","reference":"u1"}]}"#)).expect(1).create();
+            let candidate = engine
+                .generate_meeting_summary(id.clone(), "algemeen".into(), keys())
+                .unwrap();
+            let mut record = candidate.record.clone().unwrap();
+            let structure = record.structure.as_mut().unwrap();
+            let source = match alteration {
+                "topic_id" => structure.topics[0].source.as_mut().unwrap(),
+                "decision_id" => structure.decisions[0].source.as_mut().unwrap(),
+                "question_id" => structure.open_questions[0].source.as_mut().unwrap(),
+                _ => structure.actions[0].source.as_mut().unwrap(),
+            };
+            match alteration {
+                "valid" => {}
+                "action_time" => source.start_ms += 999_999,
+                "action_speaker" => source.speaker = Some("Invented person".into()),
+                _ => source.utterance_id = uuid::Uuid::now_v7().to_string(),
+            }
+            assert!(record.accepts(&candidate.meeting_uid, &candidate.markdown));
+            let accepted = engine
+                .accept_meeting_summary_record(
+                    id,
+                    candidate.revision,
+                    candidate.source_revision,
+                    candidate.markdown.clone(),
+                    Some(record),
+                )
+                .unwrap();
+            assert_eq!(accepted.markdown, candidate.markdown);
+            assert_eq!(
+                accepted.record.is_some(),
+                alteration == "valid",
+                "{alteration}"
+            );
+            provider.assert();
+        }
     }
 
     #[test]

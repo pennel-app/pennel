@@ -1777,29 +1777,7 @@ impl MeetingStore {
     }
 
     pub fn speaker_names(&self, id: &str) -> Vec<SpeakerName> {
-        let Some((front, _)) = self.frontmatter(id) else {
-            return Vec::new();
-        };
-        let mut names: Vec<SpeakerName> = front
-            .extra
-            .iter()
-            .find_map(|line| line.strip_prefix("speakers:"))
-            .map(|list| {
-                list.split(';')
-                    .filter_map(|pair| {
-                        let (voice, name) = pair.split_once('=')?;
-                        let voice = voice.trim().parse().ok().filter(|v| VOICES.contains(v))?;
-                        Some(SpeakerName {
-                            voice,
-                            name: name.trim().to_owned(),
-                        })
-                    })
-                    .filter(|n| !n.name.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default();
-        names.sort_by_key(|n| n.voice);
-        names
+        speaker_names_from_document(&self.read_file(id, "meeting.md"))
     }
 
     /// An empty name forgets the voice's name.
@@ -2051,7 +2029,37 @@ fn refuse_unparsed(bytes: &[u8]) -> Result<(), PennelError> {
     Ok(())
 }
 
-fn snapshot_from_text(root: &Path, uid: &str, bytes: &[u8]) -> MeetingTranscriptSnapshot {
+pub(crate) fn speaker_names_from_document(raw: &str) -> Vec<SpeakerName> {
+    let Some((front, _)) = parse_meeting(raw) else {
+        return Vec::new();
+    };
+    let mut names: Vec<SpeakerName> = front
+        .extra
+        .iter()
+        .find_map(|line| line.strip_prefix("speakers:"))
+        .map(|list| {
+            list.split(';')
+                .filter_map(|pair| {
+                    let (voice, name) = pair.split_once('=')?;
+                    let voice = voice.trim().parse().ok().filter(|v| VOICES.contains(v))?;
+                    Some(SpeakerName {
+                        voice,
+                        name: name.trim().to_owned(),
+                    })
+                })
+                .filter(|n| !n.name.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort_by_key(|n| n.voice);
+    names
+}
+
+pub(crate) fn snapshot_from_text(
+    root: &Path,
+    uid: &str,
+    bytes: &[u8],
+) -> MeetingTranscriptSnapshot {
     let mut occurrences = std::collections::HashMap::new();
     let fallback = String::from_utf8_lossy(bytes)
         .lines()
