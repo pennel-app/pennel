@@ -1318,21 +1318,28 @@ pub async fn meeting_templates(shared: State<'_, Arc<Shared>>) -> Result<Vec<Mee
 pub async fn summarize_meeting(
     id: String,
     template_id: String,
+    expected_revision: Option<String>,
+    expected_source_revision: Option<String>,
     app: AppHandle,
     shared: State<'_, Arc<Shared>>,
 ) -> Result<String> {
     let shared = shared.inner().clone();
+    let updated_id = id.clone();
+    let worker_app = app.clone();
     let summary = blocking(move || {
         let _library_job = meeting_runtime::LibraryJob::new(&shared)?;
         checked_meeting_dir(&shared.engine, &id)?;
         require_inactive_meeting(&shared, &id)?;
-        let keys = shared.keys();
-        shared
-            .engine
-            .summarize_meeting(id, template_id, keys)
-            .map_err(err)
-    })
-    .await?;
+        let progress = crate::meeting_postprocess::SummaryProgress::start(&worker_app, &shared, &id);
+        let result = match (expected_revision, expected_source_revision) {
+            (Some(revision), Some(source)) => shared.engine.summarize_meeting_if_empty(id, template_id, revision, source, shared.keys()).map(|document| document.markdown),
+            (None, None) => shared.engine.summarize_meeting(id, template_id, shared.keys()),
+            _ => Err(pennel_core::PennelError::Storage { message: "The summary or its source changed. Your saved text was kept. Reload before saving.".into() }),
+        };
+        if let Some(progress) = progress { progress.complete(&result); }
+        result.map_err(err)
+    }).await?;
+    let _ = app.emit("meeting-updated", updated_id);
     let _ = app.emit("library-changed", ());
     crate::cloud::poke(&app);
     Ok(summary)

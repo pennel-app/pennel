@@ -1,4 +1,13 @@
 {
+  "meetings.summary_consent_question": "Deze meeting samenvatten?",
+  "meetings.summary_consent_destination": "Verwerking: {destination}. Gebruikt je notities en het afgeronde transcript.",
+  "meetings.summary_consent_automatic": "Doe dit na elke meeting",
+  "meetings.summary_consent_not_now": "Nu niet",
+  "meetings.summary_consent_quiet": "Je kunt een samenvatting maken wanneer je wilt.",
+  "meetings.summary_consent_reading": "Samenvattingsopties controleren…",
+  "meetings.summary_preparing": "Samenvatting voorbereiden…",
+  "meetings.summary_processing_failed": "De samenvatting kon niet worden gemaakt. Je kunt het opnieuw proberen.",
+  "meetings.summary_processing_cancelled": "Samenvatting gestopt. Je kunt het opnieuw proberen.",
   "meetings.companion_ask": "Vraag",
   "meetings.live_label": "Live",
   "meetings.notes_private_share": "Privé · niet opgenomen wanneer je deelt",

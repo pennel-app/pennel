@@ -19,6 +19,7 @@ const FORMAT: &str = "pennel_summary_format";
 const SOURCE: &str = "pennel_summary_source_revision";
 const EDITED: &str = "pennel_summary_edited";
 const BODY_REVISION: &str = "pennel_summary_body_revision";
+const PROMPT_DISMISSED: &str = "pennel_summary_prompt_dismissed";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
@@ -323,6 +324,56 @@ impl MeetingStore {
         source_files(&directory)
     }
 
+    fn summary_prompt_dismissed(&self, id: &str) -> Result<bool, PennelError> {
+        let directory = checked_directory(self, id)?;
+        let gate = replacement_gate(&directory);
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+        let raw = String::from_utf8(regular_bytes(&directory.join("meeting.md"))?)
+            .map_err(PennelError::storage)?;
+        let (head, _, _) = split_document(&raw)?;
+        Ok(field(head, PROMPT_DISMISSED) == Some("true"))
+    }
+
+    fn dismiss_summary_prompt(
+        &self,
+        id: &str,
+        expected_revision: &str,
+        expected_source: &str,
+    ) -> Result<MeetingSummaryDocument, PennelError> {
+        let directory = checked_directory(self, id)?;
+        let gate = replacement_gate(&directory);
+        let _gate = gate.lock().unwrap_or_else(|error| error.into_inner());
+        let before = source_files(&directory)?;
+        let current = document(&before)?;
+        if current.revision != expected_revision || current.source_revision != expected_source {
+            return Err(changed());
+        }
+        let (head, body, newline) = split_document(&before.raw)?;
+        let mut lines: Vec<_> = head
+            .lines()
+            .filter(|line| line.split(':').next().map(str::trim) != Some(PROMPT_DISMISSED))
+            .map(str::to_owned)
+            .collect();
+        lines.push(format!("{PROMPT_DISMISSED}: true"));
+        let next = format!(
+            "---{newline}{}{newline}---{newline}{body}",
+            lines.join(newline)
+        );
+        compare_write(
+            &directory.join("meeting.md"),
+            before.raw.as_bytes(),
+            next.as_bytes(),
+            || {
+                let verified = source_files(&directory)?;
+                if verified.raw != before.raw || verified.owner_revision != before.owner_revision {
+                    return Err(changed());
+                }
+                Ok(())
+            },
+        )?;
+        attached_document(&directory, &source_files(&directory)?)
+    }
+
     fn read_owner_summary(&self, id: &str) -> Result<MeetingSummaryDocument, PennelError> {
         let directory = checked_directory(self, id)?;
         let gate = replacement_gate(&directory);
@@ -553,6 +604,58 @@ impl MeetingStore {
 
 #[uniffi::export]
 impl PennelEngine {
+    pub fn summarize_meeting_if_empty(
+        &self,
+        id: String,
+        template_id: String,
+        expected_revision: String,
+        expected_source_revision: String,
+        keys: ApiKeys,
+    ) -> Result<MeetingSummaryDocument, PennelError> {
+        self.claim_library()?;
+        let _edit = self.edit_meeting(&id)?;
+        let store = self.meeting_store();
+        self.require_finalized_summary_source(&store, &id)?;
+        let before = store.read_owner_summary(&id)?;
+        if before.revision != expected_revision
+            || before.source_revision != expected_source_revision
+            || before.edited
+            || !before.markdown.trim().is_empty()
+        {
+            return Err(changed());
+        }
+        let candidate =
+            self.prepare_owner_summary_at(&id, &template_id, &keys, Some(&before), None)?;
+        store.save_owner_summary_record(
+            &id,
+            &candidate.revision,
+            &candidate.source_revision,
+            &candidate.markdown,
+            SummarySave::Generate(&template_id),
+            candidate.record.as_ref(),
+        )
+    }
+
+    pub fn meeting_summary_prompt_dismissed(&self, id: String) -> Result<bool, PennelError> {
+        self.claim_library()?;
+        self.meeting_store().summary_prompt_dismissed(&id)
+    }
+
+    pub fn dismiss_meeting_summary_prompt(
+        &self,
+        id: String,
+        expected_revision: String,
+        expected_source_revision: String,
+    ) -> Result<MeetingSummaryDocument, PennelError> {
+        self.claim_library()?;
+        let _edit = self.edit_meeting(&id)?;
+        self.meeting_store().dismiss_summary_prompt(
+            &id,
+            &expected_revision,
+            &expected_source_revision,
+        )
+    }
+
     pub fn meeting_summary(&self, id: String) -> Result<MeetingSummaryDocument, PennelError> {
         self.claim_library()?;
         let store = self.meeting_store();
@@ -3335,5 +3438,208 @@ mod tests {
                     .is_err()
             );
         }
+    }
+    #[test]
+    fn summary_prompt_dismissal_is_durable_per_meeting_without_changing_body_or_sources() {
+        let (dir, store, id) = fixture();
+        let before = save(
+            &store,
+            &id,
+            "  Exact private summary\n\n**Keep this text**\n",
+        );
+        let notes = fs::read(store.dir_of(&id).join("notes.md")).unwrap();
+        let transcript = fs::read(store.dir_of(&id).join("transcript.md")).unwrap();
+        assert!(!store.summary_prompt_dismissed(&id).unwrap());
+        let saved = store
+            .dismiss_summary_prompt(&id, &before.revision, &before.source_revision)
+            .unwrap();
+        assert!(store.summary_prompt_dismissed(&id).unwrap());
+        assert_eq!(saved.markdown, before.markdown);
+        assert_eq!(saved.source_revision, before.source_revision);
+        assert_eq!(saved.edited, before.edited);
+        assert_eq!(saved.record, before.record);
+        assert_ne!(saved.revision, before.revision);
+        assert_eq!(fs::read(store.dir_of(&id).join("notes.md")).unwrap(), notes);
+        assert_eq!(
+            fs::read(store.dir_of(&id).join("transcript.md")).unwrap(),
+            transcript
+        );
+        let renamed = store.rename(&id, "Renamed meeting").unwrap();
+        let reopened = MeetingStore::new(dir.path());
+        assert!(reopened.summary_prompt_dismissed(&renamed).unwrap());
+        let other = reopened
+            .create("Other meeting", chrono::Local::now())
+            .unwrap();
+        assert!(!reopened.summary_prompt_dismissed(&other).unwrap());
+    }
+
+    #[test]
+    fn summary_prompt_dismissal_rejects_changed_document_and_source_before_writing() {
+        let (_dir, store, id) = fixture();
+        let before = store.read_owner_summary(&id).unwrap();
+        store.write_notes(&id, "A newer private note").unwrap();
+        let raw = fs::read(store.dir_of(&id).join("meeting.md")).unwrap();
+        assert!(
+            store
+                .dismiss_summary_prompt(&id, &before.revision, &before.source_revision)
+                .is_err()
+        );
+        assert_eq!(fs::read(store.dir_of(&id).join("meeting.md")).unwrap(), raw);
+        let current = store.read_owner_summary(&id).unwrap();
+        save(&store, &id, "A newer summary");
+        let raw = fs::read(store.dir_of(&id).join("meeting.md")).unwrap();
+        assert!(
+            store
+                .dismiss_summary_prompt(&id, &current.revision, &current.source_revision)
+                .is_err()
+        );
+        assert_eq!(fs::read(store.dir_of(&id).join("meeting.md")).unwrap(), raw);
+        assert!(!store.summary_prompt_dismissed(&id).unwrap());
+    }
+
+    #[test]
+    fn summary_prompt_read_is_read_only_even_for_legacy_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MeetingStore::new(dir.path());
+        let legacy = dir.path().join("Legacy");
+        fs::create_dir(&legacy).unwrap();
+        let raw =
+            "---\ntitle: Legacy\npennel_summary_prompt_dismissed: true\n---\nUnchanged summary\n";
+        fs::write(legacy.join("meeting.md"), raw).unwrap();
+        assert!(store.summary_prompt_dismissed("Legacy").unwrap());
+        assert_eq!(fs::read_to_string(legacy.join("meeting.md")).unwrap(), raw);
+        assert_eq!(store.uid_of("Legacy"), None);
+        assert_eq!(fs::read_dir(&legacy).unwrap().count(), 1);
+        assert!(store.summary_prompt_dismissed("../Legacy").is_err());
+    }
+
+    #[test]
+    fn summary_prompt_dismissal_never_changes_global_policies_or_calls_a_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let provider = server.mock("POST", "/chat/completions").expect(0).create();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let before_settings = serde_json::to_string(&engine.settings()).unwrap();
+        let before = engine.meeting_summary(id.clone()).unwrap();
+        engine
+            .dismiss_meeting_summary_prompt(id.clone(), before.revision, before.source_revision)
+            .unwrap();
+        assert!(engine.meeting_summary_prompt_dismissed(id).unwrap());
+        assert_eq!(
+            serde_json::to_string(&engine.settings()).unwrap(),
+            before_settings
+        );
+        assert_eq!(
+            engine.settings().summary_automation,
+            crate::SummaryAutomation::Unanswered
+        );
+        provider.assert();
+    }
+    #[test]
+    fn consent_create_saves_only_the_expected_empty_unedited_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let provider = server.mock("POST", "/chat/completions")
+            .with_body(response(r#"{"lead":"An explicitly created summary.","topics":[],"decisions":[],"actions":[],"open_questions":[]}"#)).expect(1).create();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let before = engine.meeting_summary(id.clone()).unwrap();
+        let saved = engine
+            .summarize_meeting_if_empty(
+                id.clone(),
+                "algemeen".into(),
+                before.revision,
+                before.source_revision,
+                keys(),
+            )
+            .unwrap();
+        assert!(saved.markdown.contains("An explicitly created summary."));
+        assert!(!saved.edited);
+        assert!(saved.record.is_some());
+        assert_eq!(engine.meeting_summary(id.clone()).unwrap(), saved);
+        let dismissed = engine.dismiss_meeting_summary_prompt(id.clone(), saved.revision.clone(), saved.source_revision.clone()).unwrap();
+        assert_eq!(dismissed.record, saved.record);
+        assert_eq!(dismissed.markdown, saved.markdown);
+        assert!(engine.meeting_summary_prompt_dismissed(id).unwrap());
+        assert_eq!(
+            engine.settings().summary_automation,
+            crate::SummaryAutomation::Unanswered
+        );
+        provider.assert();
+    }
+
+    #[test]
+    fn consent_create_rejects_existing_edited_or_changed_context_before_provider_dispatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let provider = server.mock("POST", "/chat/completions").expect(0).create();
+        let engine = engine(&dir, &server);
+        for mode in ["existing", "edited_empty", "source", "document"] {
+            let id = meeting(&engine);
+            let store = engine.meeting_store();
+            let mut before = store.read_owner_summary(&id).unwrap();
+            match mode {
+                "existing" => before = save(&store, &id, "Keep this existing summary"),
+                "edited_empty" => before = save(&store, &id, ""),
+                "source" => store.write_notes(&id, "A newer private source").unwrap(),
+                "document" => {
+                    save(&store, &id, "An intervening summary");
+                }
+                _ => unreachable!(),
+            }
+            let raw = fs::read(store.dir_of(&id).join("meeting.md")).unwrap();
+            assert!(
+                engine
+                    .summarize_meeting_if_empty(
+                        id.clone(),
+                        "algemeen".into(),
+                        before.revision,
+                        before.source_revision,
+                        keys()
+                    )
+                    .is_err(),
+                "{mode}"
+            );
+            assert_eq!(fs::read(store.dir_of(&id).join("meeting.md")).unwrap(), raw);
+        }
+        provider.assert();
+    }
+
+    #[test]
+    fn consent_create_keeps_external_writes_that_arrive_during_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new();
+        let engine = engine(&dir, &server);
+        let id = meeting(&engine);
+        let before = engine.meeting_summary(id.clone()).unwrap();
+        let notes = engine.meeting_store().dir_of(&id).join("notes.md");
+        let provider = server.mock("POST", "/chat/completions").with_chunked_body(move |writer| {
+            fs::write(&notes, "Newer private notes from another editor").unwrap();
+            writer.write_all(&response(r#"{"lead":"An earlier source summary.","topics":[],"decisions":[],"actions":[],"open_questions":[]}"#))
+        }).expect(1).create();
+        assert!(
+            engine
+                .summarize_meeting_if_empty(
+                    id.clone(),
+                    "algemeen".into(),
+                    before.revision,
+                    before.source_revision,
+                    keys()
+                )
+                .is_err()
+        );
+        assert!(
+            engine
+                .meeting_summary(id.clone())
+                .unwrap()
+                .markdown
+                .is_empty()
+        );
+        assert_eq!(
+            engine.meeting_store().read_notes(&id),
+            "Newer private notes from another editor"
+        );
+        provider.assert();
     }
 }

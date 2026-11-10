@@ -1066,18 +1066,23 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
     if shared.quitting.load(Ordering::SeqCst) {
         return;
     }
-    // Admission belongs to the core: readiness is not consent, and a failed attempt must
-    // not be repeated by another finish event or after restarting a host.
-    if shared
-        .engine
-        .summarize_meeting_automatically(
+    // The event describes preparation; admission and policy epochs remain authoritative in core.
+    if shared.settings().summary_automation == pennel_core::SummaryAutomation::Automatic {
+        let progress = crate::meeting_postprocess::SummaryProgress::start(&app, &shared, &id);
+        let result = shared.engine.summarize_meeting_automatically(
             id.clone(),
             shared.settings().default_template,
             shared.keys(),
-        )
-        .is_err()
-    {
-        LOG.error("Automatic summarization failed; transcript and notes remain saved.");
+        );
+        if let Some(progress) = progress {
+            match &result {
+                Ok(None) => progress.finish(crate::meeting_postprocess::ProgressState::Skipped),
+                _ => progress.complete(&result),
+            }
+        }
+        if result.is_err() {
+            LOG.error("Automatic summarization failed; transcript and notes remain saved.");
+        }
     }
     let _ = app.emit("meeting-updated", id);
     crate::cloud::poke(&app);

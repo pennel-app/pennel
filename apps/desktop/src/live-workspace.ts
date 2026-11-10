@@ -16,7 +16,7 @@ import { openPeoplePicker, peopleNoteControls, type PeopleHost } from "./people-
 import { canAcknowledgePeopleNotes, speakerLinkUtteranceIds, type PeopleSnapshot } from "./people-state";
 import { conversationPanel } from "./conversation-panel";
 import { meetingSummaryEditor } from "./meeting-summary-editor";
-import { summaryAutomationChoice } from "./meeting-summary-automation";
+import { meetingSummaryConsent } from "./meeting-summary-consent";
 import { meetingExportPreview } from "./meeting-export-preview";
 import { meetingWorkspaceTools } from "./meeting-workspace-tools";
 import { sourceRange, transcriptSourceBlocks } from "./source-navigation";
@@ -287,15 +287,17 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     h("p", { class: "help live-question-scope" }, l("meetings.workspace_scope")),
     h("p", { class: "help live-source-assessment" }, l("meetings.workspace_sourcecheck_unavailable"))), questions.root);
   panels.get("suggestions")!.append(h("h2", {}, l("meetings.workspace_suggestions")), h("p", { class: "help" }, l("meetings.workspace_suggestions_unavailable")));
-  const summary = meetingSummaryEditor(ctx, { id: () => owner.id, finished: () => finalized, flushNotes: async () => { await saveNotes(); await saveTitle(); }, template: () => selectedTemplate,
+  let consent: ReturnType<typeof meetingSummaryConsent> | null = null;
+  const summary = meetingSummaryEditor(ctx, { meetingUid: () => uid, changed: () => consent?.refresh(), id: () => owner.id, finished: () => finalized, flushNotes: async () => { await saveNotes(); await saveTitle(); }, template: () => selectedTemplate,
     processing: () => !!reviewDetail?.retranscription_status?.running,
     sourceAvailable: source => finalized && status.metadata_status === "valid" && status.transcript.filter(segment => !segment.failed && segment.utterance_id === source.utterance_id && segment.start_ms === source.start_ms).length === 1,
     openSource: openSummarySource, openTemplate: () => openTools("template"),
     transcriptProvenance: api.meetingTranscriptProvenance,
     canReview: () => !composing && !notes.dirty && notes.status !== "saving" && !titleDraft.dirty && titleDraft.status !== "saving" });
   panels.get("summary")!.append(summary.root);
-  const automation = summaryAutomationChoice(ctx, { compact: true, configure: () => openTools("automation") });
-  const automationNudge = h("div", { class: "meeting-automation-nudge", hidden: !finalized }, automation.root);
+  consent = meetingSummaryConsent(ctx, { id: () => owner.id, finished: () => finalized, working: summary.working, canGenerate: summary.canGenerate, canDismiss: summary.canDismiss,
+    blockedReason: summary.blockedReason, generate: summary.generate, dismiss: summary.dismissPrompt, focusTarget: summary.root });
+  summary.root.insertBefore(consent.root, summary.root.querySelector(".meeting-summary-rendered"));
   const tools = meetingWorkspaceTools(ctx, { id: () => owner.id, finished: () => finalized, flush, refresh: loadReview,
     template: () => selectedTemplate, setTemplate: value => { selectedTemplate = value; }, speakers: speakerControls, people: peopleControls, close: returnToDocument,
     processingChanged: value => { if (reviewDetail) reviewDetail.retranscription_status = value; summary.readiness(); } });
@@ -310,7 +312,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const summaryHeading = summary.root.querySelector("h2")!; summaryHeading.id = `live-${session}-summary-heading`;
   const companionHeader = h("div", { class: "meeting-companion-header" }, companionTabs, closeCompanion);
   const companion = h("aside", { class: "meeting-companion", "aria-label": l("meetings.workspace_tools"), hidden: true }, companionHeader, panels.get("transcript")!, panels.get("questions")!, panels.get("suggestions")!, panels.get("tools")!);
-  const primaryColumn = h("div", { class: "meeting-primary-column" }, band, warning, recovery, failedRecoveryNotice, tabList, automationNudge, documentSurface);
+  const primaryColumn = h("div", { class: "meeting-primary-column" }, band, warning, recovery, failedRecoveryNotice, tabList, documentSurface);
   const backdrop = h("div", { class: "meeting-companion-backdrop", hidden: true, "aria-hidden": "true", onclick: () => returnToDocument() });
   const content = h("div", { class: "live-workspace-panes" }, primaryColumn, separator, backdrop, companion);
   root.append(sourceBack, sourceNotice, content);
@@ -384,7 +386,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       next.onInfoChange(() => { if (mine === binding) updateReadiness(); });
       next.onFlush(flush);
       questions.bind(next);
-      summary.bind(next); automation.bind(next); tools.bind(next); exportPreview.bind(next);
+      summary.bind(next); consent?.bind(next); tools.bind(next); exportPreview.bind(next);
       if (finalized && insights) insights.bind(ctx, insightHost());
       const peopleId = owner.id;
       void api.meetingPeople(peopleId).then(snapshot => {
@@ -439,7 +441,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     root.classList.toggle("live-wide", panes.wide);
     root.classList.toggle("live-companion-open", panes.companionOpen);
     if (!splitAdjusted && panes.wide && panes.companionOpen && root.isConnected) panes.ratio = Math.round(primaryColumn.getBoundingClientRect().width / Math.max(1, content.clientWidth - 28) * 100);
-    automationNudge.hidden = !finalized;
     root.classList.toggle("live-enlarged", parseFloat(getComputedStyle(tabList).fontSize) >= 20);
     content.style.setProperty("--live-notes-ratio", String(panes.ratio / 100));
     root.style.setProperty("--live-notes-ratio", String(panes.ratio / 100));
@@ -620,7 +621,6 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     copyExport.hidden = !finalized;
     recordingControls.hidden = finalized;
     updateHeader();
-    automationNudge.hidden = !finalized;
     title.disabled = !finalized && !["recording", "stopping"].includes(next.phase);
     const messages = [next.transcription_warning, next.audio_warning, next.error].filter((value): value is string => !!value);
     warning.textContent = messages.map(localizeBackendText).join(" ");

@@ -437,6 +437,8 @@
     return { failed_count: failed, retryable_count: retryable, status: !failed ? "complete" : retryable ? "retryable" : "unavailable", reason_code: reason || null };
   };
   const summaryDocuments = new Map();
+  const dismissedSummaryPrompts = new Set();
+  let summaryOperation = 0;
   const summaryHistories = new Map();
   const shareableSummaries = new Map();
   const summarySourceRevision = async (id, transcriptOnly = false) => {
@@ -461,7 +463,7 @@
     const workspace = options.window === "onboarding" && latest?.version === 1 ? latest : { version: 1,
       history: history.filter(entry => entry.status !== "unsaved"), library, pad, notes, transcript, sessionCounter,
       activeMeetingId, meetingUid, liveSession, meeting: clone(meeting), meetingSequence, ownerRecording, recordingStopped,
-      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries] };
+      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries], dismissedSummaryPrompts: [...dismissedSummaryPrompts] };
     globalThis.localStorage.setItem(ownerStateKey, JSON.stringify({ ...workspace, ...services }));
     restoreReviewServices(services);
   };
@@ -483,6 +485,7 @@
       activeMeetingId = saved.activeMeetingId; meetingUid = saved.meetingUid; liveSession = saved.liveSession;
       Object.assign(meeting, saved.meeting); meetingSequence = saved.meetingSequence; ownerRecording = saved.ownerRecording; recordingStopped = saved.recordingStopped;
       restoreReviewServices(saved);
+      for (const uid of saved.dismissedSummaryPrompts || []) dismissedSummaryPrompts.add(uid);
       for (const [target, entries] of [[retainedMeetings, saved.retainedMeetings], [libraryUids, saved.libraryUids], [summaryDocuments, saved.summaryDocuments], [summaryHistories, saved.summaryHistories], [shareableSummaries, saved.shareableSummaries]])
         for (const [key, value] of entries || []) target.set(key, value);
     }
@@ -629,6 +632,12 @@
     }
     const document = summaryDocuments.get(uid);
     return { ...document, source_revision: source, outdated: document.source_revision !== source || summaryOutdated };
+  };
+  const withSummaryProgress = async (id, work) => {
+    const frame = { id, meeting_uid: uidFor(id), operation_id: `qa-summary-${++summaryOperation}`, stage: "summary" };
+    emit("meeting-postprocess", { ...frame, state: "started" });
+    try { const result = await work(); emit("meeting-postprocess", { ...frame, state: "finished" }); return result; }
+    catch (error) { emit("meeting-postprocess", { ...frame, state: "failed" }); throw error; }
   };
   const saveSummaryDocument = async (id, args, markdown, reviewed = false, restoredSource, actionRecord) => {
     if (options.owner_review ? saveFailure : options.summary_save_error) throw Error(options.summary_save_error || "Synthetic summary storage unavailable.");
@@ -1461,7 +1470,36 @@
         const index = library.findIndex(info => info.id === args.id); if (index >= 0) library.splice(index, 1);
         conversationFixture?.deleteMeeting(uid); emit("library-changed", null); return null;
       }
-      case "summarize_meeting": return summary;
+      case "summarize_meeting": return withSummaryProgress(args.id, async () => {
+        const before = await summaryDocument(args.id), record = recordForId(args.id);
+        if (args.expectedRevision !== undefined || args.expectedSourceRevision !== undefined) {
+          if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision || before.edited || before.markdown.trim()) throw Error("The summary or its sources changed. Reload before creating it.");
+        }
+        if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
+        requireCurrentReview();
+        if (options.summary_generation_error) throw Error(options.summary_generation_error);
+        const current = await summaryDocument(args.id);
+        if (current.revision !== before.revision || current.source_revision !== before.source_revision) throw Error("The summary or its sources changed. Reload before creating it.");
+        const markdown = `${summary}\n\n${record.notes}`;
+        summaryDocuments.set(before.meeting_uid, { ...before, markdown, revision: await fingerprint(markdown), edited: false, outdated: false });
+        const info = library.find(info => info.id === args.id); if (info) info.has_summary = true;
+        persistOwnerReview(); emit("meeting-updated", args.id); return markdown;
+      });
+      case "meeting_summary_prompt_dismissed": {
+        const uid = uidFor(args.id); if (!uid || deletedMeetingUids.has(uid)) throw Error("This meeting is no longer available.");
+        return dismissedSummaryPrompts.has(uid);
+      }
+      case "dismiss_meeting_summary_prompt": {
+        const before = await summaryDocument(args.id);
+        if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision) throw Error("The summary or its sources changed. Reload before saving.");
+        if (saveFailure || options.summary_prompt_error) throw Error(options.summary_prompt_error || "Synthetic metadata storage unavailable.");
+        if (!dismissedSummaryPrompts.has(before.meeting_uid)) {
+          dismissedSummaryPrompts.add(before.meeting_uid);
+          summaryDocuments.set(before.meeting_uid, { ...before, revision: await fingerprint(JSON.stringify([before.revision, "prompt-dismissed"])) });
+          persistOwnerReview(); emit("meeting-updated", args.id);
+        }
+        return clone(await summaryDocument(args.id));
+      }
       case "meeting_summary": return clone(await summaryDocument(args.id));
       case "meeting_transcript_provenance": return options.summary_structure ? { provider_kind: "local", model: "frozen-transcript-model", requested_language: "en", generated_at: "2026-10-24T09:18:00Z" } : null;
       case "meeting_speaker_timeline": {
@@ -1484,7 +1522,7 @@
         if (!revision) throw Error("The requested summary revision is unavailable.");
         return saveSummaryDocument(args.id, args, revision.markdown, false, revision.source_revision);
       }
-      case "generate_meeting_summary": {
+      case "generate_meeting_summary": return withSummaryProgress(args.id, async () => {
         const before = await summaryDocument(args.id), record = recordForId(args.id);
         if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
         requireCurrentReview();
@@ -1499,7 +1537,7 @@
           return { meeting_uid: before.meeting_uid, markdown: body, revision: before.revision, source_revision: before.source_revision, record: await fixtureSummaryRecord(args.id, body, structure) };
         }
         return { meeting_uid: before.meeting_uid, markdown: `${summary}\n\n${record.notes}`, revision: before.revision, source_revision: before.source_revision };
-      }
+      });
       case "generate_shareable_meeting_summary": {
         const record = recordForId(args.id);
         if (!record?.transcript.length || options.shareable_missing_transcript) throw Error("A finalized transcript is required for a shareable summary.");
