@@ -287,7 +287,8 @@ fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> R
                 .into(),
         );
     }
-    let previous = old_settings.hotkey;
+    let previous =
+        pennel_core::effective_shortcut(&old_settings, "dictate", crate::shortcuts::platform());
     let revoke_speaker_evidence =
         old_settings.meeting_app_speakers && !settings.meeting_app_speakers;
     shared.engine.update_settings(settings).map_err(err)?;
@@ -320,17 +321,15 @@ fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> R
             }
         }
     }
-    let hotkey = shared.settings().hotkey;
-    if hotkey != previous {
-        let listener = shared.hotkey.lock().unwrap().clone();
-        if let Some(listener) = listener {
-            listener.set_trigger(hotkey);
-        }
+    let updated = shared.settings();
+    if pennel_core::effective_shortcut(&updated, "dictate", crate::shortcuts::platform())
+        != previous
+    {
         let _ = shared.dictation.send(Msg::TriggerChanged);
         if let Some(hint) = app.try_state::<crate::TrayHint>() {
             let _ = hint.0.set_text(crate::hotkey_hint(shared));
         }
-        LOG.info(format!("shortcut changed to {hotkey:?}"));
+        LOG.info("dictation shortcut changed");
     }
     crate::record_shortcut::refresh(app, shared);
     crate::apply_appearance(app);

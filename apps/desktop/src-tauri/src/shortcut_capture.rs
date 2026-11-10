@@ -210,6 +210,8 @@ fn start_capture(
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
     *session().lock().unwrap_or_else(|p| p.into_inner()) =
         Some(CaptureSession::new(action, generation));
+    #[cfg(target_os = "macos")]
+    crate::macos_tray::changed();
     if let Err(error) = crate::desktop_commands::refresh(app) {
         stop(app);
         return Err(error.to_string());
@@ -237,7 +239,32 @@ fn start_capture(
             }
             Ok(mode)
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            #[cfg(target_os = "linux")]
+            if crate::linux_input::is_wayland() {
+                return capture_mode(scope, false, false);
+            }
+            let listener = shared
+                .hotkey
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            let mode = capture_mode(scope, listener.is_some(), true)?;
+            // Release plugin grabs before raw capture; old pressed grabs remain only until their release.
+            crate::record_shortcut::refresh(app, shared);
+            if mode == CaptureMode::Native
+                && let Some(listener) = listener
+            {
+                let app = app.clone();
+                let shared = shared.clone();
+                listener.set_capture(Some(Box::new(move |event| {
+                    native_portable_input(&app, &shared, generation, event)
+                })))?;
+            }
+            Ok(mode)
+        }
+        #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
         {
             capture_mode(scope, false, false)
         }
@@ -281,7 +308,7 @@ fn stop_generation(app: &AppHandle, generation: Option<u64>) {
     if !capturing() {
         return;
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     if let Some(shared) = app.try_state::<Arc<Shared>>() {
         let listener = shared.hotkey.lock().unwrap().clone();
         if let Some(listener) = listener {
@@ -289,6 +316,8 @@ fn stop_generation(app: &AppHandle, generation: Option<u64>) {
         }
     }
     CAPTURING.store(false, Ordering::SeqCst);
+    #[cfg(target_os = "macos")]
+    crate::macos_tray::changed();
     if let Some(shared) = app.try_state::<Arc<Shared>>() {
         crate::record_shortcut::refresh(app, &shared);
     }
@@ -336,6 +365,9 @@ fn native_mac_input(app: &AppHandle, shared: &Shared, generation: u64, event: se
         .get("kind")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
+    if kind == "down" && event.get("repeat").and_then(serde_json::Value::as_bool) == Some(true) {
+        return;
+    }
     let modifier = matches!(code, 54..=56 | 58..=63);
     let mut mods = Vec::new();
     for (family, left, right, generic, left_mask, right_mask) in [
@@ -402,6 +434,66 @@ fn native_mac_input(app: &AppHandle, shared: &Shared, generation: u64, event: se
     if !modifier && kind == "down" && logical.is_none() {
         return;
     }
+    publish_input(
+        app,
+        shared,
+        generation,
+        mods,
+        key_code,
+        logical,
+        kind == "down" || (modifier && !flags.eq(&0)),
+    );
+}
+#[cfg(any(windows, target_os = "linux"))]
+fn native_portable_input(
+    app: &AppHandle,
+    shared: &Shared,
+    generation: u64,
+    event: serde_json::Value,
+) {
+    if !app
+        .get_webview_window("main")
+        .is_some_and(|window| window.is_focused().unwrap_or(false))
+    {
+        defer_stop(app, generation);
+        return;
+    }
+    let Some(mods) = event
+        .get("mods")
+        .cloned()
+        .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
+    else {
+        return;
+    };
+    let Some(down) = event.get("down").and_then(serde_json::Value::as_bool) else {
+        return;
+    };
+    let modifier = event.get("modifier").and_then(serde_json::Value::as_bool) == Some(true);
+    let code = (!modifier).then(|| {
+        event
+            .get("code")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Unidentified")
+            .to_owned()
+    });
+    let key = (!modifier).then(|| {
+        event
+            .get("key")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Unidentified")
+            .to_owned()
+    });
+    publish_input(app, shared, generation, mods, code, key, down);
+}
+fn publish_input(
+    app: &AppHandle,
+    shared: &Shared,
+    generation: u64,
+    mods: Vec<String>,
+    code: Option<String>,
+    key: Option<String>,
+    down: bool,
+) {
     let settings = shared.settings();
     let language = settings
         .ui_language
@@ -416,10 +508,10 @@ fn native_mac_input(app: &AppHandle, shared: &Shared, generation: u64, event: se
         };
         state.input(
             mods,
-            key_code,
-            logical,
-            kind == "down" || (modifier && !flags.eq(&0)),
-            ShortcutPlatform::Macos,
+            code,
+            key,
+            down,
+            crate::shortcuts::platform(),
             language,
         )
     };
@@ -429,6 +521,7 @@ fn native_mac_input(app: &AppHandle, shared: &Shared, generation: u64, event: se
         defer_stop(app, generation);
     }
 }
+
 fn defer_stop(app: &AppHandle, generation: u64) {
     let app = app.clone();
     // run_on_main_thread is inline on main. Originating on a worker truly queues teardown after the tap returns.

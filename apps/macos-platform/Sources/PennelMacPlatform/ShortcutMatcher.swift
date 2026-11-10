@@ -33,8 +33,11 @@ struct ShortcutMatcher {
         capturing || !withheld.isEmpty || table.hold?.code != nil || !table.always.isEmpty ||
             (listening && table.listening.contains { $0.code != nil })
     }
-    mutating func setTable(_ table: ShortcutTable) {
-        self.table = table; isHeld = false; armed.removeAll()
+    mutating func setTable(_ table: ShortcutTable, preserveHold: Bool = false) {
+        let sameHold = self.table.hold == table.hold
+        self.table = table; armed.removeAll(); dirty.removeAll()
+        if preserveHold && sameHold { return }
+        isHeld = false
         holdSuppressed = table.hold.map { matches($0, exact: false) } ?? false
     }
     mutating func setListening(_ value: Bool) {
@@ -64,14 +67,14 @@ struct ShortcutMatcher {
         default: return nil
         }
     }
-    private func matches(_ binding: NativeShortcut, exact: Bool) -> Bool {
+    private func matches(_ binding: NativeShortcut, exact: Bool, allowHold: Bool = true) -> Bool {
         guard binding.mods.allSatisfy({ flags & $0 == $0 }), binding.code.map({ keys.contains($0) }) ?? true else { return false }
         guard exact else { return true }
         let required = binding.mods.reduce(UInt64(0)) { $0 | family($1) }
-        let held = isHeld ? table.hold?.mods.reduce(UInt64(0)) { $0 | family($1) } ?? 0 : 0
+        let held = isHeld && allowHold ? table.hold?.mods.reduce(UInt64(0)) { $0 | family($1) } ?? 0 : 0
         // macOS synthesizes fn on arrows/function keys; it is meaningful only on modifier bindings.
         let relevant: UInt64 = binding.code == nil ? 0x9E0000 : 0x1E0000
-        let allowed = required | held | (isHeld ? 0x20000 : 0)
+        let allowed = required | held | (isHeld && allowHold ? 0x20000 : 0)
         return flags & relevant & ~allowed == 0
     }
     mutating func route(_ input: ShortcutInput, code: Int64, flags nextFlags: UInt64, repeating: Bool = false) -> ShortcutDecision {
@@ -96,14 +99,11 @@ struct ShortcutMatcher {
         if !captureDraining.isEmpty { return result }
         let actions = table.always + (listening ? table.listening : [])
         if input == .down { armed.removeAll() }
-        var actionKey = false
+        let keyed = input == .down ? actions.first { $0.code == code && matches($0, exact: true, allowHold: false) } ?? (listening ? table.listening.first { $0.code == code && matches($0, exact: true) } : nil) : nil
+        let actionKey = keyed.map { $0.action == 3 || $0.action == 4 } ?? false
+        if let keyed { result.withhold = true; withheld.insert(code); if !repeating { result.signals.append(.action(keyed.action)) } }
         for binding in actions {
-            if let key = binding.code {
-                if input == .down && code == key && matches(binding, exact: true) {
-                    result.withhold = true; withheld.insert(code); actionKey = true
-                    if !repeating { result.signals.append(.action(binding.action)) }
-                }
-            } else if listening {
+            if binding.code == nil && listening {
                 let engaged = matches(binding, exact: true)
                 let anyHeld = binding.mods.contains { flags & $0 == $0 }
                 let ownModifier = modifier.map { mask in binding.mods.contains(mask) || binding.mods.contains(family(mask)) } ?? false

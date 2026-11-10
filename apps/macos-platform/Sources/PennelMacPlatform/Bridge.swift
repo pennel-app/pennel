@@ -288,7 +288,8 @@ private final class NativeHotkeys {
     func setTable(_ table: ShortcutTable) -> Bool {
         guard monitor?.start() == true else { matcher.setTable(table); shortcut?.stop(); return false }
         if table == matcher.table { return refreshTap() }
-        resetHold(); matcher.setTable(table); return refreshTap()
+        if table.hold != matcher.table.hold { resetHold() }
+        matcher.setTable(table, preserveHold: true); return refreshTap()
     }
     func refreshTap() -> Bool {
         if matcher.needsSwallowingTap { return shortcut?.start() == true }
@@ -328,7 +329,7 @@ private final class NativeHotkeys {
         if capturing, let captureSink, input != .mouse {
             // AppKit reapplies the current layout without modifiers, including AZERTY base characters.
             let character = (type == .keyDown || type == .keyUp) ? NSEvent(cgEvent: event)?.characters(byApplyingModifiers: []) : nil
-            let value: [String: Any] = ["code": code, "flags": event.flags.rawValue, "kind": type == .keyDown ? "down" : type == .keyUp ? "up" : "flags", "key": character.map { $0 as Any } ?? NSNull()]
+            let value: [String: Any] = ["code": code, "flags": event.flags.rawValue, "repeat": event.getIntegerValueField(.keyboardEventAutorepeat) != 0, "kind": type == .keyDown ? "down" : type == .keyUp ? "up" : "flags", "key": character.map { $0 as Any } ?? NSNull()]
             if let data = try? JSONSerialization.data(withJSONObject: value), let json = String(data: data, encoding: .utf8) {
                 json.withCString { captureSink(captureContext, $0, nil) }
             }
