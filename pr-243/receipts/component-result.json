@@ -1,0 +1,10 @@
+{
+  "canonical": "composition",
+  "transactions": 6,
+  "actualContentFocus": true,
+  "quietSelectionAndScroll": true,
+  "undoRedo": true,
+  "task": true,
+  "compositionLifecycle": true,
+  "localization": true
+}

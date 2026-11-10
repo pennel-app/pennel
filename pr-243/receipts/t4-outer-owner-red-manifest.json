@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-11-10T23:28:30.419Z",
+  "complete": false,
+  "capture_method": "Owned Chromium headless fixture render via CDP; no user screen/profile",
+  "baseline_commit": null,
+  "fixture_sha256": "df3406bf70acfdc0e37a8aa1db7019207bdf94b820466c11679b559a88da167d",
+  "fixture_clock": "2026-10-25T09:00:00Z",
+  "images": [],
+  "browser": "chrome-headless-shell",
+  "failure": {
+    "case": "en/light/t4-notes-finished-scroll-review",
+    "message": "Error: t4-notes-finished-scroll-review: Error: Older finished reveal replaced the newer outer reader position: 1140→3343.\n    at assert (http://127.0.0.1:56597/tests/inline-notes-reveal.interactions.mjs:2:56)\n    at Module.checkFinishedScrollOwner (http://127.0.0.1:56597/tests/inline-notes-reveal.interactions.mjs:98:3)"
+  }
+}

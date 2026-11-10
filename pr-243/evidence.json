@@ -1,0 +1,384 @@
+{
+  "pull_request": 243,
+  "kind": "synthetic/headless owned Chromium fixtures, no user screen/profile",
+  "immutable_base": "92cbad149224cc0277ee0c146d31db6320049895",
+  "reviewed_final_source": "4575c812a81bf55d4e55ccfded1d07470510fa8d",
+  "reconstructed_editor_head": "953a27dd4f099f90f5a88a1407de76d8e5285ad4",
+  "normalization_note": "One authorized nonfunctional commit follows the four reviewed editor commits; it removes one surplus terminal newline only and retains all twelve full MIT notices. No build rerun is claimed. The next normal Vite build copies the normalized public notice unchanged.",
+  "reference": {
+    "handoff": "design-handoff/HANDOFF.md section 3",
+    "screens": [
+      16,
+      22
+    ]
+  },
+  "source_checkpoints": {
+    "before": "a463cdabec735510c0f60e9d66d79a9e91449d42",
+    "matched_after": "93b4e0a630d7d6738f9e7b27a6a3259a3fd54815",
+    "first_scroll_fix": "210f3edcd81c2bffcbe6e6d28f63df0ef9b77b76",
+    "final_scroll_fix": "4575c812a81bf55d4e55ccfded1d07470510fa8d"
+  },
+  "capture_note": "The matched after/focused final-after captures precede the two behavior-only scroll fixes. Separate final-scroll sets capture final correction source. After manifests intentionally retain their original baseline_commit=null. Full fixture hashes differ between before/after because after includes eight additional interaction cases; all sixteen shared case hashes match.",
+  "sets": [
+    {
+      "directory": "before",
+      "images": 16,
+      "fixture_sha256": "58380fae48d8f2b471a27ab120b6c49e7cd32b1e6d062994741395dddf9ceffb"
+    },
+    {
+      "directory": "after",
+      "images": 24,
+      "fixture_sha256": "e5b4b656d6b0e0856157cfa02d2d4740810a26fa94b309be3b1ec27ff80ed93e"
+    },
+    {
+      "directory": "final-scroll-en-light",
+      "images": 5,
+      "fixture_sha256": "df3406bf70acfdc0e37a8aa1db7019207bdf94b820466c11679b559a88da167d"
+    },
+    {
+      "directory": "final-scroll-nl-dark",
+      "images": 1,
+      "fixture_sha256": "df3406bf70acfdc0e37a8aa1db7019207bdf94b820466c11679b559a88da167d"
+    }
+  ],
+  "matched_pairs": [
+    {
+      "before": "before/en/light/t4-notes-live.png",
+      "after": "after/en/light/t4-notes-live.png",
+      "case_sha256": "6b05647ccbaa077cffe2a28f68fce66973a63915f3d1285a3b4a5384facb17a1"
+    },
+    {
+      "before": "before/en/light/t4-notes-min.png",
+      "after": "after/en/light/t4-notes-min.png",
+      "case_sha256": "5bc441953cb2112b6dfbb55573445f931802c2f7ba9ab4d7a161fdb62789d4be"
+    },
+    {
+      "before": "before/en/light/t4-notes-zoom.png",
+      "after": "after/en/light/t4-notes-zoom.png",
+      "case_sha256": "f6bb49c0fff4f281e8ff0e447b02aa4941ae4694a287dbd148749590d651ee21"
+    },
+    {
+      "before": "before/en/light/t4-notes-finished.png",
+      "after": "after/en/light/t4-notes-finished.png",
+      "case_sha256": "d30caba55d36848f5e4e8172c6c3c9780ad6cc641900740e8d086d4f4bd53143"
+    },
+    {
+      "before": "before/en/dark/t4-notes-live.png",
+      "after": "after/en/dark/t4-notes-live.png",
+      "case_sha256": "6b05647ccbaa077cffe2a28f68fce66973a63915f3d1285a3b4a5384facb17a1"
+    },
+    {
+      "before": "before/en/dark/t4-notes-min.png",
+      "after": "after/en/dark/t4-notes-min.png",
+      "case_sha256": "5bc441953cb2112b6dfbb55573445f931802c2f7ba9ab4d7a161fdb62789d4be"
+    },
+    {
+      "before": "before/en/dark/t4-notes-zoom.png",
+      "after": "after/en/dark/t4-notes-zoom.png",
+      "case_sha256": "f6bb49c0fff4f281e8ff0e447b02aa4941ae4694a287dbd148749590d651ee21"
+    },
+    {
+      "before": "before/en/dark/t4-notes-finished.png",
+      "after": "after/en/dark/t4-notes-finished.png",
+      "case_sha256": "d30caba55d36848f5e4e8172c6c3c9780ad6cc641900740e8d086d4f4bd53143"
+    },
+    {
+      "before": "before/nl/light/t4-notes-live.png",
+      "after": "after/nl/light/t4-notes-live.png",
+      "case_sha256": "6b05647ccbaa077cffe2a28f68fce66973a63915f3d1285a3b4a5384facb17a1"
+    },
+    {
+      "before": "before/nl/light/t4-notes-min.png",
+      "after": "after/nl/light/t4-notes-min.png",
+      "case_sha256": "5bc441953cb2112b6dfbb55573445f931802c2f7ba9ab4d7a161fdb62789d4be"
+    },
+    {
+      "before": "before/nl/light/t4-notes-zoom.png",
+      "after": "after/nl/light/t4-notes-zoom.png",
+      "case_sha256": "f6bb49c0fff4f281e8ff0e447b02aa4941ae4694a287dbd148749590d651ee21"
+    },
+    {
+      "before": "before/nl/light/t4-notes-finished.png",
+      "after": "after/nl/light/t4-notes-finished.png",
+      "case_sha256": "d30caba55d36848f5e4e8172c6c3c9780ad6cc641900740e8d086d4f4bd53143"
+    },
+    {
+      "before": "before/nl/dark/t4-notes-live.png",
+      "after": "after/nl/dark/t4-notes-live.png",
+      "case_sha256": "6b05647ccbaa077cffe2a28f68fce66973a63915f3d1285a3b4a5384facb17a1"
+    },
+    {
+      "before": "before/nl/dark/t4-notes-min.png",
+      "after": "after/nl/dark/t4-notes-min.png",
+      "case_sha256": "5bc441953cb2112b6dfbb55573445f931802c2f7ba9ab4d7a161fdb62789d4be"
+    },
+    {
+      "before": "before/nl/dark/t4-notes-zoom.png",
+      "after": "after/nl/dark/t4-notes-zoom.png",
+      "case_sha256": "f6bb49c0fff4f281e8ff0e447b02aa4941ae4694a287dbd148749590d651ee21"
+    },
+    {
+      "before": "before/nl/dark/t4-notes-finished.png",
+      "after": "after/nl/dark/t4-notes-finished.png",
+      "case_sha256": "d30caba55d36848f5e4e8172c6c3c9780ad6cc641900740e8d086d4f4bd53143"
+    }
+  ],
+  "files": [
+    {
+      "file": "after/en/dark/t4-notes-check.png",
+      "sha256": "14e40900c5d331b2141c55bd6e5b01656879da91349de08a6dd7934e4d657faa"
+    },
+    {
+      "file": "after/en/dark/t4-notes-deep-finalize.png",
+      "sha256": "1cb79cee7c038c2141a287258915f585e64807d2231159a5e33808911d21ef05"
+    },
+    {
+      "file": "after/en/dark/t4-notes-finished.png",
+      "sha256": "9ecaf92628332ba865e4a30e7282568b90e7e876bb584d6499097d10d1ee16e6"
+    },
+    {
+      "file": "after/en/dark/t4-notes-live.png",
+      "sha256": "a30936bdef78a4d16c7e8ea11c0688f38492c72803945c2423f97a657b5d92f5"
+    },
+    {
+      "file": "after/en/dark/t4-notes-min.png",
+      "sha256": "b66fc88abe4716c772bbc9d308b25fa2a0fdb38975647a65fac470b7f7f98124"
+    },
+    {
+      "file": "after/en/dark/t4-notes-zoom.png",
+      "sha256": "d1618ba83c2a5378421ee2e97161bc26ce8f36f2701da16c87608d08e4242a6b"
+    },
+    {
+      "file": "after/en/light/t4-notes-check.png",
+      "sha256": "a1bfb2a1db76b8a98a5c3e420a5a1c020fb9b2e0d0de94a6de32e2b5fc05ec02"
+    },
+    {
+      "file": "after/en/light/t4-notes-deep-finalize.png",
+      "sha256": "b2aeece2052d63558ce78ad847a940618b1c087d9fc647431b62d27875f8e043"
+    },
+    {
+      "file": "after/en/light/t4-notes-finished.png",
+      "sha256": "809a8ac6fba47fce4faaabe69a5f5b2e36cbb5589d409591ba6a6f79ef4d0577"
+    },
+    {
+      "file": "after/en/light/t4-notes-live.png",
+      "sha256": "b2892cab5a1cf598050051d0fd0db55ca51389ceb99a7c50c9589fc7aad4cbb2"
+    },
+    {
+      "file": "after/en/light/t4-notes-min.png",
+      "sha256": "201621e5acc00bd00c3997950abf32603b044790694713f235dc0611122f3165"
+    },
+    {
+      "file": "after/en/light/t4-notes-zoom.png",
+      "sha256": "015ba8d4c86505b27a66f69d1b851120b8bf368a305b07cbc872cb868ca9f34c"
+    },
+    {
+      "file": "after/manifest.json",
+      "sha256": "ba6492d037f59b76cf175546e4fba7505657ee3e45f7dc24d2560f1a52d130a2"
+    },
+    {
+      "file": "after/nl/dark/t4-notes-check.png",
+      "sha256": "cd43ac5709bd5d3a8154c7f7678a9cba474738c847e2d44475e3871e23ce3552"
+    },
+    {
+      "file": "after/nl/dark/t4-notes-deep-finalize.png",
+      "sha256": "30b7f47f74e5422fc193ec0f11743d77ea676859c83b23a4f920fb856f89a145"
+    },
+    {
+      "file": "after/nl/dark/t4-notes-finished.png",
+      "sha256": "d4e621eadc952b30127b8ec005c99bb8fe564eea576830b8f2fb82d8890839dd"
+    },
+    {
+      "file": "after/nl/dark/t4-notes-live.png",
+      "sha256": "15720fa9750a080461b962c9d395dd7bb90915c78dc0f93d7bca6836533825ba"
+    },
+    {
+      "file": "after/nl/dark/t4-notes-min.png",
+      "sha256": "cebe14dc5026375e0e6676381cac34c7b0ade128e41178a472cc4959dee3cec7"
+    },
+    {
+      "file": "after/nl/dark/t4-notes-zoom.png",
+      "sha256": "a917049180569bcecbf28c68435880fcc433abf6524223502f17a3b7c7f390a5"
+    },
+    {
+      "file": "after/nl/light/t4-notes-check.png",
+      "sha256": "06672ce07d931dbd16a2a0a36991145fbe35675bc1abaeb563b66026668a309d"
+    },
+    {
+      "file": "after/nl/light/t4-notes-deep-finalize.png",
+      "sha256": "f9bf30cd1bf03974ca9af72a663bfb56fc3ce56936114c89647c3faf1a6dafec"
+    },
+    {
+      "file": "after/nl/light/t4-notes-finished.png",
+      "sha256": "64cb72701906138466d13f9d1918edb38b3d96de82fb19db9e936ace43db914c"
+    },
+    {
+      "file": "after/nl/light/t4-notes-live.png",
+      "sha256": "4b3ffca7bf4c7a79f49a66de5da5f35c41930d59ffbf41d32806054c8419b873"
+    },
+    {
+      "file": "after/nl/light/t4-notes-min.png",
+      "sha256": "17cf9d3cd0ef45288ada8aecccb3aa2179fe8e45864802881b4d4e49a6a6f447"
+    },
+    {
+      "file": "after/nl/light/t4-notes-zoom.png",
+      "sha256": "881cbcd833310e44a5bf521043b3fb0c3d9498e81a713d8b4b42f78c60cdaf6e"
+    },
+    {
+      "file": "before/en/dark/t4-notes-finished.png",
+      "sha256": "5fba28d2dff2c36460a312c306e0adf507d9bd996a893b045f09b8970b3cdf3f"
+    },
+    {
+      "file": "before/en/dark/t4-notes-live.png",
+      "sha256": "c7a6dbf98c057ef873d0e2968d0508937b0c69250f88309f0428fb768d63cdf2"
+    },
+    {
+      "file": "before/en/dark/t4-notes-min.png",
+      "sha256": "c13802a5ac592778987bfe37adccfaceab74947522f308e66ffe5866d4fa1db0"
+    },
+    {
+      "file": "before/en/dark/t4-notes-zoom.png",
+      "sha256": "72973ab410336e573f2657a1218253338b1a181dc3dfcb2cdfdd0ddb28d671d3"
+    },
+    {
+      "file": "before/en/light/t4-notes-finished.png",
+      "sha256": "2b5685146b7d616296a8f8793bb3c85fbe7db2d0edd0bbc64215ad0b7f9bbf5e"
+    },
+    {
+      "file": "before/en/light/t4-notes-live.png",
+      "sha256": "7170ba397f430ab3ef7165ac1b73d32c6621188e927b98abc6727e98ddb0a1b6"
+    },
+    {
+      "file": "before/en/light/t4-notes-min.png",
+      "sha256": "270af2c75f2f9f719c586b14cd73f0fb4a43932accc5d816d131fc5133098411"
+    },
+    {
+      "file": "before/en/light/t4-notes-zoom.png",
+      "sha256": "e69405d1dd141d755c652bfa59310b73850892d385385480ed1dcefe21bc0cd3"
+    },
+    {
+      "file": "before/manifest.json",
+      "sha256": "30f216e75f740f8082dcd25e08e4df297ce92f53813a4ef8474c1aaf85d7f80f"
+    },
+    {
+      "file": "before/nl/dark/t4-notes-finished.png",
+      "sha256": "251f9777330e778b7d9a1a859cc6b08a8113986d8033f24b1488d0cc7ba11799"
+    },
+    {
+      "file": "before/nl/dark/t4-notes-live.png",
+      "sha256": "3fdd22500f53bced9ce40fb643b5579d81eb8bb0863326756d5b547ad4104df9"
+    },
+    {
+      "file": "before/nl/dark/t4-notes-min.png",
+      "sha256": "2be725ffccaa25037658a823b36d32a02786b32c527b208e83117168da99dee5"
+    },
+    {
+      "file": "before/nl/dark/t4-notes-zoom.png",
+      "sha256": "38593e3e6f8bf748cce6bde73809a305581160e78f7bfc78795ec4074f2001aa"
+    },
+    {
+      "file": "before/nl/light/t4-notes-finished.png",
+      "sha256": "74aaac727ac6e43a84dfbb5fc31d4a82d51944cbdbec9b2c2c785e9000ff2a70"
+    },
+    {
+      "file": "before/nl/light/t4-notes-live.png",
+      "sha256": "650d0c07ac2a38c49bf6e0c3be9759480d714d42922dff778d7e42326548ba4c"
+    },
+    {
+      "file": "before/nl/light/t4-notes-min.png",
+      "sha256": "52e9753dcaccfc4b1d7aeb58aa91dba9aa9d275b56efc66eb0f5c787dcf4fdff"
+    },
+    {
+      "file": "before/nl/light/t4-notes-zoom.png",
+      "sha256": "8d62e1d350d82475b87f759653e0536a5980abdf97d0f03416ca1ab5a4fef5ab"
+    },
+    {
+      "file": "final-scroll-en-light/en/light/live-workspace-duplicate-review.png",
+      "sha256": "feaf6ac97d7bcdf34de91c1321092606e5bbeba051298ee277778d8b99d39948"
+    },
+    {
+      "file": "final-scroll-en-light/en/light/t4-notes-deep-finalize.png",
+      "sha256": "b2aeece2052d63558ce78ad847a940618b1c087d9fc647431b62d27875f8e043"
+    },
+    {
+      "file": "final-scroll-en-light/en/light/t4-notes-finished-scroll-review.png",
+      "sha256": "e10b3c2070af3e984a54531bf740c8d279ba2f37565aa200a3b6db4589b70df8"
+    },
+    {
+      "file": "final-scroll-en-light/en/light/t4-notes-reveal-review.png",
+      "sha256": "32f1139d2950a11b4a0925654c38b77a997a71aabc9ef6cadfb58b278fb8024f"
+    },
+    {
+      "file": "final-scroll-en-light/en/light/t4-notes-source-return-review.png",
+      "sha256": "7894c466d48bdf64e4e4f7f11304a5022c5b3802f253b9ce45f0be71babb3f84"
+    },
+    {
+      "file": "final-scroll-en-light/manifest.json",
+      "sha256": "d7d498cdce5dc6cce9581d72c4052ef3887a13bc2788197f4b3ba08afd1eee11"
+    },
+    {
+      "file": "final-scroll-nl-dark/manifest.json",
+      "sha256": "6854f2ac8edeefc6fc5c7f090e5a1b1283ed948fa7c31ee612c93cbc42eb2457"
+    },
+    {
+      "file": "final-scroll-nl-dark/nl/dark/t4-notes-finished-scroll-review.png",
+      "sha256": "1ebb24b858b09a316e443ffcca2516261b450a57aaecca609682d104075a0529"
+    },
+    {
+      "file": "receipts/component-result.json",
+      "sha256": "55d005f8300b9513fbabeb51decf88688851a8c7fe0d882977e4f1295b1a83e5"
+    },
+    {
+      "file": "receipts/t4-final-build.log",
+      "sha256": "47852f8ca878ce95fef4f13dd16ac562754ea0e647181d8f58760ca6677fa4ab"
+    },
+    {
+      "file": "receipts/t4-final-min-check-manifest.json",
+      "sha256": "0a396ed917db6bc0c8e0af5dec50b462879512f37a9b9963b09a588e6dd2271c"
+    },
+    {
+      "file": "receipts/t4-final-ownership-manifest.json",
+      "sha256": "5a69f8e98d7eb79dd9827776becc7a606db3aa8e07776f74441cd61cc884d527"
+    },
+    {
+      "file": "receipts/t4-final-retention-manifest.json",
+      "sha256": "ebeec66bf19870ff17b5325c9c2c802ef76ef65bae595968cbba6db3cb74a9c3"
+    },
+    {
+      "file": "receipts/t4-final-unit.log",
+      "sha256": "0a6e71a8281e67dabd7f26bf3b86b38ab643caeac3d525b3e29b43fc230c4af0"
+    },
+    {
+      "file": "receipts/t4-fix-round2-review.md",
+      "sha256": "7f2fa51fd7a83171f78bcd71f7258b4e6c16f39c41187e7f9b91c610a83bdbf2"
+    },
+    {
+      "file": "receipts/t4-integration-stable-paint-manifest.json",
+      "sha256": "a585e713fd2ffc6fb61eda76f12bbf46f2386475ebfe5d34649b22dedc199fc5"
+    },
+    {
+      "file": "receipts/t4-outer-owner-red-manifest.json",
+      "sha256": "4210ca249803fbd003282b696ba569efee33196fe68a65d0a43527adee5e3fde"
+    },
+    {
+      "file": "receipts/t4-report.md",
+      "sha256": "ac5c3b22026ffdf9fc246ae6cea8b52114dcd4bd339bbac684f825a40c0b1f80"
+    },
+    {
+      "file": "receipts/t4-reveal-review-green-manifest.json",
+      "sha256": "65884d0386e670f5f890b3ca75dd74070738a02f56c9ef7e50bf7cde74fd1e36"
+    },
+    {
+      "file": "receipts/t4-reveal-review-nl-dark-manifest.json",
+      "sha256": "1cbf9a0f967fbfe14478b2559be8ec06b48fd92c5aba699f2b9149fe674898be"
+    },
+    {
+      "file": "receipts/t4-reveal-review-red-manifest.json",
+      "sha256": "1c1ce8c011e9b20864fa4a1e48e324ff08bf2e976474ead62b4b6b0fc095c322"
+    },
+    {
+      "file": "receipts/t4-review.md",
+      "sha256": "b052a79cc2098501424d3b3024747673c2a5b0c5b3eca96d07738bfcafcdbb80"
+    }
+  ]
+}
