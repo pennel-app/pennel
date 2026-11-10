@@ -121,6 +121,44 @@ impl CaptureSession {
 pub struct CaptureStarted {
     native: bool,
     generation: u64,
+    reason: Option<String>,
+}
+#[derive(Debug, PartialEq, Eq)]
+enum CaptureMode {
+    Native,
+    Dom(&'static str),
+}
+fn capture_mode(
+    scope: ShortcutScope,
+    has_listener: bool,
+    accessibility: bool,
+) -> Result<CaptureMode, String> {
+    if has_listener && accessibility {
+        return Ok(CaptureMode::Native);
+    }
+    if scope == ShortcutScope::Application {
+        return Ok(CaptureMode::Dom(if has_listener && !accessibility {
+            "accessibility_required"
+        } else {
+            "native_capture_unavailable"
+        }));
+    }
+    Err("Native shortcut capture is unavailable on this system".into())
+}
+fn activate_with_focus<T>(
+    focused: impl Fn() -> bool,
+    activate: impl FnOnce() -> Result<T, String>,
+    rollback: impl FnOnce(&T),
+) -> Result<T, String> {
+    if !focused() {
+        return Err("Focus the Pennel workspace before recording a shortcut".into());
+    }
+    let value = activate()?;
+    if !focused() {
+        rollback(&value);
+        return Err("Shortcut capture stopped because the workspace lost focus".into());
+    }
+    Ok(value)
 }
 
 #[tauri::command]
@@ -132,6 +170,31 @@ pub fn shortcut_capture_start(
     if window.label() != "main" {
         return Err("Only the workspace can record a shortcut".into());
     }
+    if !window.is_focused().unwrap_or(false) {
+        return Err("Focus the Pennel workspace before recording a shortcut".into());
+    }
+    let app = window.app_handle().clone();
+    let shared = shared.inner().clone();
+    let (send, receive) = std::sync::mpsc::channel();
+    // Admission, tap activation and the final focus check share the native UI serialization boundary.
+    app.run_on_main_thread(move || {
+        let result = activate_with_focus(
+            || window.is_focused().unwrap_or(false),
+            || start_capture(&window, action, &shared),
+            |started| stop_generation(window.app_handle(), Some(started.generation)),
+        );
+        let _ = send.send(result);
+    })
+    .map_err(|error| error.to_string())?;
+    receive
+        .recv()
+        .map_err(|_| "Shortcut capture activation was interrupted".to_owned())?
+}
+fn start_capture(
+    window: &WebviewWindow,
+    action: String,
+    shared: &Arc<Shared>,
+) -> Result<CaptureStarted, String> {
     let scope = pennel_core::shortcut_scope(&action).ok_or("Unknown shortcut action")?;
     if CAPTURING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -146,30 +209,48 @@ pub fn shortcut_capture_start(
     }
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
     *session().lock().unwrap_or_else(|p| p.into_inner()) =
-        Some(CaptureSession::new(action.clone(), generation));
+        Some(CaptureSession::new(action, generation));
     if let Err(error) = crate::desktop_commands::refresh(app) {
         stop(app);
         return Err(error.to_string());
     }
-    let result: Result<bool, String> = (|| {
+    let result: Result<CaptureMode, String> = (|| {
         #[cfg(target_os = "macos")]
-        let listener = shared.hotkey.lock().unwrap().clone();
-        #[cfg(target_os = "macos")]
-        if let Some(listener) = listener {
-            let app = app.clone();
-            let shared = shared.inner().clone();
-            listener.set_capture(Some(Box::new(move |event| {
-                native_mac_input(&app, &shared, generation, event)
-            })))?;
-            return Ok(true);
+        {
+            let listener = shared.hotkey.lock().unwrap().clone();
+            let accessibility = crate::macos::permissions()
+                .get("accessibility")
+                .and_then(serde_json::Value::as_str)
+                == Some("granted");
+            let mode = capture_mode(scope, listener.is_some(), accessibility)?;
+            if let Some(listener) = listener {
+                // Clear the live table even for DOM fallback after Accessibility revocation.
+                let suspended = listener.suspend_bindings();
+                if mode == CaptureMode::Native {
+                    suspended?;
+                    let app = app.clone();
+                    let shared = shared.clone();
+                    listener.set_capture(Some(Box::new(move |event| {
+                        native_mac_input(&app, &shared, generation, event)
+                    })))?;
+                }
+            }
+            Ok(mode)
         }
-        if scope != ShortcutScope::Application {
-            return Err("Native shortcut capture is unavailable on this system".into());
+        #[cfg(not(target_os = "macos"))]
+        {
+            capture_mode(scope, false, false)
         }
-        Ok(false)
     })();
     match result {
-        Ok(native) => Ok(CaptureStarted { native, generation }),
+        Ok(mode) => Ok(CaptureStarted {
+            native: mode == CaptureMode::Native,
+            generation,
+            reason: match mode {
+                CaptureMode::Native => None,
+                CaptureMode::Dom(reason) => Some(reason.into()),
+            },
+        }),
         Err(error) => {
             stop(app);
             Err(error)
@@ -208,6 +289,9 @@ fn stop_generation(app: &AppHandle, generation: Option<u64>) {
         }
     }
     CAPTURING.store(false, Ordering::SeqCst);
+    if let Some(shared) = app.try_state::<Arc<Shared>>() {
+        crate::record_shortcut::refresh(app, &shared);
+    }
     let _ = crate::desktop_commands::refresh(app);
     if let Some(state) = stopped
         && !state.done
@@ -231,6 +315,13 @@ fn stop_generation(app: &AppHandle, generation: Option<u64>) {
 }
 #[cfg(target_os = "macos")]
 fn native_mac_input(app: &AppHandle, shared: &Shared, generation: u64, event: serde_json::Value) {
+    if !app
+        .get_webview_window("main")
+        .is_some_and(|window| window.is_focused().unwrap_or(false))
+    {
+        defer_stop(app, generation);
+        return;
+    }
     let Some(code) = event
         .get("code")
         .and_then(serde_json::Value::as_u64)
@@ -335,14 +426,84 @@ fn native_mac_input(app: &AppHandle, shared: &Shared, generation: u64, event: se
     let done = update.done;
     let _ = app.emit_to("main", "shortcut-capture", update);
     if done {
-        let target = app.clone();
-        let _ = app.run_on_main_thread(move || stop_generation(&target, Some(generation)));
+        defer_stop(app, generation);
     }
+}
+fn defer_stop(app: &AppHandle, generation: u64) {
+    let app = app.clone();
+    // run_on_main_thread is inline on main. Originating on a worker truly queues teardown after the tap returns.
+    let _ = std::thread::Builder::new()
+        .name("pennel-shortcut-stop".into())
+        .spawn(move || {
+            let target = app.clone();
+            let _ = app.run_on_main_thread(move || stop_generation(&target, Some(generation)));
+        });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_delayed_or_lost_focus_start_rolls_back_without_a_binding() {
+        use std::cell::Cell;
+        let focus = Cell::new(false);
+        let active = Cell::new(false);
+        let menus_suspended = Cell::new(false);
+        let activate = || {
+            active.set(true);
+            menus_suspended.set(true);
+            Ok(())
+        };
+        assert!(
+            activate_with_focus(
+                || focus.get(),
+                activate,
+                |_| {
+                    active.set(false);
+                    menus_suspended.set(false);
+                }
+            )
+            .is_err()
+        );
+        assert!(!active.get());
+        assert!(!menus_suspended.get());
+        focus.set(true);
+        assert!(
+            activate_with_focus(
+                || focus.get(),
+                || {
+                    active.set(true);
+                    menus_suspended.set(true);
+                    focus.set(false);
+                    Ok(())
+                },
+                |_| {
+                    active.set(false);
+                    menus_suspended.set(false);
+                }
+            )
+            .is_err()
+        );
+        assert!(!active.get());
+        assert!(!menus_suspended.get());
+    }
+    #[test]
+    fn an_existing_listener_without_accessibility_uses_only_application_dom_capture() {
+        assert_eq!(
+            capture_mode(ShortcutScope::Application, true, false).unwrap(),
+            CaptureMode::Dom("accessibility_required")
+        );
+        assert!(capture_mode(ShortcutScope::Global, true, false).is_err());
+        assert_eq!(
+            capture_mode(ShortcutScope::Application, false, true).unwrap(),
+            CaptureMode::Dom("native_capture_unavailable")
+        );
+        assert_eq!(
+            capture_mode(ShortcutScope::Application, true, true).unwrap(),
+            CaptureMode::Native
+        );
+    }
+
     #[test]
     fn modifier_only_capture_finishes_after_release_and_preserves_sides() {
         let mut state = CaptureSession::new("dictate".into(), 7);
