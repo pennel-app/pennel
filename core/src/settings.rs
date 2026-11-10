@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -184,6 +185,12 @@ pub struct Settings {
     pub style_rules: Vec<StyleRule>,
     pub history_retention_days: u32,
     pub hotkey: HotkeyTrigger,
+    #[serde(
+        default,
+        deserialize_with = "crate::shortcuts::lenient_shortcuts",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub shortcuts: HashMap<String, Option<crate::ShortcutBinding>>,
     pub local_unload_minutes: u32,
     /// Empty means `~/Pennel`.
     #[serde(default)]
@@ -295,6 +302,7 @@ pub fn default_settings() -> Settings {
             .collect(),
         history_retention_days: 30,
         hotkey: DEFAULT_HOTKEY,
+        shortcuts: HashMap::new(),
         local_unload_minutes: 5,
         meetings_dir: String::new(),
         meeting_audio_retention_days: 0,

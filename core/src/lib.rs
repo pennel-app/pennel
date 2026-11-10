@@ -59,6 +59,7 @@ mod rules;
 mod session;
 mod settings;
 mod setup;
+mod shortcuts;
 mod speaker_commit;
 mod speaker_jobs;
 mod speakers;
@@ -204,6 +205,13 @@ pub use settings::{
     default_settings,
 };
 pub use setup::{SetupAccess, SetupFacts, SetupReadiness, dictation_readiness, meeting_readiness};
+pub use shortcuts::{
+    SHORTCUT_ACTIONS, ShortcutBinding, ShortcutCapability, ShortcutLabel, ShortcutPlatform,
+    ShortcutProblem, ShortcutRow, ShortcutScope, bindings_conflict, default_shortcut,
+    effective_shortcut, format_shortcut, legacy_dictate, menu_accelerator,
+    reconcile_legacy_shortcuts, reset_all_shortcuts, reset_shortcut, set_shortcut,
+    shortcut_capability, shortcut_rows, shortcut_scope, supported_shortcut_code, validate_shortcut,
+};
 pub use speaker_jobs::{
     RecognitionAudioBlock, RecognitionAudioInfo, RecognitionAudioReader, RecognitionFileTransport,
     RecognitionUploadProgress, RecognitionUploadRequest, RecognitionUploadResponse,

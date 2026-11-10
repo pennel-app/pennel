@@ -30,7 +30,9 @@ export interface RerankResult { scores: { passage_id: string; score: number }[];
 export interface InferenceVerification { verified: boolean; message: string; identity: InferenceIdentity | null }
 export interface ProviderAccount { id: string; kind: ProviderKind; name: string; base_url: string }
 export interface ProviderKindInfo { kind: ProviderKind; label: string; requires_key: boolean; stt: boolean; llm: boolean; availability: Capability; default_base_url: string }
+export interface ShortcutBinding { mods: string[]; code: string | null; key: string | null }
 export interface Settings {
+  shortcuts?: Record<string, ShortcutBinding | null>;
   ui_language: 'system' | InterfaceLanguage;
   appearance: Appearance;
   onboarding: { status: 'pending' | 'skipped' | 'completed'; version: number; goal?: 'dictation' | 'meeting'; resume_step?: 'language' | 'welcome' | 'engine' | 'permissions' | 'practice' | 'voice' };

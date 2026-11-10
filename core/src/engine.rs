@@ -2474,7 +2474,8 @@ impl PennelEngine {
         }
     }
 
-    pub(crate) fn update_settings_locked(&self, settings: Settings) -> Result<(), PennelError> {
+    pub(crate) fn update_settings_locked(&self, mut settings: Settings) -> Result<(), PennelError> {
+        crate::reconcile_legacy_shortcuts(&self.settings(), &mut settings);
         self.persist_settings_locked(settings.normalized_with(&self.models.downloaded()))
     }
 
