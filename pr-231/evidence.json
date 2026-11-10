@@ -1,0 +1,154 @@
+{
+  "task": "T3b continuous meeting document",
+  "mock": true,
+  "source": "Owned synthetic headless fixture; no user screen",
+  "before_ref": "f27709593485cf7d57529396b4c00c4d70485f63",
+  "after_ref": "8dea4615d5df5cc8a08e935657ec41f61dbbe882",
+  "review_correction": "528c1b7 changes scroll restoration ordering; separate regression receipt",
+  "rows": [
+    {
+      "phase": "before",
+      "case": "en/dark/meeting-document-reference.png",
+      "file": "before-en-dark-meeting-document-reference.png",
+      "sha256": "f19b895bb92cb18c4a60e7fae62f6dab6d7b30c4ff86ca578508c75030bf74b0"
+    },
+    {
+      "phase": "before",
+      "case": "en/light/meeting-document-reference.png",
+      "file": "before-en-light-meeting-document-reference.png",
+      "sha256": "3fe3e72d1fb2db6b321d977ee00a656a5a744dd3f39f8b67fd4e6edf1e654f86"
+    },
+    {
+      "phase": "before",
+      "case": "nl/dark/meeting-document-reference.png",
+      "file": "before-nl-dark-meeting-document-reference.png",
+      "sha256": "8ed7a52f08de995bd35e5a2f7fed221ed0e78885c270fd77596edb7c318213ed"
+    },
+    {
+      "phase": "before",
+      "case": "nl/light/meeting-document-reference.png",
+      "file": "before-nl-light-meeting-document-reference.png",
+      "sha256": "e689094484564225e80c89445b9034e44a027ecfc5c4c23d554626635a9da9c5"
+    },
+    {
+      "phase": "after",
+      "case": "en/dark/meeting-document-reference.png",
+      "file": "after-en-dark-meeting-document-reference.png",
+      "sha256": "85d774a0b1789d3969e859a7e7e2b12c4f02e9578491ef152fc36b88f20e927e"
+    },
+    {
+      "phase": "after",
+      "case": "en/light/meeting-document-reference.png",
+      "file": "after-en-light-meeting-document-reference.png",
+      "sha256": "b6c769bb74e113638aaa69f1a357c6dbba1d490665677810f535fc8fb0153237"
+    },
+    {
+      "phase": "after",
+      "case": "nl/dark/meeting-document-reference.png",
+      "file": "after-nl-dark-meeting-document-reference.png",
+      "sha256": "7a8c403bd447340e2c3a72344e7830c66ab90eb50d98541d17b5401be5dbc04b"
+    },
+    {
+      "phase": "after",
+      "case": "nl/light/meeting-document-reference.png",
+      "file": "after-nl-light-meeting-document-reference.png",
+      "sha256": "9e5f324c21fe37c433eaf5ead658d334d4bff32c31151d6970290fb2b8cca876"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/meeting-document-check.png",
+      "file": "checked-en-dark-meeting-document-check.png",
+      "sha256": "df60b6e68687f2bc97ac99d793594c387c7556ec9ccc89308ccab6195f5eb023"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/meeting-document-enlarged.png",
+      "file": "checked-en-dark-meeting-document-enlarged.png",
+      "sha256": "57ad50b698105b04d4b07219079e1b5240497978accda149ccdfe5ce4fec6a4e"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/meeting-document-minimum.png",
+      "file": "checked-en-dark-meeting-document-minimum.png",
+      "sha256": "0dd7e5c68bab77b73a2806457515457b07c41eb710a4d1dce08eabe40e097582"
+    },
+    {
+      "phase": "checked",
+      "case": "en/dark/meeting-document-reference.png",
+      "file": "checked-en-dark-meeting-document-reference.png",
+      "sha256": "85d774a0b1789d3969e859a7e7e2b12c4f02e9578491ef152fc36b88f20e927e"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/meeting-document-check.png",
+      "file": "checked-en-light-meeting-document-check.png",
+      "sha256": "50516227d9dcd93e56599cb024ccbc0696fc4ecfbf6cb1604a088bbd7237f137"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/meeting-document-enlarged.png",
+      "file": "checked-en-light-meeting-document-enlarged.png",
+      "sha256": "2686a979ea834c34d5600fbd4fbc8d14c76129016b2136256729547d2f7d5548"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/meeting-document-minimum.png",
+      "file": "checked-en-light-meeting-document-minimum.png",
+      "sha256": "7d64f230f84bab37d36a356817d77b08062c346196c0f54bbc88baba1928d266"
+    },
+    {
+      "phase": "checked",
+      "case": "en/light/meeting-document-reference.png",
+      "file": "checked-en-light-meeting-document-reference.png",
+      "sha256": "b6c769bb74e113638aaa69f1a357c6dbba1d490665677810f535fc8fb0153237"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/meeting-document-check.png",
+      "file": "checked-nl-dark-meeting-document-check.png",
+      "sha256": "53cb523888964d6e934532406e4c335de56942e0a7acc5494614ad14bbbc87de"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/meeting-document-enlarged.png",
+      "file": "checked-nl-dark-meeting-document-enlarged.png",
+      "sha256": "e58774d077ee8816a3a582c3ec7145e2c8aa9c18d6597c392f40a3533a41615d"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/meeting-document-minimum.png",
+      "file": "checked-nl-dark-meeting-document-minimum.png",
+      "sha256": "814ef5bfa99fc20122d227aafcec8efa2a16ea125d85db266e217e1971d3401d"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/dark/meeting-document-reference.png",
+      "file": "checked-nl-dark-meeting-document-reference.png",
+      "sha256": "7a8c403bd447340e2c3a72344e7830c66ab90eb50d98541d17b5401be5dbc04b"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/meeting-document-check.png",
+      "file": "checked-nl-light-meeting-document-check.png",
+      "sha256": "fb6e7c54457becd426cf0c79e8290c46fba404555f33127711126174da7e7735"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/meeting-document-enlarged.png",
+      "file": "checked-nl-light-meeting-document-enlarged.png",
+      "sha256": "0f6565d680a03290967840cf8a1f90ba6d79fbdf493e9c45ebe52462bc12298e"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/meeting-document-minimum.png",
+      "file": "checked-nl-light-meeting-document-minimum.png",
+      "sha256": "d6f3a996d4f10e6ab2ad1560d0230d34f313c114c2834cff46dc04ffc9852de4"
+    },
+    {
+      "phase": "checked",
+      "case": "nl/light/meeting-document-reference.png",
+      "file": "checked-nl-light-meeting-document-reference.png",
+      "sha256": "9e5f324c21fe37c433eaf5ead658d334d4bff32c31151d6970290fb2b8cca876"
+    }
+  ]
+}
