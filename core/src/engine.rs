@@ -134,6 +134,112 @@ struct PreparedInferenceRegistration {
     cancellation: Arc<crate::InferenceCancellation>,
 }
 
+pub(crate) struct AutomaticTitleInference {
+    engine: Arc<PennelEngine>,
+    account: ProviderAccount,
+    provider: ProviderConfig,
+    cancellation: Arc<crate::InferenceCancellation>,
+    deadline: std::time::Instant,
+    epoch: u64,
+    cloud: Option<(Arc<Session>, u64)>,
+    #[cfg(test)]
+    pool: Option<Arc<crate::meeting_scheduler::PhysicalInferencePool>>,
+    _registration: PreparedInferenceRegistration,
+}
+
+impl AutomaticTitleInference {
+    pub(crate) fn current(&self) -> bool {
+        !self.cancellation.is_cancelled()
+            && self.engine.inference_epoch() == self.epoch
+            && self
+                .engine
+                .settings()
+                .resolve(&self.engine.settings().llm)
+                .is_some_and(|(account, model)| {
+                    account == self.account && model == self.provider.model
+                })
+            && self.cloud.as_ref().is_none_or(|(session, generation)| {
+                session.generation() == *generation
+                    && session.signed_in()
+                    && self
+                        .engine
+                        .current_cloud_session()
+                        .as_ref()
+                        .is_some_and(|current| Arc::ptr_eq(current, session))
+            })
+    }
+
+    pub(crate) fn complete(&self, source: &str, keys: ApiKeys) -> Result<String, PennelError> {
+        if !self.current() {
+            return Err(PennelError::Cancelled);
+        }
+        let engine = self.engine.clone();
+        let account = self.account.clone();
+        let provider = self.provider.clone();
+        let cancellation = self.cancellation.clone();
+        let worker_cancellation = cancellation.clone();
+        let epoch = self.epoch;
+        let cloud = self.cloud.clone();
+        let messages = crate::automatic_titles::title_messages(source);
+        let system = self.engine.system_llm.read().unwrap().clone();
+        let operation = move |deadline: std::time::Instant| {
+            if worker_cancellation.is_cancelled() || engine.inference_epoch() != epoch {
+                return Err(PennelError::Cancelled);
+            }
+            let key = match cloud {
+                Some((session, generation)) => Some(session.inference_token(
+                    generation,
+                    false,
+                    &worker_cancellation,
+                    deadline,
+                )?),
+                None => keys.get(&account).map(str::to_owned),
+            };
+            if requires_key(account.kind) && key.is_none() {
+                return Err(PennelError::MissingApiKey { task: "llm".into() });
+            }
+            let remaining = deadline
+                .saturating_duration_since(std::time::Instant::now())
+                .as_secs();
+            if remaining == 0 {
+                return Err(crate::inference::network());
+            }
+            if provider.kind == ProviderKind::AppleIntelligence {
+                system_llm::complete(system.as_deref(), &messages, remaining)
+            } else if provider.kind.is_cli_agent() {
+                crate::cli_agent::complete(
+                    provider.kind,
+                    &provider.base_url,
+                    &provider.model,
+                    &messages,
+                    remaining,
+                )
+            } else {
+                crate::llm::chat_complete_before(
+                    &provider,
+                    key.as_deref(),
+                    &messages,
+                    deadline,
+                    Reasoning::Off,
+                )
+            }
+        };
+        #[cfg(test)]
+        let result = if let Some(pool) = self.pool.as_ref() {
+            crate::inference::run_cancelled_in_pool(pool, cancellation, self.deadline, operation)
+        } else {
+            crate::inference::run_cancelled_before(cancellation, self.deadline, operation)
+        }?;
+        #[cfg(not(test))]
+        let result =
+            crate::inference::run_cancelled_before(cancellation, self.deadline, operation)?;
+        if !self.current() {
+            return Err(PennelError::Cancelled);
+        }
+        crate::automatic_titles::parse_generated_title(&result)
+    }
+}
+
 impl Drop for PreparedInferenceRegistration {
     fn drop(&mut self) {
         let reference = Arc::downgrade(&self.cancellation);
@@ -410,6 +516,9 @@ pub struct PennelEngine {
     writing_profile_before_dispatch: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     #[cfg(test)]
     writing_profile_test_pool: Mutex<Option<Arc<crate::meeting_scheduler::PhysicalInferencePool>>>,
+    #[cfg(test)]
+    pub(crate) automatic_title_test_pool:
+        Mutex<Option<Arc<crate::meeting_scheduler::PhysicalInferencePool>>>,
     pub(crate) conversations: Mutex<crate::conversations::State>,
     unsaved_history: Mutex<RecoveryState>,
     dictation_pad: Mutex<DictationPad>,
@@ -2881,6 +2990,8 @@ impl PennelEngine {
             writing_profile_before_dispatch: Mutex::new(None),
             #[cfg(test)]
             writing_profile_test_pool: Mutex::new(None),
+            #[cfg(test)]
+            automatic_title_test_pool: Mutex::new(None),
             conversations: Mutex::new(crate::conversations::State::default()),
             unsaved_history: Mutex::new(RecoveryState::default()),
             dictation_pad: Mutex::new(dictation_pad),
@@ -3165,6 +3276,54 @@ impl PennelEngine {
             return system_llm::complete(model.as_deref(), messages, timeout_secs);
         }
         crate::llm::chat_complete_within(provider, key, messages, timeout_secs, reasoning)
+    }
+
+    pub(crate) fn prepare_automatic_title(
+        self: &Arc<Self>,
+    ) -> Result<AutomaticTitleInference, PennelError> {
+        let _gate = self.meeting_gate.lock().unwrap();
+        let settings = self.settings();
+        let (account, model) = settings
+            .resolve(&settings.llm)
+            .ok_or(PennelError::NotFound)?;
+        if model.trim().is_empty() || !supports(account.kind, ProviderTask::Llm) {
+            return Err(PennelError::NotFound);
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let cancellation = crate::InferenceCancellation::scheduled(
+            crate::InferenceCancellation::new(),
+            crate::InferencePriority::BackgroundAnalysis,
+            deadline,
+        );
+        let epoch = {
+            let requests = self.inference_requests.lock().unwrap();
+            if requests.mutation_depth > 0 {
+                return Err(PennelError::Cancelled);
+            }
+            requests.generation
+        };
+        self.register_inference_locked(&cancellation);
+        let cloud = if account.kind == ProviderKind::PennelCloud {
+            let session = self.cloud_session()?;
+            Some((session.clone(), session.generation()))
+        } else {
+            None
+        };
+        Ok(AutomaticTitleInference {
+            engine: self.clone(),
+            account: account.clone(),
+            provider: self.endpoint(&account, model),
+            cancellation: cancellation.clone(),
+            deadline,
+            epoch,
+            cloud,
+            #[cfg(test)]
+            pool: self.automatic_title_test_pool.lock().unwrap().clone(),
+            _registration: PreparedInferenceRegistration {
+                state: self.inference_state(),
+                cancellation,
+            },
+        })
     }
 
     fn record_cleanup_reason(

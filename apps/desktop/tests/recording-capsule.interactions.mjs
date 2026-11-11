@@ -30,7 +30,7 @@ export async function checkRecordingCapsule() {
     if (fixture.options.recording_start_error) {
       blockStart = true;
       record.click();
-      await until(() => document.querySelector(".recording-view input") && !document.querySelector("#content").inert, "Failed immediate start did not open recovery.");
+      await until(() => document.querySelector(".recording-view .btn.primary") && !document.querySelector("#content").inert, "Failed immediate start did not open recovery.");
       const fallback = document.querySelector(".recording-view");
       assert(fallback.textContent.includes("Synthetic microphone startup failed."), "Startup failure lost its reason.");
       assert([...fallback.querySelectorAll("button")].some(button => button.textContent === t("meetings.recording_settings")), "Startup recovery lost recording settings.");
@@ -45,7 +45,7 @@ export async function checkRecordingCapsule() {
       document.querySelector(".task-setup-dialog [data-setup-cancel]").click();
       await until(() => !document.querySelector(".task-setup-dialog"), "Task setup did not return to startup recovery.");
       assert(JSON.stringify(fixture.info().settings.meeting_stt) === setupBefore, "Opening recovery silently changed the speech setup.");
-      fallback.querySelector("input").value = "Synthetic retry title";
+      assert(!fallback.querySelector("input") && fallback.textContent.includes(t("meetings.automatic_title_help")), "Startup recovery still requires a meeting name.");
       blockStart = false; releaseStart = () => {};
       fallback.querySelector(".btn.primary").click();
     } else {

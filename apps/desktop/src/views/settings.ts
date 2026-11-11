@@ -187,7 +187,9 @@ export async function meetingSettingsView(ctx: Context): Promise<HTMLElement> {
   const pathLocked = ctx.info.preview || recording.busy;
   const path = h("span", { class: "grow meeting-path", "aria-label": l("settings.folder.label") }, ctx.info.preview ? l("settings.folder.preview") : settings.meetings_dir || "~/Pennel");
   return h("div", { class: "settings-pane" },
-    section(l("settings.after_meeting"), null, h("h3", {}, l("meetings.summary_automation_title")),
+    section(l("settings.after_meeting"), null,
+      h("h3", {}, l("meetings.automatic_titles_title")), h("p", { class: "help" }, l("meetings.automatic_titles_help")),
+      h("h3", {}, l("meetings.summary_automation_title")),
       summaryAutomationChoice({ ...ctx, get info() { return ctx.info; }, onInfoChange: () => undefined }).root,
       suggestionAutomationChoice(ctx).root),
     section(l("settings.folder.title"), l("settings.folder.help"),

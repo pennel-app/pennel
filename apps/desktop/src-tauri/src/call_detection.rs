@@ -155,6 +155,10 @@ fn revalidated_calendar_context(
     Some(saved)
 }
 
+fn detected_recording_title(title: Option<String>) -> String {
+    title.unwrap_or_default()
+}
+
 fn offer(app: &AppHandle, shared: &Arc<Shared>, detected_call: DetectedCall) {
     if shared.updating.load(Ordering::SeqCst)
         || shared.quitting.load(Ordering::SeqCst)
@@ -198,7 +202,7 @@ fn offer(app: &AppHandle, shared: &Arc<Shared>, detected_call: DetectedCall) {
             if crate::meeting_runtime::start_detected_with_calendar(
                 app,
                 shared,
-                title.unwrap_or_else(|| "Meeting".into()),
+                detected_recording_title(title),
                 detected_call,
                 attendees,
                 calendar_context,
@@ -284,7 +288,7 @@ pub fn answer(
             let started = crate::meeting_runtime::start_detected_with_calendar(
                 app,
                 shared,
-                prompt.title.unwrap_or_else(|| "Meeting".into()),
+                detected_recording_title(prompt.title),
                 prompt.detected_call,
                 attendees,
                 calendar_context,
@@ -412,6 +416,25 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn detected_calls_without_calendar_titles_use_core_automatic_names() {
+        let directory = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(directory.path().join("preview"));
+        for title in [None, Some("Calendar planning".to_owned())] {
+            let expected = title.clone();
+            let session = shared.engine.clone().start_meeting(
+                detected_recording_title(title),
+                pennel_core::ApiKeys { by_provider: Default::default() },
+            ).unwrap();
+            let actual = shared.engine.meeting_info(session.id()).unwrap().title;
+            match expected {
+                Some(expected) => assert_eq!(actual, expected),
+                None => assert!(actual.starts_with("Meeting · ") && actual != "Meeting"),
+            }
+            session.stop().unwrap();
+        }
+    }
 
     #[test]
     fn prompt_keeps_only_unchanged_authorized_calendar_context() {

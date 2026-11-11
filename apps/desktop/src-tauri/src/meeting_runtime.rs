@@ -162,6 +162,12 @@ pub fn set_title(shared: &Shared, title: String, session_id: &str) -> Result<(),
         .as_mut()
         .filter(|context| context.token == session_id)
         .ok_or("This recording session is no longer active.")?;
+    if !title.trim().is_empty() {
+        shared
+            .engine
+            .mark_meeting_title_manual(context.session.id())
+            .map_err(|error| error.to_string())?;
+    }
     context.title = title;
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
@@ -374,11 +380,7 @@ fn start_with_calendar_impl(
     let _tray_update = crate::macos_tray::UpdateOnDrop;
     #[cfg(target_os = "macos")]
     crate::macos_tray::changed();
-    let title = if title.trim().is_empty() {
-        "Meeting".to_owned()
-    } else {
-        title.trim().to_owned()
-    };
+    let title = title.trim().to_owned();
     let settings = shared.settings();
     let keys = shared.keys();
     if let Err(error) = shared.engine.validate_meeting_setup(keys.clone()) {
@@ -412,6 +414,10 @@ fn start_with_calendar_impl(
         }
     };
     let id = session.id();
+    let title = shared
+        .engine
+        .meeting_info(id.clone())
+        .map_or(title, |info| info.title);
     if let Some(context) = calendar_context
         && shared
             .engine
@@ -910,6 +916,7 @@ pub fn retry_persistence(
         let _ = app.emit("meeting-stopped", Some(id));
         let _ = app.emit("meeting-updated", id);
         crate::cloud::poke(app);
+        spawn_automatic_title(app.clone(), shared.clone(), id.clone());
     }
     result.map(|_| ())
 }
@@ -1086,8 +1093,36 @@ fn postprocess(app: AppHandle, shared: Arc<Shared>, id: String) {
         }
     }
     crate::automatic_suggestions::run_after_summary(app.clone(), shared.clone(), id.clone());
-    let _ = app.emit("meeting-updated", id);
+    let _ = app.emit("meeting-updated", &id);
     crate::cloud::poke(&app);
+    drop(_progress);
+    // Naming follows existing processing so its optional request cannot delay summary or Review.
+    automatically_name_meeting(&app, &shared, id);
+}
+
+pub(crate) fn spawn_automatic_title(app: AppHandle, shared: Arc<Shared>, id: String) {
+    std::thread::spawn(move || automatically_name_meeting(&app, &shared, id));
+}
+
+fn automatically_name_meeting(app: &AppHandle, shared: &Arc<Shared>, id: String) {
+    if shared.quitting.load(Ordering::SeqCst) {
+        return;
+    }
+    let Ok(_job) = LibraryJob::new(shared) else {
+        return;
+    };
+    match shared
+        .engine
+        .clone()
+        .automatically_name_meeting(id.clone(), shared.keys())
+    {
+        Ok(true) => {
+            let _ = app.emit("meeting-updated", &id);
+            crate::cloud::poke(app);
+        }
+        Ok(false) => {}
+        Err(_) => LOG.error("Automatic meeting naming failed; the existing name is kept."),
+    }
 }
 
 /// Worker-only shutdown path. The host keeps its event loop alive while native audio is released.

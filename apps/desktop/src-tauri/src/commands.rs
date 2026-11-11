@@ -1381,6 +1381,8 @@ pub async fn retranscribe_meeting(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<u32> {
     let shared = shared.inner().clone();
+    let naming_shared = shared.clone();
+    let naming_id = id.clone();
     let count = blocking(move || {
         let _library_job = meeting_runtime::LibraryJob::new(&shared)?;
         checked_meeting_dir(&shared.engine, &id)?;
@@ -1391,6 +1393,7 @@ pub async fn retranscribe_meeting(
     .await?;
     let _ = app.emit("library-changed", ());
     crate::cloud::poke(&app);
+    meeting_runtime::spawn_automatic_title(app, naming_shared, naming_id);
     Ok(count)
 }
 
@@ -1409,6 +1412,8 @@ pub async fn retranscribe_meeting_audio(
     shared: State<'_, Arc<Shared>>,
 ) -> Result<u32> {
     let shared = shared.inner().clone();
+    let naming_shared = shared.clone();
+    let naming_id = id.clone();
     let events = app.clone();
     let count=off_main("retranscribe_meeting_audio",move || {
         let _library_job=meeting_runtime::LibraryJob::new(&shared)?;
@@ -1422,6 +1427,7 @@ pub async fn retranscribe_meeting_audio(
     }).await?;
     let _ = app.emit("library-changed", ());
     crate::cloud::poke(&app);
+    meeting_runtime::spawn_automatic_title(app, naming_shared, naming_id);
     Ok(count)
 }
 
