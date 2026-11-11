@@ -15,6 +15,14 @@ test('durable attempt and source states remain meaningful without discarding exi
  }
  const existing={...snapshot,items:[{review_state:'proposed'}],automatic_attempt_stale:true};assert.equal(suggestionConsentPresentation({...input,snapshot:existing}).mode,'stale');assert.equal(existing.items.length,1);
 });
+test('current connection blockers take priority over historical analysis receipts without discarding cards',()=>{
+ const histories=[{}, {automatic_attempt:{outcome:'completed',items_found:0}}, {automatic_attempt:{outcome:'failed',error_code:'deadline_exceeded'}}, {automatic_attempt_stale:true}, {automatic_attempt_reason_code:'attempt_unavailable'}, {items:[{review_state:'accepted'}]}];
+ for(const policy of ['manual','automatic','unanswered'])for(const history of histories)for(const reason of ['unconfigured','unqualified']){
+  const current={...snapshot,...history},before=structuredClone(current),result=suggestionConsentPresentation({...input,policy,snapshot:current,availability:{...availability,available:false,reason_code:reason}});
+  assert.deepEqual(result,{mode:'unavailable',reason,showQuestion:false});assert.deepEqual(current,before);
+ }
+ assert.equal(suggestionConsentPresentation({...input,working:true,availability:{...availability,available:false,reason_code:'unconfigured'}}).mode,'running');
+});
 test('only an explicit question choice saves suggestion policy/fallback before starting',async()=>{
  const calls=[];const effects={savePolicy:async(policy,language)=>{calls.push(['policy',policy,language]);},start:async()=>{calls.push(['start']);return true;},dismiss:async()=>{calls.push(['dismiss']);}};
  await performSuggestionConsent('consent',true,'nl',true,effects);assert.deepEqual(calls,[['policy','automatic','nl'],['start']]);

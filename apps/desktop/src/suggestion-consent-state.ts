@@ -12,6 +12,7 @@ export function suggestionConsentPresentation(input: {
   if (input.working) mode = "running";
   else if (!snapshot || !availability) mode = "loading";
   else if (input.summaryWorking && policy === "automatic" && !snapshot.automatic_attempt) mode = "waiting_summary";
+  else if (!availability.available) { mode = "unavailable"; reason = availability.reason_code; }
   else if (snapshot.automatic_attempt_reason_code) { mode = "failed"; reason = snapshot.automatic_attempt_reason_code; }
   else if (snapshot.automatic_attempt_stale) { mode = "stale"; reason = "source_changed"; }
   else if (snapshot.automatic_attempt && snapshot.automatic_attempt.outcome !== "completed") {
@@ -19,8 +20,7 @@ export function suggestionConsentPresentation(input: {
   } else if (snapshot.items.length) mode = "items";
   else if (snapshot.automatic_attempt?.outcome === "completed") mode = "done_empty";
   else if (policy === "unanswered") {
-    if (!availability.available) { mode = "unavailable"; reason = availability.reason_code; }
-    else mode = input.dismissed ? "quiet" : "consent";
+    mode = input.dismissed ? "quiet" : "consent";
   } else if (policy === "manual") mode = "manual";
   else { mode = "not_run"; reason = availability.available ? "not_run" : availability.reason_code; }
   return { mode, reason, showQuestion: mode === "consent" };
