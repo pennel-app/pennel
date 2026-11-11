@@ -18,7 +18,7 @@ Additive private title metadata records ownership, revision, value/source finger
 - `make test`: 1,306 core and 17 typing tests passed; seven existing core ignores retained.
 - `scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check`: passed.
 - `scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings`: passed.
-- Desktop backend `cargo test`: 408 passed, including no-calendar detected-session naming.
+- Desktop backend `cargo test`: 408 passed, including no-calendar detected-session naming. Desktop `cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check` also passed; the hosted formatter exposed and corrected layout in that test only, with no production-source change.
 - Desktop frontend: 525 tests, TypeScript/Vite and theme checks passed.
 - Eight focused core naming tests and 24 conversation tests cover generated/local/failed names, same-name/late overrides, source/configuration/restart/legacy behavior and title-only persistence.
 - Twelve EN/NL light/dark synthetic browser frames cover title refresh without replacing notes or losing conversation draft/composition/focus/selection, manual Rename, and recording-start recovery without a title field. Four matching Settings before/after pairs explain the independent naming policy.
