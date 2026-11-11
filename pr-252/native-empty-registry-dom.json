@@ -1,0 +1,80 @@
+{
+  "complete": true,
+  "scope": "owned native DOM/IPC compatibility; empty registry; no live-provider or native-image acceptance",
+  "native_window_images": false,
+  "native_image_blocker": "macOS console screen locked",
+  "registry_sha256": "1bd3088486bb8850eac1fca9d99f87004157315387d1a387a75086b9890c9ee1",
+  "registry_records": 0,
+  "binary_sha256": "f9c708002c2391fb5905cfb9a20ef902cc9a83b9060d31eaa647d03a22744210",
+  "personal_team": "B538Q2K76C",
+  "checks": [
+    {
+      "locale": "en",
+      "appearance": "light",
+      "review": {
+        "reason": "unqualified",
+        "find_disabled": true,
+        "opening_inference_requests": 0,
+        "notes_unchanged": true
+      },
+      "review_image": null,
+      "geometry": {
+        "companion_width": 340,
+        "rows": 16,
+        "full_horizontal_geometry": true
+      },
+      "transcript_image": null
+    },
+    {
+      "locale": "en",
+      "appearance": "dark",
+      "review": {
+        "reason": "unqualified",
+        "find_disabled": true,
+        "opening_inference_requests": 0,
+        "notes_unchanged": true
+      },
+      "review_image": null,
+      "geometry": {
+        "companion_width": 339.984375,
+        "rows": 16,
+        "full_horizontal_geometry": true
+      },
+      "transcript_image": null
+    },
+    {
+      "locale": "nl",
+      "appearance": "light",
+      "review": {
+        "reason": "unqualified",
+        "find_disabled": true,
+        "opening_inference_requests": 0,
+        "notes_unchanged": true
+      },
+      "review_image": null,
+      "geometry": {
+        "companion_width": 339.984375,
+        "rows": 16,
+        "full_horizontal_geometry": true
+      },
+      "transcript_image": null
+    },
+    {
+      "locale": "nl",
+      "appearance": "dark",
+      "review": {
+        "reason": "unqualified",
+        "find_disabled": true,
+        "opening_inference_requests": 0,
+        "notes_unchanged": true
+      },
+      "review_image": null,
+      "geometry": {
+        "companion_width": 339.984375,
+        "rows": 16,
+        "full_horizontal_geometry": true
+      },
+      "transcript_image": null
+    }
+  ]
+}

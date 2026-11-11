@@ -1,0 +1,58 @@
+{
+  "reason": "coordinator_interruption_after_previously_stalled_keychain_resolved",
+  "source_commit": "4a78575b18f1d0120d9a5ab5ee0bae0b843d4cd3",
+  "freeze_commit": "3f86ae9",
+  "phase_elapsed_seconds_at_observation": 729.95,
+  "completed_document_count": 29,
+  "completed_documents": [
+    "nl-calibration-f00-v0.json",
+    "nl-calibration-f00-v1.json",
+    "nl-calibration-f00-v2.json",
+    "nl-calibration-f00-v3.json",
+    "nl-calibration-f00-v4.json",
+    "nl-calibration-f00-v5.json",
+    "nl-calibration-f00-v6.json",
+    "nl-calibration-f00-v7.json",
+    "nl-calibration-f01-v0.json",
+    "nl-calibration-f01-v1.json",
+    "nl-calibration-f01-v2.json",
+    "nl-calibration-f01-v3.json",
+    "nl-calibration-f01-v4.json",
+    "nl-calibration-f01-v5.json",
+    "nl-calibration-f01-v6.json",
+    "nl-calibration-f01-v7.json",
+    "nl-calibration-f02-v0.json",
+    "nl-calibration-f02-v1.json",
+    "nl-calibration-f02-v2.json",
+    "nl-calibration-f02-v3.json",
+    "nl-calibration-f02-v4.json",
+    "nl-calibration-f02-v5.json",
+    "nl-calibration-f02-v6.json",
+    "nl-calibration-f02-v7.json",
+    "nl-calibration-f03-v0.json",
+    "nl-calibration-f03-v1.json",
+    "nl-calibration-f03-v2.json",
+    "nl-calibration-f03-v3.json",
+    "nl-calibration-f03-v4.json"
+  ],
+  "partial_documents": [
+    {
+      "file": "nl-calibration-f03-v5.json",
+      "attempts": 2,
+      "complete_replies": 1,
+      "status": "blocked",
+      "reason": null,
+      "last_request": {
+        "batch_index": 1,
+        "request_sha256": "309194c42bb2a0c1c3ae9fbc7136b7729abe0605855302fdb142c3059acf52af",
+        "input_bytes": 26781,
+        "http_status": null,
+        "raw_response_complete": null
+      }
+    }
+  ],
+  "new_calibration_settled_requests": 55,
+  "new_calibration_request_attempts": 56,
+  "heldout_requests": 0,
+  "unchanged_original_artifacts": true
+}

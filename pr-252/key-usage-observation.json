@@ -1,0 +1,19 @@
+{
+  "endpoint": "https://openrouter.ai/api/v1/key",
+  "method": "GET",
+  "http_status": 200,
+  "started_at_utc": "2026-11-11T22:03:47.244493+00:00",
+  "completed_at_utc": "2026-11-11T22:03:53.420526+00:00",
+  "server_date": "Wed, 11 Nov 2026 22:03:53 GMT",
+  "response_sha256": "18d23dda57ca9f2ecc869b32887fc50145d178124280ec5e3064d64ad1d10d1b",
+  "sanitized_usage_fields": {
+    "usage": "0.55310394",
+    "usage_daily": "0.020622",
+    "usage_weekly": "0.020622",
+    "usage_monthly": "0.020622",
+    "limit": 10,
+    "limit_remaining": "9.44689606"
+  },
+  "new_model_requests": 0,
+  "per_request_attribution": "unavailable; aggregate key counters only"
+}

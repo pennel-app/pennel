@@ -1,0 +1,586 @@
+{
+  "schema_version": 1,
+  "protocol_id": "production-finished-qualification-v2",
+  "freeze_sha256": "dc9cff2afbbe59e4af6dec5d9658f46a3bb7f14611b32f336eeb699c08907c68",
+  "qualification": false,
+  "production_admission": false,
+  "use_case": "manual_finished_suggestions",
+  "language": "nl",
+  "raw_component_metrics": {
+    "count": 4416,
+    "support": 4416,
+    "accepted_count": 0,
+    "correct_count": 0,
+    "accuracy": 0.0,
+    "coverage": 0.0,
+    "selective_accuracy": null,
+    "selective_precision": null,
+    "macro_precision": 0.0,
+    "macro_recall": 0.0,
+    "macro_f1": 0.0,
+    "micro_precision": null,
+    "micro_recall": 0.0,
+    "micro_f1": null,
+    "per_class": {
+      "changed": {
+        "support": 136,
+        "tp": 0,
+        "fp": 0,
+        "fn": 136,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "confirmed": {
+        "support": 341,
+        "tp": 0,
+        "fp": 0,
+        "fn": 341,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "negated": {
+        "support": 137,
+        "tp": 0,
+        "fp": 0,
+        "fn": 137,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "none": {
+        "support": 3245,
+        "tp": 0,
+        "fp": 0,
+        "fn": 3245,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "retracted": {
+        "support": 142,
+        "tp": 0,
+        "fp": 0,
+        "fn": 142,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "tentative": {
+        "support": 138,
+        "tp": 0,
+        "fp": 0,
+        "fn": 138,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "unknown": {
+        "support": 70,
+        "tp": 0,
+        "fp": 0,
+        "fn": 70,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "unresolved": {
+        "support": 207,
+        "tp": 0,
+        "fp": 0,
+        "fn": 207,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "probability_count": 0,
+    "brier": null,
+    "brier_definition": "mean(sum_k((p_k - indicator(y=k))^2)); range [0,2]",
+    "binary_brier": null,
+    "binary_brier_definition": "mean((p_true - indicator(y=true))^2); range [0,1]",
+    "ece": null,
+    "ece_bins": [
+      {
+        "lower": 0.0,
+        "upper": 0.1,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.1,
+        "upper": 0.2,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.2,
+        "upper": 0.3,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.3,
+        "upper": 0.4,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.4,
+        "upper": 0.5,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.5,
+        "upper": 0.6,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.6,
+        "upper": 0.7,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.7,
+        "upper": 0.8,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.8,
+        "upper": 0.9,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.9,
+        "upper": 1.0,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      }
+    ],
+    "ece_definition": "top-label, 10 equal-width bins, all probability-bearing cases",
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "positive_precision": null,
+    "positive_recall": null
+  },
+  "calibrated_component_metrics": {
+    "count": 4416,
+    "support": 4416,
+    "accepted_count": 0,
+    "correct_count": 0,
+    "accuracy": 0.0,
+    "coverage": 0.0,
+    "selective_accuracy": null,
+    "selective_precision": null,
+    "macro_precision": 0.0,
+    "macro_recall": 0.0,
+    "macro_f1": 0.0,
+    "micro_precision": null,
+    "micro_recall": 0.0,
+    "micro_f1": null,
+    "per_class": {
+      "changed": {
+        "support": 136,
+        "tp": 0,
+        "fp": 0,
+        "fn": 136,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "confirmed": {
+        "support": 341,
+        "tp": 0,
+        "fp": 0,
+        "fn": 341,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "negated": {
+        "support": 137,
+        "tp": 0,
+        "fp": 0,
+        "fn": 137,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "none": {
+        "support": 3245,
+        "tp": 0,
+        "fp": 0,
+        "fn": 3245,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "retracted": {
+        "support": 142,
+        "tp": 0,
+        "fp": 0,
+        "fn": 142,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "tentative": {
+        "support": 138,
+        "tp": 0,
+        "fp": 0,
+        "fn": 138,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "unknown": {
+        "support": 70,
+        "tp": 0,
+        "fp": 0,
+        "fn": 70,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "unresolved": {
+        "support": 207,
+        "tp": 0,
+        "fp": 0,
+        "fn": 207,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "probability_count": 0,
+    "brier": null,
+    "brier_definition": "mean(sum_k((p_k - indicator(y=k))^2)); range [0,2]",
+    "binary_brier": null,
+    "binary_brier_definition": "mean((p_true - indicator(y=true))^2); range [0,1]",
+    "ece": null,
+    "ece_bins": [
+      {
+        "lower": 0.0,
+        "upper": 0.1,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.1,
+        "upper": 0.2,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.2,
+        "upper": 0.3,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.3,
+        "upper": 0.4,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.4,
+        "upper": 0.5,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.5,
+        "upper": 0.6,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.6,
+        "upper": 0.7,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.7,
+        "upper": 0.8,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.8,
+        "upper": 0.9,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      },
+      {
+        "lower": 0.9,
+        "upper": 1.0,
+        "count": 0,
+        "confidence": null,
+        "accuracy": null
+      }
+    ],
+    "ece_definition": "top-label, 10 equal-width bins, all probability-bearing cases",
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "positive_precision": null,
+    "positive_recall": null
+  },
+  "complete_item_metrics": {
+    "expected_count": 1034,
+    "proposed_count": 0,
+    "correct_count": 0,
+    "duplicates": 0,
+    "unsupported": 0,
+    "missed": 1034,
+    "false_positives": 0,
+    "precision": null,
+    "recall": 0.0,
+    "classification": {
+      "count": 4416,
+      "support": 4416,
+      "accepted_count": 0,
+      "correct_count": 0,
+      "accuracy": 0.0,
+      "coverage": 0.0,
+      "selective_accuracy": null,
+      "selective_precision": null,
+      "macro_precision": 0.0,
+      "macro_recall": 0.0,
+      "macro_f1": 0.0,
+      "micro_precision": null,
+      "micro_recall": 0.0,
+      "micro_f1": null,
+      "per_class": {
+        "changed": {
+          "support": 136,
+          "tp": 0,
+          "fp": 0,
+          "fn": 136,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "confirmed": {
+          "support": 341,
+          "tp": 0,
+          "fp": 0,
+          "fn": 341,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "negated": {
+          "support": 137,
+          "tp": 0,
+          "fp": 0,
+          "fn": 137,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "none": {
+          "support": 3245,
+          "tp": 0,
+          "fp": 0,
+          "fn": 3245,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "retracted": {
+          "support": 142,
+          "tp": 0,
+          "fp": 0,
+          "fn": 142,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "tentative": {
+          "support": 138,
+          "tp": 0,
+          "fp": 0,
+          "fn": 138,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "unknown": {
+          "support": 70,
+          "tp": 0,
+          "fp": 0,
+          "fn": 70,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "unresolved": {
+          "support": 207,
+          "tp": 0,
+          "fp": 0,
+          "fn": 207,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        }
+      },
+      "probability_count": 0,
+      "brier": null,
+      "brier_definition": "mean(sum_k((p_k - indicator(y=k))^2)); range [0,2]",
+      "binary_brier": null,
+      "binary_brier_definition": "mean((p_true - indicator(y=true))^2); range [0,1]",
+      "ece": null,
+      "ece_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.1,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.1,
+          "upper": 0.2,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.3,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.3,
+          "upper": 0.4,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.5,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.5,
+          "upper": 0.6,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.6,
+          "upper": 0.7,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.7,
+          "upper": 0.8,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.8,
+          "upper": 0.9,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.9,
+          "upper": 1.0,
+          "count": 0,
+          "confidence": null,
+          "accuracy": null
+        }
+      ],
+      "ece_definition": "top-label, 10 equal-width bins, all probability-bearing cases",
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "positive_precision": null,
+      "positive_recall": null
+    }
+  },
+  "resources": {
+    "complete": false,
+    "cold_samples": 0,
+    "warm_samples": 0,
+    "warm_p95_ms": null,
+    "peak_rss_bytes": null,
+    "cpu_time_ms": null,
+    "executed_requests": null,
+    "remote_server_cpu_rss": "unavailable"
+  },
+  "gates": [
+    "actual_inference_unmeasured",
+    "production_jobs_incomplete",
+    "original_execution_failed_or_unreconciled",
+    "calibration_jobs_incomplete",
+    "original_job_deadline_measurements_unavailable",
+    "uncalibrated_contexts",
+    "component_quality_failed",
+    "complete_item_quality_failed",
+    "accepted_item_precision_failed",
+    "resource_measurements_unavailable"
+  ],
+  "candidate_records": [],
+  "original_job_deadlines": {
+    "calibration_verified": false,
+    "heldout_verified": false
+  },
+  "natural_asr_acceptance": false,
+  "human_acceptance": false,
+  "automatic_analysis_accepted": false,
+  "runtime_policy": "raw_closed_set_passage_decisions_v2",
+  "runtime_calibration_applied": false,
+  "calibration_role": "diagnostic_evidence_only",
+  "remote_weights_independently_verified": false,
+  "administrative_interruption": {
+    "original_calibration_documents_completed": 29,
+    "original_calibration_documents_partial": 1,
+    "remaining_unexecuted_calibration_documents": 66,
+    "heldout_model_requests": 0,
+    "resource_model_requests": 0,
+    "original_data_not_relabelled": true,
+    "acceptance_gates_unchanged": true,
+    "purpose": "Preserved failed attempt A; no quality credit transfers to attempt B"
+  }
+}

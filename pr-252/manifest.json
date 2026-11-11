@@ -1,0 +1,163 @@
+{
+  "scope": "owned synthetic renderer before/after; native empty-registry compatibility; incomplete qualification; no adoption",
+  "fixture_sha256": "13aceb2ede0abdba7ba4a04bf1f831f1999a9877d90afb78f22e6b9254e83f2f",
+  "images": [
+    {
+      "phase": "before",
+      "locale": "en",
+      "appearance": "light",
+      "case": "manual-review",
+      "file": "before-en-light-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "before",
+      "locale": "en",
+      "appearance": "light",
+      "case": "tested-setup",
+      "file": "before-en-light-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "before",
+      "locale": "en",
+      "appearance": "dark",
+      "case": "manual-review",
+      "file": "before-en-dark-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "before",
+      "locale": "en",
+      "appearance": "dark",
+      "case": "tested-setup",
+      "file": "before-en-dark-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "before",
+      "locale": "nl",
+      "appearance": "light",
+      "case": "manual-review",
+      "file": "before-nl-light-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "before",
+      "locale": "nl",
+      "appearance": "light",
+      "case": "tested-setup",
+      "file": "before-nl-light-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "before",
+      "locale": "nl",
+      "appearance": "dark",
+      "case": "manual-review",
+      "file": "before-nl-dark-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "before",
+      "locale": "nl",
+      "appearance": "dark",
+      "case": "tested-setup",
+      "file": "before-nl-dark-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "after",
+      "locale": "en",
+      "appearance": "light",
+      "case": "manual-review",
+      "file": "after-en-light-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "after",
+      "locale": "en",
+      "appearance": "light",
+      "case": "tested-setup",
+      "file": "after-en-light-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "after",
+      "locale": "en",
+      "appearance": "dark",
+      "case": "manual-review",
+      "file": "after-en-dark-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "after",
+      "locale": "en",
+      "appearance": "dark",
+      "case": "tested-setup",
+      "file": "after-en-dark-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "after",
+      "locale": "nl",
+      "appearance": "light",
+      "case": "manual-review",
+      "file": "after-nl-light-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "after",
+      "locale": "nl",
+      "appearance": "light",
+      "case": "tested-setup",
+      "file": "after-nl-light-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "after",
+      "locale": "nl",
+      "appearance": "dark",
+      "case": "manual-review",
+      "file": "after-nl-dark-manual-review.png",
+      "fixture_case_sha256": "442d243bf18a954ef7d650eb6493386cb29812335c3551ce861eec64256cebc4"
+    },
+    {
+      "phase": "after",
+      "locale": "nl",
+      "appearance": "dark",
+      "case": "tested-setup",
+      "file": "after-nl-dark-tested-setup.png",
+      "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    }
+  ],
+  "omitted": [],
+  "files": {
+    "before-en-light-manual-review.png": "e1fbd19047f601936d80a9f9ab8009480183398902be6727d3e0dbfd6ff3a014",
+    "before-en-light-tested-setup.png": "cd6c0a8eb3d487b7b9c175650f2baca9289a960c2a693998199d0c2e73a8900f",
+    "before-en-dark-manual-review.png": "95e0549b2570a48be4a28990c25e5f74754c42c99f9aa5a3d205275a0794d743",
+    "before-en-dark-tested-setup.png": "6d2743733f9fe896289c8f8113bc9025b7f96dcf378c7668bb4c1a445370cd1f",
+    "before-nl-light-manual-review.png": "de3e40a83175ab0c8a8ff803037dffd26cadcbe02e0af55d01553dcff3dc152d",
+    "before-nl-light-tested-setup.png": "0935ad9f844e8d8c1a950325daac0e44be5678d116dafdc4343fc4c0436686b6",
+    "before-nl-dark-manual-review.png": "5e0c41d07e33d56848f433401c5ea4f4b95e3cde4a76f7ebe9fffb382eb6c36b",
+    "before-nl-dark-tested-setup.png": "eb44bc7b70490608ab6c2984e76bce7aaf2aad710db1e4c0115b7b758ae257dc",
+    "after-en-light-manual-review.png": "3605ffa758f1575f647bf1799770015cf2f3d2be84c4f2430db0988b07479af0",
+    "after-en-light-tested-setup.png": "720579a3495f423377871c08ad292e8ec510be799879cbf06d62a6d6fc515db0",
+    "after-en-dark-manual-review.png": "cc8e54c69786f817045f05b5b37b88a0b7258c601449f39a7341eb026fce7fd2",
+    "after-en-dark-tested-setup.png": "bc1380aa5dd310188e16424979ced83678e7a028fb967a165685db5fcd605a85",
+    "after-nl-light-manual-review.png": "8e55a606a77129ec7c649aa44404c33e0bc849474551cf04bb9d43e22ca0b99f",
+    "after-nl-light-tested-setup.png": "6af90f6d2e62101ec26196fef8c1c6884bf0d2c9480aa5339665aac9c3763ae3",
+    "after-nl-dark-manual-review.png": "9168f741855adf00442ddb18a477f8ca3c471c881b5fe4a31e74358016e70422",
+    "after-nl-dark-tested-setup.png": "cdb92be5511ffa73d77fb43c8451be3e17bb4e2c86ac27750e0820dc96b04061",
+    "renderer-receipt.json": "b3748b3f7d854505ef669808f4e09a370b2e1dd8fd862111e8a156fa06918dc8",
+    "native-empty-registry-dom.json": "2629ba9396c6fa143b9ffd2feb73f443dbfcc1bba652dd4ec63514f5978af77f",
+    "attempt-a-incomplete-report.json": "1d7185518b55e6c387b35c36fe175fae04593c24f9d527160c5158bc329370aa",
+    "attempt-a-interruption.json": "402ab2ea82699d7465eeee2b7e0a7a8cab988dd435975d962b3a6a4bb36a8150",
+    "conservative-charge-resolution.json": "edba8805ec4eefce7a4e014829ff333226aefec8f20124f065433c557319a2ac",
+    "key-usage-observation.json": "bcd02e94e231177f17f11a4e93b1c9d818d53bac243265df30141be3bb07fe86",
+    "mobile-empty-registry.json": "2dd04f429504f5b4b4282458d0d661bf16881843a0f18365cbd6588fa2b53eb7",
+    "attempt-b-auth-pipe-freeze.json.gz": "c4345972e5c5957b3edf328aa657e5c7a9ffb61e5e7833c5fcb35bc255e4ec92",
+    "attempt-b-authored-spec.json.gz": "c65030aaa64f03edd194ab0c28f409337c0742fe098d32caea7b5651d01d144e",
+    "attempt-a-preserved-predictions.json.gz": "a99f72eba8da3e8ba55bd7a6c099f35ec9c260a2bd0119695cc80d35d958b62a"
+  }
+}

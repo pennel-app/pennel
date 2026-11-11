@@ -1,0 +1,51 @@
+{
+  "label": "empty-registry-baseline; no model activation or adoption claim",
+  "head": "4972e4ec439fb20c3fa3614d3aab5c93915485fb",
+  "mobile_typecheck": "passed after final shared-contract refresh invalidation",
+  "plugin_tests": 17,
+  "widget_tests": 7,
+  "mobile_ui_tests": 160,
+  "mobilekit_tests": 116,
+  "macos_platform_tests": 217,
+  "manifest": {
+    "schema": 1,
+    "revision": "bbef0982fcba9c5d71e26dfd5587985b15abe08e",
+    "core_sha256": "8af566b1c3267a6895979d9cf3dbde15bd9a613c222dd2bf0defa82395310e58",
+    "bindings_sha256": "daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21",
+    "qualification_registry_sha256": "1bd3088486bb8850eac1fca9d99f87004157315387d1a387a75086b9890c9ee1",
+    "qualification_registry_adopted_records": 0,
+    "features": [],
+    "targets": [
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim"
+    ]
+  },
+  "current_core_sha256": "8af566b1c3267a6895979d9cf3dbde15bd9a613c222dd2bf0defa82395310e58",
+  "source_registry_and_manifest_match": true,
+  "registry_tracked_in_cargo_dependencies": {
+    "aarch64-apple-ios": true,
+    "aarch64-apple-ios-sim": true
+  },
+  "binding_comparison_limit": "Retained artifact source did not match task starting HEAD; identical bytes are observed without claiming task-only ABI equivalence.",
+  "limitations": [
+    "Qualification registry is explicitly empty; Review is not activated.",
+    "No physical iPhone, signed upgrade, keyboard cold-start, Cloud deployment, store or human usability acceptance."
+  ],
+  "release_builds": [
+    {
+      "sdk": "Release-iphonesimulator",
+      "bundle_id": "app.pennel.ios.preview",
+      "binary_sha256": "2b829c691402c4da9623836932772d29da22646ba88bae48d6ccd5d114dcecae",
+      "architectures": "arm64"
+    },
+    {
+      "sdk": "Release-iphoneos",
+      "bundle_id": "app.pennel.ios.preview",
+      "binary_sha256": "0b9868339ccf851352f5ecc87dbcc29e64e192e6c7ec636fb166db4d8b0e865c",
+      "architectures": "arm64"
+    }
+  ],
+  "hosted_native_tests": 180,
+  "owned_simulator_shutdown": true,
+  "unrelated_simulator_state_changes": []
+}

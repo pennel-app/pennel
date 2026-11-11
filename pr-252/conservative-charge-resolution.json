@@ -1,0 +1,31 @@
+{
+  "reservation_id": "125",
+  "metadata": {
+    "request_sha256": "309194c42bb2a0c1c3ae9fbc7136b7729abe0605855302fdb142c3059acf52af",
+    "fixture_id": "nl-calibration-f03-v5",
+    "batch_index": 1,
+    "source_freeze_sha256": "97e38aca314e8dc93a1515f65abb50fdf88ab649649f28f0187b377f30d74f64",
+    "execution": "attempt_a_administrative_interruption"
+  },
+  "evidence": {
+    "reason": "coordinator_terminated_parent_after_stalled_keychain_resolved",
+    "raw_billed_cost": "unreported",
+    "no_aggregate_attribution": true,
+    "no_budget_discount_from_counter": true,
+    "original_ledger_sha256": "dc4626fc653bf06c744da1c398d3562787778960ada55e8bc0fda92c1c2e9eac",
+    "counter_observation_sha256": "bcd02e94e231177f17f11a4e93b1c9d818d53bac243265df30141be3bb07fe86",
+    "interruption_manifest_sha256": "402ab2ea82699d7465eeee2b7e0a7a8cab988dd435975d962b3a6a4bb36a8150",
+    "entire_original_reservation_accounted": true,
+    "raw_response_available": false,
+    "quality_or_resource_credit": false
+  },
+  "before_sha256": "dc4626fc653bf06c744da1c398d3562787778960ada55e8bc0fda92c1c2e9eac",
+  "after_sha256": "1b8ad394c9f931f8febbcd7ac6e66ef20ce26dc1586743c353bfb2e75e244b5f",
+  "known_billed_usd": "0.02062200",
+  "conservative_upper_bound_usd": "0.00244460",
+  "total_exposure_usd": "0.02306660",
+  "raw_billed_cost_usd": null,
+  "pending_reservations": {},
+  "unresolved_charge": false,
+  "new_model_requests": 0
+}
