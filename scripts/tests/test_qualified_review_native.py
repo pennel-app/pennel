@@ -71,6 +71,12 @@ class QualifiedReviewNativeTests(unittest.TestCase):
         self.assertEqual(command.call_args.kwargs["timeout"], 15)
         self.assertNotIn(b"owned-fake-secret", command.call_args.args[0])
 
+    def test_inherited_pipe_uses_the_bounded_reader_without_another_os_prompt(self):
+        with mock.patch.object(native.experiment, "credential", return_value="owned-fake-secret") as read:
+            with mock.patch.object(native.subprocess, "run", side_effect=AssertionError("No extra OS lookup")):
+                self.assertEqual(native.evaluation_credential(9), b"owned-fake-secret")
+        read.assert_called_once_with(9)
+
     @unittest.skipUnless(shutil.which("node"), "Node is required to parse the native checkpoint JavaScript")
     def test_every_native_checkpoint_is_valid_javascript_after_expansion(self):
         values = {"account": "review96-owned-test", "appearance": "dark", "locale": "en", "model": native.MODEL,

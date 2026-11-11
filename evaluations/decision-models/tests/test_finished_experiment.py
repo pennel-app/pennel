@@ -1,11 +1,13 @@
 import copy
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 import subprocess
 
@@ -120,6 +122,60 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(run['reason'], 'reserved_native_smoke_budget_unavailable')
         self.assertEqual(self.calls, [])
         self.assertEqual(self.ledger.spent, Decimal('0.00001416'))
+
+    @unittest.skipUnless(os.name == 'posix', 'Anonymous credential pipes require POSIX selectors.')
+    def test_anonymous_credential_pipe_is_bounded_and_owned_fd_is_closed(self):
+        reader, writer = os.pipe()
+        os.write(writer, b'not-a-real-key\n');os.close(writer)
+        self.assertEqual(experiment.credential_from_fd(reader, deadline=time.monotonic()+1), 'not-a-real-key')
+        with self.assertRaises(OSError): os.fstat(reader)
+        reader, writer = os.pipe()
+        os.write(writer, b'x'*4097);os.close(writer)
+        with self.assertRaisesRegex(ValueError, 'credential_pipe_too_large'):
+            experiment.credential_from_fd(reader, deadline=time.monotonic()+1)
+        with self.assertRaises(OSError): os.fstat(reader)
+
+    @unittest.skipUnless(os.name == 'posix', 'Anonymous credential pipes require POSIX selectors.')
+    def test_anonymous_credential_pipe_deadline_and_invalid_inputs_fail_closed(self):
+        reader, writer = os.pipe()
+        try:
+            with self.assertRaisesRegex(ValueError, 'credential_pipe_timeout'):
+                experiment.credential_from_fd(reader, deadline=time.monotonic()+.05)
+        finally: os.close(writer)
+        with self.assertRaises(OSError): os.fstat(reader)
+        reader, writer = os.pipe();os.close(writer)
+        with self.assertRaisesRegex(ValueError, 'credential_pipe_empty'):
+            experiment.credential_from_fd(reader, deadline=time.monotonic()+1)
+        with self.output.open('w') as handle:
+            duplicate = os.dup(handle.fileno())
+            with self.assertRaisesRegex(ValueError, 'anonymous_credential_pipe_required'):
+                experiment.credential_from_fd(duplicate, deadline=time.monotonic()+1)
+            with self.assertRaises(OSError): os.fstat(duplicate)
+        with self.assertRaisesRegex(ValueError, 'invalid_credential_fd'):
+            experiment.credential_from_fd(0, deadline=time.monotonic()+1)
+
+    def test_linux_anonymous_pipe_identity_accepts_inode_and_rejects_named_paths(self):
+        information = SimpleNamespace(st_mode=experiment.stat.S_IFIFO, st_nlink=1, st_ino=123)
+        with patch.object(experiment.os, 'name', 'posix'), patch.object(experiment.sys, 'platform', 'linux'):
+            with patch.object(experiment.os, 'readlink', return_value='pipe:[123]') as readlink:
+                self.assertTrue(experiment._anonymous_credential_pipe(7, information))
+                readlink.assert_called_once_with('/proc/self/fd/7')
+            for target in ('pipe:[124]', '/tmp/named-fifo', '/tmp/named-fifo (deleted)'):
+                with patch.object(experiment.os, 'readlink', return_value=target):
+                    self.assertFalse(experiment._anonymous_credential_pipe(7, information))
+            with patch.object(experiment.os, 'readlink', side_effect=OSError('synthetic unavailable proc')):
+                self.assertFalse(experiment._anonymous_credential_pipe(7, information))
+
+    def test_anonymous_pipe_identity_fails_closed_for_unsupported_platforms(self):
+        information = SimpleNamespace(st_mode=experiment.stat.S_IFIFO, st_nlink=0, st_ino=123)
+        with patch.object(experiment.os, 'name', 'nt'):
+            self.assertFalse(experiment._anonymous_credential_pipe(7, information))
+        with patch.object(experiment.os, 'name', 'posix'), patch.object(experiment.sys, 'platform', 'unknown'):
+            self.assertFalse(experiment._anonymous_credential_pipe(7, information))
+        with patch.object(experiment.os, 'name', 'posix'), patch.object(experiment.sys, 'platform', 'darwin'):
+            self.assertTrue(experiment._anonymous_credential_pipe(7, information))
+            information.st_nlink = 1
+            self.assertFalse(experiment._anonymous_credential_pipe(7, information))
 
     def test_credential_lookup_is_bounded_and_global_expiry_sends_nothing(self):
         with patch.object(experiment.subprocess, 'run', side_effect=subprocess.TimeoutExpired(['security'], 15)) as call:

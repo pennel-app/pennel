@@ -255,7 +255,9 @@ def billed_cost(job):
     return value if value.is_finite() and value >= 0 else None
 
 
-def evaluation_credential():
+def evaluation_credential(credential_fd=None):
+    if credential_fd is not None:
+        return experiment.credential(credential_fd).encode('utf-8')
     try:
         result = subprocess.run(["security", "find-generic-password", "-s", "dev.pennel.evaluation.openrouter",
                                  "-a", "OPENROUTER_API_KEY", "-w"], capture_output=True, check=False, timeout=15)
@@ -310,6 +312,7 @@ def main(arguments=None):
     parser.add_argument("--binary", type=Path, default=capture.DEFAULT_BINARY)
     parser.add_argument("--window-helper", type=Path, required=True)
     parser.add_argument("--credential-bridge", type=Path, required=True)
+    parser.add_argument("--credential-fd", type=int)
     parser.add_argument("--ledger", type=Path, default=experiment.DEFAULT_LEDGER)
     parser.add_argument("--output", type=Path, required=True, help="New owned output directory; existing results are never replaced")
     parser.add_argument("--locale", choices=("en", "nl"), default="en")
@@ -342,7 +345,7 @@ def main(arguments=None):
         session = capture.CaptureSession(binary, profile, log, helper)
         reservation = None
         try:
-            key = evaluation_credential()
+            key = evaluation_credential(args.credential_fd)
             receipt["capture_credential_creation_attempted"] = True
             try:
                 capture_credential(bridge, "set", account, bundle, log, key)

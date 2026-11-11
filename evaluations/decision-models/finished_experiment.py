@@ -20,6 +20,7 @@ import selectors
 import re
 import subprocess
 import sys
+import stat
 import time
 import urllib.error
 import urllib.request
@@ -268,7 +269,55 @@ def run_job(exported, freeze_sha256, bridge, credential, ledger, output, *, exec
     return finish()
 
 
-def credential(*, deadline=None, clock=time.monotonic):
+def _anonymous_credential_pipe(fd, information):
+    if os.name != 'posix' or not stat.S_ISFIFO(information.st_mode): return False
+    if sys.platform.startswith('linux'):
+        try: target = os.readlink('/proc/self/fd/' + str(fd))
+        except OSError: return False
+        return target == 'pipe:[' + str(information.st_ino) + ']'
+    if sys.platform == 'darwin' or sys.platform.startswith(('freebsd', 'openbsd', 'netbsd', 'dragonfly')):
+        return information.st_nlink == 0
+    return False
+
+
+def credential_from_fd(fd, *, deadline=None, clock=time.monotonic):
+    if isinstance(fd, bool) or not isinstance(fd, int) or fd < 3:
+        raise ValueError('invalid_credential_fd')
+    bounded = clock() + 15
+    if deadline is not None: bounded = min(bounded, deadline)
+    data = bytearray()
+    try:
+        information = os.fstat(fd)
+        if not _anonymous_credential_pipe(fd, information):
+            raise ValueError('anonymous_credential_pipe_required')
+        os.set_blocking(fd, False)
+        with selectors.DefaultSelector() as selector:
+            selector.register(fd, selectors.EVENT_READ)
+            while True:
+                remaining = bounded-clock()
+                if remaining <= 0 or not selector.select(remaining):
+                    raise ValueError('credential_pipe_timeout')
+                try: part = os.read(fd, min(4097-len(data), 4096))
+                except BlockingIOError: continue
+                if not part: break
+                data.extend(part)
+                if len(data) > 4096: raise ValueError('credential_pipe_too_large')
+        try: secret = data.decode('utf-8').rstrip('\r\n')
+        except UnicodeDecodeError: raise ValueError('invalid_credential_pipe_encoding') from None
+        if not secret: raise ValueError('credential_pipe_empty')
+        if any(ord(char) < 33 or ord(char) > 126 for char in secret):
+            raise ValueError('invalid_credential_pipe_value')
+        return secret
+    except OSError:
+        raise ValueError('credential_pipe_unavailable') from None
+    finally:
+        for index in range(len(data)): data[index] = 0
+        try: os.close(fd)
+        except OSError: pass
+
+
+def credential(credential_fd=None, *, deadline=None, clock=time.monotonic):
+    if credential_fd is not None: return credential_from_fd(credential_fd, deadline=deadline, clock=clock)
     timeout = 15 if deadline is None else min(15, deadline-clock())
     if timeout <= 0: raise ValueError('evaluation_budget_exceeded')
     try:
@@ -364,6 +413,7 @@ def main():
     parser.add_argument('--freeze', required=True);parser.add_argument('--bridge', required=True)
     parser.add_argument('--output', required=True);parser.add_argument('--pricing', required=True)
     parser.add_argument('--ledger', default=str(DEFAULT_LEDGER));parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--credential-fd', type=int, help='Inherited anonymous pipe only; secret never belongs in argv/environment/files')
     parser.add_argument('--fixture-id', action='append');parser.add_argument('--freeze-commit');parser.add_argument('--freeze-lock')
     args = parser.parse_args()
     if not args.execute: raise ValueError('execution_not_enabled')
@@ -371,6 +421,7 @@ def main():
     if output.exists(): raise ValueError('preserve_existing_execution_artifact')
     output.mkdir(parents=True)
     started = time.monotonic();global_deadline = started + MAX_SECONDS
+    secret = credential(args.credential_fd, deadline=global_deadline) if args.credential_fd is not None else None
     frozen = json.loads(Path(args.freeze).read_text());bridge = finished.CoreBridge(args.bridge)
     qualification.verify_freeze(frozen, bridge, deadline=global_deadline, clock=time.monotonic)
     if not qualification._v2(frozen): raise ValueError('batched_provider_version_freeze_required')
@@ -382,7 +433,7 @@ def main():
     if time.monotonic() >= global_deadline: raise ValueError('evaluation_budget_exceeded')
     prices = _prices(args.pricing)
     if time.monotonic() >= global_deadline: raise ValueError('evaluation_budget_exceeded')
-    secret = credential(deadline=global_deadline)
+    if secret is None: secret = credential(deadline=global_deadline)
     runs = []
     with locked_ledger(args.ledger) as ledger:
         if args.phase == 'resources':
@@ -444,6 +495,7 @@ def main():
             'freeze_sha256': frozen['freeze_sha256'], 'spend_ledger': ledger.snapshot(), 'automatic_retries': False, 'fallbacks': False,
             'pricing_evidence_sha256': finished.file_hash(args.pricing), 'prompt_token_price_usd': str(prices[0]),
             'completion_token_price_usd': str(prices[1]), 'native_smoke_allowance_usd': str(NATIVE_SMOKE_ALLOWANCE),
+            'credential_delivery': 'inherited_anonymous_pipe' if args.credential_fd is not None else 'bounded_os_keychain',
             'client_scope': 'isolated bounded job client plus waited HTTP/production Rust children; corpus supervisor separate'})
 
 
