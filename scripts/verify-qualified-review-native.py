@@ -49,7 +49,7 @@ SETUP = r"""
 const account=__ACCOUNT__,info=await real('app_info'),s=info.settings;
 Object.assign(s,{appearance:__APPEARANCE__,ui_language:__LOCALE__,history_retention_days:0,
  auto_detect:false,record_shortcut_enabled:false,calendar_enabled:false,cloud_sync:false,
- claude_access:false,llm:null,summary_automation:'manual',suggestion_automation:'manual',suggestion_language:'nl'});
+ claude_access:false,llm:{provider_id:'',model:''},summary_automation:'manual',suggestion_automation:'manual',suggestion_language:'nl'});
 s.onboarding.status='completed';
 s.providers.push({id:account,kind:'open_router',name:'Owned Review smoke',base_url:'https://openrouter.ai/api/v1'});
 s.decision={provider_id:account,protocol:'open_router_decisions',model:'unqualified-native-smoke',

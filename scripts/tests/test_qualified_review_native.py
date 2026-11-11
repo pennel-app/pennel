@@ -78,6 +78,17 @@ class QualifiedReviewNativeTests(unittest.TestCase):
         read.assert_called_once_with(9)
 
     @unittest.skipUnless(shutil.which("node"), "Node is required to parse the native checkpoint JavaScript")
+    def test_setup_preserves_the_required_model_choice_wire_shape(self):
+        body = native.expand(native.SETUP, account="review96-owned-test", appearance="dark", locale="en")
+        check = """const assert=require('node:assert/strict');const body=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
+const settings={onboarding:{status:'unanswered'},providers:[]};
+const real=async(command,args)=>{if(command==='app_info')return{settings};assert.equal(command,'save_settings');
+assert.equal(typeof args.settings.llm.provider_id,'string');assert.equal(typeof args.settings.llm.model,'string');};
+new Function('real','return(async()=>{'+body+'})()')(real).catch(error=>{console.error(error);process.exitCode=1;});"""
+        result = subprocess.run(["node", "-e", check], input=json.dumps(body), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required to parse the native checkpoint JavaScript")
     def test_every_native_checkpoint_is_valid_javascript_after_expansion(self):
         values = {"account": "review96-owned-test", "appearance": "dark", "locale": "en", "model": native.MODEL,
                   "meeting_id": "owned", "notes": native.NOTES,
