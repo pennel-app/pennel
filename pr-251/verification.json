@@ -1,0 +1,30 @@
+{
+  "source_commit": "fb7daed11dc0697d85264e8f317e9fb91e641670",
+  "base": "27b75bec",
+  "core_source_sha256": "ecfc5fe81a0255f24c2d2a88cc920ef2c96859c19b4c1db72eb3281cd62a64c1",
+  "generated_bindings_sha256": "daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21",
+  "verification": {
+    "core": 1306,
+    "typing": 17,
+    "frontend_integrated": 525,
+    "backend": 408,
+    "mac_platform": 217,
+    "mobile_plugins": 17,
+    "mobile_widgets": 7,
+    "mobile_ui": 160,
+    "mobilekit": 116,
+    "hosted_native": 180,
+    "release_core": "passed",
+    "core_fmt_clippy": "passed",
+    "frontend_build_theme": "passed",
+    "desktop_personal_team_signature": "passed",
+    "mobile_generation_pods_ownership": "passed",
+    "unsigned_simulator_device_release": "passed",
+    "title_browser_frames": 12,
+    "independent_naming_branch_browser_frames": 16
+  },
+  "evidence": "synthetic renderer and owned automated native compatibility, not real meeting topic-quality or physical-device acceptance",
+  "owned_simulator": "shut down",
+  "prior_products": "retained",
+  "shape_compatibility": "Existing UniFFI shapes preserved by source review; matching final libraries passed native checks. Retained bindings predate main and are not byte-equality evidence."
+}

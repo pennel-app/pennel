@@ -1,0 +1,66 @@
+{
+  "mobile_typecheck": "passed",
+  "plugin_tests": 17,
+  "widget_tests": 7,
+  "mobile_ui_tests": 160,
+  "mobilekit_tests": 116,
+  "macos_platform_tests": 217,
+  "mobile_prebuild": "passed",
+  "locked_pod_source_checks": 6,
+  "release_builds": [
+    {
+      "sdk": "Release-iphonesimulator",
+      "app": "$WORKSPACE/apps/mobile/build/DerivedData/Build/Products/Release-iphonesimulator/Pennel.app",
+      "bundle_id": "app.pennel.ios.preview",
+      "binary_sha256": "3492d562639a17c5d234cf4fe50d1cd1e350b15cf08bc92ceb7f9e34bc9a9797",
+      "architectures": "arm64"
+    },
+    {
+      "sdk": "Release-iphoneos",
+      "app": "$WORKSPACE/apps/mobile/build/DerivedData/Build/Products/Release-iphoneos/Pennel.app",
+      "bundle_id": "app.pennel.ios.preview",
+      "binary_sha256": "ae87e4324e2d8d6f60a9f5411f617106a0070c85ab5fd5ff758fe3257f49a6f3",
+      "architectures": "arm64"
+    }
+  ],
+  "hosted_test_runs": [
+    [
+      "36",
+      "5"
+    ],
+    [
+      "144",
+      "20"
+    ]
+  ],
+  "hosted_native_result": "passed",
+  "manifest": {
+    "schema": 1,
+    "revision": "27b75bec05bd78370dab4d8f277bbfae25b06367",
+    "core_sha256": "ecfc5fe81a0255f24c2d2a88cc920ef2c96859c19b4c1db72eb3281cd62a64c1",
+    "bindings_sha256": "daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21",
+    "features": [],
+    "targets": [
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim"
+    ]
+  },
+  "current_core_sha256": "ecfc5fe81a0255f24c2d2a88cc920ef2c96859c19b4c1db72eb3281cd62a64c1",
+  "source_matches_manifest": true,
+  "owned_simulator": {
+    "name": "Pennel Titles QA 2026-11-11",
+    "udid": "7B5A513C-6538-4F9C-AE8A-8C5DC2FACEA3",
+    "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+    "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "owned_by_task": "meeting-panels-248",
+    "created_at_unix": 1794410423.022283,
+    "booted": false,
+    "shutdown_at_unix": 1794411967.653236
+  },
+  "unrelated_simulator_state_changes": [],
+  "tracked_mobile_changes": [],
+  "limitations": [
+    "No physical iPhone, signing upgrade, keyboard cold start, Cloud deployment or store acceptance claimed.",
+    "Retained generated bindings predated current main; their changed digest cannot measure task-only ABI drift."
+  ]
+}
