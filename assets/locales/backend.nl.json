@@ -804,5 +804,7 @@
   "backend.original_text_available_see_log": "Oorspronkelijke tekst beschikbaar (zie logboek)",
   "backend.original_text_pasted": "Oorspronkelijke tekst geplakt",
   "backend.original_text_available": "Oorspronkelijke tekst beschikbaar",
-  "backend.x11_keyed_shortcuts_unavailable": "Globale sneltoetsen met een gewone toets kunnen op X11 nog niet veilig worden vrijgegeven. Gebruik de knoppen in Pennel of de sneltoetsinstellingen van je desktop."
+  "backend.x11_keyed_shortcuts_unavailable": "Globale sneltoetsen met een gewone toets kunnen op X11 nog niet veilig worden vrijgegeven. Gebruik de knoppen in Pennel of de sneltoetsinstellingen van je desktop.",
+  "backend.recording_shortcut_unavailable": "De opnamesneltoets is niet beschikbaar. Probeer deze te herstellen in Instellingen.",
+  "backend.recording_shortcut_unavailable_named": "De opnamesneltoets {label} is niet beschikbaar. Kies een andere sneltoets in Instellingen."
 }
