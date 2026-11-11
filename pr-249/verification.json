@@ -1,0 +1,12 @@
+{
+  "source_commit": "f83b273",
+  "base": "27b75bec",
+  "evidence": "owned synthetic Chromium renderer; no user screen/profile",
+  "frontend_tests": 525,
+  "initial_browser_frames": 80,
+  "followup_browser_frames": 64,
+  "matched_pairs": 8,
+  "fixture_sha256": "6a18421d9adf97b53202c285ec48fd64a0e1725a0f677d7dd4b7b69e0e669646",
+  "independent_review": "current unavailable reason correctly supersedes historical results; no remaining findings",
+  "qualification": "unchanged; zero adopted records"
+}
