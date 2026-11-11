@@ -57,6 +57,24 @@ export async function checkSuggestionUnavailable(){
  if(!fixture.options.suggestion_configured)assert(review.querySelector('.insight-destination').hidden,'Missing connection details rendered Not configured placeholders.');
  return{exactQualificationGateRetained:true,oneReasonAndSetup:true,noPrematureCoverage:true,noInference:true,syntheticOnly:true};
 }
+export async function checkReviewSetupNavigation() {
+ const { review, fixture } = await owned();
+ const setup = review.querySelector('.insight-connection-settings');
+ assert(!setup.hidden, 'Unavailable Review has no connection setup action.');
+ setup.click();
+ await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]'), 'Review setup did not open Advanced settings.');
+ await until(() => document.querySelector('details[data-settings-detail="models"]'), 'Advanced model settings did not mount.');
+ const models = document.querySelector('details[data-settings-detail="models"]');
+ assert(models?.open, 'Review setup did not open the Models section containing the tested setup.');
+ assert(!document.querySelector('details[data-settings-detail="providers"]').open, 'Review setup opened Providers instead of its tested model setup.');
+ await until(() => models.querySelector('details[data-inference-experimental]'), 'Experimental model connections did not mount.');
+ const experimental = models.querySelector('details[data-inference-experimental]');
+ experimental.querySelector(':scope > summary').click();
+ await until(() => experimental.open && experimental.querySelector('[data-tested-suggestion-apply]'), 'Tested Review setup is not reachable from the connection action.');
+ const forbidden = ['begin_insights_analysis', 'verify_inference', 'inference_decide', 'inference_rerank', 'set_key', 'download_model'];
+ assert(!fixture.calls.some(command => forbidden.includes(command)) && !policyMutations(fixture).length, 'Opening Review setup performed inference or changed settings or credentials.');
+ return { reviewOpensTestedModels: true, providersRemainCollapsed: true, noInferenceOrWrites: true, syntheticOnly: true };
+}
 export async function checkSuggestionFailure(){
  const{card,fixture,api}=await owned();await until(()=>card.dataset.mode==='consent'&&!card.querySelector('[data-suggestion-consent="not_now"]').disabled,'The question is not ready.');
  const client=window.__PENNEL_PLATFORM__,invoke=client.invoke.bind(client),metadata=fixture.options.suggestion_failure==='metadata';let reject=true;

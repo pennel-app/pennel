@@ -54,7 +54,7 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   const find = controlButton({ class: "btn primary insight-find", onclick: () => { void consent?.findOnce(); } }, l("insights.find"));
   const cancel = controlButton({ class: "btn insight-cancel", hidden: true, onclick: () => { void model.cancel(); } }, l("insights.cancel_analysis"));
   const refresh = controlButton({ class: "text-button", onclick: () => { void Promise.all([model.load(), model.choosePolicy(model.getSnapshot().policy)]); } }, l("insights.refresh"));
-  const setup = controlButton({ class: "text-button insight-connection-settings", hidden: true, onclick: () => ctx.navigate("providers") }, l("insights.connection_settings"));
+  const setup = controlButton({ class: "text-button insight-connection-settings", hidden: true, onclick: () => ctx.navigate("models") }, l("insights.connection_settings"));
   const exportItems = controlButton({ class: "btn insight-export", onclick: async () => { const value = await model.export(); if (value !== undefined) { await api.copyText(value); notice.textContent = t("insights.copied"); } } }, l("insights.copy_accepted"));
   const destination = h("p", { class: "help insight-destination" });
   const availability = h("p", { class: "help insight-availability", role: "status" });

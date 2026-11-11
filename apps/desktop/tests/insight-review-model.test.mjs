@@ -73,6 +73,22 @@ test("analysis waits for the current availability refresh instead of using a cac
  waiting.resolve({available:true,configuration_fingerprint:pin});await refreshing;assert.equal(await model.analyze(pin),true);assert.equal(starts,1);
 });
 
+test("a failed availability refresh keeps analysis disabled until a successful retry", async () => {
+  const pin = "a".repeat(64), next = "b".repeat(64); let reads = 0, starts = 0;
+  const model = new InsightReviewModel("folder", "meeting", service({
+    availability: async () => {
+      if (++reads === 2) throw Error("Owned metadata failure");
+      return { available: true, configuration_fingerprint: reads === 1 ? pin : next };
+    },
+    start: async () => { starts++; return { job_id: "job", meeting_uid: "meeting", revision: 1, state: "completed", physical_running: false }; },
+  }));
+  await model.load(); await model.choosePolicy("nl"); assert.equal(model.canAnalyze, true);
+  await model.choosePolicy("nl");
+  assert.equal(model.canAnalyze, false); assert.equal(await model.analyze(pin), false); assert.equal(starts, 0);
+  await model.choosePolicy("nl");
+  assert.equal(await model.analyze(next), true); assert.equal(starts, 1);
+});
+
 test("opening and blurring an unchanged editor does not manufacture a user edit", async () => {
   let writes = 0;
   const model = new InsightReviewModel("folder", "meeting", service({ claim: async () => snapshot(2, [{ ...item, revision: 2, edit_claim: "claim" }]),

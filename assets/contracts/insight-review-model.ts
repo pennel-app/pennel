@@ -92,7 +92,7 @@ export class InsightReviewModel {
     if (this.readAgain) { this.readAgain = false; await this.load(); }
   }
   async choosePolicy(policy: InsightLanguagePolicy) {
-    this.changed({ policy }); const epoch = ++this.availabilityEpoch;
+    this.changed({ policy, availability: null }); const epoch = ++this.availabilityEpoch;
     await this.action(`availability:${epoch}`, async () => {
       const availability = await this.service.availability(this.id, policy);
       if (epoch === this.availabilityEpoch && policy === this.state.policy) this.changed({ availability: availability.available && !configurationFingerprint(availability)
