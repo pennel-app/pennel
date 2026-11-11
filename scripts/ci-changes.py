@@ -23,7 +23,7 @@ def classify(paths):
         elif path.startswith('apps/mobile/'):
             # Their own workflows validate native/mobile inputs; desktop does not consume them.
             continue
-        elif path.startswith('assets/locales/'):
+        elif path.startswith(('assets/locales/', 'assets/qualifications/')):
             selected.update(('core', 'app'))
         elif path.startswith('assets/'):
             selected.add('app')

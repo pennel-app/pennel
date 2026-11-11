@@ -18,6 +18,9 @@ args = sys.argv[1:]
 root = pathlib.Path(os.environ["PENNEL_BUILD_TEST_ROOT"])
 with pathlib.Path(os.environ["PENNEL_BUILD_TEST_LOG"]).open("a") as log:
     log.write(json.dumps([name, *args]) + "\\n")
+def mutate_registry(phase):
+    if os.environ.get("PENNEL_BUILD_TEST_REGISTRY_MUTATION") == phase:
+        (root / "assets/qualifications/meeting-assistance.json").write_text('{"schema_version":1,"adopted_records":[{"fixture":"changed during build"}]}')
 if name == "cargo" and args[0] == "build":
     target = args[args.index("--target") + 1]
     keyboard = pathlib.Path(args[args.index("--manifest-path") + 1]).parent.name == "keyboard"
@@ -26,12 +29,14 @@ if name == "cargo" and args[0] == "build":
     stem = "libpennel_typing" if keyboard else "libpennel_core"
     (output / (stem + ".a")).write_bytes(target.encode())
     (output / (stem + ".dylib")).write_bytes(target.encode())
+    mutate_registry(("keyboard-" if keyboard else "core-") + target)
 elif name == "cargo" and args[0] == "run":
     assert pathlib.Path(args[args.index("--library") + 1]).is_file()
     output = pathlib.Path(args[args.index("--out-dir") + 1])
     output.mkdir(parents=True, exist_ok=True)
     for file in ("pennel_core.swift", "pennel_coreFFI.h", "pennel_coreFFI.modulemap"):
         (output / file).write_text("matching " + file)
+    mutate_registry("bindings")
 elif name == "xcodebuild":
     for index, value in enumerate(args):
         if value == "-library": assert pathlib.Path(args[index + 1]).is_file()
@@ -39,7 +44,9 @@ elif name == "xcodebuild":
     output = pathlib.Path(args[args.index("-output") + 1])
     output.mkdir(parents=True)
     (output / "Info.plist").write_text("matched device and simulator slices")
+    if output.name == "PennelCoreFFI.xcframework": mutate_registry("framework")
 elif name == "git":
+    mutate_registry("manifest")
     print("a" * 40)
 elif name == "node":
     assert (root / "apps/mobile/artifacts/ios/manifest.json").is_file()
@@ -68,6 +75,9 @@ class MobileCoreBuildTests(unittest.TestCase):
         self.keyboard_source = self.keyboard / "Cargo.toml"
         self.keyboard_source.write_text("[package]\nname = 'pennel-keyboard'\n")
         (self.keyboard / "include/PennelTypingFFI.h").write_text("fixture ABI header\n")
+        self.registry = self.root / "assets/qualifications/meeting-assistance.json"
+        self.registry.parent.mkdir(parents=True)
+        self.registry.write_text('{"schema_version":1,"adopted_records":[]}\n')
         tools = self.root / "tools"
         tools.mkdir()
         for name in ("cargo", "xcodebuild", "git", "node"):
@@ -118,6 +128,9 @@ class MobileCoreBuildTests(unittest.TestCase):
         digest = hashlib.sha256(b"core/Cargo.toml" + self.source.read_bytes()
                                 + b"core/keyboard/Cargo.toml" + self.keyboard_source.read_bytes()).hexdigest()
         self.assertEqual(manifest["core_sha256"], digest)
+        self.assertEqual(manifest["qualification_registry_sha256"],
+                         hashlib.sha256(self.registry.read_bytes()).hexdigest())
+        self.assertEqual(manifest["qualification_registry_adopted_records"], 0)
         commands = self.commands()
         self.assert_build_targets(commands, ["aarch64-apple-ios", "aarch64-apple-ios-sim"])
         generator = next(args for name, *args in commands if name == "cargo" and args[0] == "run")
@@ -131,6 +144,54 @@ class MobileCoreBuildTests(unittest.TestCase):
         result = self.prepare("0")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_build_targets(self.commands(), ["aarch64-apple-ios", "aarch64-apple-ios-sim"])
+
+    def test_registry_provenance_changes_without_redefining_core_or_binding_hashes(self):
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        before = json.loads((self.artifacts / "manifest.json").read_text())
+        before_commands = len(self.commands())
+        self.registry.write_text('{"schema_version":1,"adopted_records":[{"fixture":"adopted"}]}\n')
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        after = json.loads((self.artifacts / "manifest.json").read_text())
+        self.assertEqual(after["core_sha256"], before["core_sha256"])
+        self.assertEqual(after["bindings_sha256"], before["bindings_sha256"])
+        self.assertNotEqual(after["qualification_registry_sha256"], before["qualification_registry_sha256"])
+        self.assertEqual(after["qualification_registry_adopted_records"], 1)
+        self.assert_build_targets(self.commands()[before_commands:], ["aarch64-apple-ios", "aarch64-apple-ios-sim"])
+
+    def test_missing_or_invalid_registry_never_emits_a_generation_manifest(self):
+        for body in (None, '{"adopted_records":"not a list"}', '[]'):
+            with self.subTest(body=body):
+                if body is None:
+                    self.registry.unlink()
+                else:
+                    self.registry.write_text(body)
+                result = self.prepare()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.artifacts / "manifest.json").exists())
+                self.assertEqual(self.commands(), [])
+
+    def test_registry_changes_during_preparation_never_label_old_outputs_with_new_registry(self):
+        pinned = self.registry.read_bytes()
+        pinned_hash = hashlib.sha256(pinned).hexdigest()
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for phase in ('keyboard-aarch64-apple-ios', 'core-aarch64-apple-ios',
+                      'core-aarch64-apple-ios-sim', 'bindings', 'framework', 'manifest'):
+            with self.subTest(phase=phase):
+                self.registry.write_bytes(pinned)
+                self.env['PENNEL_BUILD_TEST_REGISTRY_MUTATION'] = phase
+                result = self.prepare()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('qualification registry changed', result.stderr.lower())
+                manifest_file = self.artifacts / 'manifest.json'
+                if manifest_file.exists():
+                    manifest = json.loads(manifest_file.read_text())
+                    self.assertEqual(manifest['qualification_registry_sha256'], pinned_hash)
+                    self.assertEqual(manifest['qualification_registry_adopted_records'], 0)
+                    self.assertNotEqual(manifest['qualification_registry_sha256'],
+                                        hashlib.sha256(self.registry.read_bytes()).hexdigest())
 
     def test_archive_preparation_builds_only_device_libraries_and_matching_bindings(self):
         result = self.prepare("1")

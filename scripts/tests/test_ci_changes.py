@@ -72,6 +72,12 @@ class ChangesTests(unittest.TestCase):
         self.assertEqual(self.classify('assets/locales/onboarding.en.json'),
                          {'core', 'app'})
 
+    def test_qualification_registry_validates_core_desktop_and_mobile(self):
+        self.assertEqual(self.classify('assets/qualifications/meeting-assistance.json'),
+                         {'core', 'app'})
+        workflow = SCRIPT.parents[1] / '.github/workflows/mobile.yml'
+        self.assertIn('      - "assets/qualifications/**"', workflow.read_text())
+
     def test_build_infrastructure_runs_everything(self):
         for path in ('Makefile', '.cargo/config.toml', '.github/workflows/ci.yml',
                      'scripts/generate-theme.py', 'scripts/tests/test_ci_changes.py'):
