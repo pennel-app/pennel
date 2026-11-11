@@ -1,0 +1,1074 @@
+
+> pennel-mobile-app@0.1.0 test:ui
+> node --experimental-strip-types --test tests/ui/*.test.mjs
+
+TAP version 13
+# (node:2832) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/localization.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: owned iPhone accessibility capture checker requires localized controls and fully formatted destination
+ok 1 - owned iPhone accessibility capture checker requires localized controls and fully formatted destination
+  ---
+  duration_ms: 4.347375
+  type: 'test'
+  ...
+# (node:2833) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/cleanup-verification.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a configured decision connection does not enable or qualify cleanup verification
+ok 2 - a configured decision connection does not enable or qualify cleanup verification
+  ---
+  duration_ms: 0.634375
+  type: 'test'
+  ...
+# Subtest: saved enablement remains visible and can always be disabled when qualification is unavailable
+ok 3 - saved enablement remains visible and can always be disabled when qualification is unavailable
+  ---
+  duration_ms: 0.063833
+  type: 'test'
+  ...
+# Subtest: only current native qualification can admit an opt-in and mutation removes admission
+ok 4 - only current native qualification can admit an opt-in and mutation removes admission
+  ---
+  duration_ms: 0.085875
+  type: 'test'
+  ...
+# Subtest: active status uses the frozen recorder or keyboard session rather than changed saved settings
+ok 5 - active status uses the frozen recorder or keyboard session rather than changed saved settings
+  ---
+  duration_ms: 0.065833
+  type: 'test'
+  ...
+# Subtest: destination explains actual loopback processing and suppresses invalid or credential-bearing URLs
+ok 6 - destination explains actual loopback processing and suppresses invalid or credential-bearing URLs
+  ---
+  duration_ms: 0.268125
+  type: 'test'
+  ...
+# Subtest: verification controls explain qualification and on-device processing in both interface languages
+ok 7 - verification controls explain qualification and on-device processing in both interface languages
+  ---
+  duration_ms: 0.223
+  type: 'test'
+  ...
+# Subtest: rendered settings and active-session copy interpolates every shared template in English and Dutch
+ok 8 - rendered settings and active-session copy interpolates every shared template in English and Dutch
+  ---
+  duration_ms: 0.347166
+  type: 'test'
+  ...
+# (node:2834) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/errors.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: native conversation error envelopes retain localized owned storage reasons
+ok 9 - native conversation error envelopes retain localized owned storage reasons
+  ---
+  duration_ms: 0.526541
+  type: 'test'
+  ...
+# Subtest: unknown native provider text stays private while actionable error codes remain useful
+ok 10 - unknown native provider text stays private while actionable error codes remain useful
+  ---
+  duration_ms: 0.132958
+  type: 'test'
+  ...
+# (node:2835) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/source-navigation.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: durable source navigation carries only source and answer identities and can return after restart
+ok 11 - durable source navigation carries only source and answer identities and can return after restart
+  ---
+  duration_ms: 0.72725
+  type: 'test'
+  ...
+# Subtest: library answer return stays in the library route and malformed source origins are ignored
+ok 12 - library answer return stays in the library route and malformed source origins are ignored
+  ---
+  duration_ms: 0.104584
+  type: 'test'
+  ...
+# (node:2836) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/conversation-service.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: mobile remounts retain failed drafts and legacy scope normalization without crossing libraries
+ok 13 - mobile remounts retain failed drafts and legacy scope normalization without crossing libraries
+  ---
+  duration_ms: 0.92125
+  type: 'test'
+  ...
+# Subtest: mobile source requests use only durable IDs and return fresh core validation
+ok 14 - mobile source requests use only durable IDs and return fresh core validation
+  ---
+  duration_ms: 0.66725
+  type: 'test'
+  ...
+# Subtest: a delayed send or source result cannot target a newly selected conversation or edited question
+ok 15 - a delayed send or source result cannot target a newly selected conversation or edited question
+  ---
+  duration_ms: 0.199833
+  type: 'test'
+  ...
+# Subtest: a retained view from another library cannot dispatch a new conversation there
+ok 16 - a retained view from another library cannot dispatch a new conversation there
+  ---
+  duration_ms: 4.994875
+  type: 'test'
+  ...
+# Subtest: a queued action observes library changes even while its view is unmounted
+ok 17 - a queued action observes library changes even while its view is unmounted
+  ---
+  duration_ms: 5.455291
+  type: 'test'
+  ...
+# (node:2837) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/device-link.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: availability distinguishes disabled admission from a transient failed check and recovers
+ok 18 - availability distinguishes disabled admission from a transient failed check and recovers
+  ---
+  duration_ms: 0.702875
+  type: 'test'
+  ...
+# Subtest: newer checks and account/screen cancellation discard stale availability and errors
+ok 19 - newer checks and account/screen cancellation discard stale availability and errors
+  ---
+  duration_ms: 0.135041
+  type: 'test'
+  ...
+# Subtest: the latest action owns the single connection error and cached failures remain actionable
+ok 20 - the latest action owns the single connection error and cached failures remain actionable
+  ---
+  duration_ms: 0.104458
+  type: 'test'
+  ...
+# Subtest: connection errors distinguish service access from provider keys and never show upstream bodies
+ok 21 - connection errors distinguish service access from provider keys and never show upstream bodies
+  ---
+  duration_ms: 0.351583
+  type: 'test'
+  ...
+# (node:2838) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/errors.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: provider billing failures use owned credit guidance without exposing response details
+ok 22 - provider billing failures use owned credit guidance without exposing response details
+  ---
+  duration_ms: 0.510667
+  type: 'test'
+  ...
+# Subtest: native NSError envelopes retain diagnostic codes while English UI replaces Dutch backend literals
+ok 23 - native NSError envelopes retain diagnostic codes while English UI replaces Dutch backend literals
+  ---
+  duration_ms: 0.219042
+  type: 'test'
+  ...
+# Subtest: every new recognition error has actionable EN/NL text independent of backend message
+ok 24 - every new recognition error has actionable EN/NL text independent of backend message
+  ---
+  duration_ms: 0.525292
+  type: 'test'
+  ...
+# Subtest: structured errors can be recovered from NSError metadata without swallowing quoted braces
+ok 25 - structured errors can be recovered from NSError metadata without swallowing quoted braces
+  ---
+  duration_ms: 0.073208
+  type: 'test'
+  ...
+# Subtest: stale-note codes instruct reload instead of generic storage retry
+ok 26 - stale-note codes instruct reload instead of generic storage retry
+  ---
+  duration_ms: 0.056834
+  type: 'test'
+  ...
+# Subtest: unknown provider messages remain diagnostics and cannot become raw UI content
+ok 27 - unknown provider messages remain diagnostics and cannot become raw UI content
+  ---
+  duration_ms: 0.045125
+  type: 'test'
+  ...
+# Subtest: saved interrupted work can be discarded and cleanup failures offer removal again
+ok 28 - saved interrupted work can be discarded and cleanup failures offer removal again
+  ---
+  duration_ms: 0.103417
+  type: 'test'
+  ...
+# Subtest: saved dictation and recording diagnostics relabel without changing the saved message
+ok 29 - saved dictation and recording diagnostics relabel without changing the saved message
+  ---
+  duration_ms: 0.055041
+  type: 'test'
+  ...
+# Subtest: stable failure codes select presentation independently of raw native diagnostics
+ok 30 - stable failure codes select presentation independently of raw native diagnostics
+  ---
+  duration_ms: 0.2025
+  type: 'test'
+  ...
+# Subtest: provider key failures stay separate from Pennel Cloud sign-in failures
+ok 31 - provider key failures stay separate from Pennel Cloud sign-in failures
+  ---
+  duration_ms: 0.323792
+  type: 'test'
+  ...
+# (node:2839) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/inference.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: optional defaults do not select a provider or model
+ok 32 - optional defaults do not select a provider or model
+  ---
+  duration_ms: 1.667292
+  type: 'test'
+  ...
+# Subtest: atomic configuration trims identities and requires a bounded explicit OpenRouter route
+ok 33 - atomic configuration trims identities and requires a bounded explicit OpenRouter route
+  ---
+  duration_ms: 1.040792
+  type: 'test'
+  ...
+# Subtest: saved-configuration identity ignores JSON member order while retaining every route/budget field
+ok 34 - saved-configuration identity ignores JSON member order while retaining every route/budget field
+  ---
+  duration_ms: 0.327666
+  type: 'test'
+  ...
+# Subtest: selection requires a supported explicit configuration and keeps STT untouched
+ok 35 - selection requires a supported explicit configuration and keeps STT untouched
+  ---
+  duration_ms: 0.306042
+  type: 'test'
+  ...
+# Subtest: provider URL and credential revisions invalidate the selected connection fingerprint
+ok 36 - provider URL and credential revisions invalidate the selected connection fingerprint
+  ---
+  duration_ms: 0.091708
+  type: 'test'
+  ...
+# Subtest: OpenRouter accounts and known OpenRouter hosts cannot bypass fixed routing through a direct API format
+ok 37 - OpenRouter accounts and known OpenRouter hosts cannot bypass fixed routing through a direct API format
+  ---
+  duration_ms: 0.166083
+  type: 'test'
+  ...
+# Subtest: choosing an OpenRouter provider changes only the unsaved draft to a compatible API format
+ok 38 - choosing an OpenRouter provider changes only the unsaved draft to a compatible API format
+  ---
+  duration_ms: 0.114792
+  type: 'test'
+  ...
+# Subtest: verification sends only capability and opaque request identity through the native command
+ok 39 - verification sends only capability and opaque request identity through the native command
+  ---
+  duration_ms: 0.177667
+  type: 'test'
+  ...
+# Subtest: reconfiguration cancels native work and a late result cannot verify the replacement
+ok 40 - reconfiguration cancels native work and a late result cannot verify the replacement
+  ---
+  duration_ms: 0.747167
+  type: 'test'
+  ...
+# Subtest: leaving/cancelling ignores late errors and failed verification cannot become success
+ok 41 - leaving/cancelling ignores late errors and failed verification cannot become success
+  ---
+  duration_ms: 0.368416
+  type: 'test'
+  ...
+# Subtest: all inference copy exists in both interface languages with the same section labels
+ok 42 - all inference copy exists in both interface languages with the same section labels
+  ---
+  duration_ms: 0.16125
+  type: 'test'
+  ...
+# Subtest: managed Cloud is available for both capabilities only with its explicit metadata
+ok 43 - managed Cloud is available for both capabilities only with its explicit metadata
+  ---
+  duration_ms: 0.127209
+  type: 'test'
+  ...
+# Subtest: leaving managed Cloud restores an editable compatible draft without changing saved settings
+ok 44 - leaving managed Cloud restores an editable compatible draft without changing saved settings
+  ---
+  duration_ms: 0.078792
+  type: 'test'
+  ...
+# Subtest: Cloud verification requires sign-in and a current account epoch, without a user API key
+ok 45 - Cloud verification requires sign-in and a current account epoch, without a user API key
+  ---
+  duration_ms: 0.059917
+  type: 'test'
+  ...
+# Subtest: account switching invalidates a pending managed sample and ignores its late success
+ok 46 - account switching invalidates a pending managed sample and ignores its late success
+  ---
+  duration_ms: 0.116625
+  type: 'test'
+  ...
+# (node:2840) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/note-session.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: accepted insertion uses the ordinary note writer and queues later typing without repeating the receipt
+ok 47 - accepted insertion uses the ordinary note writer and queues later typing without repeating the receipt
+  ---
+  duration_ms: 0.78025
+  type: 'test'
+  ...
+# Subtest: failed insertion note saves keep exact editable text and retry the same attempt
+ok 48 - failed insertion note saves keep exact editable text and retry the same attempt
+  ---
+  duration_ms: 0.144959
+  type: 'test'
+  ...
+# Subtest: a stale insertion cannot replace dirty mobile notes or an unrelated source
+ok 49 - a stale insertion cannot replace dirty mobile notes or an unrelated source
+  ---
+  duration_ms: 0.07325
+  type: 'test'
+  ...
+# Subtest: mobile finished review cannot send analysis without an explicit qualified language setup
+ok 50 - mobile finished review cannot send analysis without an explicit qualified language setup
+  ---
+  duration_ms: 0.285375
+  type: 'test'
+  ...
+# (node:2841) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/keyboard-settings.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: typing language changes make a narrow patch independent of interface and speech language
+ok 51 - typing language changes make a narrow patch independent of interface and speech language
+  ---
+  duration_ms: 1.575209
+  type: 'test'
+  ...
+# Subtest: saving a snippet merges into the latest snippet list without unrelated settings
+ok 52 - saving a snippet merges into the latest snippet list without unrelated settings
+  ---
+  duration_ms: 0.632875
+  type: 'test'
+  ...
+# Subtest: deleted or duplicate snippet identities cannot silently overwrite or recreate an entry
+ok 53 - deleted or duplicate snippet identities cannot silently overwrite or recreate an entry
+  ---
+  duration_ms: 0.229333
+  type: 'test'
+  ...
+# Subtest: snippet validation uses UTF8 byte bounds and preserves accents, emoji and multiline content
+ok 54 - snippet validation uses UTF8 byte bounds and preserves accents, emoji and multiline content
+  ---
+  duration_ms: 0.613
+  type: 'test'
+  ...
+# Subtest: forget-word validation accepts natural vocabulary and avoids field-wide deletion input
+ok 55 - forget-word validation accepts natural vocabulary and avoids field-wide deletion input
+  ---
+  duration_ms: 0.288208
+  type: 'test'
+  ...
+# Subtest: every keyboard and validation label is available in both interface languages
+ok 56 - every keyboard and validation label is available in both interface languages
+  ---
+  duration_ms: 0.135917
+  type: 'test'
+  ...
+# (node:2842) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/localization.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: interface locale follows the first supported system language independently of speech
+ok 57 - interface locale follows the first supported system language independently of speech
+  ---
+  duration_ms: 0.441125
+  type: 'test'
+  ...
+# Subtest: mobile copy has matching translated keys and interpolation fields
+ok 58 - mobile copy has matching translated keys and interpolation fields
+  ---
+  duration_ms: 0.822125
+  type: 'test'
+  ...
+# Subtest: every statically referenced UI label exists in both supported languages
+ok 59 - every statically referenced UI label exists in both supported languages
+  ---
+  duration_ms: 36.230125
+  type: 'test'
+  ...
+# (node:2844) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/note-session.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a failed note save prevents rename and keeps the unsaved draft available
+ok 60 - a failed note save prevents rename and keeps the unsaved draft available
+  ---
+  duration_ms: 0.471333
+  type: 'test'
+  ...
+# Subtest: rename waits for an in-flight autosave and the edits queued behind it
+ok 61 - rename waits for an in-flight autosave and the edits queued behind it
+  ---
+  duration_ms: 0.348791
+  type: 'test'
+  ...
+# (node:2845) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/format.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: notes preserve exact text and reject an edit based on a stale version
+ok 62 - notes preserve exact text and reject an edit based on a stale version
+  ---
+  duration_ms: 0.874792
+  type: 'test'
+  ...
+# Subtest: notes typed during an in-flight save are queued with the newly saved baseline
+ok 63 - notes typed during an in-flight save are queued with the newly saved baseline
+  ---
+  duration_ms: 0.108167
+  type: 'test'
+  ...
+# Subtest: failed note saving retains the draft and can be retried explicitly
+ok 64 - failed note saving retains the draft and can be retried explicitly
+  ---
+  duration_ms: 0.073041
+  type: 'test'
+  ...
+# Subtest: unknown server outcome requires confirmation and finalization cannot be cancelled
+ok 65 - unknown server outcome requires confirmation and finalization cannot be cancelled
+  ---
+  duration_ms: 0.156375
+  type: 'test'
+  ...
+# Subtest: source navigation validates the cited passage without putting its text in a route token
+ok 66 - source navigation validates the cited passage without putting its text in a route token
+  ---
+  duration_ms: 0.235834
+  type: 'test'
+  ...
+# Subtest: meeting groups use local day boundaries and stay newest first
+ok 67 - meeting groups use local day boundaries and stay newest first
+  ---
+  duration_ms: 6.091917
+  type: 'test'
+  ...
+# Subtest: fresh core transcript citations include stable named and own-speaker prefixes
+ok 68 - fresh core transcript citations include stable named and own-speaker prefixes
+  ---
+  duration_ms: 0.353
+  type: 'test'
+  ...
+# Subtest: unknown multi-digit speaker prefixes and failed chunks match the core source contract
+ok 69 - unknown multi-digit speaker prefixes and failed chunks match the core source contract
+  ---
+  duration_ms: 0.097833
+  type: 'test'
+  ...
+# Subtest: a changed cited turn cannot match identical words from a later turn
+ok 70 - a changed cited turn cannot match identical words from a later turn
+  ---
+  duration_ms: 0.329833
+  type: 'test'
+  ...
+# Subtest: a long utterance citation can begin after the core split its first labelled chunk
+ok 71 - a long utterance citation can begin after the core split its first labelled chunk
+  ---
+  duration_ms: 0.305458
+  type: 'test'
+  ...
+# Subtest: separate core passages may start on different tracks at the same timestamp
+ok 72 - separate core passages may start on different tracks at the same timestamp
+  ---
+  duration_ms: 0.115542
+  type: 'test'
+  ...
+# Subtest: durable mobile sources survive speaker changes and meeting folder renames
+ok 73 - durable mobile sources survive speaker changes and meeting folder renames
+  ---
+  duration_ms: 0.145208
+  type: 'test'
+  ...
+# Subtest: a durable source never falls back to identical words on a different utterance
+ok 74 - a durable source never falls back to identical words on a different utterance
+  ---
+  duration_ms: 0.060916
+  type: 'test'
+  ...
+# Subtest: remembering a durable citation freezes its source identity arrays and quoted text
+ok 75 - remembering a durable citation freezes its source identity arrays and quoted text
+  ---
+  duration_ms: 0.086625
+  type: 'test'
+  ...
+# (node:2846) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/model-verification.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: task verification explicitly requests real inference for the selected saved model
+ok 76 - task verification explicitly requests real inference for the selected saved model
+  ---
+  duration_ms: 0.622917
+  type: 'test'
+  ...
+# Subtest: provider availability alone cannot make an unconfigured or unauthenticated task ready to verify
+ok 77 - provider availability alone cannot make an unconfigured or unauthenticated task ready to verify
+  ---
+  duration_ms: 0.09775
+  type: 'test'
+  ...
+# Subtest: only an explicit verified result marks a model test as passed
+ok 78 - only an explicit verified result marks a model test as passed
+  ---
+  duration_ms: 0.186333
+  type: 'test'
+  ...
+# Subtest: a result cannot verify a replacement model or another provider
+ok 79 - a result cannot verify a replacement model or another provider
+  ---
+  duration_ms: 0.176708
+  type: 'test'
+  ...
+# Subtest: leaving the screen ignores late results without claiming to cancel native work
+ok 80 - leaving the screen ignores late results without claiming to cancel native work
+  ---
+  duration_ms: 0.111416
+  type: 'test'
+  ...
+# Subtest: native failures retain structured actionable status and never become verified
+ok 81 - native failures retain structured actionable status and never become verified
+  ---
+  duration_ms: 0.204333
+  type: 'test'
+  ...
+# (node:2847) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/native-routing.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: the configured sync completion link resolves to the real settings route
+ok 82 - the configured sync completion link resolves to the real settings route
+  ---
+  duration_ms: 1.026125
+  type: 'test'
+  ...
+# Subtest: preview does not rewrite another app identity or a web URL
+ok 83 - preview does not rewrite another app identity or a web URL
+  ---
+  duration_ms: 0.191583
+  type: 'test'
+  ...
+# Subtest: credentials, queries and fragments never become an accepted completion callback
+ok 84 - credentials, queries and fragments never become an accepted completion callback
+  ---
+  duration_ms: 0.1705
+  type: 'test'
+  ...
+# Subtest: existing meeting paths and malformed inputs retain the router default behavior
+ok 85 - existing meeting paths and malformed inputs retain the router default behavior
+  ---
+  duration_ms: 0.282625
+  type: 'test'
+  ...
+# (node:2848) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/owned-labels.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: model sample outcomes use the selected interface language without translating provider content
+ok 86 - model sample outcomes use the selected interface language without translating provider content
+  ---
+  duration_ms: 0.408917
+  type: 'test'
+  ...
+# Subtest: recording metadata save failures keep the retry action in both interface languages
+ok 87 - recording metadata save failures keep the retry action in both interface languages
+  ---
+  duration_ms: 0.112208
+  type: 'test'
+  ...
+# Subtest: built-in template choices are translated by ID while custom names and IDs stay literal
+ok 88 - built-in template choices are translated by ID while custom names and IDs stay literal
+  ---
+  duration_ms: 0.102209
+  type: 'test'
+  ...
+# (node:2849) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/practice-session.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: practice cannot adopt an existing normal dictation or a previously observed practice generation
+ok 89 - practice cannot adopt an existing normal dictation or a previously observed practice generation
+  ---
+  duration_ms: 0.409333
+  type: 'test'
+  ...
+# Subtest: stop and cancellation target only the accepted practice session
+ok 90 - stop and cancellation target only the accepted practice session
+  ---
+  duration_ms: 1.196917
+  type: 'test'
+  ...
+# Subtest: an unrelated later result cannot complete onboarding or replace the owned practice result
+ok 91 - an unrelated later result cannot complete onboarding or replace the owned practice result
+  ---
+  duration_ms: 0.148417
+  type: 'test'
+  ...
+# Subtest: pending, failed, empty and provisional practice results do not count as completion
+ok 92 - pending, failed, empty and provisional practice results do not count as completion
+  ---
+  duration_ms: 0.177709
+  type: 'test'
+  ...
+# Subtest: previous practice can be explicitly cancelled without adopting it or exposing a normal-session cancel
+ok 93 - previous practice can be explicitly cancelled without adopting it or exposing a normal-session cancel
+  ---
+  duration_ms: 2.043167
+  type: 'test'
+  ...
+# Subtest: abandoned or superseded starts cannot acquire ownership after their response arrives
+ok 94 - abandoned or superseded starts cannot acquire ownership after their response arrives
+  ---
+  duration_ms: 0.439667
+  type: 'test'
+  ...
+# Subtest: restarting practice clears the old success and a failed start leaves no owned session
+ok 95 - restarting practice clears the old success and a failed start leaves no owned session
+  ---
+  duration_ms: 0.126209
+  type: 'test'
+  ...
+# (node:2850) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/note-session.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Stop reaches native capture before a failing note save and leaves the draft recoverable
+ok 96 - Stop reaches native capture before a failing note save and leaves the draft recoverable
+  ---
+  duration_ms: 3.700917
+  type: 'test'
+  ...
+# Subtest: recording identity and notes stay pinned when native capture becomes idle or another meeting starts
+ok 97 - recording identity and notes stay pinned when native capture becomes idle or another meeting starts
+  ---
+  duration_ms: 0.190459
+  type: 'test'
+  ...
+# Subtest: a pre-existing autosave failure cannot prevent a later Stop request
+ok 98 - a pre-existing autosave failure cannot prevent a later Stop request
+  ---
+  duration_ms: 0.108792
+  type: 'test'
+  ...
+# Subtest: finalization errors remain visible only for the recording that produced them
+ok 99 - finalization errors remain visible only for the recording that produced them
+  ---
+  duration_ms: 0.065
+  type: 'test'
+  ...
+# Subtest: only a correlated Stop reply can retarget a renamed meeting without replacing its draft identity
+ok 100 - only a correlated Stop reply can retarget a renamed meeting without replacing its draft identity
+  ---
+  duration_ms: 0.12025
+  type: 'test'
+  ...
+# Subtest: successful Stop flushes notes before the screen can navigate, while a Stop failure is not reported as stopped
+ok 101 - successful Stop flushes notes before the screen can navigate, while a Stop failure is not reported as stopped
+  ---
+  duration_ms: 0.111083
+  type: 'test'
+  ...
+# Subtest: a reopened failed-save recording keeps its retained identity and native notes
+ok 102 - a reopened failed-save recording keeps its retained identity and native notes
+  ---
+  duration_ms: 0.096125
+  type: 'test'
+  ...
+# Subtest: Stop hands off the latest text, acknowledged source and any owned in-flight save without waiting
+ok 103 - Stop hands off the latest text, acknowledged source and any owned in-flight save without waiting
+  ---
+  duration_ms: 0.092709
+  type: 'test'
+  ...
+# Subtest: native handoff acknowledgment preserves notes typed after Stop and cannot bless unrelated remote edits
+ok 104 - native handoff acknowledgment preserves notes typed after Stop and cannot bless unrelated remote edits
+  ---
+  duration_ms: 0.232083
+  type: 'test'
+  ...
+# (node:2854) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/recording-finish.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: an older meeting sheet keeps awareness of a different active or retained recording
+ok 105 - an older meeting sheet keeps awareness of a different active or retained recording
+  ---
+  duration_ms: 0.395458
+  type: 'test'
+  ...
+# Subtest: Return dismisses the sheet first and navigates only after its native dismissal event
+ok 106 - Return dismisses the sheet first and navigates only after its native dismissal event
+  ---
+  duration_ms: 0.346708
+  type: 'test'
+  ...
+# Subtest: ordinary sheet closure does not navigate and the next presentation can return safely
+ok 107 - ordinary sheet closure does not navigate and the next presentation can return safely
+  ---
+  duration_ms: 0.061083
+  type: 'test'
+  ...
+# Subtest: a recording that finishes during sheet dismissal is not reopened as an empty recorder
+ok 108 - a recording that finishes during sheet dismissal is not reopened as an empty recorder
+  ---
+  duration_ms: 0.103958
+  type: 'test'
+  ...
+# (node:2874) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/state.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a live snapshot cannot be overwritten by an older bootstrap response
+ok 109 - a live snapshot cannot be overwritten by an older bootstrap response
+  ---
+  duration_ms: 0.504084
+  type: 'test'
+  ...
+# Subtest: an unavailable native module produces an actionable connection error
+ok 110 - an unavailable native module produces an actionable connection error
+  ---
+  duration_ms: 0.153458
+  type: 'test'
+  ...
+# Subtest: reconnecting ignores the previous connection while retaining native operations
+ok 111 - reconnecting ignores the previous connection while retaining native operations
+  ---
+  duration_ms: 0.078791
+  type: 'test'
+  ...
+# Subtest: unchanged native revisions preserve store identity and do not notify subscribers
+ok 112 - unchanged native revisions preserve store identity and do not notify subscribers
+  ---
+  duration_ms: 0.065125
+  type: 'test'
+  ...
+# Subtest: an equal revision still completes reconnection without replacing the retained snapshot
+ok 113 - an equal revision still completes reconnection without replacing the retained snapshot
+  ---
+  duration_ms: 0.106834
+  type: 'test'
+  ...
+# Subtest: an unchanged refresh preserves an operation error until it is deliberately cleared
+ok 114 - an unchanged refresh preserves an operation error until it is deliberately cleared
+  ---
+  duration_ms: 0.184542
+  type: 'test'
+  ...
+# Subtest: duplicate operations are rejected without dispatching another native command
+ok 115 - duplicate operations are rejected without dispatching another native command
+  ---
+  duration_ms: 0.186458
+  type: 'test'
+  ...
+# Subtest: failed operations clear busy state and retain actionable native errors
+ok 116 - failed operations clear busy state and retain actionable native errors
+  ---
+  duration_ms: 0.301625
+  type: 'test'
+  ...
+# Subtest: stale query results and stale query errors cannot replace a newer result
+ok 117 - stale query results and stale query errors cannot replace a newer result
+  ---
+  duration_ms: 0.257875
+  type: 'test'
+  ...
+# (node:2875) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/recording-finish.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Stop retains the workspace through finishing and failed saving, then opens only this completed recording
+ok 118 - Stop retains the workspace through finishing and failed saving, then opens only this completed recording
+  ---
+  duration_ms: 0.483083
+  type: 'test'
+  ...
+# Subtest: task readiness distinguishes chosen models from usable saved credentials and Cloud sign-in
+ok 119 - task readiness distinguishes chosen models from usable saved credentials and Cloud sign-in
+  ---
+  duration_ms: 0.115917
+  type: 'test'
+  ...
+# Subtest: minimizing a finishing or retained recording requires the same native-owned draft
+ok 120 - minimizing a finishing or retained recording requires the same native-owned draft
+  ---
+  duration_ms: 0.056125
+  type: 'test'
+  ...
+# Subtest: recent results preserve native order and all history keeps every retained result
+ok 121 - recent results preserve native order and all history keeps every retained result
+  ---
+  duration_ms: 0.297834
+  type: 'test'
+  ...
+# Subtest: processing disclosure shows the selected endpoint without embedded credentials or query secrets
+ok 122 - processing disclosure shows the selected endpoint without embedded credentials or query secrets
+  ---
+  duration_ms: 0.202625
+  type: 'test'
+  ...
+# Subtest: Dictation distinguishes local Apple audio from remote cleanup without exposing model IDs
+ok 123 - Dictation distinguishes local Apple audio from remote cleanup without exposing model IDs
+  ---
+  duration_ms: 0.278209
+  type: 'test'
+  ...
+# Subtest: remote audio and on-device Apple cleanup remain separate destinations
+ok 124 - remote audio and on-device Apple cleanup remain separate destinations
+  ---
+  duration_ms: 0.066958
+  type: 'test'
+  ...
+# Subtest: Fast explicitly skips cleanup even when a remote text service is configured
+ok 125 - Fast explicitly skips cleanup even when a remote text service is configured
+  ---
+  duration_ms: 0.062042
+  type: 'test'
+  ...
+# Subtest: route disclosure strips endpoint credentials and distinguishes missing keys from usable configuration
+ok 126 - route disclosure strips endpoint credentials and distinguishes missing keys from usable configuration
+  ---
+  duration_ms: 0.291792
+  type: 'test'
+  ...
+# Subtest: managed Cloud disclosure names its actual service instead of a saved URL the core ignores
+ok 127 - managed Cloud disclosure names its actual service instead of a saved URL the core ignores
+  ---
+  duration_ms: 0.248167
+  type: 'test'
+  ...
+# Subtest: simpler workflow copy has equal Dutch and English controls and preserves interpolation fields
+ok 128 - simpler workflow copy has equal Dutch and English controls and preserves interpolation fields
+  ---
+  duration_ms: 0.389459
+  type: 'test'
+  ...
+# (node:2876) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/summary-draft.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: editing preserves exact text and passes the captured summary and source versions to storage
+ok 129 - editing preserves exact text and passes the captured summary and source versions to storage
+  ---
+  duration_ms: 0.620667
+  type: 'test'
+  ...
+# Subtest: a source-only change cannot silently advance a dirty summary editor
+ok 130 - a source-only change cannot silently advance a dirty summary editor
+  ---
+  duration_ms: 0.09075
+  type: 'test'
+  ...
+# Subtest: edits typed during a save queue against the newly saved version
+ok 131 - edits typed during a save queue against the newly saved version
+  ---
+  duration_ms: 0.348209
+  type: 'test'
+  ...
+# Subtest: a failed save preserves the draft and never installs a remote version over it
+ok 132 - a failed save preserves the draft and never installs a remote version over it
+  ---
+  duration_ms: 0.075458
+  type: 'test'
+  ...
+# Subtest: a reviewed replacement uses explicit acceptance and stale candidates leave saved content untouched
+ok 133 - a reviewed replacement uses explicit acceptance and stale candidates leave saved content untouched
+  ---
+  duration_ms: 0.11475
+  type: 'test'
+  ...
+# Subtest: an edit to an outdated summary retains the core response instead of claiming new coverage
+ok 134 - an edit to an outdated summary retains the core response instead of claiming new coverage
+  ---
+  duration_ms: 0.063
+  type: 'test'
+  ...
+# Subtest: a fresher remote version arriving during a save remains current without losing later local edits
+ok 135 - a fresher remote version arriving during a save remains current without losing later local edits
+  ---
+  duration_ms: 0.116084
+  type: 'test'
+  ...
+# Subtest: reviewing an outdated personal summary accepts its unchanged text and exact source without a provider or generation
+ok 136 - reviewing an outdated personal summary accepts its unchanged text and exact source without a provider or generation
+  ---
+  duration_ms: 0.089083
+  type: 'test'
+  ...
+# Subtest: review cannot replace dirty, conflicting, blank, or already current summaries
+ok 137 - review cannot replace dirty, conflicting, blank, or already current summaries
+  ---
+  duration_ms: 0.247334
+  type: 'test'
+  ...
+# Subtest: review is single-flight and a rejected source check preserves the personal summary and outdated warning
+ok 138 - review is single-flight and a rejected source check preserves the personal summary and outdated warning
+  ---
+  duration_ms: 0.281958
+  type: 'test'
+  ...
+# (node:2877) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/sync-setup.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a paused library never claims it is waiting for an automatic first sync
+ok 139 - a paused library never claims it is waiting for an automatic first sync
+  ---
+  duration_ms: 0.49975
+  type: 'test'
+  ...
+# Subtest: an existing locked library exposes recovery even when sync is off
+ok 140 - an existing locked library exposes recovery even when sync is off
+  ---
+  duration_ms: 0.056959
+  type: 'test'
+  ...
+# Subtest: backup acknowledgment remains distinct from a usable local key
+ok 141 - backup acknowledgment remains distinct from a usable local key
+  ---
+  duration_ms: 0.048834
+  type: 'test'
+  ...
+# Subtest: authentication and the first successful sync are separate stages
+ok 142 - authentication and the first successful sync are separate stages
+  ---
+  duration_ms: 0.046125
+  type: 'test'
+  ...
+# Subtest: pairing polling and navigation guards finish at every terminal phase
+ok 143 - pairing polling and navigation guards finish at every terminal phase
+  ---
+  duration_ms: 0.099875
+  type: 'test'
+  ...
+# Subtest: a new Add device visit ignores historical terminal sessions and other roles
+ok 144 - a new Add device visit ignores historical terminal sessions and other roles
+  ---
+  duration_ms: 0.06275
+  type: 'test'
+  ...
+# Subtest: recovery display and confirmation are hidden after signout, account change or rotation
+ok 145 - recovery display and confirmation are hidden after signout, account change or rotation
+  ---
+  duration_ms: 0.098958
+  type: 'test'
+  ...
+# Subtest: a fresh connection visit never restores a different account or signed-out trusted request
+ok 146 - a fresh connection visit never restores a different account or signed-out trusted request
+  ---
+  duration_ms: 0.055083
+  type: 'test'
+  ...
+# Subtest: sync setup copy is complete in both languages and errors describe the recovery path
+ok 147 - sync setup copy is complete in both languages and errors describe the recovery path
+  ---
+  duration_ms: 0.938417
+  type: 'test'
+  ...
+# Subtest: device connection errors describe service fallback, durable retry and a fresh verified connection
+ok 148 - device connection errors describe service fallback, durable retry and a fresh verified connection
+  ---
+  duration_ms: 0.513875
+  type: 'test'
+  ...
+# (node:2878) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/transcript-state.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: mobile transcript keys remain stable across attribution changes and preserve duplicate legacy rows
+ok 149 - mobile transcript keys remain stable across attribution changes and preserve duplicate legacy rows
+  ---
+  duration_ms: 0.625042
+  type: 'test'
+  ...
+# Subtest: mobile labels preserve unknown, mixed and overlapping attribution independently of physical microphone
+ok 150 - mobile labels preserve unknown, mixed and overlapping attribution independently of physical microphone
+  ---
+  duration_ms: 0.186875
+  type: 'test'
+  ...
+# Subtest: mobile automatic names remain Teams estimates and explicit names remain literal in both languages
+ok 151 - mobile automatic names remain Teams estimates and explicit names remain literal in both languages
+  ---
+  duration_ms: 0.189792
+  type: 'test'
+  ...
+# Subtest: mobile durable playback requests a core source resolution rather than the mutable speaker track
+ok 152 - mobile durable playback requests a core source resolution rather than the mutable speaker track
+  ---
+  duration_ms: 0.141208
+  type: 'test'
+  ...
+# Subtest: normalization retains richer metadata and exact text while keeping old meetings readable
+ok 153 - normalization retains richer metadata and exact text while keeping old meetings readable
+  ---
+  duration_ms: 0.077458
+  type: 'test'
+  ...
+# Subtest: persisted live estimates have a qualitative review marker until final or manually confirmed
+ok 154 - persisted live estimates have a qualitative review marker until final or manually confirmed
+  ---
+  duration_ms: 0.0615
+  type: 'test'
+  ...
+# (node:2879) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/src/workflow-state.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/mobile/package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: an interruption is paused capture with an available stop action
+ok 155 - an interruption is paused capture with an available stop action
+  ---
+  duration_ms: 0.60325
+  type: 'test'
+  ...
+# Subtest: saved first-use progress resumes supported task steps and defers old voice enrollment
+ok 156 - saved first-use progress resumes supported task steps and defers old voice enrollment
+  ---
+  duration_ms: 0.063833
+  type: 'test'
+  ...
+# Subtest: task setup checks the selected task model, provider capability, availability and saved credential
+ok 157 - task setup checks the selected task model, provider capability, availability and saved credential
+  ---
+  duration_ms: 0.090125
+  type: 'test'
+  ...
+# Subtest: practice requires a matching owned generation and nonempty successful final text
+ok 158 - practice requires a matching owned generation and nonempty successful final text
+  ---
+  duration_ms: 0.82
+  type: 'test'
+  ...
+# Subtest: a supplied Markdown heading is not repeated by an additional Summary heading
+ok 159 - a supplied Markdown heading is not repeated by an additional Summary heading
+  ---
+  duration_ms: 0.128958
+  type: 'test'
+  ...
+# Subtest: workflow copy remains complete in English and Dutch
+ok 160 - workflow copy remains complete in English and Dutch
+  ---
+  duration_ms: 0.226875
+  type: 'test'
+  ...
+1..160
+# tests 160
+# suites 0
+# pass 160
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 410.287209

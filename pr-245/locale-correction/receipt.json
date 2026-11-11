@@ -1,0 +1,16 @@
+{
+  "pr": 245,
+  "branch": "codex/redesign-pill-appearance",
+  "before": "cd27321d248fe0d1ab98cede2ccf9e42dd3601d8",
+  "head": "8debdd86ec37106cb1c8069859084d59b7a1f742",
+  "source": "d3f00e70419d2d8b70e1bf1c1c02d3f08932e8c1",
+  "catalog_context_resolutions": [
+    "assets/locales/backend.en.json",
+    "assets/locales/backend.nl.json",
+    "assets/locales/backend.sources.json"
+  ],
+  "language_policy_tests": 2,
+  "frontend_i18n_tests": 9,
+  "catalog_keys": 821,
+  "checks": "all passed; no policy/test exceptions or runtime dispatch changes"
+}

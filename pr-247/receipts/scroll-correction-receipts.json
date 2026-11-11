@@ -1,0 +1,52 @@
+{
+  "base": "d7ed60eb4a4db7dae302c8499e57f28417a39326",
+  "cases": 7,
+  "deep_scroll_receipts": [
+    {
+      "case": "t12-exit-scroll-normal",
+      "source": {
+        "top": 7266,
+        "left": 0
+      },
+      "copy_at_mid_exit": {
+        "top": 7266,
+        "left": 0
+      },
+      "matched_visible_passage": true,
+      "draft_selection_retained": true,
+      "immediate_close_focus": true,
+      "rapid_reopen_retained": true
+    },
+    {
+      "case": "t12-exit-scroll-system",
+      "source": {
+        "top": 7266,
+        "left": 0
+      },
+      "copy_at_mid_exit": {
+        "top": 7266,
+        "left": 0
+      },
+      "matched_visible_passage": true,
+      "draft_selection_retained": true,
+      "immediate_close_focus": true,
+      "rapid_reopen_retained": true
+    },
+    {
+      "case": "t12-exit-scroll-app",
+      "source": {
+        "top": 7266,
+        "left": 0
+      },
+      "copy_at_mid_exit": {
+        "top": 7266,
+        "left": 0
+      },
+      "matched_visible_passage": true,
+      "draft_selection_retained": true,
+      "immediate_close_focus": true,
+      "rapid_reopen_retained": true
+    }
+  ],
+  "head": "612a5bacbe995c41b91b40ea8621c9c73b886cf1"
+}

@@ -1,0 +1,56 @@
+
+> pennel-mobile-app@0.1.0 test:widgets
+> node --test widgets/tests/live-activities.test.cjs
+
+TAP version 13
+# Subtest: payloads use canonical appearance and contain status rather than meeting content
+ok 1 - payloads use canonical appearance and contain status rather than meeting content
+  ---
+  duration_ms: 0.507791
+  type: 'test'
+  ...
+# Subtest: the actual SDK serializes a self-contained widget and renders an elapsed native timer
+ok 2 - the actual SDK serializes a self-contained widget and renders an elapsed native timer
+  ---
+  duration_ms: 425.265875
+  type: 'test'
+  ...
+# Subtest: ready sessions use a bounded native countdown with no JavaScript tick
+ok 3 - ready sessions use a bounded native countdown with no JavaScript tick
+  ---
+  duration_ms: 83.795333
+  type: 'test'
+  ...
+# Subtest: expired ready sessions and finishing recordings do not display active timers
+ok 4 - expired ready sessions and finishing recordings do not display active timers
+  ---
+  duration_ms: 160.7835
+  type: 'test'
+  ...
+# Subtest: stale presentations request verification and expose no misleading Stop action
+ok 5 - stale presentations request verification and expose no misleading Stop action
+  ---
+  duration_ms: 74.606584
+  type: 'test'
+  ...
+# Subtest: invalid timestamps fail rather than create invalid native timer ranges
+ok 6 - invalid timestamps fail rather than create invalid native timer ranges
+  ---
+  duration_ms: 0.254166
+  type: 'test'
+  ...
+# Subtest: import and explicit registration never start recording or a Live Activity
+ok 7 - import and explicit registration never start recording or a Live Activity
+  ---
+  duration_ms: 70.530833
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1171.369584

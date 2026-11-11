@@ -1,0 +1,1207 @@
+{
+  "head": "d7ed60eb4a4db7dae302c8499e57f28417a39326",
+  "completed_cases": 30,
+  "receipts": [
+    {
+      "case": "t12-companion-normal",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-companion-enter",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateX(16px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-companion-exit",
+            "duration": 130,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1",
+                "transform": "none"
+              },
+              {
+                "offset": 1,
+                "opacity": "0",
+                "transform": "translateX(16px)"
+              }
+            ]
+          },
+          {
+            "name": "desktop-arrive",
+            "duration": 320,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-summary-normal",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-arrive",
+            "duration": 320,
+            "delay": 180,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-map-draw",
+            "duration": 220,
+            "delay": 860,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "scaleX(0)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "scaleX(1)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-shortcut-normal",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-pop",
+            "duration": 120,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "scale(0.8)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-pill-normal",
+      "proof": {
+        "motion": [
+          {
+            "name": "pill-enter",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px) scale(0.96)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "pill-leave",
+            "duration": 140,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1",
+                "transform": "none"
+              },
+              {
+                "offset": 1,
+                "opacity": "0",
+                "transform": "translateY(4px) scale(0.98)"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-companion-system",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade-out",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-summary-system",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-shortcut-system",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-pill-system",
+      "proof": {
+        "motion": [
+          {
+            "name": "pill-enter-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "pill-leave-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-companion-app",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade-out",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-summary-app",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-shortcut-app",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-pill-app",
+      "proof": {
+        "motion": [
+          {
+            "name": "pill-enter-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "pill-leave-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-home-normal",
+      "proof": {
+        "motion": [
+          {
+            "name": "home-result-arrives",
+            "duration": 320,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(-8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-pop",
+            "duration": 120,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "scale(0.8)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-review-normal",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-settle",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0.65",
+                "transform": "translateY(-2px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-tick",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0.5",
+                "transform": "scale(1.2)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-home-system",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-review-system",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-negative-system",
+      "proof": {
+        "motion_negative_controls": {
+          "surviving_movement_rejected": true,
+          "missing_active_fade_rejected": true
+        }
+      }
+    },
+    {
+      "case": "t12-home-app",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-review-app",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-negative-app",
+      "proof": {
+        "motion_negative_controls": {
+          "surviving_movement_rejected": true,
+          "missing_active_fade_rejected": true
+        }
+      }
+    },
+    {
+      "case": "t12-capsule-normal",
+      "proof": {
+        "capsule_motion": [
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "width",
+            "duration": 220,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "142px",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "225px",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "width",
+            "duration": 130,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "225px",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "142px",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "width",
+            "duration": 130,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "225px",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "142px",
+                "computedOffset": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-placeholders-normal",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-arrive",
+            "duration": 320,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-capsule-system",
+      "proof": {
+        "capsule_motion": [
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-placeholders-system",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-capsule-app",
+      "proof": {
+        "capsule_motion": [
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-placeholders-app",
+      "proof": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "t12-sidebar-normal",
+      "proof": {
+        "sidebar_motion": {
+          "name": "desktop-sidebar-selection",
+          "duration": 220,
+          "keyframes": [
+            {
+              "offset": 0,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "transform": "translateY(-114px)",
+              "computedOffset": 0
+            },
+            {
+              "offset": 1,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "transform": "none",
+              "computedOffset": 1
+            }
+          ],
+          "reduced": false
+        }
+      }
+    },
+    {
+      "case": "t12-sidebar-system",
+      "proof": {
+        "sidebar_motion": {
+          "name": "desktop-fade",
+          "duration": 120,
+          "keyframes": [
+            {
+              "offset": 0,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "0",
+              "computedOffset": 0
+            },
+            {
+              "offset": 1,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "1",
+              "computedOffset": 1
+            }
+          ],
+          "reduced": true
+        }
+      }
+    },
+    {
+      "case": "t12-sidebar-app",
+      "proof": {
+        "sidebar_motion": {
+          "name": "desktop-fade",
+          "duration": 120,
+          "keyframes": [
+            {
+              "offset": 0,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "0",
+              "computedOffset": 0
+            },
+            {
+              "offset": 1,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "1",
+              "computedOffset": 1
+            }
+          ],
+          "reduced": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+test_canonical_palette_and_aliases_are_valid (__main__.GeneratorTests) ... ok
+test_desktop_chrome_keeps_reading_fonts_and_shared_sidebar_bounds (__main__.GeneratorTests) ... ok
+test_desktop_live_and_speaker_text_stay_readable_on_desktop_surfaces (__main__.GeneratorTests) ... ok
+test_desktop_theme_bridge_and_forced_appearance_share_the_semantic_palette (__main__.GeneratorTests) ... ok
+test_desktop_theme_does_not_change_mobile_or_pill_branding (__main__.GeneratorTests) ... ok
+test_desktop_theme_preserves_fixed_brand_and_font_constraints (__main__.GeneratorTests) ... ok
+test_desktop_theme_rejects_unreadable_chrome_and_semantic_states (__main__.GeneratorTests) ... ok
+test_desktop_theme_requires_complete_semantic_roles (__main__.GeneratorTests) ... ok
+test_generated_css_retains_semantic_values (__main__.GeneratorTests) ... ok
+test_generation_only_targets_active_shared_outputs (__main__.GeneratorTests) ... ok
+test_icon_shapes_are_shared_and_resource_safe (__main__.GeneratorTests) ... ok
+test_interface_font_follows_the_original_figtree_and_can_use_the_system_font (__main__.GeneratorTests) ... ok
+test_invalid_colors_and_aliases_are_rejected (__main__.GeneratorTests) ... ok
+test_pill_cannot_invert_with_the_window (__main__.GeneratorTests) ... ok
+test_pill_frames_reserve_space_for_caption_and_structured_recovery (__main__.GeneratorTests) ... ok
+test_pill_geometry_is_shared_by_css_and_frontend_state (__main__.GeneratorTests) ... ok
+test_pill_size_variants_reject_invalid_geometry_and_emit_shared_metrics (__main__.GeneratorTests) ... ok
+test_pill_theme_values_and_font_sizes_fail_with_readable_validation (__main__.GeneratorTests) ... ok
+test_pill_variants_generate_scoped_colours_and_validate_contrast (__main__.GeneratorTests) ... ok
+test_system_and_forced_appearances_support_minimum_webkit (__main__.GeneratorTests) ... ok
+test_toolbar_labels_stay_readable_through_control_and_material_layers (__main__.GeneratorTests) ... ok
+test_translucent_navigation_remains_readable_on_extreme_backdrops (__main__.GeneratorTests) ... ok
+test_unreadable_secondary_text_is_rejected (__main__.GeneratorTests) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.025s
+
+OK

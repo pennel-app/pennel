@@ -1,0 +1,16 @@
+{
+  "pr": 243,
+  "branch": "codex/redesign-inline-notes-handoff",
+  "before": "13dd5ffcfde6c2d8cdb5410a721ef9a3366429f1",
+  "head": "a7f4e62ba2184f69ca964dc84fa9a70c9340c524",
+  "source": "d3f00e70419d2d8b70e1bf1c1c02d3f08932e8c1",
+  "catalog_context_resolutions": [
+    "assets/locales/backend.en.json",
+    "assets/locales/backend.nl.json",
+    "assets/locales/backend.sources.json"
+  ],
+  "language_policy_tests": 2,
+  "frontend_i18n_tests": 9,
+  "catalog_keys": 819,
+  "checks": "all passed; no policy/test exceptions or runtime dispatch changes"
+}

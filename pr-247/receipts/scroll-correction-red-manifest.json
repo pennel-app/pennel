@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-11-11T00:18:32.552Z",
+  "complete": false,
+  "capture_method": "Owned Chromium headless fixture render via CDP; no user screen/profile",
+  "baseline_commit": null,
+  "fixture_sha256": "3be2933b7d4fa7415ebdad10cfbae2fbeb364e5aa549c40a9cf68464dcb410c5",
+  "fixture_clock": "2026-10-25T09:00:00Z",
+  "images": [],
+  "browser": "chrome-headless-shell",
+  "failure": {
+    "case": "en/light/t12-exit-scroll-normal",
+    "message": "Error: t12-exit-scroll-normal: Error: The mid-exit copy lost the real nested scroll offset: 0/0, expected 7266/0.\n    at assert (http://127.0.0.1:56528/tests/motion.interactions.mjs:1:56)\n    at Module.checkCompanionExitScroll (http://127.0.0.1:56528/tests/motion.interactions.mjs:226:3)"
+  }
+}

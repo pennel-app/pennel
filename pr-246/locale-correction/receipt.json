@@ -1,0 +1,16 @@
+{
+  "pr": 246,
+  "branch": "codex/redesign-suggestion-automation",
+  "before": "f00592376ab893b698cb4f2acefba29981af12b4",
+  "head": "7c5755a85fba94500901126d384979767528c156",
+  "source": "d3f00e70419d2d8b70e1bf1c1c02d3f08932e8c1",
+  "catalog_context_resolutions": [
+    "assets/locales/backend.en.json",
+    "assets/locales/backend.nl.json",
+    "assets/locales/backend.sources.json"
+  ],
+  "language_policy_tests": 2,
+  "frontend_i18n_tests": 9,
+  "catalog_keys": 819,
+  "checks": "all passed; no policy/test exceptions or runtime dispatch changes"
+}

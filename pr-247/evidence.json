@@ -1,0 +1,741 @@
+{
+  "pull_request": 247,
+  "head": "a0acf423079be784deecebaad8849cc61e70d4b7",
+  "immutable_base": "42e92795d747c1f9cc7ce3fd458bd5fd148252f7",
+  "source_candidate": "d3f00e70419d2d8b70e1bf1c1c02d3f08932e8c1",
+  "kind": "deterministic owned synthetic loopback/headless fixture frames and labeled animation probes; no user screen/profile or real provider",
+  "source_checkpoints": {
+    "actor_before": "d1f36579347aa4ae9fec6e390d7bec6c6d85e7b3",
+    "motion_actor": "d7ed60eb4a4db7dae302c8499e57f28417a39326",
+    "scroll_actor": "612a5bacbe995c41b91b40ea8621c9c73b886cf1",
+    "integrated_motion": "18ee205d1fe2bcbeba6fa955033689079d3ab6fc",
+    "integrated_scroll": "5757cc2eba55b544f462574510fcbcb3f084bd97",
+    "policy_fix": "b10c122eba41e1b083304a43c85f48b172910ecd",
+    "catalog_fix": "d3f00e70419d2d8b70e1bf1c1c02d3f08932e8c1"
+  },
+  "capture_note": "Original motion-author matched renders/probes, not a new whole-app catalogue or native acceptance run. The actual final immutable base has an identical frontend tree to the actor baseline; its intervening demo correction is native-only. Static PNGs demonstrate layout; runtime keyframes/durations/intermediate fades/negative controls establish motion separately. Seven final scroll-correction frames preserve the same visible passage.",
+  "sets": [
+    {
+      "directory": "before",
+      "images": 32,
+      "captured_at": "2026-11-11T00:06:24.164Z",
+      "fixture_sha256": "852013efa0f9eea6ba16aca07a1734f65cfe9da800a8d28b937f1da2d0458446"
+    },
+    {
+      "directory": "after",
+      "images": 32,
+      "captured_at": "2026-11-11T00:06:24.152Z",
+      "fixture_sha256": "852013efa0f9eea6ba16aca07a1734f65cfe9da800a8d28b937f1da2d0458446"
+    },
+    {
+      "directory": "scroll-correction",
+      "images": 7,
+      "captured_at": "2026-11-11T00:19:09.789Z",
+      "fixture_sha256": "3be2933b7d4fa7415ebdad10cfbae2fbeb364e5aa549c40a9cf68464dcb410c5"
+    }
+  ],
+  "matched_pairs": [
+    {
+      "before": "before/en/light/pill-listening-empty.png",
+      "after": "after/en/light/pill-listening-empty.png",
+      "case_sha256": "5cdf70434e35618a632a9edac64531383c5f5ebe51cdd9f96789a4cdca1bc313",
+      "width": 420,
+      "height": 164,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/en/light/t5a-export-share.png",
+      "after": "after/en/light/t5a-export-share.png",
+      "case_sha256": "add4ac6c134765ba49ce37cdc00424d8165f04723a1f8fff81ac46a8577f5299",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/light/t5a-export-personal.png",
+      "after": "after/en/light/t5a-export-personal.png",
+      "case_sha256": "f289501bf42d2f464b8dcaaddaee64bf5a0beb2ad9732a32325e24b8eaa5897e",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/light/t5a-export-minimum.png",
+      "after": "after/en/light/t5a-export-minimum.png",
+      "case_sha256": "373ccc1da02c1be9968ff5411fd9b6ebd60f7a49c0b0d4d256010dbd47a14bc5",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/light/t5a-export-enlarged.png",
+      "after": "after/en/light/t5a-export-enlarged.png",
+      "case_sha256": "bb0313a0f658b68d082b8d61ed1345bfba0e3a20798f3b8f48f333f897753a30",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/light/t2-home-before-ready.png",
+      "after": "after/en/light/t2-home-before-ready.png",
+      "case_sha256": "2bd43a9f279560b1b9110fc713e43ab9ea95bef87f838f41bab4b8e014e5bcd1",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/en/light/meeting-companion-live-reference.png",
+      "after": "after/en/light/meeting-companion-live-reference.png",
+      "case_sha256": "e5ef0c46860528094cc62a7b59076483aadb72f2e9167ca860ab66d9569a6c07",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/en/light/t9d-summary.png",
+      "after": "after/en/light/t9d-summary.png",
+      "case_sha256": "797e9b4eef2326a2edf620a684bdad334538feb5ca7a13bd21e376c95f31b121",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/dark/pill-listening-empty.png",
+      "after": "after/en/dark/pill-listening-empty.png",
+      "case_sha256": "5cdf70434e35618a632a9edac64531383c5f5ebe51cdd9f96789a4cdca1bc313",
+      "width": 420,
+      "height": 164,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/en/dark/t5a-export-share.png",
+      "after": "after/en/dark/t5a-export-share.png",
+      "case_sha256": "add4ac6c134765ba49ce37cdc00424d8165f04723a1f8fff81ac46a8577f5299",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/dark/t5a-export-personal.png",
+      "after": "after/en/dark/t5a-export-personal.png",
+      "case_sha256": "f289501bf42d2f464b8dcaaddaee64bf5a0beb2ad9732a32325e24b8eaa5897e",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/dark/t5a-export-minimum.png",
+      "after": "after/en/dark/t5a-export-minimum.png",
+      "case_sha256": "373ccc1da02c1be9968ff5411fd9b6ebd60f7a49c0b0d4d256010dbd47a14bc5",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/dark/t5a-export-enlarged.png",
+      "after": "after/en/dark/t5a-export-enlarged.png",
+      "case_sha256": "bb0313a0f658b68d082b8d61ed1345bfba0e3a20798f3b8f48f333f897753a30",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/en/dark/t2-home-before-ready.png",
+      "after": "after/en/dark/t2-home-before-ready.png",
+      "case_sha256": "2bd43a9f279560b1b9110fc713e43ab9ea95bef87f838f41bab4b8e014e5bcd1",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/en/dark/meeting-companion-live-reference.png",
+      "after": "after/en/dark/meeting-companion-live-reference.png",
+      "case_sha256": "e5ef0c46860528094cc62a7b59076483aadb72f2e9167ca860ab66d9569a6c07",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/en/dark/t9d-summary.png",
+      "after": "after/en/dark/t9d-summary.png",
+      "case_sha256": "797e9b4eef2326a2edf620a684bdad334538feb5ca7a13bd21e376c95f31b121",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/light/pill-listening-empty.png",
+      "after": "after/nl/light/pill-listening-empty.png",
+      "case_sha256": "5cdf70434e35618a632a9edac64531383c5f5ebe51cdd9f96789a4cdca1bc313",
+      "width": 420,
+      "height": 164,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/nl/light/t5a-export-share.png",
+      "after": "after/nl/light/t5a-export-share.png",
+      "case_sha256": "add4ac6c134765ba49ce37cdc00424d8165f04723a1f8fff81ac46a8577f5299",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/light/t5a-export-personal.png",
+      "after": "after/nl/light/t5a-export-personal.png",
+      "case_sha256": "f289501bf42d2f464b8dcaaddaee64bf5a0beb2ad9732a32325e24b8eaa5897e",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/light/t5a-export-minimum.png",
+      "after": "after/nl/light/t5a-export-minimum.png",
+      "case_sha256": "373ccc1da02c1be9968ff5411fd9b6ebd60f7a49c0b0d4d256010dbd47a14bc5",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/light/t5a-export-enlarged.png",
+      "after": "after/nl/light/t5a-export-enlarged.png",
+      "case_sha256": "bb0313a0f658b68d082b8d61ed1345bfba0e3a20798f3b8f48f333f897753a30",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/light/t2-home-before-ready.png",
+      "after": "after/nl/light/t2-home-before-ready.png",
+      "case_sha256": "2bd43a9f279560b1b9110fc713e43ab9ea95bef87f838f41bab4b8e014e5bcd1",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/nl/light/meeting-companion-live-reference.png",
+      "after": "after/nl/light/meeting-companion-live-reference.png",
+      "case_sha256": "e5ef0c46860528094cc62a7b59076483aadb72f2e9167ca860ab66d9569a6c07",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/nl/light/t9d-summary.png",
+      "after": "after/nl/light/t9d-summary.png",
+      "case_sha256": "797e9b4eef2326a2edf620a684bdad334538feb5ca7a13bd21e376c95f31b121",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/dark/pill-listening-empty.png",
+      "after": "after/nl/dark/pill-listening-empty.png",
+      "case_sha256": "5cdf70434e35618a632a9edac64531383c5f5ebe51cdd9f96789a4cdca1bc313",
+      "width": 420,
+      "height": 164,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/nl/dark/t5a-export-share.png",
+      "after": "after/nl/dark/t5a-export-share.png",
+      "case_sha256": "add4ac6c134765ba49ce37cdc00424d8165f04723a1f8fff81ac46a8577f5299",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/dark/t5a-export-personal.png",
+      "after": "after/nl/dark/t5a-export-personal.png",
+      "case_sha256": "f289501bf42d2f464b8dcaaddaee64bf5a0beb2ad9732a32325e24b8eaa5897e",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/dark/t5a-export-minimum.png",
+      "after": "after/nl/dark/t5a-export-minimum.png",
+      "case_sha256": "373ccc1da02c1be9968ff5411fd9b6ebd60f7a49c0b0d4d256010dbd47a14bc5",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/dark/t5a-export-enlarged.png",
+      "after": "after/nl/dark/t5a-export-enlarged.png",
+      "case_sha256": "bb0313a0f658b68d082b8d61ed1345bfba0e3a20798f3b8f48f333f897753a30",
+      "width": 760,
+      "height": 520,
+      "pixel_identical": false
+    },
+    {
+      "before": "before/nl/dark/t2-home-before-ready.png",
+      "after": "after/nl/dark/t2-home-before-ready.png",
+      "case_sha256": "2bd43a9f279560b1b9110fc713e43ab9ea95bef87f838f41bab4b8e014e5bcd1",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/nl/dark/meeting-companion-live-reference.png",
+      "after": "after/nl/dark/meeting-companion-live-reference.png",
+      "case_sha256": "e5ef0c46860528094cc62a7b59076483aadb72f2e9167ca860ab66d9569a6c07",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": true
+    },
+    {
+      "before": "before/nl/dark/t9d-summary.png",
+      "after": "after/nl/dark/t9d-summary.png",
+      "case_sha256": "797e9b4eef2326a2edf620a684bdad334538feb5ca7a13bd21e376c95f31b121",
+      "width": 1280,
+      "height": 860,
+      "pixel_identical": false
+    }
+  ],
+  "probes": {
+    "runtime_completed_cases": 30,
+    "actual_motion_receipts": 29,
+    "affected_cases": 10,
+    "scroll_correction_cases": 7,
+    "combined_browser_frames": 48,
+    "manifest_only_note": "Runtime/affected/combined manifests are metadata receipts; their PNGs are not duplicated in this focused T12 package. All static frames are separate from timing proof."
+  },
+  "files": [
+    {
+      "file": "after/en/dark/meeting-companion-live-reference.png",
+      "sha256": "9de09fb7d017f4bffcfab847e343c4ae32abccba8431e6c1ce56efd2fb95f242"
+    },
+    {
+      "file": "after/en/dark/pill-listening-empty.png",
+      "sha256": "478d25eb79e96608d351921e7da0905e4022fa1b0e68a7ae9210299dfbc88320"
+    },
+    {
+      "file": "after/en/dark/t2-home-before-ready.png",
+      "sha256": "ba1e310ad777f9316f2589be7b60d2ba423d9d0ea590d9514b94fae2938ea39d"
+    },
+    {
+      "file": "after/en/dark/t5a-export-enlarged.png",
+      "sha256": "064c2d8c60f8f196b059148acc1241dbbd34bf5bdc781a0f2463650c87c4c3f4"
+    },
+    {
+      "file": "after/en/dark/t5a-export-minimum.png",
+      "sha256": "8996d571badb366d011db71500dfee41b80f72bf5aae33eea14ca3ee137e277d"
+    },
+    {
+      "file": "after/en/dark/t5a-export-personal.png",
+      "sha256": "d9c80391ad428d7f6e154b0aa6cf5200a5cd92393671048be64ae0a5bb8f9879"
+    },
+    {
+      "file": "after/en/dark/t5a-export-share.png",
+      "sha256": "ce6b143fee2cc4f0b723452449fc4aa022e0464bb46ddbeee001cb6bb7ee5a00"
+    },
+    {
+      "file": "after/en/dark/t9d-summary.png",
+      "sha256": "afe3f47e6c7c08f727ee904e04b7b4a8b6aca1733eb46c12859596df4c603b11"
+    },
+    {
+      "file": "after/en/light/meeting-companion-live-reference.png",
+      "sha256": "b589f766ce2bb246816b25a077a208271daed29c8bc8b0983c32f416b8424af5"
+    },
+    {
+      "file": "after/en/light/pill-listening-empty.png",
+      "sha256": "27ed2e7aa6db75765d37a0ac589354f15c1795bc6a86f98baf8264986b8ae8dc"
+    },
+    {
+      "file": "after/en/light/t2-home-before-ready.png",
+      "sha256": "4cd53a4e0e2efb67ae1ccf11d950ef189ebd717b86f8051ce6e637c7a70d11be"
+    },
+    {
+      "file": "after/en/light/t5a-export-enlarged.png",
+      "sha256": "135a4587cb16224a217748eb5b1a4fcb51331ae8c8bd2adffd7c08182785f893"
+    },
+    {
+      "file": "after/en/light/t5a-export-minimum.png",
+      "sha256": "f0fe87df26c7f24a9a1a1ed6ffabefcfd0643ae0e7b25d7a9c6844e7986c8380"
+    },
+    {
+      "file": "after/en/light/t5a-export-personal.png",
+      "sha256": "650c6fe5f9e28f13af8a927d721aad0050b63ce6019fabd60d1d2bb0b07b80fa"
+    },
+    {
+      "file": "after/en/light/t5a-export-share.png",
+      "sha256": "dab31a0fe66d90f4ba0760dc6a98e7a8e0015ef2c3ebb0103e0739f204ab9429"
+    },
+    {
+      "file": "after/en/light/t9d-summary.png",
+      "sha256": "89c93078d7cefdd0d9f5323fb9aa62f556accdd45ce883799594e68b00dc2095"
+    },
+    {
+      "file": "after/manifest.json",
+      "sha256": "41b3bab1af59d8c1b8d25d49822d81566e33e3b486797b0a65ce2332ac514326"
+    },
+    {
+      "file": "after/nl/dark/meeting-companion-live-reference.png",
+      "sha256": "90d38953b49c935f9ec9178f99551db1ff350036e5e1e2ed91959da3ed03ef5a"
+    },
+    {
+      "file": "after/nl/dark/pill-listening-empty.png",
+      "sha256": "e8180978e1ca72c11ae99013d33858cda17e675f5f3b03458b2b81348f2f18ce"
+    },
+    {
+      "file": "after/nl/dark/t2-home-before-ready.png",
+      "sha256": "b94eeec457f5166b0a976581ca79f5688ac4d62bf8b1362f3c84ed309f7e83ff"
+    },
+    {
+      "file": "after/nl/dark/t5a-export-enlarged.png",
+      "sha256": "b4d83f56c7f6e0898c85e6a40fa7a704c3c24aabc18f5558f43205d9dfd262f5"
+    },
+    {
+      "file": "after/nl/dark/t5a-export-minimum.png",
+      "sha256": "260622e0c96dfefaa32cf1aa6f4740248b293e6a9d4ee4839f6685fcbf3eecdb"
+    },
+    {
+      "file": "after/nl/dark/t5a-export-personal.png",
+      "sha256": "60e74ff5f40353f62538f166c63ee049cbafbb6175f27b9dd0029aae1b829478"
+    },
+    {
+      "file": "after/nl/dark/t5a-export-share.png",
+      "sha256": "6d1f180da45266897acbcd5040d05b0c1e790d2cfb5d60c2a7b4da2759f648a3"
+    },
+    {
+      "file": "after/nl/dark/t9d-summary.png",
+      "sha256": "a8fba13444ff4f740bbf07a9cc466f09ca0aa62f8ba73bd277ed846c358a84de"
+    },
+    {
+      "file": "after/nl/light/meeting-companion-live-reference.png",
+      "sha256": "aa78a034489a9d45b3faaa37f07f5c6d4f67454646b5544f5637657e626ee428"
+    },
+    {
+      "file": "after/nl/light/pill-listening-empty.png",
+      "sha256": "1fcd5ee58678574b8d39448c0d9fd54135f17748ab22196d6df3bfdf72e2e784"
+    },
+    {
+      "file": "after/nl/light/t2-home-before-ready.png",
+      "sha256": "948bb740abf93915074800ee7fd19bf16281f42bf8e540522386fb9a810d767d"
+    },
+    {
+      "file": "after/nl/light/t5a-export-enlarged.png",
+      "sha256": "54e7d843603cc74df834b481a3e5ac734acda44890c2f539d683ca91f06d13a1"
+    },
+    {
+      "file": "after/nl/light/t5a-export-minimum.png",
+      "sha256": "c82358f76ee5120a96a060a5a28366d77fa74d0d9e536338636684a5e6bca67c"
+    },
+    {
+      "file": "after/nl/light/t5a-export-personal.png",
+      "sha256": "8789c0fcc011f3b4cb2e0ecd79e6dbb44c2ec10da76f6b37b0b9bad2dd61f1a5"
+    },
+    {
+      "file": "after/nl/light/t5a-export-share.png",
+      "sha256": "ff3ff003a83a1d2d526f805ef2dcca96f05dd644fdb2c9d44404e28b6084c9b1"
+    },
+    {
+      "file": "after/nl/light/t9d-summary.png",
+      "sha256": "9e67af97ea9ecad4c5b934fdb9202bef710837720b93f60575a8fe527174ecf5"
+    },
+    {
+      "file": "before/en/dark/meeting-companion-live-reference.png",
+      "sha256": "9de09fb7d017f4bffcfab847e343c4ae32abccba8431e6c1ce56efd2fb95f242"
+    },
+    {
+      "file": "before/en/dark/pill-listening-empty.png",
+      "sha256": "478d25eb79e96608d351921e7da0905e4022fa1b0e68a7ae9210299dfbc88320"
+    },
+    {
+      "file": "before/en/dark/t2-home-before-ready.png",
+      "sha256": "ba1e310ad777f9316f2589be7b60d2ba423d9d0ea590d9514b94fae2938ea39d"
+    },
+    {
+      "file": "before/en/dark/t5a-export-enlarged.png",
+      "sha256": "7d3243b1a5ffee9e263c4feaf2132bd2eab7d0718697c4bc57be9d6b10c512be"
+    },
+    {
+      "file": "before/en/dark/t5a-export-minimum.png",
+      "sha256": "a44151ad756c961cbd75ae308d753c75a2e143005b9296038f3242f9c8bc078c"
+    },
+    {
+      "file": "before/en/dark/t5a-export-personal.png",
+      "sha256": "500d0e6466e76df863b722e9ef789ba27abd6375cd54a7a22b105c1c678dc118"
+    },
+    {
+      "file": "before/en/dark/t5a-export-share.png",
+      "sha256": "0073b90d3726aed09797617b8012713e4faa7b83a8ff22b862c76360b39b7972"
+    },
+    {
+      "file": "before/en/dark/t9d-summary.png",
+      "sha256": "3f304e3741a76435426045b9883aefb969b738ab1880af9154043b124006a247"
+    },
+    {
+      "file": "before/en/light/meeting-companion-live-reference.png",
+      "sha256": "b589f766ce2bb246816b25a077a208271daed29c8bc8b0983c32f416b8424af5"
+    },
+    {
+      "file": "before/en/light/pill-listening-empty.png",
+      "sha256": "27ed2e7aa6db75765d37a0ac589354f15c1795bc6a86f98baf8264986b8ae8dc"
+    },
+    {
+      "file": "before/en/light/t2-home-before-ready.png",
+      "sha256": "4cd53a4e0e2efb67ae1ccf11d950ef189ebd717b86f8051ce6e637c7a70d11be"
+    },
+    {
+      "file": "before/en/light/t5a-export-enlarged.png",
+      "sha256": "69f66f182406ec16408d27fe7cdf160688a4381ad8ad4c1c540f816b454856b6"
+    },
+    {
+      "file": "before/en/light/t5a-export-minimum.png",
+      "sha256": "f20ef993b7256833dc11af1187578b5a1343b5938363e4a238cb58bc33109313"
+    },
+    {
+      "file": "before/en/light/t5a-export-personal.png",
+      "sha256": "683ac29c56cb03bc818699afb0776b1c2c187ff0bdf35a07c9b9552d778692b6"
+    },
+    {
+      "file": "before/en/light/t5a-export-share.png",
+      "sha256": "897a6eb09a7b0e14d67bd586186a9c07b17f828120cd231832c110787c6a5a5e"
+    },
+    {
+      "file": "before/en/light/t9d-summary.png",
+      "sha256": "8d34ed7b9ea22f857cc8727e2aaafb277e2e6dc2686e5e22a788f80ed6f61800"
+    },
+    {
+      "file": "before/manifest.json",
+      "sha256": "79ccd11d62a0303479eda4961fff5f11a253fe82319b04679800cc030b66d1f2"
+    },
+    {
+      "file": "before/nl/dark/meeting-companion-live-reference.png",
+      "sha256": "90d38953b49c935f9ec9178f99551db1ff350036e5e1e2ed91959da3ed03ef5a"
+    },
+    {
+      "file": "before/nl/dark/pill-listening-empty.png",
+      "sha256": "e8180978e1ca72c11ae99013d33858cda17e675f5f3b03458b2b81348f2f18ce"
+    },
+    {
+      "file": "before/nl/dark/t2-home-before-ready.png",
+      "sha256": "b94eeec457f5166b0a976581ca79f5688ac4d62bf8b1362f3c84ed309f7e83ff"
+    },
+    {
+      "file": "before/nl/dark/t5a-export-enlarged.png",
+      "sha256": "582b045351a4d265cb736aa871d6f539d1526a40ffed35561796dc0e4569377d"
+    },
+    {
+      "file": "before/nl/dark/t5a-export-minimum.png",
+      "sha256": "6ff56def993361b564093847e68c2323160e15386652c55323e27957a8f3cea7"
+    },
+    {
+      "file": "before/nl/dark/t5a-export-personal.png",
+      "sha256": "af858c9f8f2f38c72bc480aee5a0efd45d93b7a49df44f417854589655dc14b2"
+    },
+    {
+      "file": "before/nl/dark/t5a-export-share.png",
+      "sha256": "ab3f78509c07179fadce49af41e690820c10fd2fa202b8eeb8a8c7ec6ecdec6b"
+    },
+    {
+      "file": "before/nl/dark/t9d-summary.png",
+      "sha256": "4299d3ac99f92b4bf37ad5031638f84844560834756a43669aaee8de81d70a16"
+    },
+    {
+      "file": "before/nl/light/meeting-companion-live-reference.png",
+      "sha256": "aa78a034489a9d45b3faaa37f07f5c6d4f67454646b5544f5637657e626ee428"
+    },
+    {
+      "file": "before/nl/light/pill-listening-empty.png",
+      "sha256": "1fcd5ee58678574b8d39448c0d9fd54135f17748ab22196d6df3bfdf72e2e784"
+    },
+    {
+      "file": "before/nl/light/t2-home-before-ready.png",
+      "sha256": "948bb740abf93915074800ee7fd19bf16281f42bf8e540522386fb9a810d767d"
+    },
+    {
+      "file": "before/nl/light/t5a-export-enlarged.png",
+      "sha256": "5219a981645b65edb495c00630936877ee27d6cd9d4ed0831fb41dcb7ff4329d"
+    },
+    {
+      "file": "before/nl/light/t5a-export-minimum.png",
+      "sha256": "4df2c88cc5fd2f881954fd00de118ce4ff9952a679f832ba0a1fba51e681d3b0"
+    },
+    {
+      "file": "before/nl/light/t5a-export-personal.png",
+      "sha256": "37ceb8c3ad8e7b5acddde804f4ead69d633229d6c3f4da4fdb7f940ce2d8f406"
+    },
+    {
+      "file": "before/nl/light/t5a-export-share.png",
+      "sha256": "5f9ce6d887cfdeec0fcb7040556316985dcfa0bd5487d7b4004f557411b9ae89"
+    },
+    {
+      "file": "before/nl/light/t9d-summary.png",
+      "sha256": "0b313e3f792f15f9b3d7d79503e0c6803b052e26b1903f32ce42f2237b46265e"
+    },
+    {
+      "file": "receipts/affected-behavior-final-manifest.json",
+      "sha256": "4cc9c6669578a77d2047510c933e333067dc88dbed7d2edf267b1c4d785df797"
+    },
+    {
+      "file": "receipts/desktop-redesign-220.md",
+      "sha256": "b939ed1f4ced78c84d5c03e03698f3c5ff817db7804fca57a0d7e1db179f26a4"
+    },
+    {
+      "file": "receipts/final-fix-backend.log",
+      "sha256": "35a4c7f7059f59f5ae9ad318e52c5e68fc3fcc3737e5660caebab9114a5181e2"
+    },
+    {
+      "file": "receipts/final-fix-clippy.log",
+      "sha256": "a82a930cbebe97a44c1fc49a1e7662a5925555cff384ca39513ff55289c02c0a"
+    },
+    {
+      "file": "receipts/final-fix-fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "receipts/final-fix-green.log",
+      "sha256": "1ae213ef81a9a6ab45cfe5d7fcb033f70ad15ee2ae4c92ef9520d0f3c9dbce35"
+    },
+    {
+      "file": "receipts/final-fix-report.md",
+      "sha256": "4485413a2a93c28bcd899a153fa9b5d282a9c6861d5542819a5fdb72a0b41efb"
+    },
+    {
+      "file": "receipts/final-fix-review.md",
+      "sha256": "d974c3f4d3f0b6431371abbf0d98640209a77768f3f4e900bb37c5fc973d463f"
+    },
+    {
+      "file": "receipts/final-frontend-review.md",
+      "sha256": "32dc026d13d9f542cfa334529734d1343c58198cdd3474be1d2497499b5788ac"
+    },
+    {
+      "file": "receipts/final-integrated-browser-manifest.json",
+      "sha256": "989b5485d2d7c85d55565ef7b7fbdc43a4508cab557c0b54067309224d370b61"
+    },
+    {
+      "file": "receipts/final-locale-review.md",
+      "sha256": "69d62262f5c77d2ee3a61b52f69857958b2499d9c04744e2ec2fb3add31c793c"
+    },
+    {
+      "file": "receipts/final-native-review.md",
+      "sha256": "3399080c5105bbce71e25598101ae7e94ec0e957bcdca34f5097e2cf0fba1fa6"
+    },
+    {
+      "file": "receipts/motion-receipts.json",
+      "sha256": "9f09fd5d9cbd4ff0bdd3dc299d26a65d20f51caadb171939b6ced1cc6b6c794d"
+    },
+    {
+      "file": "receipts/paired-evidence.json",
+      "sha256": "477c3427ab9734986739e3fd00fcac02748ff27679dc5aa03b25d2a82123e1c4"
+    },
+    {
+      "file": "receipts/pennel-final-core-build.log",
+      "sha256": "d74c597085228765a6a25589d08fcce2bab8f5af7d193e0da80dceb3b4c074c2"
+    },
+    {
+      "file": "receipts/pennel-final-core-clippy.log",
+      "sha256": "a8ca1a706a0795a1d841056dbc21b56727c24785dea22a05a1cb3e35181f3051"
+    },
+    {
+      "file": "receipts/pennel-final-core-tests.log",
+      "sha256": "a463f51e34ee76f18e161ac64d92dcd4cee9fb6fc67f758748336f8f771ce374"
+    },
+    {
+      "file": "receipts/pennel-final-locale-backend.log",
+      "sha256": "f500d33ad282939cd33b2b345ded4963bca290b297979d742a73c508873f1766"
+    },
+    {
+      "file": "receipts/pennel-final-locale-core.log",
+      "sha256": "5e9a88b303550df49b6aff9a2210055bd33a86513958871ec15dfd673c650d93"
+    },
+    {
+      "file": "receipts/pennel-final-locale-frontend-build.log",
+      "sha256": "87fccb4c2e4333ae51c890726001698a49f0f80f3f2f2b7523b98550115c5bda"
+    },
+    {
+      "file": "receipts/pennel-final-locale-frontend-tests.log",
+      "sha256": "01ca2cebd72c545193ed2e30c310523540222f3dbb29bca078dd1f3d849b319a"
+    },
+    {
+      "file": "receipts/pennel-final-locale-policy.log",
+      "sha256": "620d24d66057e458ce1594cdef9cd666253ce1c9ee632cfa6d81f272cdab56b5"
+    },
+    {
+      "file": "receipts/pennel-final-mobile-plugins.log",
+      "sha256": "8f1b48564751ff9cf536a0e377afa29218959538d9ca971f15cd2423753585d6"
+    },
+    {
+      "file": "receipts/pennel-final-mobile-type.log",
+      "sha256": "1887206e1f2ab35629274153742349e28c6142cf640b7673b5f6850e37ca1595"
+    },
+    {
+      "file": "receipts/pennel-final-mobile-ui.log",
+      "sha256": "d4fa53b5f7a8d7c47805dfd60a1674a18b644895e36249ca8733a4fe1d03ec20"
+    },
+    {
+      "file": "receipts/pennel-final-mobile-widgets.log",
+      "sha256": "b753f0691c9b79e12b309c1785922b888873921a7877bbbe856f25383dbd0ae5"
+    },
+    {
+      "file": "receipts/pennel-final-selectors-supported-python.log",
+      "sha256": "e91b70119d3c46ed9f42ec279ddc291e20cb72ce48b0555d7877a672e8e227a5"
+    },
+    {
+      "file": "receipts/pennel-final-swift-tests.log",
+      "sha256": "81528c0ea30b60110b91f11fed635289ad84cc4ac58316fe6630b7accfd87ccb"
+    },
+    {
+      "file": "receipts/pennel-final-theme-selftest.log",
+      "sha256": "deab8c2b5cce62dc7d1b2705ec3c85d7c594626f7965bc4ffe47f548797a8793"
+    },
+    {
+      "file": "receipts/runtime-proof-manifest.json",
+      "sha256": "accf14c2df613b85a8e436e6a5816cde882a0daf66cbb049df68ae5e7144940b"
+    },
+    {
+      "file": "receipts/scroll-correction-receipts.json",
+      "sha256": "ec605492001792121fa5dd3e6a9a14e849c878b25223e0be4c773e7568314d86"
+    },
+    {
+      "file": "receipts/scroll-correction-red-manifest.json",
+      "sha256": "f8fe6f4b0ff8c9a67e584151fc1cb7659da52b4f85d93ba6c2d2b325f91aae61"
+    },
+    {
+      "file": "receipts/t12-fix-review.md",
+      "sha256": "b87ffde95144df54ccafb943aa2394f45b9a20e8d158d8de19a9b15f1d016654"
+    },
+    {
+      "file": "receipts/t12-report.md",
+      "sha256": "ee4ae69f4db10025bea3e9b509312e32f2ac971b71ade664f996b039a4d9ef92"
+    },
+    {
+      "file": "receipts/t12-review.md",
+      "sha256": "c8626789e97a81eec84db48bbac2c6fb2aed82c11701abab184ece9df6f7aa51"
+    },
+    {
+      "file": "scroll-correction/en/light/meeting-companion-keyboard-reopen.png",
+      "sha256": "40c06de0bcc3247cef07ad36d8375ecc15ca39bb8b8835eb23e0ecb7c92817b5"
+    },
+    {
+      "file": "scroll-correction/en/light/meeting-companion-resize.png",
+      "sha256": "bb0a6dcb27feb729d20fd68919f24f575771c45a5c9388c1def7272810c66adf"
+    },
+    {
+      "file": "scroll-correction/en/light/t12-companion-normal.png",
+      "sha256": "836434ad7c286308e163c162a02834f7ba8311a12955637437bb4b9711c1c797"
+    },
+    {
+      "file": "scroll-correction/en/light/t12-exit-scroll-app.png",
+      "sha256": "aac837e8b71f8be7062d39e201456cd24b8d83ee27897a2909d9291dddcbf6ef"
+    },
+    {
+      "file": "scroll-correction/en/light/t12-exit-scroll-normal.png",
+      "sha256": "152cde68d47a7d2e54e4feec98e96557859b1f15533ff5b55b7be64ad3822707"
+    },
+    {
+      "file": "scroll-correction/en/light/t12-exit-scroll-system.png",
+      "sha256": "152cde68d47a7d2e54e4feec98e96557859b1f15533ff5b55b7be64ad3822707"
+    },
+    {
+      "file": "scroll-correction/en/light/t9d-source-race.png",
+      "sha256": "97ab7e435d69e4d4217337ad0b9d970e35a6782bc3af4c2d2749243dbaca38b3"
+    },
+    {
+      "file": "scroll-correction/manifest.json",
+      "sha256": "942500a85357b6a167d4cb114609ccb5dd7d15880449adb9811c264d6faf6d35"
+    }
+  ]
+}

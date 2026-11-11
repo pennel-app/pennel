@@ -1,0 +1,485 @@
+{
+  "captured_at": "2026-11-11T00:19:09.789Z",
+  "complete": true,
+  "capture_method": "Owned Chromium headless fixture render via CDP; no user screen/profile",
+  "baseline_commit": null,
+  "fixture_sha256": "3be2933b7d4fa7415ebdad10cfbae2fbeb364e5aa549c40a9cf68464dcb410c5",
+  "fixture_clock": "2026-10-25T09:00:00Z",
+  "images": [
+    {
+      "case": "meeting-companion-resize",
+      "fixture_case_sha256": "4a9ea8c9b6b54405fcc75614629a5430a9ef5b9ced7b5d68d1724bf76339d672",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/meeting-companion-resize.png",
+      "document_language": "en",
+      "width": 1400,
+      "height": 850,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nMore\nRecording\n12:34\nStop recording\nWriter retained through actual viewport c",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "meeting-companion-keyboard-reopen",
+      "fixture_case_sha256": "43a79fab38048acaf89d691cd41e1dc25120027f4702324a369615be233daaaa",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/meeting-companion-keyboard-reopen.png",
+      "document_language": "en",
+      "width": 760,
+      "height": 520,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nMore\nRecording\n12:34\nStop recording\n•Planning afronden\n•Volgende afspraak bev",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t9d-source-race",
+      "fixture_case_sha256": "179bbdc0698b4c4ef010ddc23cab1c2ff357b8d665cb7c888c036a23fda2fc71",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t9d-source-race.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "meeting_speaker_timeline",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "meeting_detail",
+        "meeting_summary"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nBack to summary\nTranscript\nReview\nAsk\nShare\nMore\n24 Oct 2026, 09:0",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-companion-normal",
+      "fixture_case_sha256": "83e18703b63552b025d6b581ee38f72b31ad977e4369d6fe994188ebde08819e",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-companion-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nTranscript\nAsk\nMore\nRecording\n12:34\nStop recording\nSynthetic Markdown\nSecond ",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-companion-enter",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateX(16px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-companion-exit",
+            "duration": 130,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1",
+                "transform": "none"
+              },
+              {
+                "offset": 1,
+                "opacity": "0",
+                "transform": "translateX(16px)"
+              }
+            ]
+          },
+          {
+            "name": "desktop-arrive",
+            "duration": 320,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-exit-scroll-normal",
+      "fixture_case_sha256": "e482a37f636a371a2df946602cc25ff9f48554d93361730316aa02208e79da4e",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-exit-scroll-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nMore\nRecording\n12:34\nStop recording\nSynthetic draft and selection retained th",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-companion-exit",
+            "duration": 130,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1",
+                "transform": "none"
+              },
+              {
+                "offset": 1,
+                "opacity": "0",
+                "transform": "translateX(16px)"
+              }
+            ]
+          }
+        ],
+        "companion_exit_scroll": {
+          "source": {
+            "top": 7266,
+            "left": 0
+          },
+          "copy_at_mid_exit": {
+            "top": 7266,
+            "left": 0
+          },
+          "matched_visible_passage": true,
+          "draft_selection_retained": true,
+          "immediate_close_focus": true,
+          "rapid_reopen_retained": true
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-exit-scroll-system",
+      "fixture_case_sha256": "0d33bff702fa00a7c0f75b14379092e06ad9bab8b06757041a0b02e00074fc30",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-exit-scroll-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nMore\nRecording\n12:34\nStop recording\nSynthetic draft and selection retained th",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade-out",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          }
+        ],
+        "companion_exit_scroll": {
+          "source": {
+            "top": 7266,
+            "left": 0
+          },
+          "copy_at_mid_exit": {
+            "top": 7266,
+            "left": 0
+          },
+          "matched_visible_passage": true,
+          "draft_selection_retained": true,
+          "immediate_close_focus": true,
+          "rapid_reopen_retained": true
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-exit-scroll-app",
+      "fixture_case_sha256": "0859ed55bf42c86baa4612311092c19c9ada93b8ac47b06273a160abddbdae0f",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-exit-scroll-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nMore\nRecording\n12:34\nStop recording\nSynthetic draft and selection retained th",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade-out",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          }
+        ],
+        "companion_exit_scroll": {
+          "source": {
+            "top": 7266,
+            "left": 0
+          },
+          "copy_at_mid_exit": {
+            "top": 7266,
+            "left": 0
+          },
+          "matched_visible_passage": true,
+          "draft_selection_retained": true,
+          "immediate_close_focus": true,
+          "rapid_reopen_retained": true
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    }
+  ],
+  "browser": "chrome-headless-shell"
+}

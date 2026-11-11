@@ -1,0 +1,28 @@
+
+> pennel-desktop@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v8.3.5 building client environment for production...
+transforming...
+✓ 170 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                     0.51 kB │ gzip:   0.31 kB
+dist/pill.html                                      0.96 kB │ gzip:   0.40 kB
+dist/assets/inter-latin-Dx4kXJAl.woff2             48.25 kB
+dist/assets/Figtree-Medium-CHCfXh45.ttf            57.31 kB
+dist/assets/Figtree-Regular-kp3AmmyB.ttf           57.50 kB
+dist/assets/Figtree-SemiBold-BkmwCudo.ttf          57.58 kB
+dist/assets/InstrumentSerif-Regular-DXer19By.ttf   70.01 kB
+dist/assets/pill-RaZ2wNNo.css                      12.65 kB │ gzip:   2.90 kB
+dist/assets/main-CbXq3p2E.css                     172.52 kB │ gzip:  28.84 kB
+dist/assets/pill-DO92Xvwq.js                        8.53 kB │ gzip:   3.28 kB
+dist/assets/desktop-chrome-state-CoZmtAQx.js      527.76 kB │ gzip: 132.03 kB
+dist/assets/main-B9dn1Vze.js                      744.12 kB │ gzip: 221.62 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 233ms

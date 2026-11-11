@@ -1,0 +1,116 @@
+
+> pennel-mobile-app@0.1.0 test:plugins
+> node --test tests/cng*.test.cjs
+
+TAP version 13
+# Subtest: non-clean generation drops retired keyboard source references while preserving canonical sources and targets
+ok 1 - non-clean generation drops retired keyboard source references while preserving canonical sources and targets
+  ---
+  duration_ms: 1.092125
+  type: 'test'
+  ...
+# Subtest: native preparation links mobile-owned services and artifacts without creating legacy trees
+ok 2 - native preparation links mobile-owned services and artifacts without creating legacy trees
+  ---
+  duration_ms: 30.210167
+  type: 'test'
+  ...
+# Subtest: missing canonical native services fail preparation instead of silently dropping compile membership
+ok 3 - missing canonical native services fail preparation instead of silently dropping compile membership
+  ---
+  duration_ms: 10.562709
+  type: 'test'
+  ...
+# Subtest: Pennel mods finish after the already-registered Expo generators
+ok 4 - Pennel mods finish after the already-registered Expo generators
+  ---
+  duration_ms: 0.692291
+  type: 'test'
+  ...
+# Subtest: the stale widget graph is removed before SDK generation, native membership added after
+ok 5 - the stale widget graph is removed before SDK generation, native membership added after
+  ---
+  duration_ms: 0.122125
+  type: 'test'
+  ...
+# Subtest: pod composition is idempotent and keyboard targets own only lightweight helpers
+ok 6 - pod composition is idempotent and keyboard targets own only lightweight helpers
+  ---
+  duration_ms: 0.419541
+  type: 'test'
+  ...
+# Subtest: all shipping plists declare the RN architecture before Pods can rewrite sealed files
+ok 7 - all shipping plists declare the RN architecture before Pods can rewrite sealed files
+  ---
+  duration_ms: 41.670709
+  type: 'test'
+  ...
+# Subtest: keyboard routing probe is explicitly opt-in and cannot enter production
+ok 8 - keyboard routing probe is explicitly opt-in and cannot enter production
+  ---
+  duration_ms: 0.217083
+  type: 'test'
+  ...
+# Subtest: pod composition replaces legacy helper package paths during non-clean generation
+ok 9 - pod composition replaces legacy helper package paths during non-clean generation
+  ---
+  duration_ms: 0.188959
+  type: 'test'
+  ...
+# Subtest: preview group, handoff and Keychain identifiers cannot overlap production
+ok 10 - preview group, handoff and Keychain identifiers cannot overlap production
+  ---
+  duration_ms: 0.064167
+  type: 'test'
+  ...
+# Subtest: SDK factory conformance compatibility is narrow and idempotent
+ok 11 - SDK factory conformance compatibility is narrow and idempotent
+  ---
+  duration_ms: 0.307625
+  type: 'test'
+  ...
+# Subtest: native source and core artifacts are outside generated projects
+ok 12 - native source and core artifacts are outside generated projects
+  ---
+  duration_ms: 0.428625
+  type: 'test'
+  ...
+# Subtest: TestFlight signing uses the personal team and automatic distribution for Preview
+ok 13 - TestFlight signing uses the personal team and automatic distribution for Preview
+  ---
+  duration_ms: 0.365667
+  type: 'test'
+  ...
+# Subtest: ordinary generated builds retain their existing signing settings
+ok 14 - ordinary generated builds retain their existing signing settings
+  ---
+  duration_ms: 0.271084
+  type: 'test'
+  ...
+# Subtest: Preview distribution cannot select production identities
+ok 15 - Preview distribution cannot select production identities
+  ---
+  duration_ms: 0.14925
+  type: 'test'
+  ...
+# Subtest: the owner-confirmed internal Preview carries its export documentation determination
+ok 16 - the owner-confirmed internal Preview carries its export documentation determination
+  ---
+  duration_ms: 178.319375
+  type: 'test'
+  ...
+# Subtest: ordinary Preview and production builds carry no inferred export determination
+ok 17 - ordinary Preview and production builds carry no inferred export determination
+  ---
+  duration_ms: 346.590875
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 595.024375

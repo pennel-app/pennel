@@ -1,0 +1,2839 @@
+{
+  "captured_at": "2026-11-11T00:10:56.429Z",
+  "complete": true,
+  "capture_method": "Owned Chromium headless fixture render via CDP; no user screen/profile",
+  "baseline_commit": null,
+  "fixture_sha256": "852013efa0f9eea6ba16aca07a1734f65cfe9da800a8d28b937f1da2d0458446",
+  "fixture_clock": "2026-10-25T09:00:00Z",
+  "images": [
+    {
+      "case": "t12-companion-normal",
+      "fixture_case_sha256": "83e18703b63552b025d6b581ee38f72b31ad977e4369d6fe994188ebde08819e",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-companion-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nTranscript\nAsk\nMore\nRecording\n12:34\nStop recording\nSynthetic Markdown\nSecond ",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-companion-enter",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateX(16px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-companion-exit",
+            "duration": 130,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1",
+                "transform": "none"
+              },
+              {
+                "offset": 1,
+                "opacity": "0",
+                "transform": "translateX(16px)"
+              }
+            ]
+          },
+          {
+            "name": "desktop-arrive",
+            "duration": 320,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-summary-normal",
+      "fixture_case_sha256": "883c2741cdb9911ee4984412eef33c4e8d51e04ad2b5c7aaeff880f066f4697b",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-summary-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "meeting_speaker_timeline"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n18 min\nNoor\nSam\nSummary\nSaved\nBrief\n",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-arrive",
+            "duration": 320,
+            "delay": 180,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-map-draw",
+            "duration": 220,
+            "delay": 860,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "scaleX(0)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "scaleX(1)"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-shortcut-normal",
+      "fixture_case_sha256": "783b8825291d8f27b7734bb9e6edbf7b963ceb7fc2e998bbf7b3e4d1d91a0ed2",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-shortcut-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "meeting_runtime_status",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "shortcut_capture_start",
+        "shortcut_capture_stop"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Settings\nNew recording\nSettings\nBack to your work\nDictation\nMeetings\nShortcuts\nAppearance\nSync & account\nAdvanced\nShortcuts\n\nClick a shortcut and press the new keys. Esc cancels.\n\nReset all\nWorks in any app\nDictate\n\nHold to speak. Double-tap for hands-free.\n\nfn\nCommand for selected text\n\nFollows Dic",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-pop",
+            "duration": 120,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "scale(0.8)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-pill-normal",
+      "fixture_case_sha256": "3ce926063bfe58c1345b910abc24b181d9785002c49105d044024c36a5d950a7",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-pill-normal.png",
+      "document_language": "en",
+      "width": 420,
+      "height": 164,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "desktop_environment",
+        "app_info",
+        "dictation_state"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": {
+        "text": "",
+        "visible": false,
+        "height": 0
+      },
+      "body": "",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "pill-enter",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px) scale(0.96)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "pill-leave",
+            "duration": 140,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1",
+                "transform": "none"
+              },
+              {
+                "offset": 1,
+                "opacity": "0",
+                "transform": "translateY(4px) scale(0.98)"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-companion-system",
+      "fixture_case_sha256": "b4089671d177960781cfe9d4ae67a0d0bc46dd84205b2e5c33198a82c0213861",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-companion-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nTranscript\nAsk\nMore\nRecording\n12:34\nStop recording\nSynthetic Markdown\nSecond ",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade-out",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-summary-system",
+      "fixture_case_sha256": "bae102d1174cdc471e586d645f6a7fe07be1fc8306a1bbeebe43705886b39f00",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-summary-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "meeting_speaker_timeline"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n18 min\nNoor\nSam\nSummary\nSaved\nBrief\n",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-shortcut-system",
+      "fixture_case_sha256": "b1a3ed1ccfc578c3cb09d8e33f6906d5c87fafeca97671bd274c39afab5aeefd",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-shortcut-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "meeting_runtime_status",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "shortcut_capture_start",
+        "shortcut_capture_stop"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Settings\nNew recording\nSettings\nBack to your work\nDictation\nMeetings\nShortcuts\nAppearance\nSync & account\nAdvanced\nShortcuts\n\nClick a shortcut and press the new keys. Esc cancels.\n\nReset all\nWorks in any app\nDictate\n\nHold to speak. Double-tap for hands-free.\n\nfn\nCommand for selected text\n\nFollows Dic",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-pill-system",
+      "fixture_case_sha256": "c9befbb078710a866219a3a3bedffa20173c10f090324547c5b968c2240028fa",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-pill-system.png",
+      "document_language": "en",
+      "width": 420,
+      "height": 164,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "desktop_environment",
+        "app_info",
+        "dictation_state"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": {
+        "text": "",
+        "visible": false,
+        "height": 0
+      },
+      "body": "",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "pill-enter-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "pill-leave-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-companion-app",
+      "fixture_case_sha256": "0c35dc7c39812231902a7ea996221caa48a3be4996c049f8a217de551f1f864a",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-companion-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_meeting_notes",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nTranscript\nAsk\nMore\nRecording\n12:34\nStop recording\nSynthetic Markdown\nSecond ",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade-out",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-summary-app",
+      "fixture_case_sha256": "293eee12cb51e4d33813c8458907072637e1954d8c3430f008acc8ae38fdd745",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-summary-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "meeting_speaker_timeline"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n18 min\nNoor\nSam\nSummary\nSaved\nBrief\n",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-shortcut-app",
+      "fixture_case_sha256": "5aa7313dd4d6e1d36cf2421ee489659970cd70b8bd361a62076d8b145e6d14db",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-shortcut-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "dictation_state",
+        "meeting_runtime_status",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "shortcut_capture_start",
+        "shortcut_capture_stop"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Settings\nNew recording\nSettings\nBack to your work\nDictation\nMeetings\nShortcuts\nAppearance\nSync & account\nAdvanced\nShortcuts\n\nClick a shortcut and press the new keys. Esc cancels.\n\nReset all\nWorks in any app\nDictate\n\nHold to speak. Double-tap for hands-free.\n\nfn\nCommand for selected text\n\nFollows Dic",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-pill-app",
+      "fixture_case_sha256": "21cec8e2e7edc2db88bb9e9d4e44e70bef2b3a00b416c78c654ee417978b6290",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-pill-app.png",
+      "document_language": "en",
+      "width": 420,
+      "height": 164,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "desktop_environment",
+        "app_info",
+        "dictation_state",
+        "desktop_environment"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": {
+        "text": "",
+        "visible": false,
+        "height": 0
+      },
+      "body": "",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "pill-enter-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "pill-leave-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.0539205,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "1"
+              },
+              {
+                "offset": 1,
+                "opacity": "0"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-share-roles",
+      "fixture_case_sha256": "1c3ea202b17705c303cf574ba551c68fec74e0f328e8fe12bdad47aa771c0c14",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-share-roles.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "insights_snapshot",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "set_desktop_command_state"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n25 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": null,
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-home-normal",
+      "fixture_case_sha256": "18e152952a0e48a4ed62d30b339cbba11caf28789f341b081705a77d123dbd15",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-home-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "history",
+        "app_info",
+        "onboarding_readiness",
+        "history",
+        "history",
+        "app_info",
+        "onboarding_readiness",
+        "history",
+        "copy_text"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Dictation\nNew recording\nDictation\nHistory\nWrite in Pennel\nMeetings\nSettings\n\nReady to dictate\n\nHold\nfn\nand speak.\n\nRelease, and your words land wherever your cursor is. Double-tap for hands-free.\n\nTry it here\nHands-free\nSpeech on this computer\nNo cleanup (Fast)\nChange\nPractice message\n\nTry your shor",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "home-result-arrives",
+            "duration": 320,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(-8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-pop",
+            "duration": 120,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "scale(0.8)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-review-normal",
+      "fixture_case_sha256": "04e642d273ef4ee188c551b5918e9999e64de277819770c0af39c516b96b1ce3",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-review-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "review_insight",
+        "insights_snapshot"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n25 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-settle",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0.65",
+                "transform": "translateY(-2px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          },
+          {
+            "name": "desktop-tick",
+            "duration": 220,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0.5",
+                "transform": "scale(1.2)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-home-system",
+      "fixture_case_sha256": "8a57863e8c801c658e77962ee3606c01f17cf7ee13997edb0f76c81bdab1c70a",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-home-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "history",
+        "app_info",
+        "onboarding_readiness",
+        "history",
+        "history",
+        "app_info",
+        "onboarding_readiness",
+        "history",
+        "copy_text"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Dictation\nNew recording\nDictation\nHistory\nWrite in Pennel\nMeetings\nSettings\n\nReady to dictate\n\nHold\nfn\nand speak.\n\nRelease, and your words land wherever your cursor is. Double-tap for hands-free.\n\nTry it here\nHands-free\nSpeech on this computer\nNo cleanup (Fast)\nChange\nPractice message\n\nTry your shor",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-review-system",
+      "fixture_case_sha256": "a9f4bb4f46144d8d8d98d5dd3b663d2a944d96232c6b094ce5cb99a4d2cb2335",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-review-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "review_insight",
+        "insights_snapshot"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n25 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-negative-system",
+      "fixture_case_sha256": "efcd2fadad57b8d40fed34aaea966e48e622ef183ed25b824324906aaab762a5",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-negative-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nMore\nRecording\n12:34\nStop recording\n•Planning afronden\n•Volgende afspraak bev",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion_negative_controls": {
+          "surviving_movement_rejected": true,
+          "missing_active_fade_rejected": true
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-home-app",
+      "fixture_case_sha256": "007aaad3dfc65db464cacb37cc320c14725002f63d36036ffb657e13b1a16a18",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-home-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "history",
+        "app_info",
+        "onboarding_readiness",
+        "history",
+        "history",
+        "app_info",
+        "onboarding_readiness",
+        "history",
+        "copy_text"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Dictation\nNew recording\nDictation\nHistory\nWrite in Pennel\nMeetings\nSettings\n\nReady to dictate\n\nHold\nfn\nand speak.\n\nRelease, and your words land wherever your cursor is. Double-tap for hands-free.\n\nTry it here\nHands-free\nSpeech on this computer\nNo cleanup (Fast)\nChange\nPractice message\n\nTry your shor",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-review-app",
+      "fixture_case_sha256": "8f141d689391da20092d91231e1664883bd59910634bd242cef23f216a7b0b82",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-review-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "review_insight",
+        "insights_snapshot"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n25 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-negative-app",
+      "fixture_case_sha256": "de4fe67a89d5ca61efafbc5260e9ff142fdfcb28ef461bd899929040d0013a7f",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-negative-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nDictation\nMeetings\nAsk about your meetings\nNow\nProjectoverleg\nRecording 12:34\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nMore\nRecording\n12:34\nStop recording\n•Planning afronden\n•Volgende afspraak bev",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion_negative_controls": {
+          "surviving_movement_rejected": true,
+          "missing_active_fade_rejected": true
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-capsule-normal",
+      "fixture_case_sha256": "b2d9e190c6eb26bb851c8e531729ee8cc9b625d5d0f9ca2ab513d875287481c6",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-capsule-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "start_meeting",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_people_snapshot",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "onboarding_readiness",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "configured_dictation_models",
+        "get_permissions",
+        "provider_models",
+        "set_desktop_command_state",
+        "onboarding_readiness",
+        "local_models",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_people_snapshot",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "stop_meeting",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_detail",
+        "conversation_snapshot",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_availability",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "meeting_transcript_provenance",
+        "meeting_runtime_status",
+        "start_meeting",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nMore\nRecording\n12:34\nStop recording\nWrite your notes here…\n\nSaved\nH\nB\nList\nTask list\nTranscript\nAsk\n00:00\nSpeaker 1\nWe ronden de planning maandag af.\n00:08\nUnknown speaker\nIk bevestig de volgende afspraak.\n00:14\nSpeaker 2\nDan zet ik het voorstel nog vandaag in de map.",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "capsule_motion": [
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "width",
+            "duration": 220,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "142px",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "225px",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "width",
+            "duration": 130,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "225px",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "142px",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "width",
+            "duration": 130,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "225px",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "width": "142px",
+                "computedOffset": 1
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-placeholders-normal",
+      "fixture_case_sha256": "8d9be9fb70498270200ded6f689768b5f036f75824da7560128cde8e0e2f6079",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-placeholders-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "insights_snapshot",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "app_info",
+        "save_settings",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "app_info",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_summary",
+        "summarize_meeting",
+        "insights_snapshot",
+        "meetings",
+        "meeting_runtime_status",
+        "insights_snapshot",
+        "meeting_summary",
+        "conversation_snapshot",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_availability",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "insights_snapshot"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n25 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-arrive",
+            "duration": 320,
+            "delay": 0,
+            "movement": true,
+            "opacity_at_midpoint": null,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0",
+                "transform": "translateY(8px)"
+              },
+              {
+                "offset": 1,
+                "opacity": "1",
+                "transform": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-capsule-system",
+      "fixture_case_sha256": "fd6156a480116ab6df3446b1a0949b070f5d4892488e9433ee9bdc0d46bcc7c2",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-capsule-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "start_meeting",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_people_snapshot",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "onboarding_readiness",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "configured_dictation_models",
+        "get_permissions",
+        "provider_models",
+        "set_desktop_command_state",
+        "onboarding_readiness",
+        "local_models",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_people_snapshot",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "stop_meeting",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_detail",
+        "conversation_snapshot",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_availability",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "meeting_transcript_provenance",
+        "meeting_runtime_status",
+        "start_meeting",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nMore\nRecording\n12:34\nStop recording\nWrite your notes here…\n\nSaved\nH\nB\nList\nTask list\nTranscript\nAsk\n00:00\nSpeaker 1\nWe ronden de planning maandag af.\n00:08\nUnknown speaker\nIk bevestig de volgende afspraak.\n00:14\nSpeaker 2\nDan zet ik het voorstel nog vandaag in de map.",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "capsule_motion": [
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 1
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-placeholders-system",
+      "fixture_case_sha256": "b721c2a9ab11c6f2a1d00c04c521d89570dcdbb849de80f8b5bdab270f6f9f88",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-placeholders-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "insights_snapshot",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "app_info",
+        "save_settings",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "app_info",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_summary",
+        "summarize_meeting",
+        "insights_snapshot",
+        "meetings",
+        "meeting_runtime_status",
+        "insights_snapshot",
+        "meeting_summary",
+        "conversation_snapshot",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_availability",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "insights_snapshot"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n25 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-capsule-app",
+      "fixture_case_sha256": "9e03d62ca10d3dce774cd7a224086d8813f80ed921c424e3f9cf424421ec5881",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-capsule-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "start_meeting",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_people_snapshot",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "onboarding_readiness",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "configured_dictation_models",
+        "get_permissions",
+        "provider_models",
+        "set_desktop_command_state",
+        "onboarding_readiness",
+        "local_models",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_people_snapshot",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "stop_meeting",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_detail",
+        "conversation_snapshot",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_availability",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_summary",
+        "set_desktop_command_state",
+        "meeting_transcript_provenance",
+        "meeting_runtime_status",
+        "start_meeting",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "meeting_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "meeting_runtime_status",
+        "meeting_people_snapshot",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meeting_runtime_status",
+        "meeting_runtime_status"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nRecording 12:34\nStop\nMore\nRecording\n12:34\nStop recording\nWrite your notes here…\n\nSaved\nH\nB\nList\nTask list\nTranscript\nAsk\n00:00\nSpeaker 1\nWe ronden de planning maandag af.\n00:08\nUnknown speaker\nIk bevestig de volgende afspraak.\n00:14\nSpeaker 2\nDan zet ik het voorstel nog vandaag in de map.",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "capsule_motion": [
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 1
+              }
+            ]
+          },
+          {
+            "property": "background-color",
+            "duration": 120,
+            "frames": [
+              {
+                "offset": 0,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgb(42, 39, 35)",
+                "computedOffset": 0
+              },
+              {
+                "offset": 1,
+                "easing": "linear",
+                "composite": "auto",
+                "backgroundColor": "rgba(0, 0, 0, 0)",
+                "computedOffset": 1
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-placeholders-app",
+      "fixture_case_sha256": "ede9b4ff3f53ee152bb50a2578cc09a11ac0dfc44cb3892f90653b41c3de211a",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-placeholders-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "frontend_ready",
+        "meetings",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "insights_snapshot",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance",
+        "app_info",
+        "save_settings",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "app_info",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_summary",
+        "summarize_meeting",
+        "insights_snapshot",
+        "meetings",
+        "meeting_runtime_status",
+        "insights_snapshot",
+        "meeting_summary",
+        "conversation_snapshot",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_availability",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "insights_snapshot"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n24 Oct 2026, 09:00\n25 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "motion": [
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          },
+          {
+            "name": "desktop-fade",
+            "duration": 120,
+            "delay": 0,
+            "movement": false,
+            "opacity_at_midpoint": 0.946079,
+            "keyframes": [
+              {
+                "offset": 0,
+                "opacity": "0"
+              },
+              {
+                "offset": 1,
+                "opacity": "1"
+              }
+            ]
+          }
+        ]
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-sidebar-normal",
+      "fixture_case_sha256": "4e3e867e83b5719cf5b67c516270fba873d59c9e8943194d51d7a21b0269c5a9",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-sidebar-normal.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "meetings",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n25 Oct 2026, 08:30\n18 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "sidebar_motion": {
+          "name": "desktop-sidebar-selection",
+          "duration": 220,
+          "keyframes": [
+            {
+              "offset": 0,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "transform": "translateY(-114px)",
+              "computedOffset": 0
+            },
+            {
+              "offset": 1,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "transform": "none",
+              "computedOffset": 1
+            }
+          ],
+          "reduced": false
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-sidebar-system",
+      "fixture_case_sha256": "f39e92c2a22b958e45f11382251f55b765615337e398b6f766f2b59da04ae848",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-sidebar-system.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "meetings",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n25 Oct 2026, 08:30\n18 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "sidebar_motion": {
+          "name": "desktop-fade",
+          "duration": 120,
+          "keyframes": [
+            {
+              "offset": 0,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "0",
+              "computedOffset": 0
+            },
+            {
+              "offset": 1,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "1",
+              "computedOffset": 1
+            }
+          ],
+          "reduced": true
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    },
+    {
+      "case": "t12-sidebar-app",
+      "fixture_case_sha256": "85dbf252bc3c36dab6e26fa50180069a2673f6bd1f0ef700df9fb4dc7ba7d4a5",
+      "locale": "en",
+      "appearance": "light",
+      "file": "en/light/t12-sidebar-app.png",
+      "document_language": "en",
+      "width": 1280,
+      "height": 860,
+      "horizontal_overflow": false,
+      "unknown_commands": [],
+      "calls": [
+        "app_info",
+        "desktop_environment",
+        "set_desktop_command_state",
+        "dictation_state",
+        "local_models",
+        "onboarding_readiness",
+        "history",
+        "onboarding_readiness",
+        "frontend_ready",
+        "meeting_runtime_status",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "set_desktop_command_state",
+        "meetings",
+        "meeting_detail",
+        "meeting_runtime_status",
+        "conversation_snapshot",
+        "meeting_templates",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "insights_snapshot",
+        "insights_availability",
+        "meeting_detail",
+        "meeting_summary_prompt_dismissed",
+        "automatic_insights_availability",
+        "meeting_suggestion_prompt_dismissed",
+        "meeting_people_snapshot",
+        "meeting_detail",
+        "meeting_summary",
+        "meetings",
+        "meeting_runtime_status",
+        "set_desktop_command_state",
+        "insights_snapshot",
+        "meeting_transcript_provenance"
+      ],
+      "runtime_banner": "",
+      "recovery_banner": "",
+      "surface_error": "",
+      "pill_preview": null,
+      "body": "Meetings\nNew recording\nDictation\nMeetings\nAsk about your meetings\nToday\nWeekstart\n25 Oct 2026, 08:30 · 18 min\nThis week\nProjectoverleg\n24 Oct 2026, 09:00 · 25 min\nEarlier\nKlantgesprek Studio Noord\n14 Oct 2026, 14:00 · 42 min\nSettings\nShare\nMore\n25 Oct 2026, 08:30\n18 min\nNoor\nSam\nSummary\nSaved\nTempla",
+      "live_acceptance": null,
+      "people_acceptance": null,
+      "conversation_acceptance": null,
+      "control_acceptance": {
+        "sidebar_motion": {
+          "name": "desktop-fade",
+          "duration": 120,
+          "keyframes": [
+            {
+              "offset": 0,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "0",
+              "computedOffset": 0
+            },
+            {
+              "offset": 1,
+              "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+              "composite": "auto",
+              "opacity": "1",
+              "computedOffset": 1
+            }
+          ],
+          "reduced": true
+        }
+      },
+      "pill_acceptance": null,
+      "runtime_errors": []
+    }
+  ],
+  "browser": "chrome-headless-shell"
+}

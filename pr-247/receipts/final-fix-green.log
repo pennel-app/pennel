@@ -1,0 +1,16 @@
+Waiting for backend cache lease
+Acquired backend cache lease
+   Compiling pennel-desktop v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a0097254ec71636e7/apps/desktop/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.09s
+     Running unittests src/main.rs (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-aa92d718182538c4d/apps/desktop/src-tauri/target/debug/deps/pennel-7ec8a1b5ab868c4d)
+
+running 6 tests
+test commands::settings_inference_tests::configuration_mutation_keeps_admission_closed_until_native_publication_finishes ... ok
+test commands::settings_inference_tests::own_policy_revocation_cancels_automatic_summary_and_consumes_its_attempt ... ok
+test commands::settings_inference_tests::provider_model_and_inference_config_saves_still_cancel_automatic_summary ... ok
+test commands::settings_inference_tests::suggestion_fallback_language_save_preserves_inflight_automatic_summary ... ok
+test commands::settings_inference_tests::suggestion_policy_save_preserves_inflight_automatic_summary ... ok
+test commands::settings_inference_tests::summary_policy_save_preserves_a_real_registered_inflight_decision ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 401 filtered out; finished in 1.22s
+
