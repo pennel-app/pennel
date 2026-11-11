@@ -193,8 +193,7 @@ Cleaned-up dictation uses conservative ordered-content safeguards before accepti
 Dictation settings expose **Verify cleanup meaning**, independently from the optional Decision processing connection. It starts off and remains unavailable until the exact pipeline and content-language policy are qualified. No production model is qualified in this version; a connection sample does not enable verification. The settings explain saved enablement and the configured destination, while active sessions retain their original destination. Requested but unavailable verification keeps raw text, with no retry or alternate provider.
 
 **Settings → Advanced → Models and experimental connections** keeps **Decision processing**
-and **Passage ranking** inside the initially collapsed **Experimental connections — setup and testing only** disclosure. These connections do not
-currently drive ordinary dictation, meeting processing or search. A missing compatible
+and **Passage ranking** inside an initially collapsed **Experimental connections** disclosure. Ordinary dictation, summaries, meeting answers and search retain their existing models. Manual finished-meeting Review requires an adopted qualification for the exact connection, content language and resource context. A missing compatible
 provider shows an explanation and **Add connection**, rather than a blank dropdown. Both
 connections start disabled, including on existing profiles. Both can use the existing Pennel Cloud
 account with its normal sign-in and a managed model; no API key, server URL or model ID is
@@ -204,6 +203,10 @@ explicit test for the current account and settings. The connections also reuse e
 OpenRouter or Custom server accounts and their OS-stored keys. Custom accounts can have an optional
 key; a keyless local service remains supported. Removing an account disables its optional
 connections without selecting a replacement.
+
+Review's **Connection settings** action opens Models. An adopted manual Dutch setup appears as **Tested Review setup**, with its exact provider-reported model version and destination. **Use tested setup** fills a draft for an explicitly selected compatible OpenRouter account; **Save configuration** applies it. The existing account and OS-stored key are reused. Missing qualifications leave this action disabled with an explanation. Returned serving revision and remote weights are never invented; provider-reported version evidence explicitly does not independently verify the weights. See [the bounded functional Review trial](evidence/review-provider-version-96-2026-11-12.md).
+
+A qualified manual request remains available when automatic foreground-impact qualification is missing. Automatic analysis additionally requires that separate evidence and consent. Find rechecks the displayed connection fingerprint before credentials or inference; consent saves only its own policy fields. Failed metadata reads keep Find disabled until a successful refresh. Opening Review reads stored results and availability without starting inference, and previously saved suggestions remain reviewable when a connection becomes unavailable.
 
 Decision processing supports OpenRouter Decisions/System One, direct TypeSafe,
 Perplexity/Mercury and the official loopback Decider endpoint. Passage ranking also supports TEI.
