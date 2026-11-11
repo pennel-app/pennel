@@ -1,0 +1,126 @@
+{
+  "snapshot_time": "2026-11-11T00:59:52.139944+00:00",
+  "note": "One observed snapshot only; pending jobs are not inferred green and no queue wait was performed.",
+  "pull_requests": [
+    {
+      "number": 239,
+      "head": "b33cb02ce44e1c615cb505a8a20b2e14e141b39e",
+      "draft": true,
+      "total": 16,
+      "pending": 0,
+      "terminal_failures": 0,
+      "pending_names": []
+    },
+    {
+      "number": 240,
+      "head": "ee47bf2af6ba5e68af0aceb746fe0902feb7702e",
+      "draft": true,
+      "total": 14,
+      "pending": 0,
+      "terminal_failures": 0,
+      "pending_names": []
+    },
+    {
+      "number": 241,
+      "head": "945319dc6f76ab4eabbbd903d18059913f62c2cd",
+      "draft": true,
+      "total": 13,
+      "pending": 4,
+      "terminal_failures": 0,
+      "pending_names": [
+        "build-and-test",
+        "iOS generated build (1)",
+        "iOS Debug runtime and keyboard tests",
+        "app (macos-15, aarch64-apple-darwin, app,dmg)"
+      ]
+    },
+    {
+      "number": 242,
+      "head": "a8f35661490b2cd868755164ed64e2e54560aa7a",
+      "draft": true,
+      "total": 13,
+      "pending": 5,
+      "terminal_failures": 0,
+      "pending_names": [
+        "build-and-test",
+        "offline (macos-latest)",
+        "iOS generated build (1)",
+        "iOS Debug runtime and keyboard tests",
+        "app (macos-15, aarch64-apple-darwin, app,dmg)"
+      ]
+    },
+    {
+      "number": 243,
+      "head": "a7f4e62ba2184f69ca964dc84fa9a70c9340c524",
+      "draft": true,
+      "total": 11,
+      "pending": 4,
+      "terminal_failures": 0,
+      "pending_names": [
+        "build-and-test",
+        "iOS generated build (1)",
+        "iOS Debug runtime and keyboard tests",
+        "app (macos-15, aarch64-apple-darwin, app,dmg)"
+      ]
+    },
+    {
+      "number": 244,
+      "head": "b41fb97bb587ec6f5179c7cb45511cba084e9cb1",
+      "draft": true,
+      "total": 13,
+      "pending": 5,
+      "terminal_failures": 0,
+      "pending_names": [
+        "build-and-test",
+        "offline (macos-latest)",
+        "iOS generated build (1)",
+        "iOS Debug runtime and keyboard tests",
+        "app (macos-15, aarch64-apple-darwin, app,dmg)"
+      ]
+    },
+    {
+      "number": 245,
+      "head": "8debdd86ec37106cb1c8069859084d59b7a1f742",
+      "draft": true,
+      "total": 13,
+      "pending": 5,
+      "terminal_failures": 0,
+      "pending_names": [
+        "offline (macos-latest)",
+        "iOS generated build (1)",
+        "build-and-test",
+        "iOS Debug runtime and keyboard tests",
+        "app (macos-15, aarch64-apple-darwin, app,dmg)"
+      ]
+    },
+    {
+      "number": 246,
+      "head": "7c5755a85fba94500901126d384979767528c156",
+      "draft": true,
+      "total": 13,
+      "pending": 5,
+      "terminal_failures": 0,
+      "pending_names": [
+        "build-and-test",
+        "offline (macos-latest)",
+        "iOS generated build (1)",
+        "iOS Debug runtime and keyboard tests",
+        "app (macos-15, aarch64-apple-darwin, app,dmg)"
+      ]
+    },
+    {
+      "number": 247,
+      "head": "a0acf423079be784deecebaad8849cc61e70d4b7",
+      "draft": true,
+      "total": 11,
+      "pending": 4,
+      "terminal_failures": 0,
+      "pending_names": [
+        "build-and-test",
+        "iOS generated build (1)",
+        "iOS Debug runtime and keyboard tests",
+        "app (macos-15, aarch64-apple-darwin, app,dmg)"
+      ]
+    }
+  ]
+}
