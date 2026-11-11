@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "protocol_id": "production-finished-qualification-v1",
+  "use_case": "manual_finished_suggestions",
+  "languages": ["nl"],
+  "production_contract": "Unchanged Rust finished_meeting_export/replay, raw parser and candidate decoder",
+  "acceptance": {
+    "component_macro_f1_min": 0.90,
+    "complete_item_macro_f1_min": 0.90,
+    "accepted_item_precision_min": 0.95,
+    "minimum_calibration_observations": 10,
+    "minimum_calibration_classes": 2,
+    "minimum_calibration_families": 2,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "local_warm_p95_ms_max": 5000
+  },
+  "bounds": {
+    "local_seconds_after_ready_max": 7200,
+    "hosted_total_usd_max": "2.00",
+    "automatic_retries": false,
+    "fallbacks": false,
+    "new_model_runtime_downloads": false
+  },
+  "items": "Exact kind, commitment state, quote, source bytes/fingerprint, supported owner and verbatim due phrase. Unsupported details stay null. Raw production candidates are scored even when calibration would abstain.",
+  "calibration": "Calibration-only raw distributions; exact production prompt, ordered labels, grouping, model/provider/revision/artifact and resource context. Freeze fitted artifact before exporting held-out requests.",
+  "resource_scope": "Owned application client plus owned model process for local; owned application client for hosted, with remote server CPU/RSS explicitly unavailable. Fixed five cold-client and thirty warm complete production jobs; repeated timing adds no quality credit.",
+  "adoption": "Emit reviewable candidate records only after every exact-context gate passes. This runner never writes the application registry or changes admission. Synthetic qualification is not natural-ASR, human or live/background acceptance."
+}
