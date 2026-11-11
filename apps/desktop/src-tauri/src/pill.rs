@@ -168,23 +168,125 @@ impl PillSnapshot {
 struct DemoVisibility {
     generation: u64,
     active: bool,
+    real_visible: bool,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct DemoFrame {
+    generation: u64,
+    visible: bool,
+}
+
 impl DemoVisibility {
-    fn start(&mut self) -> u64 {
-        self.generation = self.generation.wrapping_add(1);
-        self.active = true;
-        self.generation
-    }
-    fn cancel(&mut self) {
+    fn reserve(&mut self) -> Option<u64> {
+        if self.real_visible {
+            return None;
+        }
         self.generation = self.generation.wrapping_add(1);
         self.active = false;
+        Some(self.generation)
     }
-    fn end_if(&mut self, generation: u64) -> bool {
-        if !self.active || self.generation != generation {
+    fn admit(&mut self, generation: u64, idle: bool) -> bool {
+        if self.generation != generation || self.real_visible || !idle {
             return false;
         }
-        self.active = false;
+        self.active = true;
         true
+    }
+    fn cancel(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.active = false;
+        self.generation
+    }
+    fn cancel_if(&mut self, generation: u64) -> Option<u64> {
+        (self.generation == generation).then(|| self.cancel())
+    }
+    fn real_visibility(&mut self, visible: bool) -> Option<u64> {
+        self.real_visible = visible;
+        visible.then(|| self.cancel())
+    }
+    fn may_hide(&self, generation: u64) -> bool {
+        self.generation == generation && !self.active
+    }
+    fn end_if(&mut self, generation: u64) -> Option<u64> {
+        (self.active && self.generation == generation).then(|| self.cancel())
+    }
+    fn frame(&self, idle: bool) -> DemoFrame {
+        DemoFrame {
+            generation: self.generation,
+            visible: self.active && !self.real_visible && idle,
+        }
+    }
+}
+
+const DEMO_BUSY: &str = "Finish the current dictation before showing the pill preview.";
+
+fn demo_frame(demo: &Mutex<DemoVisibility>, idle: &impl Fn() -> bool) -> DemoFrame {
+    let idle = idle();
+    demo.lock().unwrap().frame(idle)
+}
+
+// Native show/hide can reenter. Reapply the latest owner if that happens; never hold its guard here.
+fn reconcile_demo(
+    demo: &Mutex<DemoVisibility>,
+    idle: impl Fn() -> bool,
+    mut native: impl FnMut(bool),
+) -> DemoFrame {
+    let mut desired = demo_frame(demo, &idle);
+    loop {
+        native(desired.visible);
+        let latest = demo_frame(demo, &idle);
+        if latest == desired {
+            return latest;
+        }
+        desired = latest;
+    }
+}
+
+fn show_demo(
+    demo: &Mutex<DemoVisibility>,
+    idle: impl Fn() -> bool,
+    create: impl FnOnce() -> Result<(), String>,
+    mut native: impl FnMut(bool),
+) -> Result<u64, String> {
+    // Reserve before the first idle check so cancellation during creation invalidates this request.
+    let generation = demo
+        .lock()
+        .unwrap()
+        .reserve()
+        .ok_or_else(|| DEMO_BUSY.to_owned())?;
+    let admission = (|| {
+        if !idle() {
+            return Err(DEMO_BUSY.to_owned());
+        }
+        create()?;
+        let idle = idle();
+        if !demo.lock().unwrap().admit(generation, idle) {
+            return Err(DEMO_BUSY.to_owned());
+        }
+        Ok(())
+    })();
+    if admission.is_err() {
+        demo.lock().unwrap().cancel_if(generation);
+    }
+    let latest = reconcile_demo(demo, idle, &mut native);
+    admission?;
+    if latest.generation == generation && latest.visible {
+        Ok(generation)
+    } else {
+        Err(DEMO_BUSY.into())
+    }
+}
+
+fn hide_cancelled_demo(
+    demo: &Mutex<DemoVisibility>,
+    generation: u64,
+    idle: impl Fn() -> bool,
+    native: impl FnMut(bool),
+) {
+    let current = demo.lock().unwrap().may_hide(generation);
+    if current {
+        reconcile_demo(demo, idle, native);
     }
 }
 
@@ -696,16 +798,132 @@ mod tests {
     }
 
     #[test]
+    fn pending_demo_cannot_revive_after_capture_cancels_it_during_creation() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let idle = std::cell::Cell::new(true);
+        let visible = std::cell::Cell::new(false);
+        let result = show_demo(
+            &demo,
+            || idle.get(),
+            || {
+                idle.set(false);
+                demo.lock().unwrap().real_visibility(true);
+                Ok(())
+            },
+            |shown| visible.set(shown),
+        );
+        assert!(result.is_err());
+        assert!(!visible.get());
+        // The real owner blocks admission even before its content snapshot catches up.
+        idle.set(true);
+        assert!(
+            show_demo(
+                &demo,
+                || idle.get(),
+                || panic!("created under a real owner"),
+                |shown| visible.set(shown)
+            )
+            .is_err()
+        );
+        demo.lock().unwrap().real_visibility(false);
+        let result = show_demo(
+            &demo,
+            || true,
+            || {
+                let mut state = demo.lock().unwrap();
+                state.real_visibility(true);
+                state.real_visibility(false);
+                Ok(())
+            },
+            |shown| visible.set(shown),
+        );
+        assert!(
+            result.is_err(),
+            "an intervening capture must invalidate the old request even when idle again"
+        );
+        assert!(!visible.get());
+    }
+
+    #[test]
+    fn an_old_queued_cancel_cannot_hide_a_new_valid_demo() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let visible = std::cell::Cell::new(false);
+        show_demo(&demo, || true, || Ok(()), |shown| visible.set(shown)).unwrap();
+        let cancelled = {
+            let mut state = demo.lock().unwrap();
+            let generation = state.real_visibility(true).unwrap();
+            state.real_visibility(false);
+            generation
+        };
+        show_demo(&demo, || true, || Ok(()), |shown| visible.set(shown)).unwrap();
+        hide_cancelled_demo(&demo, cancelled, || true, |shown| visible.set(shown));
+        assert!(visible.get());
+    }
+
+    #[test]
+    fn capture_reentry_during_native_show_is_reconciled_without_a_state_lock() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let idle = std::cell::Cell::new(true);
+        let visible = std::cell::Cell::new(false);
+        let interrupted = std::cell::Cell::new(false);
+        let result = show_demo(
+            &demo,
+            || idle.get(),
+            || Ok(()),
+            |shown| {
+                if shown && !interrupted.replace(true) {
+                    demo.try_lock()
+                        .expect("native show held demo state")
+                        .real_visibility(true);
+                    idle.set(false);
+                }
+                visible.set(shown);
+            },
+        );
+        assert!(result.is_err());
+        assert!(!visible.get());
+    }
+
+    #[test]
+    fn native_hide_reentry_preserves_a_newer_demo() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let visible = std::cell::Cell::new(false);
+        let cancelled = {
+            let mut state = demo.lock().unwrap();
+            let generation = state.real_visibility(true).unwrap();
+            state.real_visibility(false);
+            generation
+        };
+        let reentered = std::cell::Cell::new(false);
+        hide_cancelled_demo(
+            &demo,
+            cancelled,
+            || true,
+            |shown| {
+                if !shown && !reentered.replace(true) {
+                    assert!(demo.try_lock().is_ok(), "native hide held demo state");
+                    show_demo(&demo, || true, || Ok(()), |new| visible.set(new)).unwrap();
+                }
+                visible.set(shown);
+            },
+        );
+        assert!(visible.get());
+    }
+
+    #[test]
     fn demo_timer_cannot_hide_a_new_preview_or_resume_after_real_capture() {
         let mut demo = DemoVisibility::default();
-        let first = demo.start();
-        let second = demo.start();
-        assert!(!demo.end_if(first));
+        let first = demo.reserve().unwrap();
+        assert!(demo.admit(first, true));
+        let second = demo.reserve().unwrap();
+        assert!(demo.admit(second, true));
+        assert!(demo.end_if(first).is_none());
         assert!(demo.active);
         demo.cancel();
-        assert!(!demo.end_if(second));
-        let third = demo.start();
-        assert!(demo.end_if(third));
+        assert!(demo.end_if(second).is_none());
+        let third = demo.reserve().unwrap();
+        assert!(demo.admit(third, true));
+        assert!(demo.end_if(third).is_some());
         assert!(!demo.active);
     }
 
@@ -760,16 +978,47 @@ fn create_window(app: &AppHandle, label: &str, url: &str) -> tauri::Result<Webvi
     Ok(window)
 }
 
-fn cancel_demo(app: &AppHandle) {
-    if let Some(snapshot) = app.try_state::<Snapshot>() {
-        snapshot.demo.lock().unwrap().cancel();
-    }
-    let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        if let Some(window) = handle.get_webview_window(DEMO_LABEL) {
+fn demo_idle(app: &AppHandle) -> bool {
+    let Some(shared) = app.try_state::<Arc<crate::state::Shared>>() else {
+        return false;
+    };
+    // Real presentation ownership is tracked in DemoVisibility before content/native work begins.
+    !shared
+        .dictation_active
+        .load(std::sync::atomic::Ordering::SeqCst)
+        && shared
+            .dictation_jobs
+            .load(std::sync::atomic::Ordering::SeqCst)
+            == 0
+}
+
+fn demo_native(app: &AppHandle, visible: bool) {
+    if let Some(window) = app.get_webview_window(DEMO_LABEL) {
+        if visible {
+            platform::show_at_bottom(app, &window);
+        } else {
             platform::hide(&window);
         }
-    });
+    }
+}
+
+fn sync_demo_real_visibility(app: &AppHandle, visible: bool) {
+    let Some(snapshot) = app.try_state::<Snapshot>() else {
+        return;
+    };
+    let demo = snapshot.demo.clone();
+    let generation = demo.lock().unwrap().real_visibility(visible);
+    if let Some(generation) = generation {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            hide_cancelled_demo(
+                &demo,
+                generation,
+                || demo_idle(&handle),
+                |shown| demo_native(&handle, shown),
+            );
+        });
+    }
 }
 
 /// A separate display-only window never receives a capture snapshot or recognition events.
@@ -779,34 +1028,33 @@ pub fn show_pill_preview(
     shared: tauri::State<'_, Arc<crate::state::Shared>>,
 ) -> Result<(), String> {
     let snapshot = app.state::<Snapshot>();
-    if snapshot.content.lock().unwrap().state != PillState::Hidden
-        || shared
-            .dictation_active
-            .load(std::sync::atomic::Ordering::SeqCst)
-        || shared
-            .dictation_jobs
-            .load(std::sync::atomic::Ordering::SeqCst)
-            > 0
-    {
-        return Err("Finish the current dictation before showing the pill preview.".into());
-    }
-    let window = app
-        .get_webview_window(DEMO_LABEL)
-        .map(Ok)
-        .unwrap_or_else(|| create_window(&app, DEMO_LABEL, "pill.html?preview=1"))
-        .map_err(|_| "The pill preview could not be opened.".to_owned())?;
-    let generation = snapshot.demo.lock().unwrap().start();
-    platform::show_at_bottom(&app, &window);
+    let _ = shared;
+    let generation = show_demo(
+        &snapshot.demo,
+        || demo_idle(&app),
+        || {
+            app.get_webview_window(DEMO_LABEL)
+                .map(Ok)
+                .unwrap_or_else(|| create_window(&app, DEMO_LABEL, "pill.html?preview=1"))
+                .map(|_| ())
+                .map_err(|_| "The pill preview could not be opened.".to_owned())
+        },
+        |visible| demo_native(&app, visible),
+    )?;
     let demo = snapshot.demo.clone();
     let handle = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(2400));
         let app = handle.clone();
         let _ = handle.run_on_main_thread(move || {
-            if demo.lock().unwrap().end_if(generation)
-                && let Some(window) = app.get_webview_window(DEMO_LABEL)
-            {
-                platform::hide(&window);
+            let expired = demo.lock().unwrap().end_if(generation);
+            if let Some(generation) = expired {
+                hide_cancelled_demo(
+                    &demo,
+                    generation,
+                    || demo_idle(&app),
+                    |shown| demo_native(&app, shown),
+                );
             }
         });
     });
@@ -822,11 +1070,11 @@ pub fn refresh_preferences(app: &AppHandle) {
         {
             platform::show_at_bottom(&handle, &window);
         }
-        if snapshot.demo.lock().unwrap().active
-            && let Some(window) = handle.get_webview_window(DEMO_LABEL)
-        {
-            platform::show_at_bottom(&handle, &window);
-        }
+        reconcile_demo(
+            &snapshot.demo,
+            || demo_idle(&handle),
+            |shown| demo_native(&handle, shown),
+        );
     });
 }
 
@@ -850,9 +1098,7 @@ impl Pill {
     }
 
     pub fn show(&self, state: PillState) {
-        if state != PillState::Hidden {
-            cancel_demo(&self.app);
-        }
+        sync_demo_real_visibility(&self.app, state != PillState::Hidden);
         let (was_hidden, generation) = {
             let mut content = self.content.lock().unwrap();
             let was_hidden = content.state == PillState::Hidden;
