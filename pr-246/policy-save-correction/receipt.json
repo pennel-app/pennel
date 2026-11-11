@@ -1,0 +1,19 @@
+{
+  "source_fix": "b10c122eba41e1b083304a43c85f48b172910ecd",
+  "branch": "codex/redesign-suggestion-automation",
+  "head": "f00592376ab893b698cb4f2acefba29981af12b4",
+  "adaptation": "No manual adaptation. Exact reviewed test file and save seam; this branch retains its preexisting absence of C pill-position AppInfo metadata.",
+  "tests": {
+    "settings_inference_tests": 6,
+    "failed": 0,
+    "filtered": 395,
+    "command": "python3 <shared with-cache-lock.py> backend cargo test --bin pennel commands::settings_inference_tests -- --test-threads=1",
+    "exit_code": 0
+  },
+  "fmt": {
+    "command": "cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
+    "exit_code": 0
+  },
+  "whitespace": "cached diff check passed",
+  "limits": "No full suite repeated; native AppHandle effects and production qualified Suggestions remain unverified"
+}
