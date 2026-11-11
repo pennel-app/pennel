@@ -45,12 +45,16 @@ export interface InsightAvailability {
   available: boolean; configured: boolean; qualified: boolean; reason_code: string;
   provider_id: string | null; model: string | null; endpoint: string | null; language_policy: string;
   task: string; qualification_id: string | null; use_case: string;
+  configuration_fingerprint?: string | null;
   resolved_language?: Exclude<InsightLanguagePolicy, "unknown"> | null;
   extraction_scope?: "passage" | "exact_span"; complete_extraction?: boolean; coverage_notice?: string;
 }
 export interface InsightJob {
   job_id: string; meeting_uid: string; state: "queued" | "running" | "completed" | "cancelled" | "failed";
   revision: number; error_code: string | null; physical_running: boolean; included_through_ms: number; completed_windows: number; total_windows: number;
+  completed_provider_requests?: number;
+  reported_billed_cost_usd?: number | null;
+  billing_complete?: boolean;
 }
 export interface InsightInsertionPreparation { snapshot: InsightSnapshot; receipt: InsightInsertionReceipt; stage: boolean; intended_notes: string | null }
 export interface InsightReviewUpdate { review_state?: InsightReviewState | null; edited_text?: string | null; clear_edit?: boolean; edit_claim?: string | null; release_edit_claim?: boolean }

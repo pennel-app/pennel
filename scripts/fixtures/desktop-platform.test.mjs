@@ -1450,3 +1450,18 @@ test("suggestion dismissal fixture stays durable and independent of summary dism
  assert.equal(await fixture("meeting-document-minimum",{...options,profile:"suggestion-consent-B"},storage).__PENNEL_PLATFORM__.invoke("meeting_suggestion_prompt_dismissed",{id}),false);
  assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command=>["save_settings","begin_insights_analysis"].includes(command)));
 });
+
+test("scoped suggestion consent preserves concurrent unrelated settings and rejects a stale route",async()=>{
+ const context=fixture("meeting-document-minimum",{suggestion_configured:true,insight_qualified:true,suggestion_foreground_accepted:false,insight_recorded_language:"nl"}),api=context.__PENNEL_PLATFORM__,id=context.__PENNEL_FIXTURE__.options.meeting_id;
+ const before=await api.invoke("app_info"),ready=await api.invoke("insights_availability",{id,languagePolicy:"nl"});
+ await api.invoke("save_settings",{settings:{...before.settings,ui_language:"nl",summary_automation:"automatic"}});
+ const saved=await api.invoke("set_meeting_suggestion_policy_checked",{languagePolicy:"nl",expectedConfigurationFingerprint:ready.configuration_fingerprint,policy:"manual",fallbackLanguage:null});
+ assert.equal(saved.settings.ui_language,"nl");assert.equal(saved.settings.summary_automation,"automatic");assert.equal(saved.settings.suggestion_automation,"manual");
+ await assert.rejects(api.invoke("set_meeting_suggestion_policy_checked",{languagePolicy:"nl",expectedConfigurationFingerprint:ready.configuration_fingerprint,policy:"automatic",fallbackLanguage:"nl"}),/foreground_impact_unaccepted/);
+ assert.equal((await api.invoke("app_info")).settings.suggestion_automation,"manual");
+ const selected=JSON.parse(JSON.stringify(saved.settings));selected.decision={provider_id:"different",protocol:"open_router_decisions",model:"different",upstream:"other",expected_model:null,max_input_bytes:16000,timeout_secs:30};
+ await api.invoke("save_settings",{settings:selected});
+ await assert.rejects(api.invoke("set_meeting_suggestion_policy_checked",{languagePolicy:"nl",expectedConfigurationFingerprint:ready.configuration_fingerprint,policy:"automatic",fallbackLanguage:"nl"}),/changed/);
+ const after=await api.invoke("app_info");assert.deepEqual(after.settings.decision,selected.decision);assert.equal(after.settings.suggestion_automation,"manual");assert.equal(after.settings.suggestion_language,saved.settings.suggestion_language);
+ assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command=>["begin_insights_analysis","test_inference","set_key"].includes(command)));
+});

@@ -922,6 +922,17 @@
     return `${item.edited_text ?? item.text}\n\n---\n\n**Source evidence (original transcript)**\n\nMeeting file: [Transcript](transcript.md).\n\nEvidence cutoff: [${clock(item.evidence_cutoff_ms)}] (${item.evidence_cutoff_ms} ms)\n\nProcessing destination: \`${destination}\`\n\nSource status: ${item.source_state}\n\n${evidence}`;
   };
   const insightSave = store => { store.status = "ready"; store.revision++; insightMetadata(store); };
+  const insightConfigurationState = language => {
+    const config = settings.decision, provider = settings.providers.find(item => item.id === config?.provider_id);
+    return JSON.stringify([settings.meetings_dir, config, provider ?? null, provider ? providerRevisions[provider.id] ?? 0 : 0,
+      provider ? !!keys[provider.id] : false, config?.protocol === "pennel_cloud" ? signedIn : null, language]);
+  };
+  const insightConfigurationFingerprint = language => fingerprint(insightConfigurationState(language));
+  const insightConfigurationMatches = async (language, expected) => {
+    if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected)) return false;
+    const state = insightConfigurationState(language), observed = await fingerprint(state);
+    return expected === observed && state === insightConfigurationState(language);
+  };
   async function insightCommand(command, args) {
     const request = args.request || {};
     if (command === "insights_snapshot") return insightRead(args.id);
@@ -929,11 +940,13 @@
       const resolved = resolvedSuggestionLanguage(args.languagePolicy ?? settings.suggestion_language), writable = ["ready", "missing"].includes(insightStore(args.id).status);
       const configured = !!options.suggestion_configured || !!options.insights_seeded, qualified = !!options.insight_qualified && !!resolved;
       const reason = !resolved ? "language_unknown" : !configured ? "unconfigured" : !qualified ? "unqualified" : options.suggestion_foreground_accepted === false ? "foreground_impact_unaccepted" : !writable ? "source_unavailable" : "";
-      return { configured, qualified, available: !reason, reason_code: reason, provider_id: configured ? "owned-ui" : null, model: configured ? "owned-ui-fixture" : null, endpoint: configured ? "https://decision.example.invalid/v1" : null, language_policy: resolved || "unknown", resolved_language: resolved, task: "meeting_suggestions_v1", use_case: "automatic_finished_suggestions", qualification_id: qualified ? "owned-ui-only" : null };
+      return { configured, qualified, available: !reason, reason_code: reason, provider_id: configured ? "owned-ui" : null, model: configured ? "owned-ui-fixture" : null, endpoint: configured ? "https://decision.example.invalid/v1" : null, language_policy: resolved || "unknown", resolved_language: resolved, task: "meeting_suggestions_v1", use_case: "automatic_finished_suggestions", qualification_id: qualified ? "owned-ui-only" : null,
+        configuration_fingerprint: configured ? await insightConfigurationFingerprint(resolved || "unknown") : null };
     }
     if (command === "insights_availability") return { configured: !!options.insights_seeded || !!options.suggestion_configured, available: !!options.insight_qualified && args.languagePolicy !== "unknown", qualified: !!options.insight_qualified && args.languagePolicy !== "unknown",
       reason_code: args.languagePolicy === "unknown" ? "unknown_language" : options.insight_qualified ? "" : "unqualified", provider_id: options.insights_seeded || options.suggestion_configured ? "owned-ui" : null,
-      model: options.insights_seeded || options.suggestion_configured ? "owned-ui-fixture" : null, endpoint: options.insights_seeded || options.suggestion_configured ? "https://decision.example.invalid/v1" : null, language_policy: args.languagePolicy, task: "meeting_suggestions_v1", use_case: "manual_finished_suggestions", qualification_id: options.insight_qualified ? "owned-ui-only" : null };
+      model: options.insights_seeded || options.suggestion_configured ? "owned-ui-fixture" : null, endpoint: options.insights_seeded || options.suggestion_configured ? "https://decision.example.invalid/v1" : null, language_policy: args.languagePolicy, task: "meeting_suggestions_v1", use_case: "manual_finished_suggestions", qualification_id: options.insight_qualified ? "owned-ui-only" : null,
+      configuration_fingerprint: options.insights_seeded || options.suggestion_configured ? await insightConfigurationFingerprint(args.languagePolicy) : null };
     if (command === "claim_insight_edit" || command === "review_insight") {
       if (options.insight_write_fail) throw Error("Synthetic review storage unavailable.");
       if (options.insight_review_delay_ms) await new Promise(resolve => setTimeout(resolve, options.insight_review_delay_ms));
@@ -978,6 +991,7 @@
       item.source_reassociated = true; item.evidence_cutoff_ms = request.evidence_cutoff_ms; item.revision++; insightSave(store); return insightRead(args.id);
     }
     if (command === "begin_insights_analysis") {
+      if (!await insightConfigurationMatches(args.languagePolicy, args.expectedConfigurationFingerprint)) throw Error("The connection changed. Refresh before finding suggestions.");
       if (!options.insight_qualified || args.languagePolicy === "unknown") throw Error("This setup is not qualified.");
       const store = insightStore(args.id), job = { job_id: insightId(), meeting_uid: store.meeting_uid, state: "running", revision: 1, error_code: null, physical_running: true, included_through_ms: 32000, completed_windows: 0, total_windows: 1 };
       insightJobs.set(job.job_id, { job, id: args.id, polls: 0 }); insightMetadata(job); return clone(job);
@@ -1122,6 +1136,17 @@
         persistOwnerReview();
         emit("settings-changed", null);
         return info();
+      }
+      case "set_meeting_suggestion_policy_checked": {
+        if (!await insightConfigurationMatches(args.languagePolicy, args.expectedConfigurationFingerprint)) throw Error("The connection changed. Refresh before finding suggestions.");
+        if (!options.insight_qualified || !["en", "nl", "mixed"].includes(args.languagePolicy)) throw Error("This setup is not qualified.");
+        if (!["manual", "automatic"].includes(args.policy) || args.fallbackLanguage != null && !["en", "nl", "mixed"].includes(args.fallbackLanguage)) throw Error("The connection changed. Refresh before finding suggestions.");
+        if (args.policy === "automatic" && options.suggestion_foreground_accepted === false) throw Error("foreground_impact_unaccepted");
+        if (options.settings_save_error) throw Error(options.settings_save_error);
+        settings.suggestion_automation = args.policy;
+        if (args.fallbackLanguage != null) settings.suggestion_language = args.fallbackLanguage;
+        if (profileKey) { try { globalThis.localStorage?.setItem(profileKey, JSON.stringify(settings)); } catch {} }
+        persistOwnerReview(); emit("settings-changed", null); return info();
       }
       case "show_pill_preview": return null;
       case "configured_dictation_models": return configuredSpeechModels();
@@ -1286,6 +1311,7 @@
         keys[args.account] = Boolean(args.key); providerRevisions[args.account] = (providerRevisions[args.account] || 0) + 1;
         persistOwnerReview({ keys: { [args.account]: keys[args.account] }, providerRevisions: { [args.account]: providerRevisions[args.account] } }); return info();
       }
+      case "qualified_finished_suggestion_presets": return clone(options.tested_suggestion_presets || []);
       case "inference_protocols": return [
         ["open_router_decisions", "OpenRouter Decisions", "https://openrouter.ai/api/v1"],
         ["open_router_system_one", "OpenRouter System One", "https://openrouter.ai/api/v1"],

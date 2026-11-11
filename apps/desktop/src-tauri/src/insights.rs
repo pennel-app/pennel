@@ -80,6 +80,7 @@ pub async fn insights_availability(
 pub async fn begin_insights_analysis(
     id: String,
     language_policy: String,
+    expected_configuration_fingerprint: String,
     app: AppHandle,
     shared: State<'_, Arc<Shared>>,
 ) -> Result<Value> {
@@ -88,7 +89,11 @@ pub async fn begin_insights_analysis(
             shared
                 .engine
                 .clone()
-                .admit_meeting_insight_analysis(id, language_policy),
+                .admit_meeting_insight_analysis_checked(
+                    id,
+                    language_policy,
+                    expected_configuration_fingerprint,
+                ),
             || shared.keys(),
         )?;
         shared

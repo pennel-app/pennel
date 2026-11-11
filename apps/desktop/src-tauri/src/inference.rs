@@ -5,7 +5,7 @@ use pennel_core::{
     DecisionRequest, DecisionResult, InferenceAvailability, InferenceCancellation,
     InferenceCapability, InferenceProtocolInfo, InferenceVerification, RerankRequest, RerankResult,
 };
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::state::Shared;
 
@@ -142,6 +142,49 @@ async fn run<T: Send + 'static>(
 #[tauri::command]
 pub fn inference_protocols() -> Vec<InferenceProtocolInfo> {
     pennel_core::inference_protocols()
+}
+
+#[tauri::command]
+pub async fn qualified_finished_suggestion_presets(
+    shared: State<'_, Arc<Shared>>,
+) -> Result<serde_json::Value> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let presets = shared
+            .engine
+            .qualified_finished_suggestion_presets_json()
+            .map_err(error)?;
+        serde_json::from_str(&presets).map_err(error)
+    })
+    .await
+    .map_err(|_| error("The inference availability could not be checked."))?
+}
+
+#[tauri::command]
+pub async fn set_meeting_suggestion_policy_checked(
+    language_policy: String,
+    expected_configuration_fingerprint: String,
+    policy: pennel_core::SuggestionAutomation,
+    fallback_language: Option<String>,
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<crate::commands::AppInfo> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        shared
+            .engine
+            .set_meeting_suggestion_policy_checked(
+                language_policy,
+                expected_configuration_fingerprint,
+                policy,
+                fallback_language,
+            )
+            .map_err(error)?;
+        let _ = app.emit("settings-changed", ());
+        crate::commands::info(&shared)
+    })
+    .await
+    .map_err(|_| error("The inference request could not be completed."))?
 }
 
 #[tauri::command]

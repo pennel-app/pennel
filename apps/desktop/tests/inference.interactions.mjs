@@ -247,3 +247,71 @@ export async function checkInferenceUI() {
     cleanup.forEach(action => action()); client.invoke = original; setInterfaceLanguage(previousLanguage); target.replaceChildren(...previous);
   }
 }
+
+export async function checkTestedSuggestionSetup(referenceOnly = false) {
+  if (!/^(127\.0\.0\.1|localhost)$/.test(location.hostname) || !window.__PENNEL_FIXTURE__) throw Error("Use the owned fixture.");
+  const { inferenceModelsView } = await import("/src/views/inference.ts");
+  const info = window.__PENNEL_FIXTURE__.info(), client = window.__PENNEL_PLATFORM__, invoke = client.invoke.bind(client);
+  const router = { id: "owned-router", name: "Owned OpenRouter connection", kind: "open_router", base_url: "https://openrouter.ai/api/v1" };
+  info.settings.providers = [router]; info.keys = { [router.id]: true }; info.settings.decision = null;
+  const other = JSON.stringify([info.settings.dictation_stt, info.settings.meeting_stt, info.settings.llm, info.settings.summary_automation, info.settings.suggestion_automation]);
+  const keys = JSON.stringify(info.keys), commands = [];
+  const preset = { qualification_id: "owned-synthetic-manual-only", language_policy: "nl", identity_evidence: "provider_reported_version", weights_independently_verified: false,
+    actual_model: "perplexity/pplx-decider-v1.2-20261016", actual_provider: "Perplexity", configured: { protocol: "open_router_decisions", endpoint: "https://openrouter.ai/api/alpha/decisions",
+      model: "perplexity/pplx-decider-v1.2", upstream: "perplexity", expected_model: "perplexity/pplx-decider-v1.2-20261016", max_input_bytes: 32000, timeout_secs: 90 } };
+  let presets = [preset], saves = 0, capabilities = true;
+  if (window.__PENNEL_FIXTURE__.options.tested_suggestion_empty) presets = [];
+  client.invoke = async (command, args) => {
+    commands.push(command);
+    if (command === "inference_protocols" && !capabilities) return [];
+    if (command === "qualified_finished_suggestion_presets") return structuredClone(presets);
+    if (command === "inference_availability") return { available: false, configured: !!info.settings[args.capability], reason: "Not configured", endpoint: null };
+    return invoke(command, args);
+  };
+  const target = document.getElementById("content"), previous = [...target.childNodes], cleanup = [], listeners = [];
+  const ctx = { get info() { return info; }, onDispose(action) { cleanup.push(action); }, onInfoChange(listener) { listeners.push(listener); }, rerender() {}, navigate() {},
+    async save(change) { ++saves; change(info.settings); } };
+  const settle = () => new Promise(resolve => setTimeout(resolve, 30));
+  const assert = (value, message) => { if (!value) throw Error(message); };
+  try {
+    target.replaceChildren(...await inferenceModelsView(ctx));
+    target.querySelector(".experimental-connections").open = true;
+    if (referenceOnly) return { syntheticOnly: true, configuredByRender: false };
+    const root = target.querySelector('[data-inference-capability="decision"]');
+    const use = root.querySelector('[data-tested-suggestion-apply]');
+    if (window.__PENNEL_FIXTURE__.options.tested_suggestion_empty) {
+      assert(use?.disabled && !root.querySelector('[data-tested-suggestion-setup] .choice'), "Missing qualification hides the control or exposes a blank preset choice.");
+      assert(saves === 0 && !info.settings.decision && !commands.some(command => ["verify_inference", "begin_insights_analysis", "set_key", "download_model"].includes(command)), "Missing qualification performed work.");
+      return { unavailableControlVisible: true, noFakePresetOrInference: true, syntheticOnly: true };
+    }
+    assert(use && !use.disabled, "An adopted matching setup is not reachable for the selected OpenRouter account.");
+    assert(saves === 0 && !info.settings.decision, "Reading presets saved or activated a configuration.");
+    use.click(); await settle();
+    assert(root.querySelector('[data-inference-field="model"]').value === preset.configured.model
+      && root.querySelector('[data-inference-field="expected_model"]').value === preset.actual_model
+      && root.querySelector('[data-inference-field="upstream"]').value === "perplexity"
+      && root.querySelector('[data-inference-field="timeout_secs"]').value === "90", "The tested draft lost its exact model, route or bounds.");
+    assert(saves === 0 && !info.settings.decision, "Applying a preset bypassed the explicit Save action.");
+    root.querySelector('[data-tested-suggestion-details]').open = true;
+    assert(root.querySelector('[data-tested-suggestion-details]').textContent.includes("Perplexity"), "Verification details omit the provider-reported version.");
+    const save = [...root.querySelectorAll("button")].find(button => ["Save configuration", "Configuratie bewaren"].includes(button.textContent));
+    save.click(); await settle();
+    assert(saves === 1 && info.settings.decision.provider_id === router.id && info.settings.decision.expected_model === preset.actual_model, "Explicit Save did not retain the selected account and exact pin.");
+    assert(JSON.stringify(info.keys) === keys && JSON.stringify([info.settings.dictation_stt, info.settings.meeting_stt, info.settings.llm, info.settings.summary_automation, info.settings.suggestion_automation]) === other,
+      "The preset changed credentials, unrelated tasks or consent.");
+    const saved = JSON.stringify(info.settings.decision);
+    presets = [{ ...preset, actual_model: "perplexity/pplx-decider-v1.2-20261017", configured: { ...preset.configured, expected_model: "perplexity/pplx-decider-v1.2-20261017" } }];
+    use.click(); await settle();
+    assert(root.querySelector('[data-inference-field="expected_model"]').value === preset.actual_model, "Changed evidence under an old preset ID replaced the shown pin.");
+    presets = [];
+    use.click(); await settle();
+    assert(saves === 1 && JSON.stringify(info.settings.decision) === saved, "A revoked preset changed the saved connection.");
+    capabilities = false; presets = [preset]; cleanup.splice(0).forEach(action => action()); listeners.splice(0);
+    target.replaceChildren(...await inferenceModelsView(ctx));
+    assert(target.querySelector('[data-tested-suggestion-apply]')?.disabled, "Missing native protocol metadata still permits applying a tested setup.");
+    assert(!commands.some(command => ["verify_inference", "begin_insights_analysis", "set_key", "download_model"].includes(command)), "Reading/applying the preset sent content or changed credentials.");
+    return { exactDraftRequiresSave: true, selectedAccountPreserved: true, noInferenceOrCredentials: true, revokedPresetRejected: true, syntheticOnly: true };
+  } finally {
+    if (!referenceOnly) { cleanup.forEach(action => action()); client.invoke = invoke; target.replaceChildren(...previous); }
+  }
+}

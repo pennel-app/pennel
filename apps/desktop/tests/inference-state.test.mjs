@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState } from "../src/inference-state.ts";
+import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState, testedSuggestionDraft } from "../src/inference-state.ts";
 
 const config = { provider_id: "custom", protocol: "mercury", model: "decision-model", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 30 };
 const info = { settings: { providers: [{ id: "custom", kind: "custom", name: "My server", base_url: "https://example.com/v1" }], decision: config }, keys: { custom: true }, provider_revisions: { custom: 1 } };
@@ -70,4 +70,14 @@ test("cancellation invalidates an old response without losing a newer request", 
   assert.equal(state.finish("new", "after", result), true);
   assert.equal(state.get("after"), result);
   assert.equal(state.get("changed"), null);
+});
+test("tested suggestion setup only fills the selected official OpenRouter account and exact adopted pin", () => {
+  const account={id:"router-owner",kind:"open_router",name:"My connection",base_url:"https://openrouter.ai/api/v1"};
+  const preset={qualification_id:"owned-fixture",language_policy:"nl",identity_evidence:"provider_reported_version",weights_independently_verified:false,
+    actual_model:"perplexity/pplx-decider-v1.2-20261016",actual_provider:"Perplexity",configured:{protocol:"open_router_decisions",endpoint:"https://openrouter.ai/api/alpha/decisions",model:"perplexity/pplx-decider-v1.2",upstream:"perplexity",expected_model:"perplexity/pplx-decider-v1.2-20261016",max_input_bytes:32000,timeout_secs:90}};
+  const before=structuredClone([account,preset]);
+  assert.deepEqual(testedSuggestionDraft(preset,account),{provider_id:account.id,protocol:"open_router_decisions",model:preset.configured.model,upstream:"perplexity",expected_model:preset.actual_model,max_input_bytes:32000,timeout_secs:90});
+  assert.deepEqual([account,preset],before);
+  for(const patch of [{kind:"pennel_cloud"},{kind:"custom"},{base_url:"https://untrusted.example/api/v1"},{base_url:"http://openrouter.ai/api/v1"},{base_url:"https://openrouter.ai/api/v1?secret=x"}])assert.equal(testedSuggestionDraft(preset,{...account,...patch}),null);
+  for(const patch of [{qualification_id:""},{identity_evidence:"serving_revision_and_artifact"},{weights_independently_verified:true},{language_policy:"en"},{configured:{...preset.configured,expected_model:"other"}},{configured:{...preset.configured,upstream:"other"}},{configured:{...preset.configured,timeout_secs:91}}])assert.equal(testedSuggestionDraft({...preset,...patch},account),null);
 });
