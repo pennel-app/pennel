@@ -815,5 +815,7 @@
   "backend.shortcut_native_key_not_supported": "native_key_not_supported",
   "backend.shortcut_native_shortcut_unavailable": "native_shortcut_unavailable",
   "backend.shortcut_wayland_global_shortcuts": "wayland_global_shortcuts",
-  "backend.shortcut_x11_keyed_shortcuts_unavailable": "x11_keyed_shortcuts_unavailable"
+  "backend.shortcut_x11_keyed_shortcuts_unavailable": "x11_keyed_shortcuts_unavailable",
+  "backend.recording_shortcut_unavailable": "The recording shortcut is unavailable. Try resetting it in Settings.",
+  "backend.recording_shortcut_unavailable_named": "The {label} recording shortcut is unavailable. Choose another shortcut in Settings."
 }
