@@ -1,0 +1,6 @@
+Waiting for core cache lease
+Acquired core cache lease
+    Checking pennel-speakers v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/core/speakers)
+    Checking pennel-keyboard v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/core/keyboard)
+    Checking pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.63s

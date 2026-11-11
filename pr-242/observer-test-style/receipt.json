@@ -1,0 +1,16 @@
+{
+  "head": "a8f35661490b2cd868755164ed64e2e54560aa7a",
+  "change": "Existing final integration test-only ReadingObserver let-chain; no runtime behavior change",
+  "source_reference": "a0acf423079be784deecebaad8849cc61e70d4b7",
+  "observed_ci_failure": "https://github.com/pennel-app/pennel/actions/runs/42934866094/job/130242389097",
+  "focused_test": {
+    "passed": 1,
+    "failed": 0,
+    "filtered": 1265
+  },
+  "strict_core_clippy": "--lib --tests -- -D warnings passed under shared core cache lease",
+  "fmt_and_diff": "passed",
+  "limits": "No full core/native/device repeat; hosted jobs are not inferred green",
+  "published_log_note": "Only surplus terminal empty lines normalized in the published focused-test text; raw command log retained locally.",
+  "raw_focused_log_sha256": "ca90715d9a12f320be009705b6d3df0ddd4b443747278601ae795194622e2a90"
+}
