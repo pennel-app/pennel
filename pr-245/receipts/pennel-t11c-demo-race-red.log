@@ -1,0 +1,39 @@
+Waiting for backend cache lease
+Acquired backend cache lease
+   Compiling pennel-desktop v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a65210de8afb33f96/apps/desktop/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 33.78s
+     Running unittests src/main.rs (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-aa92d718182538c4d/apps/desktop/src-tauri/target/debug/deps/pennel-762b83d6cd8d1297)
+
+running 4 tests
+test pill::tests::demo_timer_cannot_hide_a_new_preview_or_resume_after_real_capture ... ok
+test pill::tests::an_old_queued_cancel_cannot_hide_a_new_valid_demo ... FAILED
+test pill::tests::native_hide_reentry_preserves_a_newer_demo ... FAILED
+test pill::tests::pending_demo_cannot_revive_after_capture_cancels_it_during_creation ... FAILED
+
+failures:
+
+---- pill::tests::an_old_queued_cancel_cannot_hide_a_new_valid_demo stdout ----
+
+thread 'pill::tests::an_old_queued_cancel_cannot_hide_a_new_valid_demo' (47404817) panicked at src/pill.rs:756:9:
+assertion failed: visible.get()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- pill::tests::native_hide_reentry_preserves_a_newer_demo stdout ----
+
+thread 'pill::tests::native_hide_reentry_preserves_a_newer_demo' (47404819) panicked at src/pill.rs:805:9:
+assertion failed: visible.get()
+
+---- pill::tests::pending_demo_cannot_revive_after_capture_cancels_it_during_creation stdout ----
+
+thread 'pill::tests::pending_demo_cannot_revive_after_capture_cancels_it_during_creation' (47404820) panicked at src/pill.rs:740:9:
+assertion failed: result.is_err()
+
+
+failures:
+    pill::tests::an_old_queued_cancel_cannot_hide_a_new_valid_demo
+    pill::tests::native_hide_reentry_preserves_a_newer_demo
+    pill::tests::pending_demo_cannot_revive_after_capture_cancels_it_during_creation
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--bin pennel`

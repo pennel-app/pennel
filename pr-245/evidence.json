@@ -1,0 +1,597 @@
+{
+  "pull_request": 245,
+  "head": "cd27321d248fe0d1ab98cede2ccf9e42dd3601d8",
+  "base": "ce0a3e1d455b4a302ba720619f1b597b7e451429",
+  "reviewed_source": "39885c91bc8a32deabfb54afec36305a55012cd1",
+  "kind": "synthetic/headless source-author owned Chromium fixtures; no user screen/profile",
+  "reference": {
+    "handoff": "design-handoff/HANDOFF.md section 3",
+    "screens": [
+      25,
+      26,
+      40
+    ]
+  },
+  "source_checkpoints": {
+    "baseline": "5d569c8cc0fc8be0aacfe6172d77a812cbe39aaa",
+    "appearance": "194a81e6b218f7be5a78b445ba872b88ac9a6529",
+    "demo_correction": "39885c91bc8a32deabfb54afec36305a55012cd1"
+  },
+  "capture_note": "Source-author coherent report paths: after-final32, final controls and global-appearance-verified8. No later mixed Root integration frames are included; its transparent Dutch caveat does not apply to these sets. Every PNG passed nonblank pixel checks. Original capture/baseline metadata is retained; later Match Pennel labels/help are shown in controls-final and appearance-verified. The backend-only demo ownership correction changes no renderer/geometry and has separate controlled regression receipts.",
+  "sets": [
+    {
+      "directory": "before",
+      "images": 16,
+      "captured_at": "2026-11-10T22:09:08.927Z",
+      "fixture_sha256": "0bcad0c034a258294590a7a7ee07d39902cb000a5e11f44ce2e69cd9f7f89637",
+      "pixel_check": "nontransparent; >=10 colors; RGB stddev>=2 in at least one channel"
+    },
+    {
+      "directory": "after",
+      "images": 32,
+      "captured_at": "2026-11-10T22:06:10.607Z",
+      "fixture_sha256": "2ffa6e6910de8b9ecbbbc2ea7f7531363db6c54b663716bfd98083dc34518059",
+      "pixel_check": "nontransparent; >=10 colors; RGB stddev>=2 in at least one channel"
+    },
+    {
+      "directory": "controls-final",
+      "images": 16,
+      "captured_at": "2026-11-10T22:58:11.800Z",
+      "fixture_sha256": "45b26b1a4aee5d17e2ac8eb8504ebd5f88781a2afbfb62fe0a83622618126192",
+      "pixel_check": "nontransparent; >=10 colors; RGB stddev>=2 in at least one channel"
+    },
+    {
+      "directory": "appearance-verified",
+      "images": 8,
+      "captured_at": "2026-11-10T23:04:14.842Z",
+      "fixture_sha256": "a9c87583e9c90616b190dae3c0c59d414cbfd84be41bf1a864a3e7b937b12de0",
+      "pixel_check": "nontransparent; >=10 colors; RGB stddev>=2 in at least one channel"
+    },
+    {
+      "directory": "privacy-demo",
+      "images": 4,
+      "captured_at": "2026-11-10T23:27:38.941Z",
+      "fixture_sha256": "a9c87583e9c90616b190dae3c0c59d414cbfd84be41bf1a864a3e7b937b12de0",
+      "pixel_check": "nontransparent; >=10 colors; RGB stddev>=2 in at least one channel"
+    },
+    {
+      "directory": "wayland",
+      "images": 4,
+      "captured_at": "2026-11-10T22:09:02.911Z",
+      "fixture_sha256": "0bcad0c034a258294590a7a7ee07d39902cb000a5e11f44ce2e69cd9f7f89637",
+      "pixel_check": "nontransparent; >=10 colors; RGB stddev>=2 in at least one channel"
+    }
+  ],
+  "matched_pairs": [
+    {
+      "before": "before/en/light/t11c-pill-compact-ink.png",
+      "after": "after/en/light/t11c-pill-compact-ink.png",
+      "case_sha256": "37c2376e9961c89708c7857c5ce5e8a88e9b4ad79da19d0c11392a94f469f00b",
+      "width": 360,
+      "height": 152
+    },
+    {
+      "before": "before/en/light/t11c-pill-regular-light.png",
+      "after": "after/en/light/t11c-pill-regular-light.png",
+      "case_sha256": "4de573f0f6b11ea9e691aed94eefbe81f4c6dddb7a10f1233a8916d305848487",
+      "width": 420,
+      "height": 164
+    },
+    {
+      "before": "before/en/light/t11c-pill-large-system.png",
+      "after": "after/en/light/t11c-pill-large-system.png",
+      "case_sha256": "f0a0d84d8c7a1eea3b22ae055a352fbcb9527b0409199a7071e409d10ce1afa2",
+      "width": 500,
+      "height": 200
+    },
+    {
+      "before": "before/en/light/t11c-settings-preview.png",
+      "after": "after/en/light/t11c-settings-preview.png",
+      "case_sha256": "bbba9d4c0321016bc4964ec1dd351ad41b0a0cd50315285879e8f89748f3fee4",
+      "width": 760,
+      "height": 650
+    },
+    {
+      "before": "before/en/dark/t11c-pill-compact-ink.png",
+      "after": "after/en/dark/t11c-pill-compact-ink.png",
+      "case_sha256": "37c2376e9961c89708c7857c5ce5e8a88e9b4ad79da19d0c11392a94f469f00b",
+      "width": 360,
+      "height": 152
+    },
+    {
+      "before": "before/en/dark/t11c-pill-regular-light.png",
+      "after": "after/en/dark/t11c-pill-regular-light.png",
+      "case_sha256": "4de573f0f6b11ea9e691aed94eefbe81f4c6dddb7a10f1233a8916d305848487",
+      "width": 420,
+      "height": 164
+    },
+    {
+      "before": "before/en/dark/t11c-pill-large-system.png",
+      "after": "after/en/dark/t11c-pill-large-system.png",
+      "case_sha256": "f0a0d84d8c7a1eea3b22ae055a352fbcb9527b0409199a7071e409d10ce1afa2",
+      "width": 500,
+      "height": 200
+    },
+    {
+      "before": "before/en/dark/t11c-settings-preview.png",
+      "after": "after/en/dark/t11c-settings-preview.png",
+      "case_sha256": "bbba9d4c0321016bc4964ec1dd351ad41b0a0cd50315285879e8f89748f3fee4",
+      "width": 760,
+      "height": 650
+    },
+    {
+      "before": "before/nl/light/t11c-pill-compact-ink.png",
+      "after": "after/nl/light/t11c-pill-compact-ink.png",
+      "case_sha256": "37c2376e9961c89708c7857c5ce5e8a88e9b4ad79da19d0c11392a94f469f00b",
+      "width": 360,
+      "height": 152
+    },
+    {
+      "before": "before/nl/light/t11c-pill-regular-light.png",
+      "after": "after/nl/light/t11c-pill-regular-light.png",
+      "case_sha256": "4de573f0f6b11ea9e691aed94eefbe81f4c6dddb7a10f1233a8916d305848487",
+      "width": 420,
+      "height": 164
+    },
+    {
+      "before": "before/nl/light/t11c-pill-large-system.png",
+      "after": "after/nl/light/t11c-pill-large-system.png",
+      "case_sha256": "f0a0d84d8c7a1eea3b22ae055a352fbcb9527b0409199a7071e409d10ce1afa2",
+      "width": 500,
+      "height": 200
+    },
+    {
+      "before": "before/nl/light/t11c-settings-preview.png",
+      "after": "after/nl/light/t11c-settings-preview.png",
+      "case_sha256": "bbba9d4c0321016bc4964ec1dd351ad41b0a0cd50315285879e8f89748f3fee4",
+      "width": 760,
+      "height": 650
+    },
+    {
+      "before": "before/nl/dark/t11c-pill-compact-ink.png",
+      "after": "after/nl/dark/t11c-pill-compact-ink.png",
+      "case_sha256": "37c2376e9961c89708c7857c5ce5e8a88e9b4ad79da19d0c11392a94f469f00b",
+      "width": 360,
+      "height": 152
+    },
+    {
+      "before": "before/nl/dark/t11c-pill-regular-light.png",
+      "after": "after/nl/dark/t11c-pill-regular-light.png",
+      "case_sha256": "4de573f0f6b11ea9e691aed94eefbe81f4c6dddb7a10f1233a8916d305848487",
+      "width": 420,
+      "height": 164
+    },
+    {
+      "before": "before/nl/dark/t11c-pill-large-system.png",
+      "after": "after/nl/dark/t11c-pill-large-system.png",
+      "case_sha256": "f0a0d84d8c7a1eea3b22ae055a352fbcb9527b0409199a7071e409d10ce1afa2",
+      "width": 500,
+      "height": 200
+    },
+    {
+      "before": "before/nl/dark/t11c-settings-preview.png",
+      "after": "after/nl/dark/t11c-settings-preview.png",
+      "case_sha256": "bbba9d4c0321016bc4964ec1dd351ad41b0a0cd50315285879e8f89748f3fee4",
+      "width": 760,
+      "height": 650
+    }
+  ],
+  "files": [
+    {
+      "file": "after/en/dark/t11c-pill-compact-ink.png",
+      "sha256": "a036de303fce59b58d07cd983f06425a369cf7da9727cf0f97bfad263affe5fa"
+    },
+    {
+      "file": "after/en/dark/t11c-pill-large-system.png",
+      "sha256": "a1c5b5c482f2f46291535707afce0e06d146622ba7fe5c97bc18de09ce7dd7e0"
+    },
+    {
+      "file": "after/en/dark/t11c-pill-regular-light.png",
+      "sha256": "a68b5d45bc0fb866ffca6e220d89afe81a5f6bae4b27a99f4ae8ed19168541ad"
+    },
+    {
+      "file": "after/en/dark/t11c-pill-regular-recovery.png",
+      "sha256": "317ec0f1f637944dd394309cd706b70ba2dce97628fa71a23232d6a9ff15eaa4"
+    },
+    {
+      "file": "after/en/dark/t11c-pill-tiny-recovery.png",
+      "sha256": "65fda6f1c116dc5e648cde7e7b3632828278c62dc1e90a004fc29330091b80e6"
+    },
+    {
+      "file": "after/en/dark/t11c-settings-enlarged.png",
+      "sha256": "090aec650a1f62c3025ba1d3abb14c9c5e09af6ddebaa46676d5e1fd059361f6"
+    },
+    {
+      "file": "after/en/dark/t11c-settings-preview.png",
+      "sha256": "f8d426413eec4f5ee09e6d81ce38c48c0696ab95d531e8af56235bfb286a1297"
+    },
+    {
+      "file": "after/en/dark/t11c-settings-wayland.png",
+      "sha256": "d689c40e6b3f136b5251b9abeec1b7ffe22155aa7158f576f8652c9d9bc8164a"
+    },
+    {
+      "file": "after/en/light/t11c-pill-compact-ink.png",
+      "sha256": "3dab3ec18c70a0ac887f030601b3136c1562026fb01cb94eb9abad6dfba2fd7d"
+    },
+    {
+      "file": "after/en/light/t11c-pill-large-system.png",
+      "sha256": "8a515578508c26bdd213dadcd25666988beff55cd569f4de01f26f62d51bcbf5"
+    },
+    {
+      "file": "after/en/light/t11c-pill-regular-light.png",
+      "sha256": "c8b68e26eede524244211a775b7b748d66fba7cf492235c6f5ed6a86bb4d48f6"
+    },
+    {
+      "file": "after/en/light/t11c-pill-regular-recovery.png",
+      "sha256": "681fa71e65900b4d397b3d80015cfca621089b1294ed2cae1fd47cfec328a299"
+    },
+    {
+      "file": "after/en/light/t11c-pill-tiny-recovery.png",
+      "sha256": "a91d05fbab8e86f73bc49cc53effc25d7a41c194944622ba5b58ff27670e326e"
+    },
+    {
+      "file": "after/en/light/t11c-settings-enlarged.png",
+      "sha256": "db5cd0866f0a9aaf7d6f8730024c7c78b71a0e04b6a4bddd98d49e60c67ebcc0"
+    },
+    {
+      "file": "after/en/light/t11c-settings-preview.png",
+      "sha256": "0ebf38bdf26a1a48ad88a2903d9fd17f754ea56a11cdfa081a6c16391be101ac"
+    },
+    {
+      "file": "after/en/light/t11c-settings-wayland.png",
+      "sha256": "a908eb89ec89af28eb3cc50c87bf1180ee15971ba16818f0179c9ec52a8a2065"
+    },
+    {
+      "file": "after/manifest.json",
+      "sha256": "98f58af79c9909de507184284a050ab2b71871b32fd822b86aa55d1a89ec8445"
+    },
+    {
+      "file": "after/nl/dark/t11c-pill-compact-ink.png",
+      "sha256": "49cdc5b747b50b0dc968f58ed868494931d898130a45cca04b07039979c53841"
+    },
+    {
+      "file": "after/nl/dark/t11c-pill-large-system.png",
+      "sha256": "352f4d407a29630a9169ae22bb0aafb791f8ba40bfb0a44235ed47854e5a4bf1"
+    },
+    {
+      "file": "after/nl/dark/t11c-pill-regular-light.png",
+      "sha256": "938a73d665522b181c965c91e80f834e3adaeffd613778abe2e12652f5e2fac1"
+    },
+    {
+      "file": "after/nl/dark/t11c-pill-regular-recovery.png",
+      "sha256": "a219c58d408e929cb0e20a2a73c32af122b99a16bde0341eac22c3279e1f554c"
+    },
+    {
+      "file": "after/nl/dark/t11c-pill-tiny-recovery.png",
+      "sha256": "8cf345009547790cfdd80d3957b9f7175d192ac788b4b42f476214ed649292be"
+    },
+    {
+      "file": "after/nl/dark/t11c-settings-enlarged.png",
+      "sha256": "85af80afc2c6b7a348d442a69b76a709e500ebac30b398247212f8ae619331fa"
+    },
+    {
+      "file": "after/nl/dark/t11c-settings-preview.png",
+      "sha256": "175673d5ec05618cfc9a941508a410481caa6a499839c498fedebea48c5f72e9"
+    },
+    {
+      "file": "after/nl/dark/t11c-settings-wayland.png",
+      "sha256": "85675df2311e878a4607a7a1f9377ee7957e6845cb25bd5a824c8f30f6f8cbb8"
+    },
+    {
+      "file": "after/nl/light/t11c-pill-compact-ink.png",
+      "sha256": "08b9969017d26799d7366d82f0dfed0f498621039f66c28a5aa4e9da78719a83"
+    },
+    {
+      "file": "after/nl/light/t11c-pill-large-system.png",
+      "sha256": "3fb3375bc555814fefa1122ca55f6ecfcc6fe4031ab95f1d3847448fc82bdb81"
+    },
+    {
+      "file": "after/nl/light/t11c-pill-regular-light.png",
+      "sha256": "17f1c34f27549882fa1bd6d25e5ba037d6d8f554d9b1bfe68e3340d02a648da0"
+    },
+    {
+      "file": "after/nl/light/t11c-pill-regular-recovery.png",
+      "sha256": "4b29dcde588edb0ab2b139673d47b666d422a4cc0dc20e14ef9c8ffa2375a2ed"
+    },
+    {
+      "file": "after/nl/light/t11c-pill-tiny-recovery.png",
+      "sha256": "36c5b386de9b6bbbca61d82f719ae0edf6b7bec9d1d33d1a0977ecf5f61899c7"
+    },
+    {
+      "file": "after/nl/light/t11c-settings-enlarged.png",
+      "sha256": "91fc2095768bf5a78b2ecaa2cf46360952431eb0d091e605d3a20cbee83b7b5b"
+    },
+    {
+      "file": "after/nl/light/t11c-settings-preview.png",
+      "sha256": "a90b3ca9f2ef3ad20d48c1f4aef612231308b8ae52cc1f1e7d9c04df18ba1ba9"
+    },
+    {
+      "file": "after/nl/light/t11c-settings-wayland.png",
+      "sha256": "0fbcc47a8d51a409f3b4dda6c861a6786faa92b5b338389e13648692b0566b1b"
+    },
+    {
+      "file": "appearance-verified/en/dark/t11c-pill-following-appearance.png",
+      "sha256": "70596c1f254c1485d8cea2f311b2902580e7bc1257acfa0ac0fc5d290f8795a5"
+    },
+    {
+      "file": "appearance-verified/en/dark/t11c-settings-opposite-system.png",
+      "sha256": "0c6b5d22a9435647edeee567676bf85dab736f5b259a4123a06111e83983d498"
+    },
+    {
+      "file": "appearance-verified/en/light/t11c-pill-following-appearance.png",
+      "sha256": "27ed2e7aa6db75765d37a0ac589354f15c1795bc6a86f98baf8264986b8ae8dc"
+    },
+    {
+      "file": "appearance-verified/en/light/t11c-settings-opposite-system.png",
+      "sha256": "3c9fab2161927c14f30ec33e1ec4853c6f2ddb1136f8f6668a1a17c8535817bc"
+    },
+    {
+      "file": "appearance-verified/manifest.json",
+      "sha256": "427f23ef870c8bc8c875419e988347b0484433d2b1b2918ca4432587cfde5af5"
+    },
+    {
+      "file": "appearance-verified/nl/dark/t11c-pill-following-appearance.png",
+      "sha256": "faa670468de5db4518def132c6cc37e3d1478937620f25cbc70ebf8f19a23d4d"
+    },
+    {
+      "file": "appearance-verified/nl/dark/t11c-settings-opposite-system.png",
+      "sha256": "402d71ba64c5782a747064fe4577b2612f59169af5f4882843cc5e6a83e2c412"
+    },
+    {
+      "file": "appearance-verified/nl/light/t11c-pill-following-appearance.png",
+      "sha256": "1fcd5ee58678574b8d39448c0d9fd54135f17748ab22196d6df3bfdf72e2e784"
+    },
+    {
+      "file": "appearance-verified/nl/light/t11c-settings-opposite-system.png",
+      "sha256": "d6573b7c6888529c5c93972091923c44289c87ba5b0834da5fe4a3bee9ff5300"
+    },
+    {
+      "file": "before/en/dark/t11c-pill-compact-ink.png",
+      "sha256": "1c00d98fab4b4a39094106c086b948ee2415151eab912af6eca85aac5b7b8bd7"
+    },
+    {
+      "file": "before/en/dark/t11c-pill-large-system.png",
+      "sha256": "4132f2536ade019bf15e19db9e0ffabd07838a8ba2129fed4048599b99830cc5"
+    },
+    {
+      "file": "before/en/dark/t11c-pill-regular-light.png",
+      "sha256": "c41261e0d225b3c984587e88991549f0cda421e4690b51f027b4c67a3e40712c"
+    },
+    {
+      "file": "before/en/dark/t11c-settings-preview.png",
+      "sha256": "af5517e0a1ef3ef0605fc3161e8fcd462522af3ebcb8a1416e053928c8614e60"
+    },
+    {
+      "file": "before/en/light/t11c-pill-compact-ink.png",
+      "sha256": "18f80f225740f0c6bd517b65e81ff8f1441f3a4699100609bfff8e6446158676"
+    },
+    {
+      "file": "before/en/light/t11c-pill-large-system.png",
+      "sha256": "6a7ce06a8e7610cfa33ba2fe9a4cb0679acec7a00ef758d1eb02ed205705bd1a"
+    },
+    {
+      "file": "before/en/light/t11c-pill-regular-light.png",
+      "sha256": "5c51bb33f9d1b16593d1f59b20f533ed95dbf9967bec4abe9480c5187a79431e"
+    },
+    {
+      "file": "before/en/light/t11c-settings-preview.png",
+      "sha256": "9f167e4863a29963c0dc4d898ef97919fafca2d164f9edff6c3b7f24408f3c48"
+    },
+    {
+      "file": "before/manifest.json",
+      "sha256": "7654d0d6de651e8a82591a5be778f908f31cd3318650667f2ac5ec7228a90701"
+    },
+    {
+      "file": "before/nl/dark/t11c-pill-compact-ink.png",
+      "sha256": "d8dcc1ab3f8f2e189fd11c395ad988f8d98c894e57f6d5dd96f09923adfff329"
+    },
+    {
+      "file": "before/nl/dark/t11c-pill-large-system.png",
+      "sha256": "c38abd41d1c7d11ae7348c1d1c16dd89cd119a3912fed737ed26540af6fb9d38"
+    },
+    {
+      "file": "before/nl/dark/t11c-pill-regular-light.png",
+      "sha256": "534328b492948121772b675a4a92793a7918e67e4109974c3be40577ca202f44"
+    },
+    {
+      "file": "before/nl/dark/t11c-settings-preview.png",
+      "sha256": "ac34b18b2010a121a107ded01f623e56049fd6d4b12ade6e4f2e2f7759825024"
+    },
+    {
+      "file": "before/nl/light/t11c-pill-compact-ink.png",
+      "sha256": "525e0c7e0f43f7866c37af2b66ffe4f4aafd05c9807f0c64ab956274c7330ab5"
+    },
+    {
+      "file": "before/nl/light/t11c-pill-large-system.png",
+      "sha256": "a42defe001accba1b2a96052716f52dc2565e0c6196c0e60620af3b0ce85e7d3"
+    },
+    {
+      "file": "before/nl/light/t11c-pill-regular-light.png",
+      "sha256": "06e22677267ab98963abc3eca2df2e1e967f4784683c820b564927ccd2dce3e0"
+    },
+    {
+      "file": "before/nl/light/t11c-settings-preview.png",
+      "sha256": "e5fb07fd088dded1d675208b50d42fb78c51aa8d7966eef7139e3db4495db394"
+    },
+    {
+      "file": "controls-final/en/dark/t11c-settings-enlarged.png",
+      "sha256": "a1bad2e9f538664727065bbdf8d2caaa510290d53ed3a4aadd92042e082ff534"
+    },
+    {
+      "file": "controls-final/en/dark/t11c-settings-opposite-system.png",
+      "sha256": "d0226a086d1f6703892bddc3ccc63a2d294a0fa4220611ade9edb3259afdaf81"
+    },
+    {
+      "file": "controls-final/en/dark/t11c-settings-preview.png",
+      "sha256": "4dc7d53097e2a731c0c3ec26d055a715dcb0d420b841bbc7f6e08599a9cd409e"
+    },
+    {
+      "file": "controls-final/en/dark/t11c-settings.png",
+      "sha256": "c5b47bb4082ded18325750cb0d3f413637d2372ea13e5c30908e4ebafc0da1d1"
+    },
+    {
+      "file": "controls-final/en/light/t11c-settings-enlarged.png",
+      "sha256": "a44f5e17c92b6664a9585968439c50f0d5f195982aeb98349bdcd38b6bf3890c"
+    },
+    {
+      "file": "controls-final/en/light/t11c-settings-opposite-system.png",
+      "sha256": "8c19c4c309c11d67d2787aecb5374114510d2a27477efc5f0b3d6a7f0ccd6b8e"
+    },
+    {
+      "file": "controls-final/en/light/t11c-settings-preview.png",
+      "sha256": "7df472542b2c7e56517e05347147c2f2375824d2aac25f28a915e5faa91757ed"
+    },
+    {
+      "file": "controls-final/en/light/t11c-settings.png",
+      "sha256": "4aa2087d9c5c1a91d358f2da2a1d9b49512953ae12f08e8ef7ae7c94a23464c7"
+    },
+    {
+      "file": "controls-final/manifest.json",
+      "sha256": "e871ef640b6254c6fd349f9c18b5be7638b827c7b9613b10f446ee89f21cc1f4"
+    },
+    {
+      "file": "controls-final/nl/dark/t11c-settings-enlarged.png",
+      "sha256": "c4981e8bbb4b83c6c5f0383d4911df423811cbcd850cd723ec6070e013919e69"
+    },
+    {
+      "file": "controls-final/nl/dark/t11c-settings-opposite-system.png",
+      "sha256": "e1d7720745c6fac4ae311e713c1c3badc0bd1ea76853000b4b5af0d377acab74"
+    },
+    {
+      "file": "controls-final/nl/dark/t11c-settings-preview.png",
+      "sha256": "1fa927d3511a2d004d80db6c171f3bd855eaaf018253ff67014d879cbb8172fd"
+    },
+    {
+      "file": "controls-final/nl/dark/t11c-settings.png",
+      "sha256": "082b1f1b18c7ddb049d735cb4b82d36f7b3a05d01ddc66a3424506f699979ac6"
+    },
+    {
+      "file": "controls-final/nl/light/t11c-settings-enlarged.png",
+      "sha256": "1d3588f19d22b1272c595e5e2f27e5668fe6f4e2fdfdda835d2efe4374a684be"
+    },
+    {
+      "file": "controls-final/nl/light/t11c-settings-opposite-system.png",
+      "sha256": "518fc4bdd20cf0a9322b7859706be8de550f7a50902a551f5bf3477ab005efdb"
+    },
+    {
+      "file": "controls-final/nl/light/t11c-settings-preview.png",
+      "sha256": "bf22157a89edb606de10e42cf327868304850bcd35469a32c5c060cf46f46a4a"
+    },
+    {
+      "file": "controls-final/nl/light/t11c-settings.png",
+      "sha256": "c731b62f3f797caa5ececff082d11a61f904dda2586ceb97a1d1dcfb06055235"
+    },
+    {
+      "file": "privacy-demo/en/dark/t11c-pill-demo.png",
+      "sha256": "e30d06dbf757070241e855106a111d83cded5c05e35308bd6d70210de382b091"
+    },
+    {
+      "file": "privacy-demo/en/light/t11c-pill-demo.png",
+      "sha256": "48d8656960aa15551a3762c1fd3fb06041c2aad8768528b8bfe5b3ba13d47eec"
+    },
+    {
+      "file": "privacy-demo/manifest.json",
+      "sha256": "010ade1d70334471e385b259757e64f66ec39545a6249365226f5b84f18bc718"
+    },
+    {
+      "file": "privacy-demo/nl/dark/t11c-pill-demo.png",
+      "sha256": "5feb1061074bc9856b03e4ed62675e536486e41554107ed50940b7f023adb893"
+    },
+    {
+      "file": "privacy-demo/nl/light/t11c-pill-demo.png",
+      "sha256": "6fb7aad385c4413c97b7d78262c360ada490031d7b67aab9c14e7d0b1bb50e79"
+    },
+    {
+      "file": "receipts/functional-verified-manifest.json",
+      "sha256": "238d76f92eed01e6ea826f0d76d6bee5eb23628f26683167d83a68f78ea183c2"
+    },
+    {
+      "file": "receipts/pennel-pill-complete-core-tests.log",
+      "sha256": "5d0efd22fd60af4b9e3b80b7fe45849871444c9852c4c025cfb13b46a8832a1b"
+    },
+    {
+      "file": "receipts/pennel-pill-final-backend-aggregate.log",
+      "sha256": "72963bb26c0ea836799ea86e4b0a788a130f26fc09949ec322e79a43f29fccf7"
+    },
+    {
+      "file": "receipts/pennel-pill-final-linked-build.log",
+      "sha256": "cdb432d278d32f950040d8717ee05b2d88d70478c0300b1ddab0ffb5cb19b5bc"
+    },
+    {
+      "file": "receipts/pennel-pill-final-native-integrated.log",
+      "sha256": "a346ca1726470f1e7da640f00971b15f1d09fbe36574d81dc16f111efa4cf8ee"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-backend-clippy.log",
+      "sha256": "40671b2712954d701d9cf9e785f6a8305cffc8bb355713c2181222245d462fab"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-backend-tests.log",
+      "sha256": "1c8ceda4d6af6d7caecf3b5d75dc52982d94cb7e1299a0ad4273d9de0d857df8"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-core-localization.log",
+      "sha256": "bc9745080bf16e2f398ffaa10e634505e336697f16a148cb11c8bb237fc43f13"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-frontend-build.log",
+      "sha256": "38f1ac0ef73b1fde34cc06ebd8998d3191da3be308c6e1ab457d73cb29377685"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-frontend-tests.log",
+      "sha256": "77086cc93c4ef1dac661ecb79ce71288ff53f72ff67bea28fc18136610beaf79"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-generator.log",
+      "sha256": "ee260689723fd3d42026566a7325e53509d1ce2309c7aade91756d71c2f3476e"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-mobile-type.log",
+      "sha256": "1887206e1f2ab35629274153742349e28c6142cf640b7673b5f6850e37ca1595"
+    },
+    {
+      "file": "receipts/pennel-pill-follow-mobile-ui.log",
+      "sha256": "ff117b5e5f8eb9b11915b9d83da15622d17b27b18e9e05601a9c7a995a5b908a"
+    },
+    {
+      "file": "receipts/pennel-t11c-demo-race-clippy-noincremental.log",
+      "sha256": "5a1249552cd2e6bbddafd5c6674bad0e74f9caf83ab7df6a0c8623cf979921ae"
+    },
+    {
+      "file": "receipts/pennel-t11c-demo-race-red.log",
+      "sha256": "fb73a3ae6f6fdeafd74334f01b47ce3ca4f2f90773f51ecf2180203435c7bbcd"
+    },
+    {
+      "file": "receipts/pennel-t11c-demo-race-verified.log",
+      "sha256": "2cd9f8708b3e7131fa0f68194b8dd4162e886c5cc44cd92cd2f4e114165b6d70"
+    },
+    {
+      "file": "receipts/t11c-fix-review.md",
+      "sha256": "d9ae5edd5654b4dc2d83b7874c96e36d36c0241e87a6bcd2eb9f5e3d6949b43c"
+    },
+    {
+      "file": "receipts/t11c-report.md",
+      "sha256": "75cb9fe103ee1bb82bdb1726f69cd2f4081945812378cb0e7b6587d5211d7f7e"
+    },
+    {
+      "file": "wayland/en/dark/t11c-settings-wayland.png",
+      "sha256": "d689c40e6b3f136b5251b9abeec1b7ffe22155aa7158f576f8652c9d9bc8164a"
+    },
+    {
+      "file": "wayland/en/light/t11c-settings-wayland.png",
+      "sha256": "a908eb89ec89af28eb3cc50c87bf1180ee15971ba16818f0179c9ec52a8a2065"
+    },
+    {
+      "file": "wayland/manifest.json",
+      "sha256": "fda0f67fca0e941b27affe43acfc6877cf9bb6b1ee831051bee851042660409f"
+    },
+    {
+      "file": "wayland/nl/dark/t11c-settings-wayland.png",
+      "sha256": "85675df2311e878a4607a7a1f9377ee7957e6845cb25bd5a824c8f30f6f8cbb8"
+    },
+    {
+      "file": "wayland/nl/light/t11c-settings-wayland.png",
+      "sha256": "0fbcc47a8d51a409f3b4dda6c861a6786faa92b5b338389e13648692b0566b1b"
+    }
+  ]
+}

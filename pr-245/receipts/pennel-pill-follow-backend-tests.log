@@ -1,0 +1,29 @@
+Waiting for backend cache lease
+Acquired backend cache lease
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a65210de8afb33f96/core)
+   Compiling pennel-desktop v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a65210de8afb33f96/apps/desktop/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.52s
+     Running unittests src/main.rs (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-aa92d718182538c4d/apps/desktop/src-tauri/target/debug/deps/pennel-762b83d6cd8d1297)
+
+running 16 tests
+test pill::tests::demo_timer_cannot_hide_a_new_preview_or_resume_after_real_capture ... ok
+test pill::tests::an_earlier_leave_cannot_hide_a_later_captures_leave ... ok
+test pill::tests::core_caption_is_preserved_for_identical_grapheme_layout_in_both_renderers ... ok
+test pill::tests::a_new_capture_accepts_generation_zero_without_reusing_the_previous_model ... ok
+test pill::tests::old_completion_cannot_clear_a_new_capture ... ok
+test pill::tests::late_session_and_nonincreasing_revisions_never_replace_current_text ... ok
+test pill::tests::repeated_begin_does_not_rewind_an_existing_preview ... ok
+test pill::tests::hiding_clears_transient_text_and_refuses_late_updates ... ok
+test pill::tests::repeated_hidden_emissions_do_not_restart_the_current_leave ... ok
+test pill::tests::preview_boot_snapshot_retains_status_and_latest_text ... ok
+test pill::tests::structured_notices_reach_the_webview_as_named_fields ... ok
+test pill::tests::speech_model_metadata_stays_with_capture_and_boot_does_not_replay_confirmation ... ok
+test pill::tests::frozen_verification_metadata_survives_processing_and_clears_with_its_preview ... ok
+test pill::tests::cancel_hint_is_owned_by_listening_presentation_and_clears_before_processing ... ok
+test pill::tests::pill_geometry_stays_inside_small_scaled_and_negative_work_areas ... ok
+test pill::tests::selected_geometry_respects_scale_work_area_and_cursor_for_each_size ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 360 filtered out; finished in 0.00s
+

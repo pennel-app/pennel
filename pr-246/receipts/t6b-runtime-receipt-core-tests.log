@@ -1,0 +1,59 @@
+Waiting for core cache lease
+Acquired core cache lease
+Refreshed local crate inputs for active checkout
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.20s
+     Running unittests src/lib.rs (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-aa92d718182538c4d/core/target/debug/deps/pennel_core-e69b5cc585a030af)
+
+running 46 tests
+test meeting_insight_engine::tests::automatic_availability_reports_unknown_language_without_credentials_or_policy_side_effects ... ok
+test meeting_insight_engine::tests::automatic_suggestion_language_uses_frozen_speech_language_and_only_explicit_fallback ... ok
+test meeting_insight_engine::tests::automatic_policies_revoke_only_their_own_work_and_revocation_is_sticky ... ok
+test meeting_insight_engine::tests::automatic_suggestions_require_foreground_impact_acceptance_without_changing_the_manual_gate ... ok
+test meeting_insight_engine::tests::automatic_suggestion_admission_needs_its_own_consent_language_and_exact_qualification ... ok
+test meeting_insight_engine::tests::automatic_attempt_precedes_content_dispatch_contains_only_metadata_and_survives_restart ... ok
+test meeting_insight_engine::tests::connectivity_or_configured_destination_does_not_qualify_or_send_meeting_content ... ok
+test meeting_insight_engine::tests::automatic_admission_follows_a_rename_and_updates_the_same_attempt ... ok
+test meeting_insight_engine::tests::damaged_automatic_attempt_is_consumed_without_hiding_cards_or_exposing_untrusted_text ... ok
+test meeting_insight_engine::tests::exact_event_spans_separate_multiple_commitments_inside_one_utterance ... ok
+test meeting_insight_engine::tests::abandoned_admissions_release_owned_evidence_and_keep_only_bounded_job_metadata ... ok
+test meeting_insight_engine::tests::dropping_an_automatic_admission_finishes_its_marker_as_cancelled_without_requests ... ok
+test meeting_insight_engine::tests::negatives_abstentions_and_unknown_values_cannot_create_obligations ... ok
+test meeting_insight_engine::tests::notes_changed_between_prepare_and_save_keep_the_newer_edit_and_pending_receipt ... ok
+test meeting_insight_engine::tests::one_finalized_utterance_can_yield_actions_decisions_and_open_questions ... ok
+test meeting_insight_engine::tests::automatic_source_replacement_rejects_commit_and_reports_the_old_attempt_as_stale ... ok
+test meeting_insight_engine::tests::optional_receipt_io_failure_does_not_turn_a_durable_note_save_into_not_saved ... ok
+test meeting_insight_engine::tests::oversized_sources_are_refused_instead_of_truncated ... ok
+test meeting_insight_engine::tests::a_review_saved_during_regeneration_is_preserved_when_the_request_finishes ... ok
+test meeting_insight_engine::tests::prior_evidence_is_not_assigned_when_several_changed_events_make_ownership_ambiguous ... ok
+test meeting_insight_engine::tests::ordinary_notes_and_receipt_ack_share_the_same_writer_without_reinsertion ... ok
+test meeting_insight_engine::tests::receipt_bound_note_writes_reject_unprepared_text_without_mutating_saved_state ... ok
+test meeting_insight_engine::tests::receipt_insertion_never_treats_unreadable_notes_as_an_empty_acknowledged_draft ... ok
+test meeting_insight_engine::tests::admission_deadline_expires_before_delayed_native_keys_can_dispatch_content ... ok
+test meeting_insight_engine::tests::retracted_and_changed_events_carry_typed_prior_evidence_without_changing_kind ... ok
+test meeting_insight_engine::tests::admissions_are_single_use_and_completed_jobs_do_not_retain_the_engine_or_source_lease ... ok
+test meeting_insight_engine::tests::suggestion_consent_upgrades_without_inheriting_summary_consent ... ok
+test meeting_insight_engine::tests::busy_speech_questions_and_retranscription_refuse_automatic_admission_without_a_marker ... ok
+test meeting_insight_engine::tests::cancellation_after_the_atomic_source_commit_cannot_claim_the_saved_result_was_cancelled ... ok
+test meeting_insight_engine::tests::cancellation_keeps_physical_library_accounting_and_old_review_until_transport_exits ... ok
+test meeting_insight_engine::tests::cancelled_admissions_release_pending_evidence_while_the_native_handle_is_retained ... ok
+test meeting_insight_engine::tests::unicode_extraction_offsets_must_point_into_source_text_not_headers ... ok
+test meeting_insight_engine::tests::unsupported_owner_and_deadline_remain_unknown_and_source_text_stays_verbatim ... ok
+test meeting_insight_engine::tests::unavailable_transcript_does_not_hide_saved_review_or_expose_automatic_receipts ... ok
+test meeting_insight_engine::tests::windows_include_only_finalized_neighbours_and_declare_their_exact_sources ... ok
+test meeting_insight_engine::tests::credential_mutation_between_admission_and_key_dispatch_cannot_rebind_old_keys ... ok
+test meeting_insight_engine::tests::failed_automatic_attempt_stays_consumed_but_owner_can_start_a_manual_retry ... ok
+test meeting_insight_engine::tests::first_finished_analysis_links_a_typed_retraction_to_the_newly_created_commitment_atomically ... ok
+test meeting_insight_engine::tests::partial_kind_abstention_preserves_unchecked_cards_while_explicit_negatives_can_withdraw_proposals ... ok
+test meeting_insight_engine::tests::qualified_test_transport_persists_supported_quotes_without_private_notes ... ok
+test meeting_insight_engine::tests::rename_between_admission_and_worker_start_keeps_the_frozen_source_identity ... ok
+test meeting_insight_engine::tests::source_replacement_during_provider_work_does_not_commit_any_new_suggestions ... ok
+test meeting_insight_engine::tests::suggestion_policy_revocation_during_one_request_is_sticky_and_summary_policy_is_independent ... ok
+test meeting_insight_engine::tests::terminal_receipt_finalization_error_still_retires_the_consumed_attempt ... ok
+test meeting_insight_engine::tests::terminal_receipt_is_not_finalized_until_after_the_actual_receipt_write ... ok
+test meeting_insight_engine::tests::wholly_unchecked_analysis_preserves_the_previous_store_bytes ... ok
+
+test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 1213 filtered out; finished in 6.95s
+

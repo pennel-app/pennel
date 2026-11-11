@@ -1,0 +1,537 @@
+Building for debugging...
+[1 / 4]
+[2 / 5] PennelMacPlatform
+[3 / 6] PennelMacPlatform
+[10 / 13] PennelMacPlatform
+[12 / 14] PennelMacPlatform
+[13 / 15] PennelMacPlatformTests-product
+[16 / 18] PennelMacPlatformTests-product
+[22 / 23] PennelMacPlatformTests-product
+[25 / 25] PennelMacPlatform-product
+Build complete! (6,09 secs)
+Test Suite 'All tests' started at 2026-11-10 23:15:56.752.
+Test Suite 'PennelMacPlatformTests.xctest' started at 2026-11-10 23:15:56.754.
+Test Suite 'AppIdentityTests' started at 2026-11-10 23:15:56.754.
+Test Case '-[PennelMacPlatformTests.AppIdentityTests testInstalledAppReturnsNameAndPNGIcon]' started.
+Test Case '-[PennelMacPlatformTests.AppIdentityTests testInstalledAppReturnsNameAndPNGIcon]' passed (0.038 seconds).
+Test Case '-[PennelMacPlatformTests.AppIdentityTests testUnknownOrInvalidAppHasNoIdentity]' started.
+Test Case '-[PennelMacPlatformTests.AppIdentityTests testUnknownOrInvalidAppHasNoIdentity]' passed (0.000 seconds).
+Test Suite 'AppIdentityTests' passed at 2026-11-10 23:15:56.793.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.039 (0.039) seconds
+Test Suite 'AppleSpeechTests' started at 2026-11-10 23:15:56.793.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testCanonicallyEquivalentButDifferentRunBytesUseIntactResult]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testCanonicallyEquivalentButDifferentRunBytesUseIntactResult]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testEmptyAudioBridgeFailsBeforeAnyModelOrPermissionWork]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testEmptyAudioBridgeFailsBeforeAnyModelOrPermissionWork]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testMalformedTimesKeepRecognizedTextWithoutTiming]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testMalformedTimesKeepRecognizedTextWithoutTiming]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testRunsOutsideFinalResultRangeFallBackToTheActualFinalRange]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testRunsOutsideFinalResultRangeFallBackToTheActualFinalRange]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testTimedBuilderOnlyIncludesFinalResultsAndPreservesUTF8Offsets]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testTimedBuilderOnlyIncludesFinalResultsAndPreservesUTF8Offsets]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testUnmappableRunsUseWholeFinalResultWithoutInventedAlignment]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testUnmappableRunsUseWholeFinalResultWithoutInventedAlignment]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testVocabularyBridgeRejectsMalformedDataWithoutRecognizingOrEchoingIt]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testVocabularyBridgeRejectsMalformedDataWithoutRecognizingOrEchoingIt]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testZeroDurationTextCannotBecomeAnAttributedInstant]' started.
+Test Case '-[PennelMacPlatformTests.AppleSpeechTests testZeroDurationTextCannotBecomeAnAttributedInstant]' passed (0.000 seconds).
+Test Suite 'AppleSpeechTests' passed at 2026-11-10 23:15:56.794.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'ApplicationPresentationTests' started at 2026-11-10 23:15:56.795.
+Test Case '-[PennelMacPlatformTests.ApplicationPresentationTests testProductWindowsExposeMenusAndBackgroundOverlaysRemainAccessory]' started.
+Test Case '-[PennelMacPlatformTests.ApplicationPresentationTests testProductWindowsExposeMenusAndBackgroundOverlaysRemainAccessory]' passed (0.000 seconds).
+Test Suite 'ApplicationPresentationTests' passed at 2026-11-10 23:15:56.795.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'CalendarParticipantKindTests' started at 2026-11-10 23:15:56.795.
+Test Case '-[PennelMacPlatformTests.CalendarParticipantKindTests testRoomsAndResourcesAreRecordedButAreNotPeople]' started.
+Test Case '-[PennelMacPlatformTests.CalendarParticipantKindTests testRoomsAndResourcesAreRecordedButAreNotPeople]' passed (0.001 seconds).
+Test Suite 'CalendarParticipantKindTests' passed at 2026-11-10 23:15:56.795.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'CredentialPresenceTests' started at 2026-11-10 23:15:56.795.
+Test Case '-[PennelMacPlatformTests.CredentialPresenceTests testOnlyNotFoundMeansMissing]' started.
+Test Case '-[PennelMacPlatformTests.CredentialPresenceTests testOnlyNotFoundMeansMissing]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.CredentialPresenceTests testPresenceQueryRequestsMetadataWithoutSecretOrInteraction]' started.
+Test Case '-[PennelMacPlatformTests.CredentialPresenceTests testPresenceQueryRequestsMetadataWithoutSecretOrInteraction]' passed (0.003 seconds).
+Test Suite 'CredentialPresenceTests' passed at 2026-11-10 23:15:56.798.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.003 (0.003) seconds
+Test Suite 'DesktopEnvironmentTests' started at 2026-11-10 23:15:56.798.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testAccessibilityChangesKeepTheEditorAndNativeHierarchyInPlace]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testAccessibilityChangesKeepTheEditorAndNativeHierarchyInPlace]' passed (0.112 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testChromeTeardownPreservesAToolbarInstalledByAnotherOwner]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testChromeTeardownPreservesAToolbarInstalledByAnotherOwner]' passed (0.031 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testConstraintsAndSiblingOrderSurviveAttachmentAndTeardown]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testConstraintsAndSiblingOrderSurviveAttachmentAndTeardown]' passed (0.020 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testDetachedHostsDropQueuedCallbacksBeforeAReplacementAttaches]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testDetachedHostsDropQueuedCallbacksBeforeAReplacementAttaches]' passed (0.038 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testGlassEmbedsTheExistingWebviewAndRepeatedAttachmentPreservesIdentity]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testGlassEmbedsTheExistingWebviewAndRepeatedAttachmentPreservesIdentity]' passed (0.018 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testLaidOutAutoresizingConstraintsSurviveMaterialAttachmentAndTeardown]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testLaidOutAutoresizingConstraintsSurviveMaterialAttachmentAndTeardown]' passed (0.054 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testLegacyFallbackUsesWindowStateAndTeardownRestoresTheWebview]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testLegacyFallbackUsesWindowStateAndTeardownRestoresTheWebview]' passed (0.012 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testMainChromeRestoresThePreviousToolbarAndStyleAtTeardown]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testMainChromeRestoresThePreviousToolbarAndStyleAtTeardown]' passed (0.018 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testMainHostUsesAnEmptySystemToolbarAndReportsItsNativeGeometry]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testMainHostUsesAnEmptySystemToolbarAndReportsItsNativeGeometry]' passed (0.011 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testMaterialHostReservesTheNativeControlsWithoutMovingThem]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testMaterialHostReservesTheNativeControlsWithoutMovingThem]' passed (0.008 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testNativeAccessibilityNotificationPublishesOnceAndTeardownRemovesItsObserver]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testNativeAccessibilityNotificationPublishesOnceAndTeardownRemovesItsObserver]' passed (0.039 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testNativeEnvironmentCallbacksAreDeferredAndCoalesceTheLatestSnapshot]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testNativeEnvironmentCallbacksAreDeferredAndCoalesceTheLatestSnapshot]' passed (0.027 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testOpaquePolicyOverridesBothNativeMaterials]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testOpaquePolicyOverridesBothNativeMaterials]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testOtherWindowLabelsAndFloatingHostsKeepTheirOriginalChrome]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testOtherWindowLabelsAndFloatingHostsKeepTheirOriginalChrome]' passed (0.022 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testPromptUsesTheActualNonactivatingPanelAndNoTitlebarInset]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testPromptUsesTheActualNonactivatingPanelAndNoTitlebarInset]' passed (0.010 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testQueuedCallbacksUseTheCurrentLabelAndSinkAfterRepeatedAttachment]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testQueuedCallbacksUseTheCurrentLabelAndSinkAfterRepeatedAttachment]' passed (0.017 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testSnapshotEncodingMatchesTheFrontendContractAndAppearanceChangesLive]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testSnapshotEncodingMatchesTheFrontendContractAndAppearanceChangesLive]' passed (0.013 seconds).
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testUnattachedReadStillReportsNativeAppearanceGeometryAndPreferences]' started.
+Test Case '-[PennelMacPlatformTests.DesktopEnvironmentTests testUnattachedReadStillReportsNativeAppearanceGeometryAndPreferences]' passed (0.008 seconds).
+Test Suite 'DesktopEnvironmentTests' passed at 2026-11-10 23:15:57.259.
+	 Executed 18 tests, with 0 failures (0 unexpected) in 0.459 (0.460) seconds
+Test Suite 'EventTapHealthTests' started at 2026-11-10 23:15:57.259.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testAccessLossAndRestorationRecoverWithoutRestartingTheMonitor]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testAccessLossAndRestorationRecoverWithoutRestartingTheMonitor]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testAmbiguousConcurrentTapsAreNotMistakenForTheRequestedTap]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testAmbiguousConcurrentTapsAreNotMistakenForTheRequestedTap]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testAuthorizationRequiredEvenWhenTheTapExists]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testAuthorizationRequiredEvenWhenTheTapExists]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testCreationWithAStrippedMaskIsDisposedRatherThanKeptAsHealthy]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testCreationWithAStrippedMaskIsDisposedRatherThanKeptAsHealthy]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testInspectingANewTapUsesItsIdentityRatherThanAnotherHealthyTap]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testInspectingANewTapUsesItsIdentityRatherThanAnotherHealthyTap]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testPartialStartupIsRecreatedAfterAccessIsGranted]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testPartialStartupIsRecreatedAfterAccessIsGranted]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testPartialTapIsNotReportedAsAvailable]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testPartialTapIsNotReportedAsAvailable]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testRevokedAccessAndDisabledOrInvalidPortsRequireRecovery]' started.
+Test Case '-[PennelMacPlatformTests.EventTapHealthTests testRevokedAccessAndDisabledOrInvalidPortsRequireRecovery]' passed (0.000 seconds).
+Test Suite 'EventTapHealthTests' passed at 2026-11-10 23:15:57.262.
+	 Executed 8 tests, with 0 failures (0 unexpected) in 0.001 (0.003) seconds
+Test Suite 'ExternalPasteTargetTests' started at 2026-11-10 23:15:57.262.
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testGlobalDictationNeverReactivatesItsTargetAfterPennelTakesFocus]' started.
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testGlobalDictationNeverReactivatesItsTargetAfterPennelTakesFocus]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testOwnWindowActivationDoesNotReplaceTheCapturedDestination]' started.
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testOwnWindowActivationDoesNotReplaceTheCapturedDestination]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testPadDeliveryCanRestoreItsCapturedAppButNeverAThirdApp]' started.
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testPadDeliveryCanRestoreItsCapturedAppButNeverAThirdApp]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testRestartedAppWithTheSamePIDAndBundleIsADifferentTarget]' started.
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testRestartedAppWithTheSamePIDAndBundleIsADifferentTarget]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testThirdAppActivationCancelsEvenWhenTheUserReturns]' started.
+Test Case '-[PennelMacPlatformTests.ExternalPasteTargetTests testThirdAppActivationCancelsEvenWhenTheUserReturns]' passed (0.000 seconds).
+Test Suite 'ExternalPasteTargetTests' passed at 2026-11-10 23:15:57.263.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+Test Suite 'FoundationLanguageModelTests' started at 2026-11-10 23:15:57.263.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testAvailabilityExplainsEveryRecoveryState]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testAvailabilityExplainsEveryRecoveryState]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testBridgeAvailabilityInspectionDoesNotRequestAccess]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testBridgeAvailabilityInspectionDoesNotRequestAccess]' passed (0.006 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testContextBudgetReservesAnAnswer]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testContextBudgetReservesAnAnswer]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testDeadlineHonorsCancellation]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testDeadlineHonorsCancellation]' passed (0.005 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testDeadlineReturnsSuccessfulResultOnlyOnce]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testDeadlineReturnsSuccessfulResultOnlyOnce]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testDeniedSpeechPermissionOpensRecoveryInsteadOfAnIneffectiveRepeatedPrompt]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testDeniedSpeechPermissionOpensRecoveryInsteadOfAnIneffectiveRepeatedPrompt]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testInputBudgetCountsUTF8AndFramingWithoutTruncating]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testInputBudgetCountsUTF8AndFramingWithoutTruncating]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testInvalidBridgeRequestCallsBackOnceWithoutKeepingBorrowedInput]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testInvalidBridgeRequestCallsBackOnceWithoutKeepingBorrowedInput]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testNativeTranscriptKeepsSourceDataAndHistoryAtTheirOriginalPriority]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testNativeTranscriptKeepsSourceDataAndHistoryAtTheirOriginalPriority]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testRequestPreservesRolesAndDoesNotPromoteConversationToInstructions]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testRequestPreservesRolesAndDoesNotPromoteConversationToInstructions]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testRequestRejectsMalformedOrMisplacedRolesWithoutEchoingInput]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testRequestRejectsMalformedOrMisplacedRolesWithoutEchoingInput]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testTimeoutDoesNotWaitForNoncooperativeOperation]' started.
+Test Case '-[PennelMacPlatformTests.FoundationLanguageModelTests testTimeoutDoesNotWaitForNoncooperativeOperation]' passed (0.012 seconds).
+Test Suite 'FoundationLanguageModelTests' passed at 2026-11-10 23:15:57.288.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.025 (0.025) seconds
+Test Suite 'LegacyKeychainTests' started at 2026-11-10 23:15:57.288.
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testDuplicateAddRacePreservesTheCanonicalWinner]' started.
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testDuplicateAddRacePreservesTheCanonicalWinner]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testExistingCanonicalEntryIsNeverReadFromLegacyOrReplaced]' started.
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testExistingCanonicalEntryIsNeverReadFromLegacyOrReplaced]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testLegacyAccessAndAddFailuresArePropagated]' started.
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testLegacyAccessAndAddFailuresArePropagated]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testLockedOrDeniedCanonicalEntryDoesNotFallBackToLegacy]' started.
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testLockedOrDeniedCanonicalEntryDoesNotFallBackToLegacy]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testMissingLegacyEntryIsANoOp]' started.
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testMissingLegacyEntryIsANoOp]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testOnlyMissingCanonicalEntryAllowsImport]' started.
+Test Case '-[PennelMacPlatformTests.LegacyKeychainTests testOnlyMissingCanonicalEntryAllowsImport]' passed (0.000 seconds).
+Test Suite 'LegacyKeychainTests' passed at 2026-11-10 23:15:57.289.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'LiveSpeechPreviewTests' started at 2026-11-10 23:15:57.289.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testAudioConversionUsesTheChosenAnalyzerFormat]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testAudioConversionUsesTheChosenAnalyzerFormat]' passed (0.002 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCallbackGateRejectsUpdatesAfterStop]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCallbackGateRejectsUpdatesAfterStop]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCancelledReplacementCannotClaimOrReleaseRetiringWorkersSlot]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCancelledReplacementCannotClaimOrReleaseRetiringWorkersSlot]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCaptionTailPreservesUnicodeAndRemainsBounded]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCaptionTailPreservesUnicodeAndRemainsBounded]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCommittedRangeCannotBeOverwrittenByLateVolatileText]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testCommittedRangeCannotBeOverwrittenByLateVolatileText]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testFinalRangeReplacesOverlappingVolatileFragments]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testFinalRangeReplacesOverlappingVolatileFragments]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testNewPhraseKeepsCommittedTextWithoutDuplicatingPartials]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testNewPhraseKeepsCommittedTextWithoutDuplicatingPartials]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testPhysicalAdmissionRemainsOccupiedUntilUnderlyingWorkReleasesIt]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testPhysicalAdmissionRemainsOccupiedUntilUnderlyingWorkReleasesIt]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testPreparationBufferKeepsOnlyBoundedNewestAudioAndItsOffset]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testPreparationBufferKeepsOnlyBoundedNewestAudioAndItsOffset]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testPreviewVocabularyMatchesBoundedAuthoritativeContext]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testPreviewVocabularyMatchesBoundedAuthoritativeContext]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testReplacementWaitsOffCallerUntilRetiringPhysicalWorkerExits]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testReplacementWaitsOffCallerUntilRetiringPhysicalWorkerExits]' passed (0.049 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testStopDrainsAnExecutingCallbackBeforeReturning]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testStopDrainsAnExecutingCallbackBeforeReturning]' passed (0.025 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testStoppedPreviewCanBeAwaitedBeforeStartingWithoutRequestingAccess]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testStoppedPreviewCanBeAwaitedBeforeStartingWithoutRequestingAccess]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testStoppingBeforePreparationRejectsAudioAndCannotRestart]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testStoppingBeforePreparationRejectsAudioAndCannotRestart]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedEventsRejectInvalidRangesAndBoundDisplayText]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedEventsRejectInvalidRangesAndBoundDisplayText]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedEventsRetainExactRangeAndFinalityWithoutBecomingFinalTranscript]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedEventsRetainExactRangeAndFinalityWithoutBecomingFinalTranscript]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedGateDeliversStartupFailureAndRejectsLateResults]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedGateDeliversStartupFailureAndRejectsLateResults]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedInputPreservesRecordingOffsetAndDoesNotBridgeMissingAudio]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedInputPreservesRecordingOffsetAndDoesNotBridgeMissingAudio]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedInputRejectsRepeatedFramesAndKeepsOnlyUnseenSuffix]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testTimedInputRejectsRepeatedFramesAndKeepsOnlyUnseenSuffix]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testVolatileCorrectionReplacesItsEarlierRange]' started.
+Test Case '-[PennelMacPlatformTests.LiveSpeechPreviewTests testVolatileCorrectionReplacesItsEarlierRange]' passed (0.000 seconds).
+Test Suite 'LiveSpeechPreviewTests' passed at 2026-11-10 23:15:57.370.
+	 Executed 20 tests, with 0 failures (0 unexpected) in 0.080 (0.081) seconds
+Test Suite 'MeetingAudioSourceIntegrityTests' started at 2026-11-10 23:15:57.370.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testAudioClockUsesTheTrackUptimeEpochAndFreezesAtHardwareStop]' started.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testAudioClockUsesTheTrackUptimeEpochAndFreezesAtHardwareStop]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testCaptureFailureInvalidatesAndCannotBeRequalifiedByARestart]' started.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testCaptureFailureInvalidatesAndCannotBeRequalifiedByARestart]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testEmptyProcessResolutionPreservesGlobalCaptureButCannotSupplyAppNames]' started.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testEmptyProcessResolutionPreservesGlobalCaptureButCannotSupplyAppNames]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testHealthyTargetedRebuildsRetainScopeAndDoNotWarn]' started.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testHealthyTargetedRebuildsRetainScopeAndDoNotWarn]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testManualGlobalCaptureRemainsGlobalAndNeverQualifiesFromALaterReport]' started.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testManualGlobalCaptureRemainsGlobalAndNeverQualifiesFromALaterReport]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testScopeAwareAndLegacyBridgeStartsRejectMissingPathsWithoutHardwareOrPermissions]' started.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testScopeAwareAndLegacyBridgeStartsRejectMissingPathsWithoutHardwareOrPermissions]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testTargetedToGlobalInvalidatesBeforeFallbackAudioAndCannotRecoverNames]' started.
+Test Case '-[PennelMacPlatformTests.MeetingAudioSourceIntegrityTests testTargetedToGlobalInvalidatesBeforeFallbackAudioAndCannotRecoverNames]' passed (0.000 seconds).
+Test Suite 'MeetingAudioSourceIntegrityTests' passed at 2026-11-10 23:15:57.372.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.001 (0.001) seconds
+Test Suite 'MeetingCaptureHealthTests' started at 2026-11-10 23:15:57.372.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testArchiveFailureIsImmediatelyReadableAndNeverErasesTranscriptAudio]' started.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testArchiveFailureIsImmediatelyReadableAndNeverErasesTranscriptAudio]' passed (0.020 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testEchoAvailabilityDescribesTheRunningEngineRatherThanThePreference]' started.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testEchoAvailabilityDescribesTheRunningEngineRatherThanThePreference]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testFailedMicrophoneRestartRemainsVisibleUntilCaptureActuallyStarts]' started.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testFailedMicrophoneRestartRemainsVisibleUntilCaptureActuallyStarts]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testHealthBridgeKeepsArchiveFailuresSeparateFromCaptureAvailability]' started.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testHealthBridgeKeepsArchiveFailuresSeparateFromCaptureAvailability]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testLaterArchiveWritesDoNotHideAnEarlierMissingBlock]' started.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testLaterArchiveWritesDoNotHideAnEarlierMissingBlock]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testQuiescenceClosesAdmissionWithoutWaitingForBlockedArchiveWrites]' started.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testQuiescenceClosesAdmissionWithoutWaitingForBlockedArchiveWrites]' passed (0.106 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testSystemAudioFailureClearsOnlyAfterASuccessfulRestart]' started.
+Test Case '-[PennelMacPlatformTests.MeetingCaptureHealthTests testSystemAudioFailureClearsOnlyAfterASuccessfulRestart]' passed (0.000 seconds).
+Test Suite 'MeetingCaptureHealthTests' passed at 2026-11-10 23:15:57.501.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.129 (0.129) seconds
+Test Suite 'MeetingMicrophoneStartupTests' started at 2026-11-10 23:15:57.501.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testBothFailuresStopAfterOneRetryAndPreserveTheSecondError]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testBothFailuresStopAfterOneRetryAndPreserveTheSecondError]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testConfigurationChangesDuringStartupWaitUntilStartupReturns]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testConfigurationChangesDuringStartupWaitUntilStartupReturns]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testConfigurationChangesFollowTheReplacementEngine]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testConfigurationChangesFollowTheReplacementEngine]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testEchoStartupDoesNotResetOrRetryAHealthyEngine]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testEchoStartupDoesNotResetOrRetryAHealthyEngine]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testFailedEchoStartupResetsBeforeOneRawAttemptAndShowsTheEchoWarning]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testFailedEchoStartupResetsBeforeOneRawAttemptAndShowsTheEchoWarning]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testFormatReadinessDoesNotWaitForAHealthyFormatOrAMissingDevice]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testFormatReadinessDoesNotWaitForAHealthyFormatOrAMissingDevice]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testFormatReadinessWaitsForExistingDefaultInputAfterRouteReconfiguration]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testFormatReadinessWaitsForExistingDefaultInputAfterRouteReconfiguration]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testMissingInputDoesNotRetryOrBecomeAGenericStartupError]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testMissingInputDoesNotRetryOrBecomeAGenericStartupError]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testPermissionFailuresDoNotRetryOrLoseTheirSpecificMessage]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testPermissionFailuresDoNotRetryOrLoseTheirSpecificMessage]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testPersistentUnreadyRouteIsBoundedAndRetainsPermissionFailures]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testPersistentUnreadyRouteIsBoundedAndRetainsPermissionFailures]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testRawStartupDoesNotEnableEchoOrResetAHealthyEngine]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testRawStartupDoesNotEnableEchoOrResetAHealthyEngine]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testRawStartupFailureDoesNotRetry]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testRawStartupFailureDoesNotRetry]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testStoppedCaptureNoLongerReceivesConfigurationChanges]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testStoppedCaptureNoLongerReceivesConfigurationChanges]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testTapFormatIsResolvedAfterVoiceProcessingConfiguration]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testTapFormatIsResolvedAfterVoiceProcessingConfiguration]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testUnknownFailureDoesNotRetryOrBecomeAMicrophoneError]' started.
+Test Case '-[PennelMacPlatformTests.MeetingMicrophoneStartupTests testUnknownFailureDoesNotRetryOrBecomeAMicrophoneError]' passed (0.000 seconds).
+Test Suite 'MeetingMicrophoneStartupTests' passed at 2026-11-10 23:15:57.505.
+	 Executed 15 tests, with 0 failures (0 unexpected) in 0.003 (0.004) seconds
+Test Suite 'MeetingPeopleSourceTests' started at 2026-11-10 23:15:57.505.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testAttendeeSnapshotRetainsUnknownFieldsAndDoesNotInferEmailFromOtherURLs]' started.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testAttendeeSnapshotRetainsUnknownFieldsAndDoesNotInferEmailFromOtherURLs]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testCalendarRevisionChangesWithSourceOrParticipantStatusWithoutGuessingIdentity]' started.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testCalendarRevisionChangesWithSourceOrParticipantStatusWithoutGuessingIdentity]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testCalendarSourceAvailabilityDoesNotSurviveRevocationDeletionOrAccountSwitch]' started.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testCalendarSourceAvailabilityDoesNotSurviveRevocationDeletionOrAccountSwitch]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testChosenContactSnapshotCopiesOnlyMinimalFieldsAndRevisionIgnoresSelectionTime]' started.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testChosenContactSnapshotCopiesOnlyMinimalFieldsAndRevisionIgnoresSelectionTime]' passed (0.006 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testContactPickerCancellationRestoresOwnerFocusAndIgnoresLateSelection]' started.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testContactPickerCancellationRestoresOwnerFocusAndIgnoresLateSelection]' passed (0.010 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testContactPickerRejectsSelectionAfterItsOwnerCloses]' started.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testContactPickerRejectsSelectionAfterItsOwnerCloses]' passed (0.002 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testRichCalendarContextRetainsSelfDeclinedAndDuplicateNames]' started.
+Test Case '-[PennelMacPlatformTests.MeetingPeopleSourceTests testRichCalendarContextRetainsSelfDeclinedAndDuplicateNames]' passed (0.002 seconds).
+Test Suite 'MeetingPeopleSourceTests' passed at 2026-11-10 23:15:57.527.
+	 Executed 7 tests, with 0 failures (0 unexpected) in 0.021 (0.022) seconds
+Test Suite 'MeetingSpeakerCallAssociationTests' started at 2026-11-10 23:15:57.527.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndOnlyTransitionAllowsOnlyProvenDestructionWhenFocusMovesToKnownMain]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndOnlyTransitionAllowsOnlyProvenDestructionWhenFocusMovesToKnownMain]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndOnlyTransitionHasOneFixedMonotonicDeadline]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndOnlyTransitionHasOneFixedMonotonicDeadline]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndOnlyTransitionNeverBeginsForUnboundOrMismatchedAndNeverResumesLive]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndOnlyTransitionNeverBeginsForUnboundOrMismatchedAndNeverResumesLive]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndTransitionStaticScanDoesNotUseParticipantTileLabelsAsAuthority]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testEndTransitionStaticScanDoesNotUseParticipantTileLabelsAsAuthority]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testGenericCompleteControlTreeIsAnUnclassifiedPossibleSecondCall]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testGenericCompleteControlTreeIsAnUnclassifiedPossibleSecondCall]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testHiddenMinimizedUnfocusedAmbiguousAndUnsupportedWindowsNeverProveEnd]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testHiddenMinimizedUnfocusedAmbiguousAndUnsupportedWindowsNeverProveEnd]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMeasuredNativeWindowSharingButtonIsAnAuxiliarySurface]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMeasuredNativeWindowSharingButtonIsAnAuxiliarySurface]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMeasuredPersonalNavigationRecognizesTheMainShellOnEachTab]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMeasuredPersonalNavigationRecognizesTheMainShellOnEachTab]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMinimizedOrCoveredCompetingCallStillMakesAudioAssociationAmbiguous]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMinimizedOrCoveredCompetingCallStillMakesAudioAssociationAmbiguous]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMissingRegistryMetadataOnlyAllowsTheSameLiveKernelBirthAndExecutable]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testMissingRegistryMetadataOnlyAllowsTheSameLiveKernelBirthAndExecutable]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testNavigationRoleOrIdentifierAloneDoesNotProveANonCallWindow]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testNavigationRoleOrIdentifierAloneDoesNotProveANonCallWindow]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testOnlyAPreviouslyTrustedBoundPrejoinOrDestroyedWindowProvesCleanEnd]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testOnlyAPreviouslyTrustedBoundPrejoinOrDestroyedWindowProvesCleanEnd]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testOrdinaryChatAndMainWindowDoNotBecomeCallsFromCommaLabels]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testOrdinaryChatAndMainWindowDoNotBecomeCallsFromCommaLabels]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testParticipantTilesStillMakeAMainNavigationWindowACall]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testParticipantTilesStillMakeAMainNavigationWindowACall]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testPersonalNavigationRequiresTheCompleteMeasuredShapeAndOneCheckedControl]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testPersonalNavigationRequiresTheCompleteMeasuredShapeAndOneCheckedControl]' passed (0.002 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testSameCallCompactAndFullViewsRemainAmbiguousWithoutAnIndependentCallIdentity]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testSameCallCompactAndFullViewsRemainAmbiguousWithoutAnIndependentCallIdentity]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testSharingButtonExclusionDoesNotAcceptOtherDialogsOrHideASecondCall]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testSharingButtonExclusionDoesNotAcceptOtherDialogsOrHideASecondCall]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testTwoDistinctCallsAreAmbiguousEvenWithOneFocused]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testTwoDistinctCallsAreAmbiguousEvenWithOneFocused]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testUnreadableOrUnclassifiedCompetingWindowBlocksAutomaticAssociation]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerCallAssociationTests testUnreadableOrUnclassifiedCompetingWindowBlocksAutomaticAssociation]' passed (0.000 seconds).
+Test Suite 'MeetingSpeakerCallAssociationTests' passed at 2026-11-10 23:15:57.537.
+	 Executed 19 tests, with 0 failures (0 unexpected) in 0.008 (0.010) seconds
+Test Suite 'MeetingSpeakerMergeTests' started at 2026-11-10 23:15:57.537.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerMergeTests testMergeKeepsFirstSeenOrderWithoutDuplicates]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerMergeTests testMergeKeepsFirstSeenOrderWithoutDuplicates]' passed (0.000 seconds).
+Test Suite 'MeetingSpeakerMergeTests' passed at 2026-11-10 23:15:57.537.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'MeetingSpeakerObserverTests' started at 2026-11-10 23:15:57.537.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testAWindowWithoutTilesIsUnavailable]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testAWindowWithoutTilesIsUnavailable]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testCallLifecycleCannotBeAuthorizedByChatWordsOrParticipantTileLabelsAlone]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testCallLifecycleCannotBeAuthorizedByChatWordsOrParticipantTileLabelsAlone]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testContextMenuLabelsAloneAndUnrelatedVideoClassesAreNotParticipantTiles]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testContextMenuLabelsAloneAndUnrelatedVideoClassesAreNotParticipantTiles]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testDisplayedNameKeepsCommasThatTheLabelSplits]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testDisplayedNameKeepsCommasThatTheLabelSplits]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testDuplicateDisplayNamesAreFlaggedInsteadOfCollapsedAsOnePerson]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testDuplicateDisplayNamesAreFlaggedInsteadOfCollapsedAsOnePerson]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testFallsBackToTheLabelWhenTheTileShowsNoName]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testFallsBackToTheLabelWhenTheTileShowsNoName]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testIgnoresDutchOwnVideoLabels]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testIgnoresDutchOwnVideoLabels]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testIgnoresTheLocalUsersTile]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testIgnoresTheLocalUsersTile]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testKnownPrejoinIsNotAnActiveCallAndCannotOfferNames]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testKnownPrejoinIsNotAnActiveCallAndCannotOfferNames]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testMeasuredHostAloneCallIsAvailableWithAnEmptyRoster]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testMeasuredHostAloneCallIsAvailableWithAnEmptyRoster]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testMeasuredRetainedPostcallPanelIsInactiveWithoutReadingItsPeopleCard]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testMeasuredRetainedPostcallPanelIsInactiveWithoutReadingItsPeopleCard]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testMergesTheCompactAndFullMeetingWindows]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testMergesTheCompactAndFullMeetingWindows]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testOnlyTeamsIsSupported]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testOnlyTeamsIsSupported]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testReadsMeasuredPersonalCameraOffTileWithoutAVideoStateSuffix]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testReadsMeasuredPersonalCameraOffTileWithoutAVideoStateSuffix]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testReadsParticipantsAndTheHighlightedSpeaker]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testReadsParticipantsAndTheHighlightedSpeaker]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testRetainedPostcallWordsNeedNativeAnchorsAndCompleteCompoundControls]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testRetainedPostcallWordsNeedNativeAnchorsAndCompleteCompoundControls]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testReturnsTheElementsThatHoldTilesForCheapResampling]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testReturnsTheElementsThatHoldTilesForCheapResampling]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testSoloWordsWithoutNativeControlIdsCannotProveCallAndMissingRosterStaysUnknown]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerObserverTests testSoloWordsWithoutNativeControlIdsCannotProveCallAndMissingRosterStaysUnknown]' passed (0.000 seconds).
+Test Suite 'MeetingSpeakerObserverTests' passed at 2026-11-10 23:15:57.540.
+	 Executed 18 tests, with 0 failures (0 unexpected) in 0.002 (0.003) seconds
+Test Suite 'MeetingSpeakerWindowTests' started at 2026-11-10 23:15:57.540.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerWindowTests testAmbiguousSameSizedWindowsAreUnavailable]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerWindowTests testAmbiguousSameSizedWindowsAreUnavailable]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerWindowTests testCompletelyCoveredWindowsAreUnavailableWithoutReadingTheirContents]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerWindowTests testCompletelyCoveredWindowsAreUnavailableWithoutReadingTheirContents]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerWindowTests testVisibilityRequiresTheSameProcessAndWindowBounds]' started.
+Test Case '-[PennelMacPlatformTests.MeetingSpeakerWindowTests testVisibilityRequiresTheSameProcessAndWindowBounds]' passed (0.000 seconds).
+Test Suite 'MeetingSpeakerWindowTests' passed at 2026-11-10 23:15:57.541.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+Test Suite 'MicrophoneAccessTests' started at 2026-11-10 23:15:57.541.
+Test Case '-[PennelMacPlatformTests.MicrophoneAccessTests testEngineFailureWithoutAccessAsksForThePermission]' started.
+Test Case '-[PennelMacPlatformTests.MicrophoneAccessTests testEngineFailureWithoutAccessAsksForThePermission]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MicrophoneAccessTests testMessagesAreEnglishAndNeverExposeCoreAudio]' started.
+Test Case '-[PennelMacPlatformTests.MicrophoneAccessTests testMessagesAreEnglishAndNeverExposeCoreAudio]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.MicrophoneAccessTests testOnlyAnAuthorizedStatusCountsAsGranted]' started.
+Test Case '-[PennelMacPlatformTests.MicrophoneAccessTests testOnlyAnAuthorizedStatusCountsAsGranted]' passed (0.000 seconds).
+Test Suite 'MicrophoneAccessTests' passed at 2026-11-10 23:15:57.541.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'MonoResamplerTests' started at 2026-11-10 23:15:57.541.
+Test Case '-[PennelMacPlatformTests.MonoResamplerTests testOneResamplerFollowsChannelAndSampleRateChanges]' started.
+Test Case '-[PennelMacPlatformTests.MonoResamplerTests testOneResamplerFollowsChannelAndSampleRateChanges]' passed (0.004 seconds).
+Test Case '-[PennelMacPlatformTests.MonoResamplerTests testOneResamplerFollowsMicrophoneSampleRateChanges]' started.
+Test Case '-[PennelMacPlatformTests.MonoResamplerTests testOneResamplerFollowsMicrophoneSampleRateChanges]' passed (0.003 seconds).
+Test Suite 'MonoResamplerTests' passed at 2026-11-10 23:15:57.549.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.007 (0.007) seconds
+Test Suite 'NativeGuardTests' started at 2026-11-10 23:15:57.549.
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testAnySoundDisablesTheSilentCaptureWarning]' started.
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testAnySoundDisablesTheSilentCaptureWarning]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testClipboardRestoreWaitsForSlowApps]' started.
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testClipboardRestoreWaitsForSlowApps]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testDigitalSilenceRequiresNonemptyExactZeros]' started.
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testDigitalSilenceRequiresNonemptyExactZeros]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testMissingInputDeviceIsNotUsable]' started.
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testMissingInputDeviceIsNotUsable]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testSustainedDigitalSilenceReportsOnlyOnce]' started.
+Test Case '-[PennelMacPlatformTests.NativeGuardTests testSustainedDigitalSilenceReportsOnlyOnce]' passed (0.000 seconds).
+Test Suite 'NativeGuardTests' passed at 2026-11-10 23:15:57.549.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+Test Suite 'PillGeometryTests' started at 2026-11-10 23:15:57.549.
+Test Case '-[PennelMacPlatformTests.PillGeometryTests testCursorAndAllSizesAreClampedToTinyWorkAreas]' started.
+Test Case '-[PennelMacPlatformTests.PillGeometryTests testCursorAndAllSizesAreClampedToTinyWorkAreas]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PillGeometryTests testFractionalPointGeometryNeverRoundsOutsideTheWorkArea]' started.
+Test Case '-[PennelMacPlatformTests.PillGeometryTests testFractionalPointGeometryNeverRoundsOutsideTheWorkArea]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PillGeometryTests testPositionsRespectNegativeDisplayOriginAndVisibleArea]' started.
+Test Case '-[PennelMacPlatformTests.PillGeometryTests testPositionsRespectNegativeDisplayOriginAndVisibleArea]' passed (0.000 seconds).
+Test Suite 'PillGeometryTests' passed at 2026-11-10 23:15:57.550.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'PlatformActionTests' started at 2026-11-10 23:15:57.550.
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testFailedShortcutRegistrationDoesNotMarkItEnabled]' started.
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testFailedShortcutRegistrationDoesNotMarkItEnabled]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testMailComposerURLPreservesSubjectAndBodyAsData]' started.
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testMailComposerURLPreservesSubjectAndBodyAsData]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testRecordingShortcutStartsDisabledAndStopsWhenDisabledAgain]' started.
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testRecordingShortcutStartsDisabledAndStopsWhenDisabledAgain]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testUnknownShareActionDoesNotOpenAnExternalApp]' started.
+Test Case '-[PennelMacPlatformTests.PlatformActionTests testUnknownShareActionDoesNotOpenAnExternalApp]' passed (0.000 seconds).
+Test Suite 'PlatformActionTests' passed at 2026-11-10 23:15:57.551.
+	 Executed 4 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+Test Suite 'PlatformTests' started at 2026-11-10 23:15:57.551.
+Test Case '-[PennelMacPlatformTests.PlatformTests testM4AAudioCanBeDecodedForTheSharedRustCore]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testM4AAudioCanBeDecodedForTheSharedRustCore]' passed (0.008 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testOtherInstancesOnlyReportsLegacyOrCanonicalAppsAndExcludesSelf]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testOtherInstancesOnlyReportsLegacyOrCanonicalAppsAndExcludesSelf]' passed (0.009 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testOverlaySitsBottomCentreOnTheGivenScreen]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testOverlaySitsBottomCentreOnTheGivenScreen]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testOverlayUsesANonactivatingPanelWithoutChangingTheHostWindowClass]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testOverlayUsesANonactivatingPanelWithoutChangingTheHostWindowClass]' passed (0.002 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testPasteboardRestoreDoesNotOverwriteNewCopy]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testPasteboardRestoreDoesNotOverwriteNewCopy]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testPasteboardRestorePreservesRichFormats]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testPasteboardRestorePreservesRichFormats]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testPermissionsInspectionHasNoPromptingSideEffects]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testPermissionsInspectionHasNoPromptingSideEffects]' passed (0.070 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testSilenceFallbackDoesNotTreatQuietRoomAsBrokenInput]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testSilenceFallbackDoesNotTreatQuietRoomAsBrokenInput]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testTopRightOverlayFrameKeepsMarginAndFitsSmallScreens]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testTopRightOverlayFrameKeepsMarginAndFitsSmallScreens]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.PlatformTests testTrackArchivesAndCallbacksShareOneTimelineAcrossAnInterruption]' started.
+Test Case '-[PennelMacPlatformTests.PlatformTests testTrackArchivesAndCallbacksShareOneTimelineAcrossAnInterruption]' passed (0.008 seconds).
+Test Suite 'PlatformTests' passed at 2026-11-10 23:15:57.649.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 0.097 (0.098) seconds
+Test Suite 'ShortcutMatcherTests' started at 2026-11-10 23:15:57.649.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testBareActionAccommodatesAnExistingKeyedDictationHold]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testBareActionAccommodatesAnExistingKeyedDictationHold]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testCaptureWithholdsEveryKeyboardEventAndKeepsReleaseLatchAfterStop]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testCaptureWithholdsEveryKeyboardEventAndKeepsReleaseLatchAfterStop]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testForeignModifiersCannotRearmADirtyBareAction]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testForeignModifiersCannotRearmADirtyBareAction]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testGlobalActionsUseExactModifiersAndKeepModifierHoldInterrupts]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testGlobalActionsUseExactModifiersAndKeepModifierHoldInterrupts]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testKeyedHoldLatchesThroughRepeatsAndModifierFirstRelease]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testKeyedHoldLatchesThroughRepeatsAndModifierFirstRelease]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testListeningActionsAreWithheldOnlyWhileListeningAndCancelDoesNotInterrupt]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testListeningActionsAreWithheldOnlyWhileListeningAndCancelDoesNotInterrupt]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testRebindingWhileHeldWaitsForARelease]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testRebindingWhileHeldWaitsForARelease]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testSharedRustSequencesMatchTheNativeMatcher]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testSharedRustSequencesMatchTheNativeMatcher]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testSideSpecificBareModifierNeedsACleanReleaseAndMouseCancelsIt]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testSideSpecificBareModifierNeedsACleanReleaseAndMouseCancelsIt]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testSyntheticFnFlagsOnArrowsAndFunctionKeysDoNotStartDictation]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testSyntheticFnFlagsOnArrowsAndFunctionKeysDoNotStartDictation]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testUpdatingListeningActionsPreservesTheCurrentHold]' started.
+Test Case '-[PennelMacPlatformTests.ShortcutMatcherTests testUpdatingListeningActionsPreservesTheCurrentHold]' passed (0.000 seconds).
+Test Suite 'ShortcutMatcherTests' passed at 2026-11-10 23:15:57.651.
+	 Executed 11 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds
+Test Suite 'StyleApplicationPickerTests' started at 2026-11-10 23:15:57.651.
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testBundleIdentityKeepsCaseAndUsesDisplayName]' started.
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testBundleIdentityKeepsCaseAndUsesDisplayName]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testCancellingIgnoresAnUnusableSelection]' started.
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testCancellingIgnoresAnUnusableSelection]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testMissingDisplayNameUsesAppFilename]' started.
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testMissingDisplayNameUsesAppFilename]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testPickerRelabelsWithoutReplacingItsSelectionOrRules]' started.
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testPickerRelabelsWithoutReplacingItsSelectionOrRules]' passed (0.472 seconds).
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testSheetUsesItsOwnerAndCancellationRestoresTheOriginalResponder]' started.
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testSheetUsesItsOwnerAndCancellationRestoresTheOriginalResponder]' passed (0.252 seconds).
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testUnusableMetadataFailsWithoutCreatingARule]' started.
+Test Case '-[PennelMacPlatformTests.StyleApplicationPickerTests testUnusableMetadataFailsWithoutCreatingARule]' passed (0.000 seconds).
+Test Suite 'StyleApplicationPickerTests' passed at 2026-11-10 23:15:58.376.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.725 (0.725) seconds
+Test Suite 'SystemCaptureTimingTests' started at 2026-11-10 23:15:58.376.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testAggregateRateOverridesStaleBluetoothTapRateWithoutChangingPitchOrPadding]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testAggregateRateOverridesStaleBluetoothTapRateWithoutChangingPitchOrPadding]' passed (0.036 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testAmbiguousMappingAndInvalidCallbackBuffersAreRejected]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testAmbiguousMappingAndInvalidCallbackBuffersAreRejected]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testContiguousFullDuplexDeviceElementsNormalizeWithoutIncludingTheMicrophone]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testContiguousFullDuplexDeviceElementsNormalizeWithoutIncludingTheMicrophone]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testDiagnosticsRetainLatestBoundedEventsAndSafeCounters]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testDiagnosticsRetainLatestBoundedEventsAndSafeCounters]' passed (0.003 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testFinishedWriterRejectsLateCallbacksAndKeepsRealGap]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testFinishedWriterRejectsLateCallbacksAndKeepsRealGap]' passed (0.006 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testGapsOverlapsUnknownHardwareAndUnmatchedChannelTotalsStayAmbiguous]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testGapsOverlapsUnknownHardwareAndUnmatchedChannelTotalsStayAmbiguous]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testGenerationRejectsStoppedCallbacksAndEarlierNotificationWork]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testGenerationRejectsStoppedCallbacksAndEarlierNotificationWork]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testLargeAndVariableHalfRateCallbacksCannotResetTheMismatchGuard]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testLargeAndVariableHalfRateCallbacksCannotResetTheMismatchGuard]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testMeasuredTapOnlyDeviceElementSevenMapsToFirstScopeLocalInputBuffer]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testMeasuredTapOnlyDeviceElementSevenMapsToFirstScopeLocalInputBuffer]' passed (0.001 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testPersistentHalfRateIsDetectedButRealInterruptionsArePreserved]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testPersistentHalfRateIsDetectedButRealInterruptionsArePreserved]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testRouteObserverSurvivesFailedCaptureAndFollowsSameDeviceRateChanges]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testRouteObserverSurvivesFailedCaptureAndFollowsSameDeviceRateChanges]' passed (0.000 seconds).
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testSupportedRatesAndLayoutsMapStreamsInsteadOfAssumingLastBuffers]' started.
+Test Case '-[PennelMacPlatformTests.SystemCaptureTimingTests testSupportedRatesAndLayoutsMapStreamsInsteadOfAssumingLastBuffers]' passed (0.199 seconds).
+Test Suite 'SystemCaptureTimingTests' passed at 2026-11-10 23:15:58.622.
+	 Executed 12 tests, with 0 failures (0 unexpected) in 0.245 (0.246) seconds
+Test Suite 'PennelMacPlatformTests.xctest' passed at 2026-11-10 23:15:58.622.
+	 Executed 216 tests, with 0 failures (0 unexpected) in 1.851 (1.869) seconds
+Test Suite 'All tests' passed at 2026-11-10 23:15:58.623.
+	 Executed 216 tests, with 0 failures (0 unexpected) in 1.851 (1.871) seconds
+◇ Test run started.
+↳ Testing Library Version: 2403
+↳ Target Platform: arm64e-apple-macos14.0
+✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.

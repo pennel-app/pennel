@@ -1,0 +1,25 @@
+Waiting for core cache lease
+Acquired core cache lease
+Refreshed local crate inputs for active checkout
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a65210de8afb33f96/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.01s
+     Running unittests src/lib.rs (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-aa92d718182538c4d/core/target/debug/deps/pennel_core-e031d8b85961f527)
+
+running 11 tests
+test localization::tests::preferences_serialize_stably_and_default_to_system ... ok
+test localization::tests::explicit_languages_serialize_as_stable_codes_with_english_fallback ... ok
+test localization::tests::explicit_language_overrides_system_without_changing_it ... ok
+test localization::tests::substitutions_preserve_literal_user_text_and_never_expand_it_recursively ... ok
+test localization::tests::system_language_matching_uses_first_supported_language_and_regions ... ok
+test localization::tests::duplicate_catalog_keys_are_rejected - should panic ... ok
+test localization::tests::shared_catalogs_translate_both_languages ... ok
+test localization::tests::owned_message_matching_is_exact_and_preserves_arguments ... ok
+test localization::tests::canonical_recording_and_transcript_guards_have_exact_dutch_aliases ... ok
+test localization::tests::canonical_english_and_legacy_dutch_messages_follow_the_interface_language ... ok
+test localization::tests::both_catalogs_cover_the_same_keys_and_placeholders ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1231 filtered out; finished in 0.02s
+

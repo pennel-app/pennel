@@ -1,0 +1,5 @@
+Waiting for backend cache lease
+Acquired backend cache lease
+   Compiling pennel-desktop v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/apps/desktop/src-tauri)
+    Checking pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.89s

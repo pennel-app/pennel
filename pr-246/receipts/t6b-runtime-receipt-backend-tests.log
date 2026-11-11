@@ -1,0 +1,25 @@
+Waiting for backend cache lease
+Acquired backend cache lease
+Refreshed local crate inputs for active checkout
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling pennel-desktop v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/apps/desktop/src-tauri)
+   Compiling pennel-core v0.1.0 (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-a9f879970dcd315be/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.90s
+     Running unittests src/main.rs (/Users/lander.parren/Developer/pennel-app/pennel/.claude/worktrees/agent-aa92d718182538c4d/apps/desktop/src-tauri/target/debug/deps/pennel-767e7ea35d28b299)
+
+running 11 tests
+test automatic_suggestions::tests::quitting_before_admission_reads_no_credentials_and_starts_no_job ... ok
+test automatic_suggestions::tests::shutdown_after_admission_drops_it_before_looking_up_keys ... ok
+test automatic_suggestions::tests::completion_follows_the_owned_meeting_uid_after_a_folder_rename ... ok
+test automatic_suggestions::tests::quitting_cancels_only_the_owned_job_and_waits_for_physical_exit ... ok
+test automatic_suggestions::tests::failed_receipt_write_completes_without_waiting_for_an_outcome_or_retrying ... ok
+test automatic_suggestions::tests::job_progress_without_a_new_durable_revision_does_not_poke_sync_or_retry ... ok
+test automatic_suggestions::tests::terminal_job_waits_for_the_receipt_latch_before_final_durable_notification ... ok
+test automatic_suggestions::tests::credentials_follow_actual_admission_and_progress_never_exposes_content ... ok
+test automatic_suggestions::tests::superseded_job_response_cannot_publish_or_cancel_the_replacement ... ok
+test automatic_suggestions::tests::foreign_begin_response_never_cancels_someone_elses_job ... ok
+test automatic_suggestions::tests::actual_core_finished_profiles_and_unqualified_availability_never_read_keys_or_connect ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 361 filtered out; finished in 0.17s
+
