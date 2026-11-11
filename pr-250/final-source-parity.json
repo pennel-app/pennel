@@ -1,0 +1,42 @@
+{
+  "final_source_head": "f83b2732b10e7d957dbb645784cf0cd9803dd4cc",
+  "source_note": "Final shared-core working source includes automatic-title changes; retained original trial binary and raw timings remain historical. Fresh export/replay only, no model inference.",
+  "candidates": [
+    {
+      "candidate": "local",
+      "historical_bridge_sha256": "589ad6cd42ae0910b4fedf52511a229fbb4e3c6d0ddaea0fd58fb49159271f8c",
+      "final_bridge_sha256": "542c9cbd273e919ded70db079d467cba02a12fe9a0c7eb2178ff0ec45386681d",
+      "export_contract_identical": {
+        "fixture": true,
+        "configuration": true,
+        "expected_actual": true,
+        "qualification_request": true,
+        "source_sha256": true,
+        "windows": true,
+        "snapshot": true,
+        "freeze_sha256": true
+      },
+      "raw_replay_status": "identity_unavailable",
+      "new_model_requests": 0,
+      "historical_model_requests": 1
+    },
+    {
+      "candidate": "hosted",
+      "historical_bridge_sha256": "589ad6cd42ae0910b4fedf52511a229fbb4e3c6d0ddaea0fd58fb49159271f8c",
+      "final_bridge_sha256": "542c9cbd273e919ded70db079d467cba02a12fe9a0c7eb2178ff0ec45386681d",
+      "export_contract_identical": {
+        "fixture": true,
+        "configuration": true,
+        "expected_actual": true,
+        "qualification_request": true,
+        "source_sha256": true,
+        "windows": true,
+        "snapshot": true,
+        "freeze_sha256": true
+      },
+      "raw_replay_status": "identity_unavailable",
+      "new_model_requests": 0,
+      "historical_model_requests": 1
+    }
+  ]
+}

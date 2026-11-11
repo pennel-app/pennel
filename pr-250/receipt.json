@@ -1,0 +1,157 @@
+{
+  "date": "2026-11-11",
+  "issue": "https://github.com/pennel-app/pennel/issues/96",
+  "base_commit": "27b75bec05bd78370dab4d8f277bbfae25b06367",
+  "content": "invented Dutch Cedar development transcript only",
+  "bridge_sha256": "589ad6cd42ae0910b4fedf52511a229fbb4e3c6d0ddaea0fd58fb49159271f8c",
+  "local": {
+    "status": "blocked",
+    "reason": "identity_unavailable",
+    "physical_requests": 1,
+    "http_status": 200,
+    "request_sha256": "0510817aa1097fb5a0b0c930a7dbbc3f49227d35a10da3577e431caf9eb13523",
+    "response_sha256": "1bd772691c2224e8ab4f2e8dff6a802b429f4f705a48bf39cab46db46b5c2c28",
+    "response_bytes": 1492,
+    "request_elapsed_ms": 1633.1669169012457,
+    "actual_identity": {
+      "actual_model": "pplx-decider-flash-v1.2",
+      "actual_provider": null,
+      "actual_revision": null,
+      "endpoint": "http://127.0.0.1:8080/v1/decisions",
+      "protocol": "local_decider",
+      "request_id": null,
+      "requested_model": "pplx-decider-flash-v1.2",
+      "requested_upstream": null
+    },
+    "qualification": false,
+    "production_admission": false,
+    "new_model_runtime_download_bytes": 0,
+    "ready_budget_seconds": 7200,
+    "load_seconds": 2.283120584092103,
+    "elapsed_seconds_after_ready": 1.7645395409781486,
+    "owned_runtime_stopped": true,
+    "model_sha256": "ffb27ade8976765b0e6943a0b7f5f3fd0f7042d45ad90256a76d608bcd3942c2",
+    "observed_open_model_file": true,
+    "owned_runtime_lifetime_peak_rss_bytes": 5912625152,
+    "owned_runtime_lifetime_cpu_time_ms": 1020,
+    "resource_scope": "one owned runtime lifetime including startup/one request/shutdown; not a qualification timing panel or aggregate app acceptance",
+    "owned_server_processes_gone": true
+  },
+  "hosted": {
+    "status": "blocked",
+    "reason": "identity_unavailable",
+    "physical_requests": 1,
+    "http_status": 200,
+    "request_sha256": "e6c9adf13123cdf6d02afaedb3445907e285b581ef43c906ff448c7542e88d9d",
+    "response_sha256": "ed641caf29d80a7a5b6691144c803c34ff30e2c070f7a6a4f99d4867aabfd115",
+    "response_bytes": 1785,
+    "request_elapsed_ms": 718.626833986491,
+    "actual_identity": {
+      "actual_model": "perplexity/pplx-decider-v1.2-20261016",
+      "actual_provider": "Perplexity",
+      "actual_revision": null,
+      "endpoint": "https://openrouter.ai/api/alpha/decisions",
+      "protocol": "open_router_decisions",
+      "request_id": "gen-dec-1794410606-dPES5c4UkB1yyn7uTEKH",
+      "requested_model": "perplexity/pplx-decider-v1.2",
+      "requested_upstream": "perplexity"
+    },
+    "qualification": false,
+    "production_admission": false,
+    "upstream": "perplexity",
+    "total_budget_usd": "2.00",
+    "returned_billed_cost_usd": "0.00001416",
+    "pending_reservations": {},
+    "unresolved_charge": false,
+    "privacy": "current exact endpoint ZDR-eligible; deny data collection, require ZDR, disable fallbacks; no residency/account-policy assertion"
+  },
+  "unattempted": [
+    "calibration model inference",
+    "heldout model inference",
+    "complete-item quality",
+    "five cold-client/thirty warm timing panel",
+    "foreground impact",
+    "natural-ASR/human acceptance"
+  ],
+  "adopted_records_added": 0,
+  "production_settings_changed": false,
+  "source_note": "Later preflight error/deadline retention repairs preserve the successful production wire bytes and raw replies. Replayed final evidence offline; no repeated model requests.",
+  "retained_artifact_sha256": {
+    "development-nl.json": "67d5e4be12755264844122d7e70701e4ddace64c10ce01f4813e94caf01d6797",
+    "final-hosted-identity-freeze.json": "5a57d6c01e773444dc85d45cdbea4c3f290af7d2748f5efa1233490018924e1f",
+    "final-hosted-raw-replay.json": "2f1e951a5994f1243b1084fafe464d38b71f28bf41787c58d859db42504cb1a9",
+    "final-local-identity-freeze.json": "34b445f499a632c5cd88be71449ac1d66ef041efe0468e3c8fe789604a4b9e59",
+    "final-local-raw-replay.json": "72d9b4f153a4988870f9a4f63ee76284df78cebefe27c3eaa8ff8f697a7ae67c",
+    "final-source-parity.json": "9617bac4ea1bddd87d29cd2edb95313bfdfb0407dd69288721b22d01dd8cd149",
+    "hosted-endpoints.json": "0c50802636ba2171f650c2bdce230abe1c0f25dd5af46930f701ac3344665ac2",
+    "hosted-identity-freeze.json": "caa451b02a03e09946ddb9a7437a7875b7f23d65c9b4fee369e592aa2199d776",
+    "hosted-preflight.json": "7601aaf2075446e71c58c578dadce39c8ba41120e1b4c14087825beb79e92618",
+    "hosted-zdr.json": "1c067be435570641c342c16767006cbb1ca60c8a9775df2f535c8c774b5b6e81",
+    "local-identity-freeze.json": "e5aaedf7aa674c91645a15a21db6c0650d8adef968124dbde203ca876b42d331",
+    "local-preflight.json": "40252994b0221d410626df5521b58a87482fe06161cf09c9c568d8e1c04ee88f",
+    "local-session.json": "704e1626c8027de56680a565677079bd7a17b8f1111e0fda72c8aaaade78cbef",
+    "python-tests-final.log": "f20dd100de05b5e9f1ab5704ed644b0c7257428ef15da253a311a20fc20e9792",
+    "python-tests.log": "12f82db7c72019d2da047078a8cf7371711ae784ac48f7e2a7e8f8b13ed03987",
+    "run_hosted_identity.py": "2135414ab1cbf788201a5750ee9300558041a0b01fbe2e466020668e481c4b3b",
+    "run_local_identity.py": "7d5453c8fa0a27be5e32e1409af3659770e161d81b6fb3d020d0418d0cd6afc5",
+    "runtime-model-metadata.json": "a216d16c12ad1f906b21edfac9c621e22406047f3de1a923d502b80368d8d52a",
+    "runtime-open-files.txt": "3eab1db2eb9f01536b2c479026bc3a0489ab9fd75edea53881e767a47aaf076c",
+    "runtime.stderr.log": "1459711a3d6c5259427ef2f0807af1ffe596ab3ac49f09d0cb4813c975c0ac04",
+    "runtime.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "runtime.toml": "5c143bf911fa7dbfe81bd8fb419ccdba54c062ca5e3b9e7aa51a7bb4b0ee90d1",
+    "spend-ledger.json": "843a4ab5d2af642ee85e521f599927a36d9e49087f44ae3b19be14aca6ffdbff"
+  },
+  "final_source_offline_parity": {
+    "final_source_head": "f83b2732b10e7d957dbb645784cf0cd9803dd4cc",
+    "source_note": "Final shared-core working source includes automatic-title changes; retained original trial binary and raw timings remain historical. Fresh export/replay only, no model inference.",
+    "candidates": [
+      {
+        "candidate": "local",
+        "historical_bridge_sha256": "589ad6cd42ae0910b4fedf52511a229fbb4e3c6d0ddaea0fd58fb49159271f8c",
+        "final_bridge_sha256": "542c9cbd273e919ded70db079d467cba02a12fe9a0c7eb2178ff0ec45386681d",
+        "export_contract_identical": {
+          "fixture": true,
+          "configuration": true,
+          "expected_actual": true,
+          "qualification_request": true,
+          "source_sha256": true,
+          "windows": true,
+          "snapshot": true,
+          "freeze_sha256": true
+        },
+        "raw_replay_status": "identity_unavailable",
+        "new_model_requests": 0,
+        "historical_model_requests": 1
+      },
+      {
+        "candidate": "hosted",
+        "historical_bridge_sha256": "589ad6cd42ae0910b4fedf52511a229fbb4e3c6d0ddaea0fd58fb49159271f8c",
+        "final_bridge_sha256": "542c9cbd273e919ded70db079d467cba02a12fe9a0c7eb2178ff0ec45386681d",
+        "export_contract_identical": {
+          "fixture": true,
+          "configuration": true,
+          "expected_actual": true,
+          "qualification_request": true,
+          "source_sha256": true,
+          "windows": true,
+          "snapshot": true,
+          "freeze_sha256": true
+        },
+        "raw_replay_status": "identity_unavailable",
+        "new_model_requests": 0,
+        "historical_model_requests": 1
+      }
+    ]
+  },
+  "verification": {
+    "full_python_suite": {
+      "passed": 317,
+      "seconds": 99.312
+    },
+    "final_focused_finished_suite": {
+      "passed": 30
+    },
+    "final_lean_evaluation_build": "passed",
+    "final_source_raw_replay": "passed; unchanged wire/source contract and blockers; no new inference"
+  }
+}

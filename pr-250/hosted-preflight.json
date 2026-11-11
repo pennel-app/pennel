@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "freeze_sha256": "f8fd74babae12c7b556cb37c87ab120aa44d800ae8b30d245ff79ad8596c4d1f",
+  "configuration": {
+    "endpoint": "https://openrouter.ai/api/alpha/decisions",
+    "expected_model": "perplexity/pplx-decider-v1.2-20261016",
+    "max_input_bytes": 16000,
+    "model": "perplexity/pplx-decider-v1.2",
+    "protocol": "open_router_decisions",
+    "timeout_secs": 30,
+    "upstream": "perplexity"
+  },
+  "status": "blocked",
+  "reason": "identity_unavailable",
+  "qualification": false,
+  "production_admission": false,
+  "evidence_class": "recorded_inference",
+  "physical_requests": 1,
+  "requests": [
+    {
+      "fixture_id": "cedar_nl",
+      "window_index": 0,
+      "request_sha256": "e6c9adf13123cdf6d02afaedb3445907e285b581ef43c906ff448c7542e88d9d",
+      "http_status": 200,
+      "response_sha256": "ed641caf29d80a7a5b6691144c803c34ff30e2c070f7a6a4f99d4867aabfd115",
+      "response_bytes": 1785,
+      "raw_response_complete": true,
+      "raw_response": "{\"model\":\"perplexity/pplx-decider-v1.2-20261016\",\"answers\":{\"action\":{\"type\":\"choice\",\"choice\":\"confirmed\",\"probabilities\":{\"none\":0.007282005864256057,\"tentative\":0.04435433881532527,\"confirmed\":0.9360233555718149,\"retracted\":0.0016110670430653032,\"unresolved\":0.003961580798437738,\"changed\":0.0018737344255498364,\"unknown\":0.0037969638822824606,\"negated\":0.0010969535992686212},\"confidence\":0.9268838349392171},\"decision\":{\"type\":\"choice\",\"choice\":\"confirmed\",\"probabilities\":{\"none\":0.0027553528851919323,\"tentative\":0.004619558773468001,\"confirmed\":0.9899973113828446,\"retracted\":0.0005436540218000678,\"unresolved\":0.0005645658905119139,\"changed\":0.0005308623015686134,\"unknown\":0.000690410724049446,\"negated\":0.0002982840205653094},\"confidence\":0.9885683558661081},\"open_question\":{\"type\":\"choice\",\"choice\":\"none\",\"probabilities\":{\"none\":0.9968020584239254,\"tentative\":0.0008980770888917854,\"confirmed\":0.0009275793250432637,\"retracted\":0.00025169053163990105,\"unresolved\":0.000502000862541762,\"changed\":0.00023919516229269067,\"unknown\":0.00018468248948215674,\"negated\":0.00019471611618305856},\"confidence\":0.9963452096273434},\"changed_commitment\":{\"type\":\"choice\",\"choice\":\"none\",\"probabilities\":{\"none\":0.9823815825302017,\"tentative\":0.0023164092343426687,\"confirmed\":0.01152237831915164,\"retracted\":0.0006217535967434489,\"unresolved\":0.0008421896115754815,\"changed\":0.0012936784235536487,\"unknown\":0.0005399179776859401,\"negated\":0.0004820903067454199},\"confidence\":0.9798646657488019}},\"usage\":{\"input_tokens\":708,\"output_tokens\":4,\"cost\":0.00001416,\"is_byok\":false,\"cost_details\":{\"upstream_inference_cost\":0.00001416,\"upstream_inference_prompt_cost\":0.00001416,\"upstream_inference_completions_cost\":0}},\"id\":\"gen-dec-1794410606-dPES5c4UkB1yyn7uTEKH\",\"provider\":\"Perplexity\"}",
+      "elapsed_ms": 718.626833986491
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "cedar_nl",
+      "window_index": 0,
+      "replay": {
+        "complete": false,
+        "freeze_sha256": "ed9908d715b0d6eb8ec0644c90af195e2ba0c7590b626a0b24e7a8c8ca50c2be",
+        "production_admission": false,
+        "protocol_id": "production-finished-meeting-v1",
+        "qualification": false,
+        "schema_version": 1,
+        "status": "identity_unavailable",
+        "windows": [
+          {
+            "observed_identity": {
+              "actual_model": "perplexity/pplx-decider-v1.2-20261016",
+              "actual_provider": "Perplexity",
+              "actual_revision": null,
+              "endpoint": "https://openrouter.ai/api/alpha/decisions",
+              "protocol": "open_router_decisions",
+              "request_id": "gen-dec-1794410606-dPES5c4UkB1yyn7uTEKH",
+              "requested_model": "perplexity/pplx-decider-v1.2",
+              "requested_upstream": "perplexity"
+            },
+            "status": "identity_unavailable",
+            "window_index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "spend_ledger": {
+    "limit_usd": "2.00",
+    "known_billed_usd": "0.00001416",
+    "reserved_usd": "0",
+    "pending_reservations": {},
+    "unresolved_charge": false,
+    "attempt_count": 1,
+    "attempts": [
+      {
+        "reservation_id": "1",
+        "reserved_usd": "0.10",
+        "billed_cost_usd": "0.00001416",
+        "metadata": {
+          "request_sha256": "e6c9adf13123cdf6d02afaedb3445907e285b581ef43c906ff448c7542e88d9d",
+          "http_status": 200
+        }
+      }
+    ]
+  }
+}

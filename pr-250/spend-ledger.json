@@ -1,0 +1,19 @@
+{
+  "limit_usd": "2.00",
+  "known_billed_usd": "0.00001416",
+  "reserved_usd": "0",
+  "pending_reservations": {},
+  "unresolved_charge": false,
+  "attempt_count": 1,
+  "attempts": [
+    {
+      "reservation_id": "1",
+      "reserved_usd": "0.10",
+      "billed_cost_usd": "0.00001416",
+      "metadata": {
+        "request_sha256": "e6c9adf13123cdf6d02afaedb3445907e285b581ef43c906ff448c7542e88d9d",
+        "http_status": 200
+      }
+    }
+  ]
+}

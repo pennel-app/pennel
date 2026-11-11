@@ -1,0 +1,25 @@
+{
+  "complete": false,
+  "freeze_sha256": "3c268ad75e06bdf6f3ea5a82032cf3b6696cf5ec14cb9e02cd2a5d6d03aa7da5",
+  "production_admission": false,
+  "protocol_id": "production-finished-meeting-v1",
+  "qualification": false,
+  "schema_version": 1,
+  "status": "identity_unavailable",
+  "windows": [
+    {
+      "observed_identity": {
+        "actual_model": "pplx-decider-flash-v1.2",
+        "actual_provider": null,
+        "actual_revision": null,
+        "endpoint": "http://127.0.0.1:8080/v1/decisions",
+        "protocol": "local_decider",
+        "request_id": null,
+        "requested_model": "pplx-decider-flash-v1.2",
+        "requested_upstream": null
+      },
+      "status": "identity_unavailable",
+      "window_index": 0
+    }
+  ]
+}

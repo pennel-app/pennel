@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "freeze_sha256": "c82e627d4018527882cfdcfa9acb76d89dd5c9af2b9ac28c3c8fd768c9f9f444",
+  "configuration": {
+    "endpoint": "http://127.0.0.1:8080/v1/decisions",
+    "expected_model": "pplx-decider-flash-v1.2",
+    "max_input_bytes": 16000,
+    "model": "pplx-decider-flash-v1.2",
+    "protocol": "local_decider",
+    "timeout_secs": 30,
+    "upstream": null
+  },
+  "status": "blocked",
+  "reason": "identity_unavailable",
+  "qualification": false,
+  "production_admission": false,
+  "evidence_class": "recorded_inference",
+  "physical_requests": 1,
+  "requests": [
+    {
+      "fixture_id": "cedar_nl",
+      "window_index": 0,
+      "request_sha256": "0510817aa1097fb5a0b0c930a7dbbc3f49227d35a10da3577e431caf9eb13523",
+      "http_status": 200,
+      "response_sha256": "1bd772691c2224e8ab4f2e8dff6a802b429f4f705a48bf39cab46db46b5c2c28",
+      "response_bytes": 1492,
+      "raw_response_complete": true,
+      "raw_response": "{\"model\":\"pplx-decider-flash-v1.2\",\"answers\":{\"action\":{\"type\":\"choice\",\"choice\":\"confirmed\",\"confidence\":0.5775403010816339,\"probabilities\":{\"none\":0.17903817441655026,\"tentative\":0.07401608272187486,\"confirmed\":0.6303477634464296,\"retracted\":0.01039019755618754,\"unresolved\":0.029555957674788066,\"changed\":0.012382681198861226,\"unknown\":0.030627697908241006,\"negated\":0.03364144507706734}},\"decision\":{\"type\":\"choice\",\"choice\":\"confirmed\",\"confidence\":0.7450329686586212,\"probabilities\":{\"none\":0.0896802903549965,\"tentative\":0.05886857855677676,\"confirmed\":0.7769038475762936,\"retracted\":0.007484620629104001,\"unresolved\":0.018376283198631674,\"changed\":0.00925172271421023,\"unknown\":0.015034819770550479,\"negated\":0.024399837199436503}},\"open_question\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":0.9433320149969363,\"probabilities\":{\"none\":0.9504155131223193,\"tentative\":0.012640873972781795,\"confirmed\":0.0047723126925464255,\"retracted\":0.004191340615381314,\"unresolved\":0.01195277810551316,\"changed\":0.002369005785664495,\"unknown\":0.007696014162669583,\"negated\":0.0059621615431239144}},\"changed_commitment\":{\"type\":\"choice\",\"choice\":\"none\",\"confidence\":0.556526859533346,\"probabilities\":{\"none\":0.6119610020916778,\"tentative\":0.05748585917570312,\"confirmed\":0.20724062697775641,\"retracted\":0.01345479953903586,\"unresolved\":0.02939023082742466,\"changed\":0.0221037810748605,\"unknown\":0.018793449978317518,\"negated\":0.039570250335224065}}},\"usage\":{\"input_tokens\":1103,\"output_tokens\":0}}",
+      "elapsed_ms": 1633.1669169012457
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "cedar_nl",
+      "window_index": 0,
+      "replay": {
+        "complete": false,
+        "freeze_sha256": "3c268ad75e06bdf6f3ea5a82032cf3b6696cf5ec14cb9e02cd2a5d6d03aa7da5",
+        "production_admission": false,
+        "protocol_id": "production-finished-meeting-v1",
+        "qualification": false,
+        "schema_version": 1,
+        "status": "identity_unavailable",
+        "windows": [
+          {
+            "observed_identity": {
+              "actual_model": "pplx-decider-flash-v1.2",
+              "actual_provider": null,
+              "actual_revision": null,
+              "endpoint": "http://127.0.0.1:8080/v1/decisions",
+              "protocol": "local_decider",
+              "request_id": null,
+              "requested_model": "pplx-decider-flash-v1.2",
+              "requested_upstream": null
+            },
+            "status": "identity_unavailable",
+            "window_index": 0
+          }
+        ]
+      }
+    }
+  ]
+}

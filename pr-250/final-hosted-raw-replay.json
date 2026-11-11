@@ -1,0 +1,25 @@
+{
+  "complete": false,
+  "freeze_sha256": "ed9908d715b0d6eb8ec0644c90af195e2ba0c7590b626a0b24e7a8c8ca50c2be",
+  "production_admission": false,
+  "protocol_id": "production-finished-meeting-v1",
+  "qualification": false,
+  "schema_version": 1,
+  "status": "identity_unavailable",
+  "windows": [
+    {
+      "observed_identity": {
+        "actual_model": "perplexity/pplx-decider-v1.2-20261016",
+        "actual_provider": "Perplexity",
+        "actual_revision": null,
+        "endpoint": "https://openrouter.ai/api/alpha/decisions",
+        "protocol": "open_router_decisions",
+        "request_id": "gen-dec-1794410606-dPES5c4UkB1yyn7uTEKH",
+        "requested_model": "perplexity/pplx-decider-v1.2",
+        "requested_upstream": "perplexity"
+      },
+      "status": "identity_unavailable",
+      "window_index": 0
+    }
+  ]
+}
