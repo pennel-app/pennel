@@ -40,6 +40,20 @@ pub struct MeetingQualificationRequest {
     pub resource_profile_sha256: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingIdentityEvidence {
+    #[default]
+    ServingRevisionAndArtifact,
+    ProviderReportedVersion,
+}
+
+impl MeetingIdentityEvidence {
+    fn is_legacy(&self) -> bool {
+        *self == Self::ServingRevisionAndArtifact
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MeetingActualInference {
@@ -47,6 +61,8 @@ pub struct MeetingActualInference {
     pub revision: String,
     pub provider: String,
     pub artifact_sha256: String,
+    #[serde(default, skip_serializing_if = "MeetingIdentityEvidence::is_legacy")]
+    pub identity_evidence: MeetingIdentityEvidence,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,6 +171,60 @@ fn text(value: &str, maximum: usize) -> bool {
     !value.trim().is_empty() && value.len() <= maximum && !value.chars().any(char::is_control)
 }
 
+const OPENROUTER_DECISIONS: &str = "https://openrouter.ai/api/alpha/decisions";
+const PERPLEXITY_DECIDER: &str = "perplexity/pplx-decider-v1.2";
+
+fn provider_versioned_model(model: &str) -> bool {
+    let Some(date) = model
+        .strip_prefix(PERPLEXITY_DECIDER)
+        .and_then(|suffix| suffix.strip_prefix('-'))
+    else {
+        return false;
+    };
+    date.len() == 8
+        && date.bytes().all(|byte| byte.is_ascii_digit())
+        && chrono::NaiveDate::parse_from_str(date, "%Y%m%d").is_ok()
+}
+
+impl MeetingActualInference {
+    fn valid_pin(&self) -> bool {
+        if !text(&self.model, 256) || !text(&self.provider, 256) {
+            return false;
+        }
+        match self.identity_evidence {
+            MeetingIdentityEvidence::ServingRevisionAndArtifact => {
+                text(&self.revision, 256) && hash(&self.artifact_sha256)
+            }
+            MeetingIdentityEvidence::ProviderReportedVersion => {
+                provider_versioned_model(&self.model)
+                    && self.provider == "Perplexity"
+                    && self.revision.is_empty()
+                    && self.artifact_sha256.is_empty()
+            }
+        }
+    }
+
+    fn matches_provider_configuration(&self, configured: &MeetingConfiguredInference) -> bool {
+        configured.protocol == InferenceProtocol::OpenRouterDecisions
+            && configured.endpoint == OPENROUTER_DECISIONS
+            && (configured.model == PERPLEXITY_DECIDER || configured.model == self.model)
+            && configured.expected_model.as_deref() == Some(self.model.as_str())
+            && configured.upstream.as_deref() == Some("perplexity")
+    }
+
+    fn valid_for_request(&self, request: &MeetingQualificationRequest) -> bool {
+        self.valid_pin()
+            && match self.identity_evidence {
+                MeetingIdentityEvidence::ServingRevisionAndArtifact => true,
+                MeetingIdentityEvidence::ProviderReportedVersion => {
+                    request.use_case == MeetingAnalysisUseCase::ManualFinishedSuggestions
+                        && request.language_policy == "nl"
+                        && self.matches_provider_configuration(&request.configured)
+                }
+            }
+    }
+}
+
 impl MeetingQualificationRequest {
     pub(crate) fn validate(&self) -> Result<(), MeetingQualificationError> {
         if !matches!(self.language_policy.as_str(), "en" | "nl" | "mixed") {
@@ -230,11 +300,8 @@ impl MeetingQualificationRecord {
         if self.schema_version != 1
             || !text(&self.qualification_id, 256)
             || request.validate().is_err()
-            || !text(&self.context.actual.model, 256)
-            || !text(&self.context.actual.revision, 256)
-            || !text(&self.context.actual.provider, 256)
+            || !self.context.actual.valid_for_request(request)
             || [
-                &self.context.actual.artifact_sha256,
                 &self.context.calibration_sha256,
                 &evidence.protocol_sha256,
                 &evidence.corpus_sha256,
@@ -354,6 +421,41 @@ impl MeetingQualificationRegistry {
             record: record.clone(),
         })
     }
+
+    fn finished_provider_presets(&self) -> Vec<serde_json::Value> {
+        self.records
+            .iter()
+            .filter_map(|record| {
+                if record.context.actual.identity_evidence
+                    != MeetingIdentityEvidence::ProviderReportedVersion
+                    || record.context.request.use_case
+                        != MeetingAnalysisUseCase::ManualFinishedSuggestions
+                    || record.context.request.language_policy != "nl"
+                {
+                    return None;
+                }
+                let current = crate::meeting_insight_engine::qualification_request(
+                    record.context.request.configured.clone(),
+                    &record.context.request.language_policy,
+                );
+                if current != record.context.request
+                    || self.admit(&current).ok()?.record().qualification_id
+                        != record.qualification_id
+                {
+                    return None;
+                }
+                Some(serde_json::json!({
+                    "qualification_id": record.qualification_id,
+                    "language_policy": record.context.request.language_policy,
+                    "configured": record.context.request.configured,
+                    "identity_evidence": record.context.actual.identity_evidence,
+                    "actual_model": record.context.actual.model,
+                    "actual_provider": record.context.actual.provider,
+                    "weights_independently_verified": false
+                }))
+            })
+            .collect()
+    }
 }
 
 impl QualifiedMeetingAnalysis {
@@ -392,23 +494,59 @@ pub(crate) fn compare_inference_identity(
         || identity.requested_model != configured.model
         || identity.requested_upstream != configured.upstream
         || identity.actual_model.as_deref() != Some(actual.model.as_str())
-        || identity.actual_revision.as_deref() != Some(actual.revision.as_str())
         || identity.actual_provider.as_deref() != Some(actual.provider.as_str())
+        || !actual.valid_pin()
     {
         return Err(MeetingQualificationError::IdentityChanged);
     }
-    Ok(())
+    match actual.identity_evidence {
+        MeetingIdentityEvidence::ServingRevisionAndArtifact
+            if identity.actual_revision.as_deref() != Some(actual.revision.as_str()) =>
+        {
+            Err(MeetingQualificationError::IdentityChanged)
+        }
+        MeetingIdentityEvidence::ProviderReportedVersion
+            if !actual.matches_provider_configuration(configured) =>
+        {
+            Err(MeetingQualificationError::IdentityChanged)
+        }
+        _ => Ok(()),
+    }
+}
+
+#[cfg(any(test, feature = "evaluation"))]
+pub(crate) fn observed_identity_complete(
+    expected: Option<&MeetingActualInference>,
+    identity: &InferenceIdentity,
+) -> bool {
+    identity
+        .actual_model
+        .as_deref()
+        .is_some_and(|value| text(value, 256))
+        && identity
+            .actual_provider
+            .as_deref()
+            .is_some_and(|value| text(value, 256))
+        && (expected.is_some_and(|pin| {
+            pin.identity_evidence == MeetingIdentityEvidence::ProviderReportedVersion
+        }) || identity
+            .actual_revision
+            .as_deref()
+            .is_some_and(|value| text(value, 256)))
 }
 
 #[cfg(feature = "evaluation")]
 pub(crate) fn valid_evaluation_identity_pin(actual: &MeetingActualInference) -> bool {
-    text(&actual.model, 256)
-        && text(&actual.revision, 256)
-        && text(&actual.provider, 256)
-        && hash(&actual.artifact_sha256)
+    actual.valid_pin()
 }
 
 impl PennelEngine {
+    /// Account-free local metadata for supported, adopted setup choices; never probes a provider.
+    pub fn qualified_finished_suggestion_presets_json(&self) -> Result<String, crate::PennelError> {
+        serde_json::to_string(&MeetingQualificationRegistry::bundled().finished_provider_presets())
+            .map_err(crate::PennelError::storage)
+    }
+
     pub(crate) fn meeting_analysis_configuration(
         &self,
     ) -> Result<(String, MeetingConfiguredInference), MeetingQualificationError> {
@@ -616,6 +754,7 @@ mod tests {
                     revision: "immutable-v1".into(),
                     provider: "owned-local-worker".into(),
                     artifact_sha256: sha('6'),
+                    identity_evidence: Default::default(),
                 },
                 calibration_sha256: sha('7'),
             },
@@ -668,6 +807,235 @@ mod tests {
             actual_provider: Some("owned-local-worker".into()),
             request_id: Some("ephemeral-request".into()),
         }
+    }
+
+    fn provider_record_value() -> serde_json::Value {
+        let mut value = serde_json::to_value(record()).unwrap();
+        value["context"]["use_case"] = "manual_finished_suggestions".into();
+        value["context"]["configured"] = serde_json::json!({
+            "protocol":"open_router_decisions",
+            "endpoint":"https://openrouter.ai/api/alpha/decisions",
+            "model":"perplexity/pplx-decider-v1.2",
+            "expected_model":"perplexity/pplx-decider-v1.2-20261016",
+            "upstream":"perplexity",
+            "max_input_bytes":16000,
+            "timeout_secs":30
+        });
+        value["context"]["actual"] = serde_json::json!({
+            "model":"perplexity/pplx-decider-v1.2-20261016",
+            "provider":"Perplexity",
+            "revision":"",
+            "artifact_sha256":"",
+            "identity_evidence":"provider_reported_version"
+        });
+        value
+    }
+
+    fn provider_identity() -> InferenceIdentity {
+        InferenceIdentity {
+            protocol: InferenceProtocol::OpenRouterDecisions,
+            endpoint: "https://openrouter.ai/api/alpha/decisions".into(),
+            requested_model: "perplexity/pplx-decider-v1.2".into(),
+            requested_upstream: Some("perplexity".into()),
+            actual_model: Some("perplexity/pplx-decider-v1.2-20261016".into()),
+            actual_revision: None,
+            actual_provider: Some("Perplexity".into()),
+            request_id: Some("owned-response".into()),
+        }
+    }
+
+    #[test]
+    fn provider_reported_version_admits_without_fabricating_revision_or_weights() {
+        let record: MeetingQualificationRecord =
+            serde_json::from_value(provider_record_value()).unwrap();
+        let request = record.context.request.clone();
+        let observed = provider_identity();
+        let admitted = registry(record).admit(&request).unwrap();
+        assert!(admitted.validate_identity(&observed).is_ok());
+        assert!(admitted.record().context.actual.revision.is_empty());
+        assert!(admitted.record().context.actual.artifact_sha256.is_empty());
+        assert_eq!(observed.actual_revision, None);
+        assert_eq!(
+            serde_json::to_value(admitted.record()).unwrap()["context"]["actual"]["identity_evidence"],
+            "provider_reported_version"
+        );
+    }
+
+    #[test]
+    fn provider_reported_version_rejects_version_provider_and_route_drift() {
+        let record: MeetingQualificationRecord =
+            serde_json::from_value(provider_record_value()).unwrap();
+        let admitted = registry(record.clone())
+            .admit(&record.context.request)
+            .unwrap();
+        for change in 0..8 {
+            let mut observed = provider_identity();
+            match change {
+                0 => observed.protocol = InferenceProtocol::Perplexity,
+                1 => observed.endpoint.push_str("/changed"),
+                2 => observed.requested_model = "perplexity/pplx-decider-latest".into(),
+                3 => observed.requested_upstream = None,
+                4 => observed.actual_model = Some("perplexity/pplx-decider-v1.2-20261017".into()),
+                5 => observed.actual_model = None,
+                6 => observed.actual_provider = Some("another-provider".into()),
+                _ => observed.actual_provider = None,
+            }
+            assert_eq!(
+                admitted.validate_identity(&observed),
+                Err(MeetingQualificationError::IdentityChanged),
+                "observed identity change {change}"
+            );
+        }
+        let mut additional_metadata = provider_identity();
+        additional_metadata.actual_revision = Some("optional-provider-metadata".into());
+        assert!(admitted.validate_identity(&additional_metadata).is_ok());
+    }
+
+    #[test]
+    fn provider_reported_pins_require_explicit_narrow_policy_and_no_weight_claim() {
+        for change in 0..15 {
+            let mut value = provider_record_value();
+            match change {
+                0 => {
+                    value["context"]["actual"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("identity_evidence");
+                }
+                1 => value["context"]["actual"]["revision"] = "invented".into(),
+                2 => value["context"]["actual"]["artifact_sha256"] = sha('a').into(),
+                3 => {
+                    value["context"]["actual"]["model"] = PERPLEXITY_DECIDER.into();
+                    value["context"]["configured"]["expected_model"] = PERPLEXITY_DECIDER.into();
+                }
+                4 => {
+                    let alias = "perplexity/pplx-decider-latest";
+                    value["context"]["actual"]["model"] = alias.into();
+                    value["context"]["configured"]["expected_model"] = alias.into();
+                }
+                5 => {
+                    let invalid = "perplexity/pplx-decider-v1.2-20260230";
+                    value["context"]["actual"]["model"] = invalid.into();
+                    value["context"]["configured"]["expected_model"] = invalid.into();
+                }
+                6 => value["context"]["configured"]["expected_model"] = serde_json::Value::Null,
+                7 => value["context"]["configured"]["upstream"] = serde_json::Value::Null,
+                8 => value["context"]["configured"]["upstream"] = "another-provider".into(),
+                9 => {
+                    value["context"]["configured"]["endpoint"] =
+                        "https://other.example.invalid/api/alpha/decisions".into()
+                }
+                10 => value["context"]["configured"]["protocol"] = "local_decider".into(),
+                11 => value["context"]["language_policy"] = "en".into(),
+                12 => value["context"]["use_case"] = "manual_live_suggestions".into(),
+                13 => value["context"]["actual"]["provider"] = "another-provider".into(),
+                _ => {
+                    value["context"]["configured"]["model"] =
+                        "perplexity/pplx-decider-flash-v1.2".into()
+                }
+            }
+            let record: MeetingQualificationRecord = serde_json::from_value(value).unwrap();
+            let request = record.context.request.clone();
+            assert!(
+                registry(record).admit(&request).is_err(),
+                "pin policy change {change}"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_reported_identity_keeps_quality_and_resource_gates() {
+        for change in 0..9 {
+            let mut record: MeetingQualificationRecord =
+                serde_json::from_value(provider_record_value()).unwrap();
+            match change {
+                0 => record.metrics.macro_f1 = Some(0.89),
+                1 => record.metrics.accepted_item_precision = Some(0.949),
+                2 => record.metrics.correct_owner_and_final_status = Some(false),
+                3 => record.metrics.calibration_observations = 9,
+                4 => record.metrics.calibration_classes = 1,
+                5 => record.metrics.calibration_meeting_groups = 1,
+                6 => record.metrics.peak_rss_bytes = None,
+                7 => record.metrics.warm_p95_ms = Some(30_001.0),
+                _ => record.evidence.mode = "offline_fixture".into(),
+            }
+            let request = record.context.request.clone();
+            assert!(
+                registry(record).admit(&request).is_err(),
+                "provider evidence change {change}"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_identity_stays_strict_and_serialization_stays_compatible() {
+        let record = record();
+        let value = serde_json::to_value(&record).unwrap();
+        assert!(
+            value["context"]["actual"]
+                .get("identity_evidence")
+                .is_none()
+        );
+        let decoded: MeetingQualificationRecord = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), value);
+        let mut missing = identity();
+        missing.actual_revision = None;
+        assert!(!observed_identity_complete(
+            Some(&record.context.actual),
+            &missing
+        ));
+        assert!(
+            compare_inference_identity(
+                &record.context.request.configured,
+                &record.context.actual,
+                &missing
+            )
+            .is_err()
+        );
+        let provider: MeetingQualificationRecord =
+            serde_json::from_value(provider_record_value()).unwrap();
+        assert!(observed_identity_complete(
+            Some(&provider.context.actual),
+            &provider_identity()
+        ));
+        assert!(!observed_identity_complete(None, &provider_identity()));
+        let mut undeclared = provider_record_value();
+        undeclared["context"]["actual"]
+            .as_object_mut()
+            .unwrap()
+            .remove("identity_evidence");
+        let undeclared: MeetingQualificationRecord = serde_json::from_value(undeclared).unwrap();
+        assert!(!observed_identity_complete(
+            Some(&undeclared.context.actual),
+            &provider_identity()
+        ));
+        assert_ne!(
+            crate::evidence_revision(&serde_json::to_string(&provider.context).unwrap()),
+            crate::evidence_revision(&serde_json::to_string(&undeclared.context).unwrap())
+        );
+    }
+
+    #[test]
+    fn tested_presets_require_adoption_current_context_and_no_credentials() {
+        let mut record: MeetingQualificationRecord =
+            serde_json::from_value(provider_record_value()).unwrap();
+        record.context.request = crate::meeting_insight_engine::qualification_request(
+            record.context.request.configured.clone(),
+            "nl",
+        );
+        let presets = registry(record.clone()).finished_provider_presets();
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0]["qualification_id"], record.qualification_id);
+        assert_eq!(presets[0]["weights_independently_verified"], false);
+        let encoded = serde_json::to_string(&presets).unwrap();
+        assert!(!encoded.contains("provider_id") && !encoded.contains("api_key"));
+        record.context.request.resource_profile_sha256 = sha('f');
+        assert!(registry(record).finished_provider_presets().is_empty());
+        let empty = MeetingQualificationRegistry {
+            records: vec![],
+            valid: true,
+        };
+        assert!(empty.finished_provider_presets().is_empty());
     }
 
     #[test]

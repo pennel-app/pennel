@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "protocol_id": "production-finished-meeting-v2",
+  "use_case": "manual_finished_suggestions",
+  "production_contract_source": "Rust finished_meeting_export/replay, physical batch builder, raw parser and per-window source-linked decoder",
+  "languages": ["nl"],
+  "split_unit": "meeting_family_including_all_lengths_and_text_variants",
+  "grouping": "At most eight source windows per serial physical request; exact byte-bound encoded request; namespaced answer IDs with independently scoped central sources",
+  "identity": "Explicit provider-reported versioned-model evidence pins exact returned dated model and provider/upstream route. Remote model weights and serving revision remain independently unverified, never invented.",
+  "runtime_policy": "raw_closed_set_passage_decisions_v2; fitted calibration is diagnostic evidence only, not an executed inference policy",
+  "automatic_retries": false,
+  "fallbacks": false,
+  "hosted_total_usd_max": "2.00",
+  "activation": false,
+  "qualification": false
+}

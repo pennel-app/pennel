@@ -6,15 +6,21 @@ import copy
 import hashlib
 import json
 import math
+import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import calibration
 import finished
+import finished_v2
 import metrics
 
 PROTOCOL = Path(__file__).with_name('protocol-finished-qualification-v1.json')
 KINDS = ('action', 'decision', 'open_question', 'changed_commitment')
 SOURCES = ('finished_qualification.py', 'finished.py', 'finished_preflight.py', 'calibration.py', 'metrics.py')
+V2_SOURCES = SOURCES + ('finished_v2.py', 'finished_experiment.py', 'finished_corpus_v2.py', 'runners.py')
+PROTOCOL_V2 = PROTOCOL.with_name('protocol-finished-qualification-v2.json')
+RUNTIME_POLICY = 'raw_closed_set_passage_decisions_v2'
 
 
 def _seal(value):
@@ -29,8 +35,41 @@ def _base(frozen):
     return _seal(value)
 
 
-def _source_hashes():
-    return {name: finished.file_hash(Path(__file__).with_name(name)) for name in SOURCES}
+def _source_hashes(v2=False):
+    return {name: finished.file_hash(Path(__file__).with_name(name)) for name in (V2_SOURCES if v2 else SOURCES)}
+
+
+def _v2(frozen):
+    return frozen.get('schema_version') == 2 and frozen.get('protocol_id') == 'production-finished-qualification-v2'
+
+
+def _protocol(frozen):
+    return PROTOCOL_V2 if _v2(frozen) else PROTOCOL
+
+
+def _contract(frozen):
+    return finished_v2 if _v2(frozen) else finished
+
+
+def physical_requests(exported):
+    return exported['batches'] if exported.get('schema_version') == 2 else exported['windows']
+
+
+def _valid_actual(configuration, actual):
+    if not isinstance(actual, dict): return False
+    if actual.get('identity_evidence') == 'provider_reported_version':
+        model = 'perplexity/pplx-decider-v1.2-20261016'
+        return (configuration.get('protocol') == 'open_router_decisions'
+            and configuration.get('endpoint') == 'https://openrouter.ai/api/alpha/decisions'
+            and configuration.get('model') in ('perplexity/pplx-decider-v1.2', model)
+            and configuration.get('expected_model') == model and configuration.get('upstream') == 'perplexity'
+            and actual.get('model') == model and actual.get('provider') == 'Perplexity'
+            and actual.get('revision') in ('', None) and actual.get('artifact_sha256') in ('', None))
+    if actual.get('identity_evidence', 'serving_revision_and_artifact') != 'serving_revision_and_artifact':
+        return False
+    return (all(actual.get(key) for key in ('model', 'revision', 'provider'))
+        and isinstance(actual.get('artifact_sha256'), str) and len(actual['artifact_sha256']) == 64
+        and all(char in '0123456789abcdef' for char in actual['artifact_sha256']))
 
 
 def _projection(item):
@@ -72,14 +111,12 @@ def _gold(exported, rows):
 
 
 def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, gold_items):
-    if (not isinstance(expected_actual, dict) or any(not expected_actual.get(key) for key in ('model', 'revision', 'provider'))
-            or not isinstance(expected_actual.get('artifact_sha256'), str)
-            or len(expected_actual['artifact_sha256']) != 64
-            or any(char not in '0123456789abcdef' for char in expected_actual['artifact_sha256'])):
+    if not _valid_actual(configuration, expected_actual):
         raise ValueError('verified_actual_identity_required')
+    v2 = expected_actual.get('identity_evidence') == 'provider_reported_version'
     if any(item.get('language') != 'nl' for item in fixtures):
         raise ValueError('initial_qualification_is_dutch_only')
-    production = finished.freeze(fixtures, configuration, bridge, expected_actual, expected_answers)
+    production = (finished_v2 if v2 else finished).freeze(fixtures, configuration, bridge, expected_actual, expected_answers)
     ids = {item['fixture']['id'] for item in production['exports']}
     if not isinstance(gold_items, dict) or set(gold_items) != ids:
         raise ValueError('complete_item_judgments_required')
@@ -87,25 +124,36 @@ def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, g
     splits = {item['fixture']['split'] for item in production['exports']}
     if splits != {'development', 'calibration', 'heldout'}:
         raise ValueError('all_disjoint_splits_required')
-    return _seal({'schema_version': 1, 'protocol_id': 'production-finished-qualification-v1',
-        'protocol_sha256': finished.file_hash(PROTOCOL), 'source_sha256': _source_hashes(),
-        'production': production, 'gold_items': gold, 'stage': 'calibration',
-        'production_admission': False})
+    value = {'schema_version': 2 if v2 else 1, 'protocol_id': f'production-finished-qualification-v{2 if v2 else 1}',
+        'protocol_sha256': finished.file_hash(PROTOCOL_V2 if v2 else PROTOCOL), 'source_sha256': _source_hashes(v2),
+        'production': production, 'gold_items': gold, 'stage': 'calibration', 'production_admission': False}
+    if v2:
+        value.update(runtime_policy=RUNTIME_POLICY, resource_fixture_id=next(item['id'] for item in fixtures if item['split'] == 'development'))
+    return _seal(value)
 
 
-def verify_freeze(frozen, bridge):
-    if (frozen.get('schema_version') != 1 or frozen.get('protocol_id') != 'production-finished-qualification-v1'
-            or frozen.get('protocol_sha256') != finished.file_hash(PROTOCOL) or frozen.get('source_sha256') != _source_hashes()
+def _deadline(deadline, clock):
+    if deadline is not None and clock() >= deadline:
+        raise finished.FinishedError('evaluation_budget_exceeded')
+
+
+def verify_freeze(frozen, bridge, *, deadline=None, clock=time.monotonic):
+    _deadline(deadline, clock)
+    if ((frozen.get('schema_version'), frozen.get('protocol_id')) not in ((1, 'production-finished-qualification-v1'), (2, 'production-finished-qualification-v2'))
+            or frozen.get('protocol_sha256') != finished.file_hash(_protocol(frozen)) or frozen.get('source_sha256') != _source_hashes(_v2(frozen))
             or frozen.get('freeze_sha256') != finished.digest({key: item for key, item in frozen.items() if key != 'freeze_sha256'})
             or frozen.get('production_admission') is not False or frozen.get('stage') not in ('calibration', 'heldout_ready')):
         raise ValueError('qualification_freeze_changed')
-    finished.verify_freeze(frozen['production'], bridge)
+    if _v2(frozen) and frozen.get('runtime_policy') != RUNTIME_POLICY:
+        raise ValueError('runtime_selection_policy_changed')
+    _contract(frozen).verify_freeze(frozen['production'], bridge, deadline=deadline, clock=clock)
     if frozen['stage'] == 'heldout_ready':
         base = _base(frozen)
         if base['freeze_sha256'] != frozen['base_freeze_sha256'] or finished.digest(frozen['calibration_runs']) != frozen['calibration_runs_sha256']:
             raise ValueError('unlinked_calibration')
-        rows, _, _ = _runs(base, frozen['calibration_runs'], bridge, 'calibration')
+        rows, _, _ = _runs(base, frozen['calibration_runs'], bridge, 'calibration', deadline=deadline, clock=clock)
         expected = calibration.fit_predictions(rows, run_manifest_hash=base['freeze_sha256'])
+        _deadline(deadline, clock)
         if expected != frozen['calibration']:
             raise ValueError('calibration_artifact_changed')
 
@@ -116,21 +164,23 @@ def requests(frozen, split, bridge):
         raise ValueError('unknown_split')
     if split == 'heldout' and frozen['stage'] != 'heldout_ready':
         raise ValueError('calibration_before_heldout_required')
-    return [{'fixture_id': exported['fixture']['id'], 'window_index': window['index'],
+    return [{'fixture_id': exported['fixture']['id'],
+             ('batch_index' if _v2(frozen) else 'window_index'): batch['index'],
              'freeze_sha256': frozen['freeze_sha256'], 'export_sha256': exported['freeze_sha256'],
-             'wire_body': window['wire_body'], 'request_sha256': hashlib.sha256(window['wire_body'].encode()).hexdigest(),
+             'wire_body': batch['wire_body'], 'request_sha256': hashlib.sha256(batch['wire_body'].encode()).hexdigest(),
              'endpoint': exported['configuration']['endpoint'], 'whole_job_timeout_secs': exported['configuration']['timeout_secs']}
             for exported in frozen['production']['exports'] if exported['fixture']['split'] == split
-            for window in exported['windows']]
+            for batch in physical_requests(exported)]
 
 
 def _number(value):
     return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
 
 
-def _run(frozen, exported, run, bridge):
+def _run(frozen, exported, run, bridge, *, deadline=None, clock=time.monotonic):
+    _deadline(deadline, clock)
     responses = run.get('responses')
-    hashes = [hashlib.sha256(window['wire_body'].encode()).hexdigest() for window in exported['windows']]
+    hashes = [hashlib.sha256(batch['wire_body'].encode()).hexdigest() for batch in physical_requests(exported)]
     if (run.get('freeze_sha256') != frozen['freeze_sha256'] or run.get('export_sha256') != exported['freeze_sha256']
             or run.get('evidence_class') not in ('recorded_inference', 'offline_fixture')
             or not isinstance(responses, list) or run.get('request_sha256s') != hashes[:len(responses)]):
@@ -138,7 +188,7 @@ def _run(frozen, exported, run, bridge):
     for key, value in run.get('measurements', {}).items():
         if key in ('latency_ms', 'whole_job_elapsed_ms', 'cpu_time_ms', 'peak_rss_bytes', 'executed_requests', 'input_bytes') and not _number(value):
             raise ValueError('invalid_resource_measurement')
-    replay = bridge({'op': 'finished_meeting_replay', 'export': exported, 'responses': responses})
+    replay = finished._bridge_call(bridge, {'op': 'finished_meeting_replay', 'export': exported, 'responses': responses}, deadline=deadline, clock=clock)
     elapsed = run.get('measurements', {}).get('whole_job_elapsed_ms', run.get('measurements', {}).get('latency_ms'))
     if (replay.get('complete') is True and elapsed is not None
             and elapsed > exported['configuration']['timeout_secs'] * 1000):
@@ -146,7 +196,24 @@ def _run(frozen, exported, run, bridge):
     return replay
 
 
-def _runs(frozen, predictions, bridge, split):
+def _execution_reconciled(run):
+    if (run.get('evidence_class') != 'recorded_inference' or run.get('status') != 'ok'
+            or run.get('reason') is not None):
+        return False
+    ledger = run.get('spend_ledger')
+    if (not isinstance(ledger, dict) or ledger.get('unresolved_charge') is not False
+            or ledger.get('pending_reservations') != {}):
+        return False
+    try:
+        limit, spent, reserved = (Decimal(str(ledger[key])) for key in ('limit_usd', 'known_billed_usd', 'reserved_usd'))
+        return (all(value.is_finite() for value in (limit, spent, reserved))
+                and 0 <= spent <= limit <= 2 and reserved == 0)
+    except (KeyError, InvalidOperation, ValueError, TypeError):
+        return False
+
+
+def _runs(frozen, predictions, bridge, split, *, deadline=None, clock=time.monotonic):
+    _deadline(deadline, clock)
     exports = {item['fixture']['id']: item for item in frozen['production']['exports'] if item['fixture']['split'] == split}
     if not isinstance(predictions, list):
         raise ValueError('predictions_required')
@@ -155,14 +222,14 @@ def _runs(frozen, predictions, bridge, split):
         identifier = run.get('fixture_id')
         if identifier not in exports or identifier in observed:
             raise ValueError('duplicate_unknown_or_wrong_split_prediction')
-        observed[identifier] = (run, _run(frozen, exports[identifier], run, bridge))
+        observed[identifier] = (run, _run(frozen, exports[identifier], run, bridge, deadline=deadline, clock=clock))
     rows, jobs = [], {}
     for identifier, exported in exports.items():
         run, replay = observed.get(identifier, ({}, {}))
         complete = replay.get('complete') is True and replay.get('status') == 'ok'
         elapsed = run.get('measurements', {}).get('whole_job_elapsed_ms')
         deadline_verified = _number(elapsed) and 0 < elapsed <= exported['configuration']['timeout_secs'] * 1000
-        jobs[identifier] = {'run': run, 'replay': replay, 'complete': complete, 'deadline_verified': deadline_verified}
+        jobs[identifier] = {'run': run, 'replay': replay, 'complete': complete, 'deadline_verified': deadline_verified, 'execution_reconciled': _execution_reconciled(run)}
         windows = {window['window_index']: window for window in replay.get('windows', [])}
         identity = exported['expected_actual']
         for index, window in enumerate(exported['windows']):
@@ -180,7 +247,7 @@ def _runs(frozen, predictions, bridge, split):
                     'expected': frozen['production']['expected_answers'][identifier][index][key],
                     'prediction': answer.get('choice') if valid else None,
                     'probabilities': {value['option_id']: value['probability'] for value in answer.get('probabilities', [])} if valid else None,
-                    'score_type': 'uncalibrated_typed_probability', 'prompt_hash': finished.digest(question),
+                    'score_type': 'uncalibrated_typed_probability', 'prompt_hash': finished.digest({'question': question, 'physical_prompt_context_sha256': window['prompt_context_sha256']}) if _v2(frozen) else finished.digest(question),
                     'label_order': [option['id'] for option in question['options']],
                     'grouping': exported['qualification_request']['grouping'],
                     'identity': {'transport': exported['configuration']['protocol'], **identity},
@@ -267,7 +334,7 @@ def _resources(frozen, resources, bridge):
                'remote_server_cpu_rss': 'unavailable'}
     if resources is None:
         return missing
-    exported = next(item for item in frozen['production']['exports'] if item['fixture']['split'] == 'development')
+    exported = next(item for item in frozen['production']['exports'] if item['fixture']['id'] == frozen.get('resource_fixture_id')) if _v2(frozen) else next(item for item in frozen['production']['exports'] if item['fixture']['split'] == 'development')
     profile = exported['qualification_request'].get('resource_profile_sha256')
     if resources.get('freeze_sha256') != frozen['freeze_sha256'] or resources.get('resource_profile_sha256') != profile:
         raise ValueError('unlinked_runtime_resource_evidence')
@@ -284,9 +351,9 @@ def _resources(frozen, resources, bridge):
         replay = _run(frozen, exported, run, bridge)
         measure = run.get('measurements', {})
         if (run.get('evidence_class') != 'recorded_inference' or replay.get('status') != 'ok'
-                or not replay.get('complete') or not _number(measure.get('whole_job_elapsed_ms'))
+                or not replay.get('complete') or not _execution_reconciled(run) or not _number(measure.get('whole_job_elapsed_ms'))
                 or not measure.get('whole_job_elapsed_ms')
-                or measure.get('executed_requests') != len(exported['windows'])):
+                or measure.get('executed_requests') != len(physical_requests(exported))):
             return missing
         samples.append((sample['phase'], measure))
     cpu, rss = resources.get('cpu_time_ms'), resources.get('peak_rss_bytes')
@@ -315,6 +382,9 @@ def evaluate(frozen, predictions, bridge, resources=None):
     gates = []
     if not actual or not calibration_actual: gates.append('actual_inference_unmeasured')
     if not complete: gates.append('production_jobs_incomplete')
+    if (not all(job['execution_reconciled'] for job in jobs.values())
+            or not all(job['execution_reconciled'] for job in calibration_jobs.values())):
+        gates.append('original_execution_failed_or_unreconciled')
     if len(frozen['calibration_runs']) != calibration_scheduled or not all(job['complete'] for job in calibration_jobs.values()):
         gates.append('calibration_jobs_incomplete')
     if not all(job['deadline_verified'] for job in jobs.values()) or not all(job['deadline_verified'] for job in calibration_jobs.values()):
@@ -337,6 +407,8 @@ def evaluate(frozen, predictions, bridge, resources=None):
         'original_job_deadlines': {'calibration_verified': all(job['deadline_verified'] for job in calibration_jobs.values()),
                                    'heldout_verified': all(job['deadline_verified'] for job in jobs.values())},
         'natural_asr_acceptance': False, 'human_acceptance': False, 'automatic_analysis_accepted': False}
+    if _v2(frozen):
+        report.update(runtime_policy=RUNTIME_POLICY, runtime_calibration_applied=False, calibration_role='diagnostic_evidence_only', remote_weights_independently_verified=False)
     if not gates:
         exported = frozen['production']['exports'][0]
         context = {**exported['qualification_request'], 'actual': exported['expected_actual'],

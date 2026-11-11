@@ -120,10 +120,10 @@ fn exported(input: &ExportRequest) -> Result<Value, &'static str> {
     let p = prepared(input)?;
     let mut value = p.export().map_err(|_| "finished_contract_invalid")?;
     let object = value.as_object_mut().ok_or("finished_contract_invalid")?;
-    object.insert("schema_version".into(), json!(1));
+    object.insert("schema_version".into(), json!(2));
     object.insert(
         "protocol_id".into(),
-        json!("production-finished-meeting-v1"),
+        json!("production-finished-meeting-v2"),
     );
     object.insert(
         "fixture".into(),
@@ -152,7 +152,7 @@ pub(super) fn export(input: Value) -> Result<Value, &'static str> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Response {
-    window_index: usize,
+    batch_index: usize,
     http_status: u16,
     body: String,
 }
@@ -179,7 +179,7 @@ pub(super) fn replay(input: Value) -> Result<Value, &'static str> {
         return Err("finished_export_changed");
     }
     let p = prepared(&request)?;
-    let count = input.export["windows"]
+    let count = input.export["batches"]
         .as_array()
         .ok_or("finished_replay_invalid")?
         .len();
@@ -188,30 +188,35 @@ pub(super) fn replay(input: Value) -> Result<Value, &'static str> {
             .responses
             .iter()
             .enumerate()
-            .any(|(index, response)| index != response.window_index)
+            .any(|(index, response)| index != response.batch_index)
     {
         return Err("finished_response_order_changed");
     }
+    let mut physical = Vec::new();
     let mut rows = Vec::new();
     for response in &input.responses {
-        let row = if !(200..300).contains(&response.http_status) {
-            json!({"window_index":response.window_index,"status":"provider_failed"})
+        let batch = if !(200..300).contains(&response.http_status) {
+            json!({"batch_index":response.batch_index,"status":"provider_failed","windows":[]})
         } else {
             p.replay(
-                response.window_index,
+                response.batch_index,
                 response.body.as_bytes(),
                 request.expected_actual.as_ref(),
             )
         };
-        rows.push(row);
+        if let Some(windows) = batch["windows"].as_array() {
+            rows.extend(windows.iter().cloned());
+        }
+        physical.push(batch);
     }
-    let status = rows
+    let status = physical
         .iter()
-        .find_map(|row| row["status"].as_str().filter(|status| *status != "ok"))
+        .find_map(|batch| batch["status"].as_str().filter(|status| *status != "ok"))
         .unwrap_or("ok");
     Ok(
-        json!({"schema_version":1,"protocol_id":"production-finished-meeting-v1", "status":status,
-        "complete":input.responses.len()==count,"windows":rows,"production_admission":false,
+        json!({"schema_version":2,"protocol_id":"production-finished-meeting-v2","status":status,
+        "complete":input.responses.len()==count,"windows":rows,"batches":physical,
+        "received_batches":input.responses.len(),"production_admission":false,
         "qualification":false,"freeze_sha256":input.export["freeze_sha256"]}),
     )
 }
