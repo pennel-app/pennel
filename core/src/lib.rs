@@ -1,5 +1,6 @@
 uniffi::setup_scaffolding!();
 
+mod automatic_titles;
 mod call_detector;
 mod catalog;
 mod chunker;

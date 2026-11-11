@@ -209,6 +209,46 @@ struct Frontmatter {
     extra: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MeetingTitleDocument {
+    pub uid: String,
+    pub title: String,
+    pub state: Option<crate::automatic_titles::TitleState>,
+}
+
+fn title_document(raw: &str) -> Result<MeetingTitleDocument, PennelError> {
+    let (head, _, _) = split_frontmatter(raw).ok_or(PennelError::NotFound)?;
+    let (front, _) = parse_meeting(raw).ok_or(PennelError::NotFound)?;
+    let fields = head
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == crate::automatic_titles::TITLE_STATE_FIELD).then_some(value.trim())
+        })
+        .collect::<Vec<_>>();
+    if fields.len() > 1
+        || head
+            .lines()
+            .filter(|line| line.split(':').next().map(str::trim) == Some("title"))
+            .count()
+            != 1
+    {
+        return Err(PennelError::storage(
+            "The saved title metadata is ambiguous.",
+        ));
+    }
+    let state = fields
+        .first()
+        .map(|value| serde_json::from_str(value))
+        .transpose()
+        .map_err(|_| PennelError::storage("The saved title metadata is unavailable."))?;
+    Ok(MeetingTitleDocument {
+        uid: front.uid,
+        title: front.title,
+        state,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailedTranscriptionRecoveryStatus {
@@ -776,19 +816,30 @@ impl MeetingStore {
     }
 
     pub fn create(&self, title: &str, start: DateTime<Local>) -> Result<String, PennelError> {
-        let base = format!("{} {}", start.format("%Y-%m-%d %H%M"), folder_name(title));
+        let automatic = title.trim().is_empty();
+        let title = if automatic {
+            sanitize(&crate::automatic_titles::dated_title("Meeting", start))
+        } else {
+            sanitize(title)
+        };
+        let base = format!("{} {}", start.format("%Y-%m-%d %H%M"), folder_name(&title));
         let id = std::iter::once(base.clone())
             .chain((2..).map(|n| format!("{base} ({n})")))
             .find(|candidate| !self.dir.join(candidate).exists())
             .expect("unbounded iterator");
         std::fs::create_dir_all(self.dir_of(&id)).map_err(PennelError::storage)?;
         let front = Frontmatter {
-            title: sanitize(title),
+            title: title.clone(),
             start_iso: start.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
             duration_min: 0,
             template: String::new(),
             uid: uuid::Uuid::now_v7().to_string(),
-            extra: Vec::new(),
+            extra: vec![format!(
+                "{}: {}",
+                crate::automatic_titles::TITLE_STATE_FIELD,
+                serde_json::to_string(&crate::automatic_titles::TitleState::new(&title, automatic))
+                    .map_err(PennelError::storage)?
+            )],
         };
         self.write_file(&id, "meeting.md", &render_meeting(&front, ""))?;
         Ok(id)
@@ -1755,6 +1806,72 @@ impl MeetingStore {
         parse_meeting(&self.read_file(id, "meeting.md"))
     }
 
+    pub(crate) fn title_document(&self, id: &str) -> Result<MeetingTitleDocument, PennelError> {
+        title_document(&self.read_file(id, "meeting.md"))
+    }
+
+    pub(crate) fn update_title_document(
+        &self,
+        id: &str,
+        expected: &MeetingTitleDocument,
+        title: Option<&str>,
+        state: &crate::automatic_titles::TitleState,
+        transcript_revision: Option<&str>,
+    ) -> Result<bool, PennelError> {
+        let root = self.dir_of(id);
+        let gate = replacement_gate(&root);
+        let _guard = gate.lock().unwrap();
+        let path = root.join("meeting.md");
+        let raw = fs::read_to_string(&path).map_err(PennelError::storage)?;
+        if title_document(&raw)? != *expected {
+            return Ok(false);
+        }
+        let transcript_current = || {
+            transcript_revision.is_none_or(|revision| {
+                fs::read(root.join("transcript.md"))
+                    .is_ok_and(|bytes| meeting_utterances::digest(&bytes) == revision)
+            })
+        };
+        if !transcript_current() {
+            return Ok(false);
+        }
+        let (head, body, newline) = split_frontmatter(&raw).ok_or(PennelError::NotFound)?;
+        let title = title.map(sanitize);
+        let field = crate::automatic_titles::TITLE_STATE_FIELD;
+        let mut lines = head
+            .split(newline)
+            .filter(|line| line.split(':').next().map(str::trim) != Some(field))
+            .map(|line| {
+                if let Some(title) = title.as_ref()
+                    && line.split(':').next().map(str::trim) == Some("title")
+                {
+                    format!("title: {title}")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>();
+        lines.push(format!(
+            "{field}: {}",
+            serde_json::to_string(state).map_err(PennelError::storage)?
+        ));
+        durable_write_checked(
+            &path,
+            format!(
+                "---{newline}{}{newline}---{newline}{body}",
+                lines.join(newline)
+            )
+            .as_bytes(),
+            || {
+                (transcript_current()
+                    && fs::read_to_string(&path).ok().as_deref() == Some(raw.as_str()))
+                .then_some(())
+                .ok_or(PennelError::Cancelled)
+            },
+        )?;
+        Ok(true)
+    }
+
     #[cfg(any(test, feature = "evaluation"))]
     pub fn write_meeting(
         &self,
@@ -1939,6 +2056,18 @@ impl MeetingStore {
             .find(|candidate| candidate == id || !self.dir.join(candidate).exists())
             .expect("unbounded iterator");
         front.title = sanitize(title);
+        let field = crate::automatic_titles::TITLE_STATE_FIELD;
+        let state = title_document(&original)?
+            .state
+            .unwrap_or_else(|| crate::automatic_titles::TitleState::new(&front.title, false))
+            .changed(&front.title, "manual");
+        front
+            .extra
+            .retain(|line| line.split(':').next().map(str::trim) != Some(field));
+        front.extra.push(format!(
+            "{field}: {}",
+            serde_json::to_string(&state).map_err(PennelError::storage)?
+        ));
         // A failed metadata write must leave the retained session's original folder usable.
         persist(id, &render_meeting(&front, &body))?;
         if new_id != id

@@ -57,6 +57,8 @@ pub(crate) struct Summary {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub active_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_state: Option<crate::automatic_titles::TitleState>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StoredSource {
@@ -109,6 +111,13 @@ pub(crate) struct Cached {
 impl Cached {
     pub(crate) fn new(scope: Scope, scope_key: String, title: String) -> Self {
         let timestamp = now();
+        let automatic = title.trim().is_empty();
+        let title = if automatic {
+            crate::automatic_titles::dated_title("Conversation", chrono::Local::now())
+        } else {
+            title
+        };
+        let title_state = Some(crate::automatic_titles::TitleState::new(&title, automatic));
         Self {
             scope,
             scope_key,
@@ -120,6 +129,7 @@ impl Cached {
                 created_at_ms: timestamp,
                 updated_at_ms: timestamp,
                 active_request_id: None,
+                title_state,
             },
             messages: vec![],
             generation: 0,
@@ -652,6 +662,58 @@ impl Store {
         Self::raw_message(&self.connection, conversation, id)?
             .map(|row| Self::decode_message(&self.connection, &header.scope_key, row))
             .transpose()
+    }
+
+    pub(crate) fn initial_messages(&self, conversation: &str) -> Result<Vec<Message>, PennelError> {
+        let header = Self::header(&self.connection, conversation)?.ok_or(PennelError::NotFound)?;
+        let mut statement = self.connection.prepare("SELECT id,conversation_id,status,position,CASE WHEN octet_length(body)<=4194304 THEN body END FROM messages WHERE conversation_id=?1 ORDER BY position LIMIT 2").map_err(PennelError::storage)?;
+        statement
+            .query_map([conversation], Self::message_row)
+            .map_err(PennelError::storage)?
+            .map(|row| {
+                Self::decode_message(
+                    &self.connection,
+                    &header.scope_key,
+                    row.map_err(PennelError::storage)?,
+                )
+            })
+            .collect()
+    }
+
+    /// Only title fields change; another process's draft and request metadata remain authoritative.
+    pub(crate) fn update_title(
+        &mut self,
+        key: &str,
+        expected: &Summary,
+        title: &str,
+        state: &crate::automatic_titles::TitleState,
+    ) -> Result<Option<Summary>, PennelError> {
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(PennelError::storage)?;
+        let Some(header) = Self::header(&transaction, &expected.id)? else {
+            return Ok(None);
+        };
+        if header.scope_key != key
+            || header.summary.title != expected.title
+            || header.summary.title_state != expected.title_state
+        {
+            return Ok(None);
+        }
+        let mut summary = header.summary;
+        summary.title = title.into();
+        summary.title_state = Some(state.clone());
+        summary.updated_at_ms = now();
+        let serialized = serde_json::to_string(&summary).map_err(PennelError::storage)?;
+        transaction
+            .execute(
+                "UPDATE conversations SET summary=?1,updated_at_ms=?2 WHERE id=?3 AND scope=?4",
+                params![serialized, summary.updated_at_ms, summary.id, key],
+            )
+            .map_err(PennelError::storage)?;
+        transaction.commit().map_err(PennelError::storage)?;
+        Ok(Some(summary))
     }
     pub(crate) fn used(
         &self,
