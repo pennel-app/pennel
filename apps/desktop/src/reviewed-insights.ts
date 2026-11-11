@@ -74,6 +74,7 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   scrolling.append(intro, analysisDetails, progress, error, storeWarning, notice, dismissed, empty, list);
   root.append(scrolling, h("footer", { class: "insight-review-footer" }, exportItems));
   consent = meetingSuggestionConsent(ctx, { id: () => host.id, uid: host.meetingUid, snapshot: () => model.getSnapshot().snapshot, language: () => model.getSnapshot().policy,
+    manualAvailability: () => model.getSnapshot().availability,
     analysisBusy: () => !!model.analysisBusy, canAnalyze: () => !!model.canAnalyze, chooseLanguage: async language => { await model.choosePolicy(language); }, start: () => model.analyze(),
     dismiss: () => host.dismissSuggestionPrompt(), canDismiss: () => host.canDismissPrompt(), blockedReason: () => host.promptBlockedReason(),
     reason: suggestionReason, changed: render, focusTarget: root, languageControlVisible: () => analysisDetails.open });
@@ -246,16 +247,21 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
     setup.hidden = false;
     const destinationInfo = safeInsightDestination(state.availability?.endpoint);
     text(destination, t("insights.destination", { destination: destinationInfo.host ? destinationInfo.on_device ? t("insights.this_device", { host: destinationInfo.host }) : destinationInfo.host : t("insights.none"), model: state.availability?.model ?? t("insights.none") }));
+    destination.hidden = !destinationInfo.host || !state.availability?.model || consent?.mode === "consent";
     text(availability, t(state.edits.size ? "insights.finish_edit" : state.availability?.available ? "insights.qualified" : insightReasonKey(state.availability?.reason_code)));
-    if (snapshot && !insightsWritable(snapshot)) text(availability, t(`insights.store_${snapshot.status}` as TranslationKey));
-    coverage.hidden = state.availability?.complete_extraction === true;
+    availability.hidden = !state.edits.size && (!!consent?.hasStatus || !!state.job || !snapshot || !insightsWritable(snapshot));
+    const completedAnalysis = snapshot?.automatic_attempt?.outcome === "completed" || state.job?.state === "completed";
+    const currentUnavailable = state.availability?.available === false && !model.analysisBusy;
+    coverage.hidden = state.availability?.complete_extraction === true || !snapshot?.items.length && (!completedAnalysis || currentUnavailable);
     error.hidden = !state.error; if (state.error) text(error, t(insightErrorKey(state.error)));
-    progress.hidden = !state.job; if (state.job) text(progress, `${t(`insights.job_${state.job.state}`)} · ${t("insights.cutoff", { time: formatClock(state.job.included_through_ms / 1000) })}${state.job.physical_running && state.job.state === "cancelled" ? ` ${t("insights.worker_finishing")}` : ""}`);
+    progress.hidden = !state.job || currentUnavailable; if (state.job) text(progress, `${t(`insights.job_${state.job.state}`)} · ${t("insights.cutoff", { time: formatClock(state.job.included_through_ms / 1000) })}${state.job.physical_running && state.job.state === "cancelled" ? ` ${t("insights.worker_finishing")}` : ""}`);
       exportItems.disabled = !insightsWritable(snapshot) || !snapshot?.items.some(item => item.review_state === "accepted") || state.busy.has("export") || state.busy.has("write") || model.dirty;
     text(dismissed, t(showDismissed ? "insights.hide_dismissed" : "insights.show_dismissed"));
     const items = model.items().filter(item => showDismissed || item.review_state !== "dismissed" || state.edits.has(item.id));
     intro.hidden = !snapshot?.items.length;
-    empty.hidden = items.length > 0 || !!consent?.ownsFind || consent?.mode === "done_empty" || consent?.mode === "running" || consent?.mode === "waiting_summary"; dismissed.hidden = !snapshot?.items.some(item => item.review_state === "dismissed");
+    empty.hidden = !snapshot || snapshot.items.length > 0 || !!consent?.ownsFind || !!consent?.hasStatus || !!state.error || !insightsWritable(snapshot) || !!state.job && !completedAnalysis;
+    text(empty, t(completedAnalysis ? "insights.none_found" : "insights.empty"));
+    dismissed.hidden = !snapshot?.items.some(item => item.review_state === "dismissed");
     storeWarning.hidden = !snapshot || insightsWritable(snapshot);
     if (!storeWarning.hidden) text(storeWarning, t(`insights.store_${snapshot!.status}` as TranslationKey));
     if (snapshot && (!optionsInitialized || previouslyHadItems && !items.length)) { analysisDetails.open = !items.length; optionsInitialized = true; }

@@ -123,8 +123,9 @@
 .meeting-companion-backdrop { position: absolute; z-index: 4; inset: -20px -22px -16px -28px; background: transparent; }
 .meeting-notes-first.live-wide.live-companion-open[data-split-custom="true"] .live-workspace-panes { grid-template-columns: minmax(0, calc((100% - 28px) * var(--live-notes-ratio, .6))) 8px minmax(0, 1fr); }
 
-.meeting-companion .transcript-line { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+.meeting-companion .transcript-line { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; margin-inline: 0; }
 .meeting-companion .live-transcript-speaker { grid-column: 1; grid-row: 1; }
+.meeting-companion .live-transcript-speaker .speaker { white-space: normal; overflow-wrap: anywhere; }
 .meeting-companion .transcript-stamp { grid-column: 2; grid-row: 1; }
 .meeting-companion .transcript-copy { grid-column: 1 / -1; grid-row: 2; }
 .meeting-companion .transcript-correction-review { grid-column: 1 / -1; }

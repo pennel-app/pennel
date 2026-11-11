@@ -49,9 +49,10 @@ export async function checkReviewEnlarged(){
  return{enlargedPinnedCopyReachable:true,retainedWriter:true,syntheticOnly:true};
 }
 export async function checkEmptyReview(){
- const root=document.querySelector('.live-workspace');await until(()=>root?.querySelector('.insight-review .insight-availability').textContent.trim(),'Empty review did not load its availability.');
+ const root=document.querySelector('.live-workspace');await until(()=>root?.querySelector('.insight-review .suggestion-consent')?.dataset.mode==='unavailable','Empty review did not load its availability.');
  const review=root.querySelector('.insight-review');if(innerWidth<1100)root.querySelector('[data-live-tab="suggestions"]').click();
- assert(visible(review.querySelector('.insight-empty'))&&review.querySelector('.insight-analysis-details').open,'Empty review hid its meaning or Find controls.');
- assert(review.querySelector('.insight-find').disabled&&review.querySelector('.insight-availability').textContent.trim()&&!window.__PENNEL_FIXTURE__.calls.includes('begin_insights_analysis'),'Unqualified empty review permitted analysis or lost its reason.');
- return{emptyFindAndReasonReachable:true,noInference:true,syntheticOnly:true};
+ assert(review.querySelector('.insight-empty').hidden&&review.querySelector('.insight-analysis-details').open,'Unavailable review competed with a generic empty state or hid its setup controls.');
+ assert(review.querySelector('.insight-find').disabled&&visible(review.querySelector('.suggestion-consent-status'))&&review.querySelector('.insight-availability').hidden&&!window.__PENNEL_FIXTURE__.calls.includes('begin_insights_analysis'),'Unqualified empty review permitted analysis or repeated its reason.');
+ assert(review.querySelector('.insight-coverage').hidden,'Review described incomplete coverage before any analysis.');
+ return{oneUnavailableReason:true,findAndSetupReachable:true,noPrematureCoverage:true,noInference:true,syntheticOnly:true};
 }

@@ -49,3 +49,48 @@ export async function checkCompanionKeyboardReopen() {
   delete window.__PENNEL_COMPANION_KEYBOARD__;
   return { realEnterReopens: true, selectedTabRetainsFocus: true, syntheticOnly: true };
 }
+
+export async function prepareTranscriptBounds() {
+  const root = await owned(), fixture = window.__PENNEL_FIXTURE__;
+  if (root.querySelector(".meeting-companion").hidden || root.querySelector('[data-live-tab="transcript"]').getAttribute("aria-selected") !== "true") press(root, "transcript");
+  const { api } = await import("/src/api.ts"), initial = await api.meetingStatus();
+  const marker = "Synthetic transcript edge check";
+  if (!initial.transcript.some(row => row.utterance_id === "qa-transcript-edge")) fixture.workspace.append({ ...initial.transcript[0], utterance_id: "qa-transcript-edge", start_ms: 3_662_000, end_ms: 3_665_000,
+    text: `${marker}: ${"ononderbroken".repeat(18)}\nLast visible glyph: é.` });
+  await until(() => [...root.querySelectorAll(".transcript-copy")].some(node => node.textContent.includes(marker)), "The long synthetic source did not reach the transcript.");
+  if (fixture.options.companion_enlarged) {
+    const sizes = [...root.querySelectorAll("*")].filter(node => node instanceof HTMLElement).map(node => [node, parseFloat(getComputedStyle(node).fontSize)]);
+    for (const [node, size] of sizes) { node.style.fontSize = `${size * 2}px`; node.style.lineHeight = "1.4"; }
+  }
+  await settle();
+  return { root, fixture };
+}
+
+export async function checkTranscriptBounds() {
+  const { root, fixture } = await prepareTranscriptBounds();
+  const content = root.querySelector(".live-transcript"), left = content.getBoundingClientRect().left + content.clientLeft, right = left + content.clientWidth;
+  assert(root.isConnected && !root.querySelector(".meeting-companion").hidden && content.clientWidth > 0, "Transcript geometry was measured in a hidden or detached pane.");
+  assert(content.scrollWidth <= content.clientWidth + 1, `The transcript scrolls horizontally (${content.scrollWidth}/${content.clientWidth}).`);
+  for (const row of content.querySelectorAll(".transcript-line")) {
+    const bounds = row.getBoundingClientRect();
+    assert(bounds.left >= left - 1 && bounds.right <= right + 1, "A transcript row extends outside its scroller.");
+    for (const element of row.querySelectorAll(".transcript-copy, .transcript-stamp")) {
+      const range = document.createRange(); range.selectNodeContents(element);
+      for (const glyphs of range.getClientRects()) assert(glyphs.left >= left - 1 && glyphs.right <= right + 1, "Transcript text or timestamp glyphs are cut off at an edge.");
+    }
+  }
+  assert(!fixture.calls.includes("begin_insights_analysis"), "Opening Transcript started Review analysis.");
+  return { boundedRowsAndGlyphs: true, noHorizontalScroll: true, longSourceWrapped: true, enlarged: !!fixture.options.companion_enlarged, syntheticOnly: true };
+}
+
+export async function checkTranscriptSplitBounds() {
+  const root = await owned();
+  await until(() => root.classList.contains("live-wide"), "The transcript did not return to a wide layout.");
+  const divider = root.querySelector(".live-pane-separator");
+  assert(!divider.hidden, "The transcript split control is unavailable.");
+  const before = root.querySelector(".meeting-companion").getBoundingClientRect().width;
+  for (let step = 0; step < 3; step++) divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+  await settle();
+  assert(root.dataset.splitCustom === "true" && root.querySelector(".meeting-companion").getBoundingClientRect().width < before, "The keyboard divider did not narrow the transcript.");
+  return checkTranscriptBounds();
+}

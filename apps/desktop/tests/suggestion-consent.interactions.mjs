@@ -50,7 +50,10 @@ export async function checkSuggestionUnavailable(){
  const{review,card,fixture}=await owned();assert(card.dataset.mode==='unavailable'&&card.querySelector('.summary-consent-card').hidden,'An unqualified setup exposed the consent question.');
  assert(card.querySelector('.suggestion-consent-status').textContent.trim()&&!inference(fixture).length&&!fixture.calls.includes('save_settings'),'Unavailable setup lost its reason or caused work.');
  assert(review.querySelector('.insight-analysis-details').open&&!review.querySelector('.insight-connection-settings').hidden,'Unavailable connection setup is not reachable.');
- return{exactQualificationGateRetained:true,reasonAndSetup:true,noInference:true,syntheticOnly:true};
+ assert(review.querySelector('.insight-availability').hidden,'Unavailable Review repeated its primary reason in Analysis details.');
+ assert(review.querySelector('.insight-empty').hidden&&review.querySelector('.insight-coverage').hidden,'Unavailable Review showed a competing empty state or warned about analysis that never ran.');
+ if(!fixture.options.suggestion_configured)assert(review.querySelector('.insight-destination').hidden,'Missing connection details rendered Not configured placeholders.');
+ return{exactQualificationGateRetained:true,oneReasonAndSetup:true,noPrematureCoverage:true,noInference:true,syntheticOnly:true};
 }
 export async function checkSuggestionFailure(){
  const{card,fixture,api}=await owned();await until(()=>card.dataset.mode==='consent'&&!card.querySelector('[data-suggestion-consent="not_now"]').disabled,'The question is not ready.');
@@ -141,4 +144,37 @@ export async function checkSuggestionCredentialFailure(){
  assert(card.querySelector('.suggestion-consent-status').textContent.includes(t('insights.reason_missing_api_key')),'The durable missing-key reason was reduced to an unexplained failure.');
  assert(!review.querySelector('.insight-connection-settings').hidden&&!inference(fixture).length,'Credential repair is unreachable or rendering attempted inference.');
  return{durableCredentialReason:true,repairReachable:true,noAutomaticRetry:true,syntheticOnly:true};
+}
+
+export async function checkManualReviewResult(){
+ const{review,card,fixture}=await owned(),{t}=await import('/src/i18n.ts'),find=review.querySelector('.insight-find');
+ await until(()=>card.dataset.mode==='manual'&&!find.disabled,'The qualified manual Review action did not become ready.');
+ assert(!inference(fixture).length&&review.querySelector('.insight-coverage').hidden,'Opening manual Review analysed content or showed premature coverage.');
+ find.click();await until(()=>review.querySelector('.insight-progress').textContent.includes(t(fixture.options.insight_analysis_fail?'insights.job_failed':'insights.job_completed')),'The real manual job did not reach its terminal state.');
+ assert(review.querySelector('.insight-availability').hidden,'The completed job repeated a connection-availability message.');
+ const empty=review.querySelector('.insight-empty');
+ if(fixture.options.insight_analysis_fail)assert(empty.hidden&&review.querySelector('.insight-coverage').hidden,'Failed analysis looked like completed empty analysis.');
+ else assert(!empty.hidden&&empty.textContent===t('insights.none_found')&&!review.querySelector('.insight-coverage').hidden,'Completed empty analysis lost its result or coverage limitation.');
+ assert(fixture.calls.filter(command=>command==='begin_insights_analysis').length===1,'Manual Review started more than one inference job.');
+ return{terminalStateAccurate:true,coverageOnlyAfterCompletion:true,oneExplicitJob:true,syntheticOnly:true};
+}
+
+export async function checkReviewAvailabilityTransition(){
+ const{review,card,fixture}=await owned(),{t}=await import('/src/i18n.ts');
+ if(fixture.options.suggestion_automation==='manual')await checkManualReviewResult();
+ else await until(()=>card.dataset.mode===fixture.options.suggestion_expected_mode,'The historical automatic result did not settle.');
+ const client=window.__PENNEL_PLATFORM__,invoke=client.invoke.bind(client),inferenceCount=inference(fixture).length,rows=[...review.querySelectorAll('.insight-card')];let reason='unconfigured';
+ client.invoke=async(command,args)=>{const value=await invoke(command,args);return ['insights_availability','automatic_insights_availability'].includes(command)?{...value,configured:reason!=='unconfigured',qualified:false,available:false,reason_code:reason,qualification_id:null,...reason==='unconfigured'?{provider_id:null,model:null,endpoint:null}:{}}:value;};
+ try{
+  for(reason of ['unconfigured','unqualified']){
+   review.querySelector('.insight-toolbar .text-button').click();
+   await until(()=>card.dataset.mode==='unavailable'&&card.querySelector('.suggestion-consent-status').textContent===t(`insights.reason_${reason}`),'A changed connection was hidden by a historical analysis result.');
+   assert(review.querySelector('.insight-find').disabled&&review.querySelector('.insight-progress').hidden&&review.querySelector('.insight-availability').hidden,'The current blocker competed with stale terminal progress or duplicate availability.');
+   assert(review.querySelector('.insight-empty').hidden&&!review.querySelector('.insight-connection-settings').hidden,'Connection repair was hidden behind the previous empty result.');
+   if(reason==='unconfigured')assert(review.querySelector('.insight-destination').hidden,'Removed connection details remained visible.');
+   assert(rows.every(row=>row.isConnected)&&review.querySelectorAll('.insight-card').length===rows.length,'Changing availability discarded saved review cards.');
+  }
+  assert(inference(fixture).length===inferenceCount,'Refreshing current availability started another analysis.');
+  return{currentConnectionReasonVisible:true,terminalProgressSuperseded:true,savedCardsRetained:true,noNewInference:true,syntheticOnly:true};
+ }finally{client.invoke=invoke;}
 }

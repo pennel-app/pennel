@@ -12,6 +12,7 @@ export function meetingSuggestionConsent(initial: Context, host: {
   analysisBusy(): boolean; canAnalyze(): boolean; chooseLanguage(language: InsightLanguagePolicy): Promise<void>;
   start(): Promise<unknown>; dismiss(): Promise<void>; canDismiss(): boolean; blockedReason(): string;
   reason(code: string): string; changed(): void; focusTarget: HTMLElement; languageControlVisible(): boolean;
+  manualAvailability?(): InsightAvailability | null;
 }) {
   let ctx = initial, bound = false, binding = 0, generation = 0, loaded = false, loading = false, pending = false;
   let dismissed = false, readFailure = false, lastRead = -Infinity, failure = "", queryKey = "", policy: SuggestionPolicy = ctx.info.settings.suggestion_automation ?? "unanswered";
@@ -37,7 +38,9 @@ export function meetingSuggestionConsent(initial: Context, host: {
   function preparing() { return (["postprocess", "summary"] as const).some(stage => meetingPostprocess.get(host.uid, stage)?.state === "started"); }
   function blocksAnalysis() { return pending || state().mode === "loading" || host.analysisBusy() || preparing() || meetingPostprocess.get(host.uid, "suggestions")?.state === "started"; }
   function state() {
-    return suggestionConsentPresentation({ policy, snapshot: host.snapshot(), availability: loaded && queryKey === key() ? availability : null, dismissed,
+    const current = loaded && queryKey === key() ? availability : null, manual = host.manualAvailability?.();
+    // Refresh can observe a connection edit before the cached automatic-status read catches up.
+    return suggestionConsentPresentation({ policy, snapshot: host.snapshot(), availability: current && manual?.available === false ? manual : current, dismissed,
       working: host.analysisBusy() || meetingPostprocess.get(host.uid, "suggestions")?.state === "started",
       summaryWorking: preparing() });
   }
@@ -106,7 +109,7 @@ export function meetingSuggestionConsent(initial: Context, host: {
     }
   }
   bindLocalization(root, refresh); refresh();
-  return { root, refresh, get busy() { return pending; }, get blocksAnalysis() { return blocksAnalysis(); }, get ownsFind() { return ["consent", "quiet"].includes(state().mode); }, get mode() { return state().mode; }, get reason() { return state().reason; }, findOnce: () => choose("one_off"), bind(next: Context) {
+  return { root, refresh, get busy() { return pending; }, get blocksAnalysis() { return blocksAnalysis(); }, get ownsFind() { return ["consent", "quiet"].includes(state().mode); }, get hasStatus() { return !status.hidden; }, get mode() { return state().mode; }, get reason() { return state().reason; }, findOnce: () => choose("one_off"), bind(next: Context) {
     ctx = next; policy = ctx.info.settings.suggestion_automation ?? "unanswered"; const mine = ++binding; bound = true; invalidate(); queryKey = "";
     next.onInfoChange(() => { if (mine !== binding) return; const nextPolicy = ctx.info.settings.suggestion_automation ?? "unanswered"; if (nextPolicy !== policy && nextPolicy === "unanswered") automatic.checked = false; policy = nextPolicy; invalidate(); queryKey = ""; refresh(); });
     stopProgress?.(); const stop = meetingPostprocess.subscribe(() => { refresh(); host.changed(); }); stopProgress = stop;
