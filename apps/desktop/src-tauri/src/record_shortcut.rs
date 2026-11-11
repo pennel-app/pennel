@@ -68,21 +68,17 @@ fn record_failure_message() -> String {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
-    match (dutch, label.is_empty()) {
-        (true, false) => format!(
-            "De opnamesneltoets {label} is niet beschikbaar. Kies een andere sneltoets in Instellingen."
-        ),
-        (true, true) => {
-            "De opnamesneltoets is niet beschikbaar. Probeer deze te herstellen in Instellingen."
-                .into()
-        }
-        (false, false) => format!(
-            "The {label} recording shortcut is unavailable. Choose another shortcut in Settings."
-        ),
-        (false, true) => {
-            "The recording shortcut is unavailable. Try resetting it in Settings.".into()
-        }
-    }
+    let language = if dutch {
+        pennel_core::InterfaceLanguage::Dutch
+    } else {
+        pennel_core::InterfaceLanguage::English
+    };
+    let key = if label.is_empty() {
+        "backend.recording_shortcut_unavailable"
+    } else {
+        "backend.recording_shortcut_unavailable_named"
+    };
+    pennel_core::ui_text(language, key, &[("label", &label)])
 }
 pub fn error() -> Option<String> {
     if action_error("record").is_some()
