@@ -454,6 +454,41 @@ impl PennelEngine {
                 id
             }
         };
+        if state.cache.get(&id).is_some_and(|doc| {
+            doc.summary.title.trim().is_empty()
+                && doc
+                    .summary
+                    .title_state
+                    .as_ref()
+                    .is_none_or(|title| title.origin != "manual")
+        }) {
+            let saved = store
+                .as_ref()
+                .filter(|_| state.cache[&id].persisted)
+                .map(|store| store.initial_messages(&id))
+                .transpose()?
+                .unwrap_or_default();
+            let doc = state.cache.get_mut(&id).ok_or(PennelError::NotFound)?;
+            let initial = saved
+                .iter()
+                .chain(doc.messages.iter())
+                .filter(|message| message.role == "user")
+                .min_by_key(|message| message.position)
+                .and_then(|message| crate::automatic_titles::local_title(&message.text));
+            let date = chrono::DateTime::from_timestamp_millis(doc.summary.created_at_ms)
+                .unwrap_or_else(chrono::Utc::now)
+                .with_timezone(&chrono::Local);
+            doc.summary.title = initial
+                .clone()
+                .unwrap_or_else(|| crate::automatic_titles::dated_title("Conversation", date));
+            let mut title = crate::automatic_titles::TitleState::new(&doc.summary.title, true);
+            if initial.is_some() {
+                title.origin = "local".into();
+            }
+            doc.summary.title_state = Some(title);
+            doc.dirty = true;
+            state.persist(store.as_mut(), &id);
+        }
         let doc = state.cache.get(&id).ok_or(PennelError::NotFound)?;
         let saved_summaries = store
             .as_ref()
@@ -537,6 +572,104 @@ impl PennelEngine {
             next_messages_cursor,
             next_conversations_cursor,
         })
+    }
+
+    fn automatically_name_conversation(
+        self: Arc<Self>,
+        request: &BeginRequest,
+        expected_library: &str,
+        keys: ApiKeys,
+    ) -> Result<bool, PennelError> {
+        let (scope, current_library) = self.normalize_conversation_scope(request.scope.clone())?;
+        if current_library != expected_library {
+            return Ok(false);
+        }
+        let key = scope.key(&current_library);
+        let (source, admitted) = {
+            let mut state = self.conversations.lock().unwrap();
+            let mut store = self.open_conversation_store(&mut state, &scope);
+            let id = self.conversation_load(
+                &mut state,
+                &mut store,
+                &scope,
+                &key,
+                Some(&request.conversation_id),
+            )?;
+            let doc = &state.cache[&id];
+            if !doc.persisted || doc.dirty {
+                return Ok(false);
+            }
+            let Some(title) = doc
+                .summary
+                .title_state
+                .as_ref()
+                .filter(|title| title.can_generate(&doc.summary.title))
+            else {
+                return Ok(false);
+            };
+            let Some(answer) = doc
+                .messages
+                .iter()
+                .filter(|message| message.role == "assistant" && message.status == "completed")
+                .min_by_key(|message| message.position)
+            else {
+                return Ok(false);
+            };
+            let Some(question) = doc
+                .messages
+                .iter()
+                .find(|message| Some(&message.id) == answer.reply_to.as_ref())
+            else {
+                return Ok(false);
+            };
+            let source = format!("Question:\n{}\nAnswer:\n{}", question.text, answer.text);
+            let mut admitted = title.clone();
+            admitted.attempt_source = Some(crate::evidence_revision(&source));
+            let Some(saved) = store
+                .as_mut()
+                .ok_or_else(|| invalid(STORAGE_ERROR))?
+                .update_title(&key, &doc.summary, &doc.summary.title, &admitted)?
+            else {
+                return Ok(false);
+            };
+            state.cache.get_mut(&id).unwrap().summary = saved;
+            (source, admitted)
+        };
+        let inference = self.prepare_automatic_title()?;
+        let generated = inference.complete(&source, keys)?;
+        let _configuration = self.inference_capture_gate();
+        if !inference.current() || library(&self)?.as_str() != expected_library {
+            return Ok(false);
+        }
+        let mut state = self.conversations.lock().unwrap();
+        if state.deleted.contains(&request.conversation_id) || state.deleted_scopes.contains(&key) {
+            return Ok(false);
+        }
+        let mut store = self.open_conversation_store(&mut state, &scope);
+        let id = self.conversation_load(
+            &mut state,
+            &mut store,
+            &scope,
+            &key,
+            Some(&request.conversation_id),
+        )?;
+        let doc = &state.cache[&id];
+        if doc.dirty
+            || doc.summary.title_state.as_ref() != Some(&admitted)
+            || admitted.value_revision != crate::evidence_revision(&doc.summary.title)
+        {
+            return Ok(false);
+        }
+        let title = admitted.changed(&generated, "generated");
+        let Some(saved) = store
+            .as_mut()
+            .ok_or_else(|| invalid(STORAGE_ERROR))?
+            .update_title(&key, &doc.summary, &generated, &title)?
+        else {
+            return Ok(false);
+        };
+        state.cache.get_mut(&id).unwrap().summary = saved;
+        Ok(true)
     }
 
     fn conversation_finish(&self, request_id: &str, result: Result<MeetingAnswer, PennelError>) {
@@ -674,6 +807,11 @@ impl PennelEngine {
                 "rename" => {
                     let doc = state.cache.get_mut(&id).unwrap();
                     doc.summary.title = title(request.title)?;
+                    let title_state = doc.summary.title_state.clone().unwrap_or_else(|| {
+                        crate::automatic_titles::TitleState::new(&doc.summary.title, false)
+                    });
+                    doc.summary.title_state =
+                        Some(title_state.changed(&doc.summary.title, "manual"));
                     doc.summary.updated_at_ms = now();
                     doc.dirty = true;
                     state.persist(store.as_mut(), &id);
@@ -890,6 +1028,17 @@ impl PennelEngine {
             let timestamp = now();
             let user_id = crate::conversations::id();
             let assistant_id = crate::conversations::id();
+            if let Some(title) = doc
+                .summary
+                .title_state
+                .as_ref()
+                .filter(|state| state.can_generate(&doc.summary.title))
+                && let Some(fallback) = crate::automatic_titles::local_title(&request.question)
+            {
+                let state = title.changed(&fallback, "local");
+                doc.summary.title = fallback;
+                doc.summary.title_state = Some(state);
+            }
             doc.messages.push(Message {
                 id: user_id.clone(),
                 conversation_id: doc.summary.id.clone(),
@@ -967,9 +1116,23 @@ impl PennelEngine {
             if std::thread::Builder::new()
                 .name("pennel-conversation-question".into())
                 .spawn(move || {
+                    let title_keys = keys.clone();
                     let result =
                         engine.run_conversation(&request_copy, history, frozen, &job, keys);
+                    let successful = result.is_ok();
                     engine.conversation_finish(&request_copy.request_id, result);
+                    if successful {
+                        let title_engine = engine.clone();
+                        let _ = std::thread::Builder::new()
+                            .name("pennel-conversation-title".into())
+                            .spawn(move || {
+                                let _ = title_engine.automatically_name_conversation(
+                                    &request_copy,
+                                    &job.library,
+                                    title_keys,
+                                );
+                            });
+                    }
                 })
                 .is_err()
             {
@@ -1613,6 +1776,14 @@ mod tests {
             messages: Vec<crate::LanguageModelMessage>,
             _: u64,
         ) -> Result<String, crate::PennelError> {
+            // This fixture counts/freezes question inference. Topic inference is exercised below.
+            if messages.first().is_some_and(|message| {
+                message
+                    .content
+                    .starts_with("Return only a short topic title")
+            }) {
+                return Ok("Synthetic conversation topic".into());
+            }
             self.prompts.lock().unwrap().push(messages);
             self.calls.fetch_add(1, Ordering::SeqCst);
             let mut open = self.open.lock().unwrap();
@@ -1665,6 +1836,182 @@ mod tests {
             .unwrap();
         let scope = json!({"kind":"meeting","meeting_uid":engine.meeting_uid(id.clone()).unwrap()});
         (dir, engine, id, scope, model)
+    }
+
+    struct TopicModel {
+        titles: AtomicUsize,
+        open: Mutex<bool>,
+        changed: Condvar,
+    }
+    impl TopicModel {
+        fn release(&self) {
+            *self.open.lock().unwrap() = true;
+            self.changed.notify_all();
+        }
+        fn await_title(&self) {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while self.titles.load(Ordering::SeqCst) == 0 {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+    impl crate::SystemLanguageModel for TopicModel {
+        fn complete(
+            &self,
+            messages: Vec<crate::LanguageModelMessage>,
+            _: u64,
+        ) -> Result<String, crate::PennelError> {
+            if messages.first().is_some_and(|message| {
+                message
+                    .content
+                    .starts_with("Return only a short topic title")
+            }) {
+                self.titles.fetch_add(1, Ordering::SeqCst);
+                let deadline = Instant::now() + Duration::from_secs(10);
+                let mut open = self.open.lock().unwrap();
+                while !*open {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        return Err(crate::PennelError::Cancelled);
+                    }
+                    open = self.changed.wait_timeout(open, remaining).unwrap().0;
+                }
+                Ok("Bespreking van de bron".into())
+            } else {
+                Ok("A frozen answer [1].".into())
+            }
+        }
+    }
+
+    #[test]
+    fn automatic_conversation_title_follows_visible_answer_once_and_survives_reopen() {
+        let (directory, engine, _meeting, scope, _) = configured(false);
+        *engine.automatic_title_test_pool.lock().unwrap() = Some(Arc::new(
+            crate::meeting_scheduler::PhysicalInferencePool::default(),
+        ));
+        let model = Arc::new(TopicModel {
+            titles: AtomicUsize::new(0),
+            open: Mutex::new(false),
+            changed: Condvar::new(),
+        });
+        engine.set_system_language_model(model.clone());
+        let created = update(&engine, json!({"scope":scope,"action":"create"}));
+        let id = created["conversation"]["id"].clone();
+        assert!(
+            created["conversation"]["title"]
+                .as_str()
+                .unwrap()
+                .starts_with("Conversation · ")
+        );
+        begin(&engine, scope.clone(), id.clone(), "automatic-topic-first");
+        let answer = completed(&engine, &scope, &id);
+        assert_eq!(answer["conversation"]["title"], "What does the source say?");
+        model.await_title();
+        assert!(
+            answer["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|message| message["role"] == "assistant" && message["status"] == "completed")
+        );
+        model.release();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let view = read(&engine, json!({"scope":scope,"conversation_id":id}));
+            if view["conversation"]["title"] == "Bespreking van de bron" {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        begin(&engine, scope.clone(), id.clone(), "automatic-topic-second");
+        completed(&engine, &scope, &id);
+        let reopened =
+            PennelEngine::new_preview(directory.path().to_string_lossy().into_owned()).unwrap();
+        assert_eq!(
+            read(&reopened, json!({"scope":scope,"conversation_id":id}))["conversation"]["title"],
+            "Bespreking van de bron"
+        );
+        assert_eq!(model.titles.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn manual_same_name_conversation_edit_stays_protected_from_late_topic() {
+        let (_directory, engine, _meeting, scope, _) = configured(false);
+        *engine.automatic_title_test_pool.lock().unwrap() = Some(Arc::new(
+            crate::meeting_scheduler::PhysicalInferencePool::default(),
+        ));
+        let model = Arc::new(TopicModel {
+            titles: AtomicUsize::new(0),
+            open: Mutex::new(false),
+            changed: Condvar::new(),
+        });
+        engine.set_system_language_model(model.clone());
+        let created = update(&engine, json!({"scope":scope,"action":"create"}));
+        let id = created["conversation"]["id"].clone();
+        begin(&engine, scope.clone(), id.clone(), "manual-topic-race");
+        completed(&engine, &scope, &id);
+        model.await_title();
+        let renamed = update(
+            &engine,
+            json!({"scope":scope,"action":"rename","conversation_id":id,"title":"What does the source say?"}),
+        );
+        assert_eq!(renamed["conversation"]["title_state"]["origin"], "manual");
+        model.release();
+        std::thread::sleep(Duration::from_millis(100));
+        let current = read(&engine, json!({"scope":scope,"conversation_id":id}));
+        assert_eq!(
+            current["conversation"]["title"],
+            "What does the source say?"
+        );
+        assert_eq!(current["conversation"]["title_state"]["origin"], "manual");
+    }
+
+    #[test]
+    fn unnamed_legacy_conversation_gets_stored_question_fallback_without_inference() {
+        let (directory, engine, _meeting, scope, model) = configured(false);
+        let initial = update(
+            &engine,
+            json!({"scope":scope,"action":"create","title":"Named before legacy migration"}),
+        );
+        let id = initial["conversation"]["id"].clone();
+        begin(&engine, scope.clone(), id.clone(), "legacy-title-question");
+        completed(&engine, &scope, &id);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Arc::strong_count(&engine) > 1 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        drop(engine);
+        let database =
+            rusqlite::Connection::open(directory.path().join("conversations.sqlite")).unwrap();
+        let raw: String = database
+            .query_row(
+                "SELECT summary FROM conversations WHERE id=?1",
+                [id.as_str().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let mut legacy: Value = serde_json::from_str(&raw).unwrap();
+        legacy["title"] = json!("");
+        legacy.as_object_mut().unwrap().remove("title_state");
+        database
+            .execute(
+                "UPDATE conversations SET summary=?1 WHERE id=?2",
+                rusqlite::params![legacy.to_string(), id.as_str().unwrap()],
+            )
+            .unwrap();
+        let before = model.calls.load(Ordering::SeqCst);
+        let reopened =
+            PennelEngine::new_preview(directory.path().to_string_lossy().into_owned()).unwrap();
+        reopened.set_system_language_model(model.clone());
+        let current = read(&reopened, json!({"scope":scope,"conversation_id":id}));
+        assert_eq!(
+            current["conversation"]["title"],
+            "What does the source say?"
+        );
+        assert_eq!(model.calls.load(Ordering::SeqCst), before);
     }
     fn row(start: u64, text: &str) -> crate::Segment {
         crate::Segment {

@@ -2,7 +2,7 @@ import { bindLocalization, l, localizeBackendText } from "../i18n.ts";
 import { speakerLabel } from "../meeting-labels.ts";
 import { api, type MeetingFinished, type MeetingStatus } from "../api";
 import { persistAll } from "../async";
-import { controlButton, textField, errorText, formatClock, h } from "../dom";
+import { controlButton, errorText, formatClock, h } from "../dom";
 import type { Context } from "../main";
 import { icon } from "../icons";
 import { VisibilityPoll } from "../window-lifecycle";
@@ -140,7 +140,6 @@ export async function meetingView(ctx: Context): Promise<HTMLElement> {
   }
   if (!initial.busy && ctx.param) return meetingDetail(ctx, ctx.param);
   if (!initial.busy) {
-    const title = textField({ type: "text", placeholder: l("meetings.meeting_title_placeholder"), class: "grow", "aria-label": l("meetings.meeting_title_label") });
     const status = h("p", { class: "error", role: "status" }, ctx.recordingStartError ? localizeBackendText(ctx.recordingStartError) : initial.error ? localizeBackendText(initial.error) : "");
     const start = controlButton({ class: "btn primary" }, l("common.start_recording"));
     const retained = !!initial.recognition && !!(initial.persistence_error || initial.terminal_error);
@@ -163,13 +162,13 @@ export async function meetingView(ctx: Context): Promise<HTMLElement> {
     refreshMicrophoneAccess();
     start.addEventListener("click", async () => {
       start.disabled = true;
-      try { if (ctx.startRecording) await ctx.startRecording(title.value); else { await api.startMeeting(title.value); ctx.rerender(); } }
+      try { if (ctx.startRecording) await ctx.startRecording(); else { await api.startMeeting(""); ctx.rerender(); } }
       catch (error) { status.textContent = errorText(error); await ctx.refresh().catch(ctx.report); }
       finally { if (start.isConnected) start.disabled = false; }
     });
     return h("div", { class: "recording-view" }, h("h1", {}, l("meetings.new_meeting")),
       h("p", { class: "muted" }, l("meetings.recording_tracks_help")),
-      processing.element, h("div", { class: "row" }, title, start), status, microphoneAccess, recoveryNotice(ctx, initial), audioReason,
+      processing.element, h("p", { class: "help" }, l("meetings.automatic_title_help")), start, status, microphoneAccess, recoveryNotice(ctx, initial), audioReason,
       h("button", { class: "text-button", onclick: () => api.showWindow("settings", "recording") }, l("meetings.recording_settings")),
       controlButton({ class: "btn", onclick: () => ctx.openSetup("meeting_stt") }, l("dictation.home.finish_setup")));
   }
