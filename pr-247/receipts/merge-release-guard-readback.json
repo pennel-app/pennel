@@ -1,0 +1,29 @@
+{
+  "releases_unchanged": true,
+  "homebrew_unchanged": true,
+  "desktop_workflow_restored": "active",
+  "late_push_event_cancelled": {
+    "id": 43028588823,
+    "status": "completed",
+    "conclusion": "cancelled",
+    "release_jobs": [
+      {
+        "completedAt": "2026-11-11T13:23:46Z",
+        "conclusion": "cancelled",
+        "databaseId": 130549956767,
+        "name": "release",
+        "startedAt": "2026-11-11T13:23:46Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/pennel-app/pennel/actions/runs/43028588823/job/130549956767"
+      }
+    ]
+  },
+  "manual_validation": {
+    "conclusion": "",
+    "event": "workflow_dispatch",
+    "headSha": "27b75bec05bd78370dab4d8f277bbfae25b06367",
+    "status": "queued",
+    "url": "https://github.com/pennel-app/pennel/actions/runs/43028588652"
+  }
+}

@@ -1,0 +1,13 @@
+# Complete redesign merged — 11 November 2026
+
+The owner explicitly authorized merging the redesign PRs. All27 PRs221–247 are now MERGED, with exact GitHub readback in merge-pr-readback.json. They target main and were made ready before delivery. No PR was merely closed as a substitute for incorporation.
+
+Main: `27b75bec05bd78370dab4d8f277bbfae25b06367`, normal merge of PR247. Delivery history: `f1df0997e4418f9f976fc420bac785e519bc8cd1`. Complete Git tree: `c9e95177ad6441e8bda8ebb62533280f30f57c6d`, byte-identical to reviewed/tested `a0acf423079be784deecebaad8849cc61e70d4b7`. Every original published PR head is reachable from main. The independent published-head audit found no lost feature/correction; the explicit ours merge reconciled parallel cherry-pick ancestry only. No tracked file changed during preparation.
+
+Before mutation all27 original heads had no failed/pending CI. Fresh frontend on the reconciled checkout:524/524 passed. The exact application tree retains all previously recorded Core/backend/Swift/mobile/theme/browser evidence. New main CI is separate and was queued/running at handoff; it is not reported green in advance.
+
+Automatic publishing was held separate from merge permission. desktop.yml was briefly disabled and immediately restored active. GitHub delivered a delayed push event after restoration; run43028588823 was explicitly cancelled and read back COMPLETED/cancelled, including a cancelled release job with no steps. Validation-only Mac dispatch43028588652 targets exact main27b75be via workflow_dispatch. The workflow's manual-event path forces release=false. The release list and Homebrew main were checked unchanged against preflight; Homebrew head remains b36e4cadf3ae0ad0134641327adfe8aeb5f89944. No persistent workflow/policy, signing, version, release or tap change.
+
+The original main worktree fast-forwarded to origin/main27b75be with no tracked edits. Its untracked .claude/worktrees are preserved. The user worktree stays clean on codex/redesign-integrated f1df099; git diff origin/main HEAD is empty. All three shared stash hashes remain unchanged. No branch/worktree was deleted or force-pushed.
+
+Tracker stays open/In review for outstanding device/qualification/platform acceptance. Main merge does not establish microphone/provider/paste/focus/global-key/VoiceOver/IME/display, signed-device/Cloud/store, production Suggestions qualification or pill clicking acceptance. Windows/Linux builds remain skipped by owner instruction. See docs/evidence/desktop-redesign-220.md for full implementation scope and earlier evidence; this receipt supersedes its historical pre-merge status.
