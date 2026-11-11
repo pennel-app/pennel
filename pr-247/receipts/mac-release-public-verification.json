@@ -1,0 +1,52 @@
+{
+  "tag": "v0.1.45",
+  "release_url": "https://github.com/pennel-app/pennel/releases/tag/v0.1.45",
+  "published_at": "2026-11-11T14:20:47Z",
+  "source_commit": "27b75bec05bd78370dab4d8f277bbfae25b06367",
+  "dmg_name": "Pennel_0.1.45_aarch64.dmg",
+  "dmg_download_url": "https://github.com/pennel-app/pennel/releases/download/v0.1.45/Pennel_0.1.45_aarch64.dmg",
+  "dmg_size": 15733236,
+  "sha256": "c7dc91aaa000d4a4e31812c1e4bf638105d984cc03ed9917c2920876599a4f1c",
+  "checksum_manifest_matches": true,
+  "github_asset_digest_matches": true,
+  "homebrew_commit": "ade2e4fa48e32e8bbd97eadb4f36fbced5ac8a4d",
+  "homebrew_version": "0.1.45",
+  "homebrew_url_matches": true,
+  "homebrew_sha256_matches": true,
+  "homebrew_ruby_syntax": "passed",
+  "bundle_inspection": {
+    "bundle": "Pennel.app inside the downloaded DMG",
+    "identifier": "dev.pennel.Pennel",
+    "version": "0.1.45",
+    "build_number": "0.1.45",
+    "architectures": [
+      "arm64"
+    ],
+    "signature_valid": true,
+    "developer_id": false,
+    "designated_requirement": "identifier \"dev.pennel.Pennel\" and certificate root = H\"5b347dcd6dc39a096da00c42aad7639a30320f62\"",
+    "app_launched": false,
+    "device_tests_performed": false
+  },
+  "disk_image_detached": true,
+  "commit_status": "SUCCESS",
+  "release_workflow_run": 43028588823,
+  "release_workflow_attempt": 2,
+  "mobile_validation": "SUCCESS",
+  "latest_release": true,
+  "release_workflow": {
+    "attempt": 2,
+    "conclusion": "success",
+    "event": "push",
+    "headSha": "27b75bec05bd78370dab4d8f277bbfae25b06367",
+    "status": "completed",
+    "url": "https://github.com/pennel-app/pennel/actions/runs/43028588823"
+  },
+  "mobile_workflow": {
+    "conclusion": "success",
+    "status": "completed",
+    "url": "https://github.com/pennel-app/pennel/actions/runs/43028588697"
+  },
+  "evaluated_checks": 16,
+  "published_at_brussels": "2026-11-11T15:20:47+01:00"
+}
