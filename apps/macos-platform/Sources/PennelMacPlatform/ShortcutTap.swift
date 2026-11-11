@@ -1,64 +1,39 @@
 import CoreGraphics
 import Foundation
 
-/// Global ⌘⇧R that is swallowed, so the app in front (a browser's hard reload) never sees it.
-/// Only touched from the main run loop, where the tap and its callback live.
+/// Installed only while a binding, capture, or an outstanding withheld release needs it.
+/// Every decision is immediate; the callback and lifetime are serialized by the main run loop.
 final class ShortcutTap: @unchecked Sendable {
-    private static let rKey: Int64 = 15
-    private let onTrigger: () -> Void
+    private let onInput: (CGEventType, CGEvent) -> Bool
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
-
-    init(onTrigger: @escaping () -> Void) {
-        self.onTrigger = onTrigger
-    }
-
+    init(onInput: @escaping (CGEventType, CGEvent) -> Bool) { self.onInput = onInput }
     deinit { stop() }
-
-    var isRunning: Bool { tap != nil }
-
+    var isRunning: Bool { tap.map { CFMachPortIsValid($0) && CGEvent.tapIsEnabled(tap: $0) } ?? false }
     func start() -> Bool {
-        guard tap == nil else { return true }
+        if isRunning { return true }
+        stop()
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
-            let shortcut = Unmanaged<ShortcutTap>.fromOpaque(refcon).takeUnretainedValue()
+            let owner = Unmanaged<ShortcutTap>.fromOpaque(refcon).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                if let tap = shortcut.tap { CGEvent.tapEnable(tap: tap, enable: true) }
+                if let tap = owner.tap { CGEvent.tapEnable(tap: tap, enable: true) }
                 return Unmanaged.passUnretained(event)
             }
-            guard shortcut.matches(event) else { return Unmanaged.passUnretained(event) }
-            // Return at once: a swallowing tap delays every keystroke on the Mac while it runs.
-            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                DispatchQueue.main.async { shortcut.onTrigger() }
-            }
-            return nil
+            return owner.onInput(type, event) ? nil : Unmanaged.passUnretained(event)
         }
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(1 << CGEventType.keyDown.rawValue),
-            callback: callback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else { return false }
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue | 1 << CGEventType.keyUp.rawValue | 1 << CGEventType.flagsChanged.rawValue)
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask, callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return false }
         self.tap = tap
-        source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        guard let source = CFMachPortCreateRunLoopSource(nil, tap, 0) else { stop(); return false }
+        self.source = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        return true
+        return isRunning
     }
-
     func stop() {
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
-        tap = nil
-        source = nil
-    }
-
-    private func matches(_ event: CGEvent) -> Bool {
-        let flags = event.flags
-        return event.getIntegerValueField(.keyboardEventKeycode) == Self.rKey
-            && flags.contains(.maskCommand) && flags.contains(.maskShift)
-            && !flags.contains(.maskControl) && !flags.contains(.maskAlternate)
+        tap = nil; source = nil
     }
 }

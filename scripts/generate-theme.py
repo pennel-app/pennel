@@ -109,6 +109,37 @@ def validate(tokens: dict) -> None:
             raise ValueError(f"invalid pill metric: {name}")
         if name in PILL_COUNTS and not isinstance(value, int):
             raise ValueError(f"invalid pill count: {name}")
+    themes = tokens.get("pill-themes", {})
+    if themes:
+        if set(themes) != {"ink", "light"}:
+            raise ValueError("invalid pill themes")
+        for name, theme in themes.items():
+            if set(theme) != {"background", "text", "accent"} or any(not isinstance(value, str) or not HEX_COLOR.fullmatch(value) for value in theme.values()):
+                raise ValueError(f"invalid pill theme: {name}")
+            if any(contrast(theme[role], theme["background"]) < 4.5 for role in ("text", "accent")):
+                raise ValueError(f"pill {name} contrast must be at least 4.5:1")
+    sizes = tokens.get("pill-sizes", {})
+    if sizes:
+        if set(sizes) != {"compact", "regular", "large"}:
+            raise ValueError("invalid pill size variants")
+        for name, metrics in sizes.items():
+            if set(metrics) != set(tokens["pill"]):
+                raise ValueError(f"invalid pill metrics for {name}")
+            for metric, value in metrics.items():
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not math.isfinite(value) or value <= 0
+                        or metric in PILL_COUNTS and not isinstance(value, int)
+                        or metric in {"label-size", "caption-size", "content-size"} and not 11 <= value <= 48
+                        or metric == "preview-lines" and value > 2):
+                    raise ValueError(f"invalid pill metric {name}: {metric}")
+            # Caption plus a two-line title/detail must fit without clipping a recovery message.
+            required = (2 * metrics["outer-inset"] + 2 * tokens["spacing"]["3"] + tokens["spacing"]["2"]
+                        + metrics["preview-lines"] * metrics["preview-line-height"]
+                        + math.ceil(4 * metrics.get("label-size", tokens["typography"]["sizes"]["label"]) * 1.2) + 1)
+            if metrics["window-height"] < required:
+                raise ValueError(f"pill {name} frame cannot fit its bounded caption and recovery message")
+        if sizes["regular"] != tokens["pill"]:
+            raise ValueError("regular pill metrics must retain the shared defaults")
     typography = tokens["typography"]
     if typography["ui"] != "Figtree" or typography["display"] != "Instrument Serif":
         raise ValueError("the bundled Pennel font families must be retained")
@@ -135,7 +166,7 @@ def validate_desktop_theme(tokens: dict) -> None:
     if any(name.startswith(("pill-", "brand-", "voice-")) or name == "wave" for name in desktop["colors"]):
         raise ValueError("desktop theme must retain fixed brand and pill colors")
     fixed = {name for name in tokens["colors"] if name.startswith(("pill-", "brand-", "voice-")) or name == "wave"}
-    required = (tokens["colors"].keys() - fixed) | {"border-strong", "control-surface", "surface-raised", "accent-hover", "accent-soft", "success-soft", "danger", "danger-soft"}
+    required = (tokens["colors"].keys() - fixed) | {"border-strong", "control-surface", "surface-raised", "accent-hover", "accent-soft", "success-soft", "danger", "danger-soft", "live"}
     if missing := required - desktop["colors"].keys():
         raise ValueError(f"missing desktop semantic colors: {', '.join(sorted(missing))}")
     if not {"control", "segmented", "panel", "window", "dialog"} <= desktop["radii"].keys():
@@ -153,7 +184,8 @@ def validate_desktop_theme(tokens: dict) -> None:
         merged[section].update(desktop[section])
     merged["typography"]["sizes"].update(typography["sizes"])
     validate(merged)
-    for foreground, background in (("danger", "surface"), ("danger", "subtle"), ("danger", "danger-soft"), ("success", "success-soft"), ("accent", "accent-soft"), ("foreground", "control-surface"), ("muted", "control-surface"), ("foreground", "surface-raised"), ("muted", "surface-raised")):
+    for foreground, background in (("danger", "surface"), ("danger", "subtle"), ("danger", "danger-soft"), ("success", "success-soft"), ("accent", "accent-soft"), ("foreground", "control-surface"), ("muted", "control-surface"), ("foreground", "surface-raised"), ("muted", "surface-raised"),
+                                   ("live", "surface"), ("live", "subtle"), *((f"voice-{number}", background) for number in range(1, 5) for background in ("surface", "subtle"))):
         for appearance in ("light", "dark"):
             ratio = contrast(merged["colors"][foreground][appearance], merged["colors"][background][appearance])
             if ratio < 4.5:
@@ -207,6 +239,31 @@ def render_css(tokens: dict) -> str:
         lines.extend(("}", ""))
     if tokens["typography"].get("macos-chrome") == "system":
         lines.extend((':root[data-platform="macos"] {', f"  --chrome-ui: {system_ui};", "}", ""))
+    if tokens.get("pill-themes") or tokens.get("pill-sizes"):
+        lines.append("/* Configurable pill variants; scoped to the pill and its settings preview. */")
+    def selector(attribute: str, value: str) -> str:
+        return f':root[data-pill-{attribute}="{value}"], [data-pill-preview][data-pill-{attribute}="{value}"]'
+    for name, theme in tokens.get("pill-themes", {}).items():
+        lines.append(selector("colour", name) + " {")
+        lines.extend(f"  --pill-{role}: {value.lower()};" for role, value in theme.items())
+        lines.extend(("}", ""))
+    if tokens.get("pill-themes"):
+        for dark, theme in ((False, tokens["pill-themes"]["light"]), (True, tokens["pill-themes"]["ink"])):
+            if dark: lines.append("@media (prefers-color-scheme: dark) {")
+            lines.append(selector("colour", "system") + " {")
+            lines.extend(f"  --pill-{role}: {value.lower()};" for role, value in theme.items())
+            lines.append("}")
+            if dark: lines.append("}")
+            lines.append("")
+    if tokens.get("pill-themes"):
+        for appearance, theme in (("light", tokens["pill-themes"]["light"]), ("dark", tokens["pill-themes"]["ink"])):
+            lines.append(f':root[data-pill-colour="system"][data-pill-appearance="{appearance}"], [data-pill-preview][data-pill-colour="system"][data-pill-appearance="{appearance}"] {{')
+            lines.extend(f"  --pill-{role}: {value.lower()};" for role, value in theme.items())
+            lines.extend(("}", ""))
+    for name, metrics in tokens.get("pill-sizes", {}).items():
+        lines.append(selector("size", name) + " {")
+        lines.extend(f"  --pill-{metric}: {scalar(value)}{'' if metric in PILL_COUNTS else 'px'};" for metric, value in metrics.items())
+        lines.extend(("}", ""))
     return "\n".join(lines)
 
 
@@ -214,6 +271,12 @@ def render_pill_metrics(tokens: dict) -> str:
     lines = ["// Generated by scripts/generate-theme.py from assets/brand/tokens.json.", "export const PILL_METRICS = {"]
     for name, value in tokens["pill"].items():
         lines.append(f"  {camel_name(name)}: {scalar(value)},")
+    lines.extend(("} as const;", ""))
+    lines.append("export const PILL_SIZES = {")
+    for name, metrics in tokens.get("pill-sizes", {"regular": tokens["pill"]}).items():
+        lines.append(f"  {name}: {{")
+        lines.extend(f"    {camel_name(metric)}: {scalar(value)}," for metric, value in metrics.items())
+        lines.append("  },")
     lines.extend(("} as const;", ""))
     return "\n".join(lines)
 
@@ -397,7 +460,43 @@ class GeneratorTests(unittest.TestCase):
         css = render_css(self.tokens)
         self.assertIn("--surface: #fcfbf8;", css)
         self.assertIn("--surface: #1e1c1a;", css)
-        self.assertEqual(css.count("--pill-background: #2a2723;"), 4)
+        self.assertEqual(css.split("/* Configurable pill variants")[0].count("--pill-background: #2a2723;"), 4)
+
+    def test_pill_variants_generate_scoped_colours_and_validate_contrast(self) -> None:
+        variants = copy.deepcopy(self.tokens)
+        variants["pill-themes"] = {"ink": {"background": "#2A2723", "text": "#FCFBF8", "accent": "#F2B48E"}, "light": {"background": "#FCFBF8", "text": "#2A2723", "accent": "#87532B"}}
+        css = render_css(variants)
+        self.assertIn('[data-pill-colour="light"]', css)
+        self.assertIn('[data-pill-colour="system"]', css)
+        self.assertIn('[data-pill-appearance="light"]', css)
+        variants["pill-themes"]["light"]["text"] = "#FCFBF8"
+        with self.assertRaisesRegex(ValueError, "pill.*contrast"):
+            validate(variants)
+
+    def test_pill_size_variants_reject_invalid_geometry_and_emit_shared_metrics(self) -> None:
+        variants = copy.deepcopy(self.tokens)
+        variants["pill-sizes"] = {"compact": {**variants["pill"], "window-width": 360}, "regular": variants["pill"].copy(), "large": {**variants["pill"], "window-width": 500}}
+        self.assertIn("export const PILL_SIZES", render_pill_metrics(variants))
+        self.assertIn('[data-pill-size="compact"]', render_css(variants))
+        variants["pill-sizes"]["compact"]["window-height"] = -1
+        with self.assertRaisesRegex(ValueError, "pill.*metric"):
+            validate(variants)
+
+    def test_pill_frames_reserve_space_for_caption_and_structured_recovery(self) -> None:
+        invalid = copy.deepcopy(self.tokens)
+        invalid["pill-sizes"]["compact"]["window-height"] = 40
+        with self.assertRaisesRegex(ValueError, "pill.*frame"):
+            validate(invalid)
+
+    def test_pill_theme_values_and_font_sizes_fail_with_readable_validation(self) -> None:
+        invalid = copy.deepcopy(self.tokens)
+        invalid["pill-themes"]["light"]["accent"] = 1
+        with self.assertRaisesRegex(ValueError, "pill theme"):
+            validate(invalid)
+        invalid = copy.deepcopy(self.tokens)
+        invalid["pill-sizes"]["large"]["label-size"] = 1
+        with self.assertRaisesRegex(ValueError, "pill metric"):
+            validate(invalid)
 
     def test_desktop_theme_does_not_change_mobile_or_pill_branding(self) -> None:
         base = copy.deepcopy(self.tokens)
@@ -438,6 +537,22 @@ class GeneratorTests(unittest.TestCase):
             invalid["desktop-theme"]["colors"][role][appearance] = value
             with self.subTest(role=role), self.assertRaisesRegex(ValueError, "contrast"):
                 validate(invalid)
+
+    def test_desktop_live_and_speaker_text_stay_readable_on_desktop_surfaces(self) -> None:
+        validate(self.tokens)
+        invalid = copy.deepcopy(self.tokens)
+        invalid["desktop-theme"]["colors"]["live"]["light"] = "#E0703C"
+        with self.assertRaisesRegex(ValueError, "live on surface"):
+            validate(invalid)
+        # Readable on the base paper and desktop white, but not on the desktop's quiet panels.
+        invalid = copy.deepcopy(self.tokens)
+        invalid["colors"]["voice-1"]["light"] = "#747474"
+        with self.assertRaisesRegex(ValueError, "voice-1 on subtle"):
+            validate(invalid)
+        invalid = copy.deepcopy(self.tokens)
+        del invalid["desktop-theme"]["colors"]["live"]
+        with self.assertRaisesRegex(ValueError, "missing desktop semantic colors: live"):
+            validate(invalid)
 
     def test_desktop_theme_requires_complete_semantic_roles(self) -> None:
         invalid = copy.deepcopy(self.tokens)

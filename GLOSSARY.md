@@ -27,6 +27,9 @@ An explicit new transcription pass over a retained recording, producing a revise
 **Suggestion**:
 A source-linked item proposed for the meeting owner's review that flags an action, decision, open question or changed commitment. Its quoted passage can contain several events, with unsupported owners or dates left unknown.
 
+**Suggestion analysis**:
+A pass over a meeting's finalized transcript that proposes suggestions. It reads no typed notes. It runs when the owner starts it or, under separate consent, once after a meeting ends. Suggestion consent is independent of summary consent. Not now is remembered with that meeting while the global policy remains Unanswered.
+
 **Writing profile**:
 A person's language-specific writing tendencies inferred from their own speech and corrected by them. It describes expression, rather than the sound of their voice or the facts they discussed.
 _Avoid_: Speaking profile, voiceprint
@@ -39,3 +42,5 @@ A writing tendency supported by speech from several capture sessions, such as di
 
 **Trait override**:
 A person's explicit correction to a writing-profile trait, retained as further speech is learned.
+
+- **Summary structure** — optional, personal display data and frozen generation provenance attached to the exact SHA-256 revision of a canonical summary Markdown body. Versioned `pennel.summary.structure.<body_revision>.json` records remain beside immutable summary history; editing the body detaches its record, and restoring that body attaches it again. Structured action state is rendered into the Markdown, while shareable summaries never read personal records.

@@ -13,6 +13,19 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow};
 use crate::status::PillState;
 
 pub const LABEL: &str = "pill";
+const DEMO_LABEL: &str = "pill-preview";
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PillModelPresentation {
+    pub session_id: String,
+    pub generation: u64,
+    pub model: pennel_core::ConfiguredDictationModel,
+    pub available_models: usize,
+    pub enabled: bool,
+    pub switched: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_shortcut: Option<pennel_core::ShortcutLabel>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct PillSnapshot {
@@ -22,6 +35,12 @@ pub struct PillSnapshot {
     pub preview: Option<DictationPreviewUpdate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cleanup_verification: Option<pennel_core::CleanupVerificationAvailability>,
+    #[serde(skip)]
+    visibility_generation: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speech_model: Option<PillModelPresentation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancel_shortcut: Option<pennel_core::ShortcutLabel>,
 }
 
 #[derive(Clone, Serialize)]
@@ -38,11 +57,18 @@ impl Default for PillSnapshot {
             state: PillState::Hidden,
             preview: None,
             cleanup_verification: None,
+            visibility_generation: 0,
+            speech_model: None,
+            cancel_shortcut: None,
         }
     }
 }
 
 impl PillSnapshot {
+    fn may_hide(&self, generation: u64) -> bool {
+        self.state == PillState::Hidden && self.visibility_generation == generation
+    }
+
     fn processing_snapshot(&self) -> ProcessingSnapshot<'_> {
         ProcessingSnapshot {
             state: &self.state,
@@ -52,10 +78,23 @@ impl PillSnapshot {
 
     fn set_state(&mut self, state: PillState) -> bool {
         let changed = self.state != state || (state == PillState::Hidden && self.preview.is_some());
+        if (self.state == PillState::Hidden) != (state == PillState::Hidden) {
+            self.visibility_generation = self.visibility_generation.wrapping_add(1);
+        }
         self.state = state;
+        if !matches!(
+            self.state,
+            PillState::Listening | PillState::HandsFree | PillState::Command | PillState::NoSound
+        ) {
+            self.cancel_shortcut = None;
+            if let Some(model) = self.speech_model.as_mut() {
+                model.next_shortcut = None;
+            }
+        }
         if self.state == PillState::Hidden {
             self.preview = None;
             self.cleanup_verification = None;
+            self.speech_model = None;
         }
         changed
     }
@@ -69,12 +108,32 @@ impl PillSnapshot {
         {
             return false;
         }
+        self.speech_model = None;
         self.preview = Some(DictationPreviewUpdate {
             session_id: id,
             revision: 0,
             text: String::new(),
         });
         true
+    }
+
+    fn update_model(&mut self, mut next: PillModelPresentation) -> bool {
+        if self.state == PillState::Hidden
+            || self
+                .preview
+                .as_ref()
+                .is_none_or(|preview| preview.session_id != next.session_id)
+            || self.speech_model.as_ref().is_some_and(|current| {
+                current.session_id == next.session_id && current.generation > next.generation
+            })
+        {
+            return false;
+        }
+        // A boot snapshot restores metadata, never an old acknowledgement timer.
+        next.switched = false;
+        let changed = self.speech_model.as_ref() != Some(&next);
+        self.speech_model = Some(next);
+        changed
     }
 
     fn update_preview(&mut self, update: DictationPreviewUpdate) -> bool {
@@ -100,31 +159,187 @@ impl PillSnapshot {
         }
         self.preview = None;
         self.cleanup_verification = None;
+        self.speech_model = None;
         true
     }
 }
 
+#[derive(Default)]
+struct DemoVisibility {
+    generation: u64,
+    active: bool,
+    real_visible: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct DemoFrame {
+    generation: u64,
+    visible: bool,
+}
+
+impl DemoVisibility {
+    fn reserve(&mut self) -> Option<u64> {
+        if self.real_visible {
+            return None;
+        }
+        self.generation = self.generation.wrapping_add(1);
+        self.active = false;
+        Some(self.generation)
+    }
+    fn admit(&mut self, generation: u64, idle: bool) -> bool {
+        if self.generation != generation || self.real_visible || !idle {
+            return false;
+        }
+        self.active = true;
+        true
+    }
+    fn cancel(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.active = false;
+        self.generation
+    }
+    fn cancel_if(&mut self, generation: u64) -> Option<u64> {
+        (self.generation == generation).then(|| self.cancel())
+    }
+    fn real_visibility(&mut self, visible: bool) -> Option<u64> {
+        self.real_visible = visible;
+        visible.then(|| self.cancel())
+    }
+    fn may_hide(&self, generation: u64) -> bool {
+        self.generation == generation && !self.active
+    }
+    fn end_if(&mut self, generation: u64) -> Option<u64> {
+        (self.active && self.generation == generation).then(|| self.cancel())
+    }
+    fn frame(&self, idle: bool) -> DemoFrame {
+        DemoFrame {
+            generation: self.generation,
+            visible: self.active && !self.real_visible && idle,
+        }
+    }
+}
+
+const DEMO_BUSY: &str = "Finish the current dictation before showing the pill preview.";
+
+fn demo_frame(demo: &Mutex<DemoVisibility>, idle: &impl Fn() -> bool) -> DemoFrame {
+    let idle = idle();
+    demo.lock().unwrap().frame(idle)
+}
+
+// Native show/hide can reenter. Reapply the latest owner if that happens; never hold its guard here.
+fn reconcile_demo(
+    demo: &Mutex<DemoVisibility>,
+    idle: impl Fn() -> bool,
+    mut native: impl FnMut(bool),
+) -> DemoFrame {
+    let mut desired = demo_frame(demo, &idle);
+    loop {
+        native(desired.visible);
+        let latest = demo_frame(demo, &idle);
+        if latest == desired {
+            return latest;
+        }
+        desired = latest;
+    }
+}
+
+fn show_demo(
+    demo: &Mutex<DemoVisibility>,
+    idle: impl Fn() -> bool,
+    create: impl FnOnce() -> Result<(), String>,
+    mut native: impl FnMut(bool),
+) -> Result<u64, String> {
+    // Reserve before the first idle check so cancellation during creation invalidates this request.
+    let generation = demo
+        .lock()
+        .unwrap()
+        .reserve()
+        .ok_or_else(|| DEMO_BUSY.to_owned())?;
+    let admission = (|| {
+        if !idle() {
+            return Err(DEMO_BUSY.to_owned());
+        }
+        create()?;
+        let idle = idle();
+        if !demo.lock().unwrap().admit(generation, idle) {
+            return Err(DEMO_BUSY.to_owned());
+        }
+        Ok(())
+    })();
+    if admission.is_err() {
+        demo.lock().unwrap().cancel_if(generation);
+    }
+    let latest = reconcile_demo(demo, idle, &mut native);
+    admission?;
+    if latest.generation == generation && latest.visible {
+        Ok(generation)
+    } else {
+        Err(DEMO_BUSY.into())
+    }
+}
+
+fn hide_cancelled_demo(
+    demo: &Mutex<DemoVisibility>,
+    generation: u64,
+    idle: impl Fn() -> bool,
+    native: impl FnMut(bool),
+) {
+    let current = demo.lock().unwrap().may_hide(generation);
+    if current {
+        reconcile_demo(demo, idle, native);
+    }
+}
+
 pub struct Snapshot {
+    demo: Arc<Mutex<DemoVisibility>>,
     content: Arc<Mutex<PillSnapshot>>,
     session: Arc<Mutex<Option<Weak<pennel_core::LiveDictationSession>>>>,
 }
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            demo: Arc::new(Mutex::new(DemoVisibility::default())),
             content: Arc::new(Mutex::new(PillSnapshot::default())),
             session: Arc::new(Mutex::new(None)),
         }
     }
 }
 
-pub fn snapshot(app: &AppHandle) -> PillState {
-    content_snapshot(app).state
+fn live_shortcut(
+    app: &AppHandle,
+    state: &PillState,
+    action: u32,
+) -> Option<pennel_core::ShortcutLabel> {
+    if !matches!(
+        state,
+        PillState::Listening | PillState::HandsFree | PillState::Command | PillState::NoSound
+    ) {
+        return None;
+    }
+    let shared = app.try_state::<Arc<crate::state::Shared>>()?;
+    if !crate::record_shortcut::listening_action_ready(&shared, action) {
+        return None;
+    }
+    let id = match action {
+        3 => "cancel",
+        4 => "next_model",
+        _ => return None,
+    };
+    let platform = crate::shortcuts::platform();
+    pennel_core::effective_shortcut(&shared.settings(), id, platform).map(|binding| {
+        pennel_core::format_shortcut(&binding, platform, shared.interface_language())
+    })
 }
 
 pub fn content_snapshot(app: &AppHandle) -> PillSnapshot {
     app.try_state::<Snapshot>()
         .map(|state| {
             let mut content = state.content.lock().unwrap().clone();
+            content.cancel_shortcut = live_shortcut(app, &content.state, 3);
+            let next = live_shortcut(app, &content.state, 4);
+            if let Some(model) = content.speech_model.as_mut() {
+                model.next_shortcut = next;
+            }
             let session = state
                 .session
                 .lock()
@@ -158,24 +373,73 @@ struct PillMetrics {
     window_height: f64,
 }
 
-fn metrics() -> &'static PillMetrics {
+fn metrics_for(size: pennel_core::PillSize) -> &'static PillMetrics {
     #[derive(Deserialize)]
     struct Tokens {
-        pill: PillMetrics,
+        #[serde(rename = "pill-sizes")]
+        sizes: std::collections::HashMap<String, PillMetrics>,
     }
-    static METRICS: OnceLock<PillMetrics> = OnceLock::new();
-    METRICS.get_or_init(|| {
-        serde_json::from_str::<Tokens>(include_str!("../../../../assets/brand/tokens.json"))
+    static METRICS: OnceLock<Tokens> = OnceLock::new();
+    let metrics = METRICS.get_or_init(|| {
+        serde_json::from_str(include_str!("../../../../assets/brand/tokens.json"))
             .expect("checked-in pill metrics must be valid")
-            .pill
-    })
+    });
+    &metrics.sizes[match size {
+        pennel_core::PillSize::Compact => "compact",
+        pennel_core::PillSize::Regular => "regular",
+        pennel_core::PillSize::Large => "large",
+    }]
 }
 
-#[cfg(any(not(target_os = "macos"), test))]
+#[cfg(test)]
+fn metrics() -> &'static PillMetrics {
+    metrics_for(pennel_core::PillSize::Regular)
+}
+
+fn preferences(app: &AppHandle) -> (pennel_core::PillSize, pennel_core::PillPosition) {
+    app.try_state::<Arc<crate::state::Shared>>()
+        .map(|shared| {
+            let settings = shared.settings();
+            (settings.pill_size, settings.pill_position)
+        })
+        .unwrap_or_default()
+}
+
+pub fn position_supported() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        !crate::linux_input::is_wayland()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
+#[cfg(test)]
 fn fitted_geometry(
     origin: (i32, i32),
     size: (u32, u32),
     scale: f64,
+) -> Option<(i32, i32, u32, u32)> {
+    fitted_geometry_with(
+        origin,
+        size,
+        scale,
+        metrics(),
+        pennel_core::PillPosition::BottomCentre,
+        None,
+    )
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn fitted_geometry_with(
+    origin: (i32, i32),
+    size: (u32, u32),
+    scale: f64,
+    metrics: &PillMetrics,
+    position: pennel_core::PillPosition,
+    cursor: Option<(f64, f64)>,
 ) -> Option<(i32, i32, u32, u32)> {
     if size.0 == 0 || size.1 == 0 {
         return None;
@@ -185,23 +449,56 @@ fn fitted_geometry(
     } else {
         1.0
     };
-    let width = (metrics().window_width * scale)
+    let width = (metrics.window_width * scale)
         .round()
         .max(1.0)
         .min(f64::from(size.0)) as u32;
-    let height = (metrics().window_height * scale)
+    let height = (metrics.window_height * scale)
         .round()
         .max(1.0)
         .min(f64::from(size.1)) as u32;
+    let min_x = f64::from(origin.0);
+    let min_y = f64::from(origin.1);
+    let max_x = min_x + f64::from(size.0 - width);
+    let max_y = min_y + f64::from(size.1 - height);
+    let (x, y) = match (
+        position,
+        cursor.filter(|(x, y)| x.is_finite() && y.is_finite()),
+    ) {
+        (pennel_core::PillPosition::TopCentre, _) => ((min_x + max_x) / 2.0, min_y),
+        (pennel_core::PillPosition::NearCursor, Some((x, y))) => {
+            (x - f64::from(width) / 2.0, y + 12.0 * scale)
+        }
+        _ => ((min_x + max_x) / 2.0, max_y),
+    };
     Some((
-        origin.0 + ((size.0 - width) / 2) as i32,
-        origin.1 + (size.1 - height) as i32,
+        x.round().clamp(min_x, max_x) as i32,
+        y.round().clamp(min_y, max_y) as i32,
         width,
         height,
     ))
 }
 
 const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
+/// The length of the pill's leave fade in `pill.css`.
+const LEAVE: Duration = Duration::from_millis(140);
+
+/// Orders the window out once the pill has faded, unless it was shown again meanwhile.
+fn hide_after_leaving(app: AppHandle, content: Arc<Mutex<PillSnapshot>>, generation: u64) {
+    std::thread::spawn(move || {
+        std::thread::sleep(LEAVE);
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            // Keep validation and the native action ordered against the next state change.
+            let content = content.lock().unwrap();
+            if content.may_hide(generation)
+                && let Some(window) = handle.get_webview_window(LABEL)
+            {
+                platform::hide(&window);
+            }
+        });
+    });
+}
 
 #[cfg(test)]
 mod tests {
@@ -232,6 +529,118 @@ mod tests {
         assert_eq!(json["preview"]["session_id"], "first");
         assert_eq!(json["preview"]["revision"], 2);
         assert_eq!(json["preview"]["text"], "Een voorlopige zin");
+    }
+
+    fn model(generation: u64) -> PillModelPresentation {
+        PillModelPresentation {
+            session_id: "first".into(),
+            generation,
+            model: pennel_core::ConfiguredDictationModel {
+                choice: pennel_core::ModelChoice {
+                    provider_id: "apple".into(),
+                    model: "dictation".into(),
+                },
+                label: "Apple dictation".into(),
+            },
+            available_models: 2,
+            enabled: true,
+            switched: true,
+            next_shortcut: None,
+        }
+    }
+
+    #[test]
+    fn speech_model_metadata_stays_with_capture_and_boot_does_not_replay_confirmation() {
+        let mut content = listening();
+        assert!(content.update_model(model(2)));
+        assert!(!content.update_model(model(1)));
+        let mut old = model(3);
+        old.session_id = "previous".into();
+        assert!(!content.update_model(old));
+        let snapshot = serde_json::to_value(&content).unwrap();
+        assert_eq!(snapshot["speech_model"]["generation"], 2);
+        assert_eq!(snapshot["speech_model"]["switched"], false);
+        assert!(snapshot["speech_model"].get("text").is_none());
+        content.set_state(PillState::Hidden);
+        assert!(content.speech_model.is_none());
+        assert!(!content.update_model(model(4)));
+    }
+
+    #[test]
+    fn cancel_hint_is_owned_by_listening_presentation_and_clears_before_processing() {
+        let mut content = listening();
+        let mut current = model(0);
+        current.next_shortcut = Some(pennel_core::ShortcutLabel {
+            keycaps: vec!["Ctrl".into(), "M".into()],
+            text: "Ctrl+M".into(),
+        });
+        content.update_model(current);
+        content.cancel_shortcut = Some(pennel_core::ShortcutLabel {
+            keycaps: vec!["Ctrl".into(), "X".into()],
+            text: "Ctrl+X".into(),
+        });
+        assert_eq!(
+            serde_json::to_value(&content).unwrap()["cancel_shortcut"]["text"],
+            "Ctrl+X"
+        );
+        content.set_state(PillState::Working);
+        assert!(content.cancel_shortcut.is_none());
+        assert!(
+            content
+                .speech_model
+                .as_ref()
+                .unwrap()
+                .next_shortcut
+                .is_none()
+        );
+        content.set_state(PillState::Hidden);
+        assert!(
+            serde_json::to_value(&content)
+                .unwrap()
+                .get("cancel_shortcut")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_new_capture_accepts_generation_zero_without_reusing_the_previous_model() {
+        let mut content = listening();
+        let mut first = model(2);
+        first.model.label = "First capture model".into();
+        assert!(content.update_model(first.clone()));
+        content.set_state(PillState::Working);
+        content.set_state(PillState::Listening);
+        assert!(content.begin_preview("second".into()));
+        assert!(content.speech_model.is_none());
+        let mut second = model(0);
+        second.session_id = "second".into();
+        second.model.choice.provider_id = "second-provider".into();
+        second.model.label = "Second capture model".into();
+        assert!(content.update_model(second));
+        first.generation = 99;
+        assert!(!content.update_model(first));
+        assert!(!content.begin_preview("second".into()));
+        let model = content.speech_model.as_ref().unwrap();
+        assert_eq!(model.session_id, "second");
+        assert_eq!(model.generation, 0);
+        assert_eq!(model.model.label, "Second capture model");
+    }
+
+    #[test]
+    fn structured_notices_reach_the_webview_as_named_fields() {
+        let mut content = listening();
+        content.set_state(PillState::Problem {
+            title: "No connection".into(),
+            detail: Some("Your words are kept in History".into()),
+        });
+        let json = serde_json::to_value(&content).unwrap();
+        assert_eq!(json["state"], "problem");
+        assert_eq!(json["title"], "No connection");
+        assert_eq!(json["detail"], "Your words are kept in History");
+        assert_eq!(json["preview"]["session_id"], "first");
+        let metadata = serde_json::to_value(content.processing_snapshot()).unwrap();
+        assert_eq!(metadata["state"], "problem");
+        assert!(metadata.get("preview").is_none());
     }
 
     #[test]
@@ -311,12 +720,211 @@ mod tests {
     }
 
     #[test]
+    fn an_earlier_leave_cannot_hide_a_later_captures_leave() {
+        let mut content = listening();
+        content.set_state(PillState::Hidden);
+        let first_leave = content.visibility_generation;
+        assert!(content.may_hide(first_leave));
+        content.set_state(PillState::Listening);
+        assert!(!content.may_hide(first_leave));
+        content.set_state(PillState::Hidden);
+        assert!(content.may_hide(content.visibility_generation));
+        assert!(!content.may_hide(first_leave));
+    }
+
+    #[test]
+    fn repeated_hidden_emissions_do_not_restart_the_current_leave() {
+        let mut content = listening();
+        content.set_state(PillState::Hidden);
+        let leave = content.visibility_generation;
+        assert!(!content.set_state(PillState::Hidden));
+        assert!(content.may_hide(leave));
+        assert!(
+            serde_json::to_value(&content)
+                .unwrap()
+                .get("visibility_generation")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn core_caption_is_preserved_for_identical_grapheme_layout_in_both_renderers() {
         let mut content = listening();
         let text = format!("{}e\u{301}👩‍👩‍👧", "é".repeat(180));
         content.update_preview(preview("first", 1, &text));
         let visible = &content.preview.as_ref().unwrap().text;
         assert_eq!(visible, &text);
+    }
+
+    #[test]
+    fn selected_geometry_respects_scale_work_area_and_cursor_for_each_size() {
+        let regular = metrics_for(pennel_core::PillSize::Regular);
+        let top = fitted_geometry_with(
+            (-1920, 24),
+            (1920, 1056),
+            2.0,
+            regular,
+            pennel_core::PillPosition::TopCentre,
+            Some((-1900.0, 50.0)),
+        )
+        .unwrap();
+        assert_eq!(top, (-1380, 24, 840, 328));
+        let near = fitted_geometry_with(
+            (-1920, 24),
+            (1920, 1056),
+            2.0,
+            regular,
+            pennel_core::PillPosition::NearCursor,
+            Some((-1900.0, 50.0)),
+        )
+        .unwrap();
+        assert_eq!(near, (-1920, 74, 840, 328));
+        for size in [
+            pennel_core::PillSize::Compact,
+            pennel_core::PillSize::Regular,
+            pennel_core::PillSize::Large,
+        ] {
+            let fitted = fitted_geometry_with(
+                (-1400, 20),
+                (350, 100),
+                1.25,
+                metrics_for(size),
+                pennel_core::PillPosition::NearCursor,
+                Some((-1.0, -9999.0)),
+            )
+            .unwrap();
+            assert_eq!(fitted, (-1400, 20, 350, 100));
+        }
+    }
+
+    #[test]
+    fn pending_demo_cannot_revive_after_capture_cancels_it_during_creation() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let idle = std::cell::Cell::new(true);
+        let visible = std::cell::Cell::new(false);
+        let result = show_demo(
+            &demo,
+            || idle.get(),
+            || {
+                idle.set(false);
+                demo.lock().unwrap().real_visibility(true);
+                Ok(())
+            },
+            |shown| visible.set(shown),
+        );
+        assert!(result.is_err());
+        assert!(!visible.get());
+        // The real owner blocks admission even before its content snapshot catches up.
+        idle.set(true);
+        assert!(
+            show_demo(
+                &demo,
+                || idle.get(),
+                || panic!("created under a real owner"),
+                |shown| visible.set(shown)
+            )
+            .is_err()
+        );
+        demo.lock().unwrap().real_visibility(false);
+        let result = show_demo(
+            &demo,
+            || true,
+            || {
+                let mut state = demo.lock().unwrap();
+                state.real_visibility(true);
+                state.real_visibility(false);
+                Ok(())
+            },
+            |shown| visible.set(shown),
+        );
+        assert!(
+            result.is_err(),
+            "an intervening capture must invalidate the old request even when idle again"
+        );
+        assert!(!visible.get());
+    }
+
+    #[test]
+    fn an_old_queued_cancel_cannot_hide_a_new_valid_demo() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let visible = std::cell::Cell::new(false);
+        show_demo(&demo, || true, || Ok(()), |shown| visible.set(shown)).unwrap();
+        let cancelled = {
+            let mut state = demo.lock().unwrap();
+            let generation = state.real_visibility(true).unwrap();
+            state.real_visibility(false);
+            generation
+        };
+        show_demo(&demo, || true, || Ok(()), |shown| visible.set(shown)).unwrap();
+        hide_cancelled_demo(&demo, cancelled, || true, |shown| visible.set(shown));
+        assert!(visible.get());
+    }
+
+    #[test]
+    fn capture_reentry_during_native_show_is_reconciled_without_a_state_lock() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let idle = std::cell::Cell::new(true);
+        let visible = std::cell::Cell::new(false);
+        let interrupted = std::cell::Cell::new(false);
+        let result = show_demo(
+            &demo,
+            || idle.get(),
+            || Ok(()),
+            |shown| {
+                if shown && !interrupted.replace(true) {
+                    demo.try_lock()
+                        .expect("native show held demo state")
+                        .real_visibility(true);
+                    idle.set(false);
+                }
+                visible.set(shown);
+            },
+        );
+        assert!(result.is_err());
+        assert!(!visible.get());
+    }
+
+    #[test]
+    fn native_hide_reentry_preserves_a_newer_demo() {
+        let demo = Mutex::new(DemoVisibility::default());
+        let visible = std::cell::Cell::new(false);
+        let cancelled = {
+            let mut state = demo.lock().unwrap();
+            let generation = state.real_visibility(true).unwrap();
+            state.real_visibility(false);
+            generation
+        };
+        let reentered = std::cell::Cell::new(false);
+        hide_cancelled_demo(
+            &demo,
+            cancelled,
+            || true,
+            |shown| {
+                if !shown && !reentered.replace(true) {
+                    assert!(demo.try_lock().is_ok(), "native hide held demo state");
+                    show_demo(&demo, || true, || Ok(()), |new| visible.set(new)).unwrap();
+                }
+                visible.set(shown);
+            },
+        );
+        assert!(visible.get());
+    }
+
+    #[test]
+    fn demo_timer_cannot_hide_a_new_preview_or_resume_after_real_capture() {
+        let mut demo = DemoVisibility::default();
+        let first = demo.reserve().unwrap();
+        assert!(demo.admit(first, true));
+        let second = demo.reserve().unwrap();
+        assert!(demo.admit(second, true));
+        assert!(demo.end_if(first).is_none());
+        assert!(demo.active);
+        demo.cancel();
+        assert!(demo.end_if(second).is_none());
+        let third = demo.reserve().unwrap();
+        assert!(demo.admit(third, true));
+        assert!(demo.end_if(third).is_some());
+        assert!(!demo.active);
     }
 
     #[test]
@@ -341,9 +949,14 @@ pub fn hide_without_focus(window: &WebviewWindow) {
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let window = tauri::WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("pill.html".into()))
+    create_window(app, LABEL, "pill.html")
+}
+
+fn create_window(app: &AppHandle, label: &str, url: &str) -> tauri::Result<WebviewWindow> {
+    let metrics = metrics_for(preferences(app).0);
+    let window = tauri::WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
         .title("Pennel")
-        .inner_size(metrics().window_width, metrics().window_height)
+        .inner_size(metrics.window_width, metrics.window_height)
         .resizable(false)
         .decorations(false)
         .transparent(true)
@@ -363,6 +976,106 @@ pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         }
     }
     Ok(window)
+}
+
+fn demo_idle(app: &AppHandle) -> bool {
+    let Some(shared) = app.try_state::<Arc<crate::state::Shared>>() else {
+        return false;
+    };
+    // Real presentation ownership is tracked in DemoVisibility before content/native work begins.
+    !shared
+        .dictation_active
+        .load(std::sync::atomic::Ordering::SeqCst)
+        && shared
+            .dictation_jobs
+            .load(std::sync::atomic::Ordering::SeqCst)
+            == 0
+}
+
+fn demo_native(app: &AppHandle, visible: bool) {
+    if let Some(window) = app.get_webview_window(DEMO_LABEL) {
+        if visible {
+            platform::show_at_bottom(app, &window);
+        } else {
+            platform::hide(&window);
+        }
+    }
+}
+
+fn sync_demo_real_visibility(app: &AppHandle, visible: bool) {
+    let Some(snapshot) = app.try_state::<Snapshot>() else {
+        return;
+    };
+    let demo = snapshot.demo.clone();
+    let generation = demo.lock().unwrap().real_visibility(visible);
+    if let Some(generation) = generation {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            hide_cancelled_demo(
+                &demo,
+                generation,
+                || demo_idle(&handle),
+                |shown| demo_native(&handle, shown),
+            );
+        });
+    }
+}
+
+/// A separate display-only window never receives a capture snapshot or recognition events.
+#[tauri::command]
+pub fn show_pill_preview(
+    app: AppHandle,
+    shared: tauri::State<'_, Arc<crate::state::Shared>>,
+) -> Result<(), String> {
+    let snapshot = app.state::<Snapshot>();
+    let _ = shared;
+    let generation = show_demo(
+        &snapshot.demo,
+        || demo_idle(&app),
+        || {
+            app.get_webview_window(DEMO_LABEL)
+                .map(Ok)
+                .unwrap_or_else(|| create_window(&app, DEMO_LABEL, "pill.html?preview=1"))
+                .map(|_| ())
+                .map_err(|_| "The pill preview could not be opened.".to_owned())
+        },
+        |visible| demo_native(&app, visible),
+    )?;
+    let demo = snapshot.demo.clone();
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(2400));
+        let app = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            let expired = demo.lock().unwrap().end_if(generation);
+            if let Some(generation) = expired {
+                hide_cancelled_demo(
+                    &demo,
+                    generation,
+                    || demo_idle(&app),
+                    |shown| demo_native(&app, shown),
+                );
+            }
+        });
+    });
+    Ok(())
+}
+
+pub fn refresh_preferences(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let snapshot = handle.state::<Snapshot>();
+        if snapshot.content.lock().unwrap().state != PillState::Hidden
+            && let Some(window) = handle.get_webview_window(LABEL)
+        {
+            platform::show_at_bottom(&handle, &window);
+        }
+        reconcile_demo(
+            &snapshot.demo,
+            || demo_idle(&handle),
+            |shown| demo_native(&handle, shown),
+        );
+    });
 }
 
 pub struct Pill {
@@ -385,11 +1098,17 @@ impl Pill {
     }
 
     pub fn show(&self, state: PillState) {
-        let was_hidden = {
+        sync_demo_real_visibility(&self.app, state != PillState::Hidden);
+        let (was_hidden, generation) = {
             let mut content = self.content.lock().unwrap();
             let was_hidden = content.state == PillState::Hidden;
             if !content.set_state(state.clone()) {
                 return;
+            }
+            content.cancel_shortcut = live_shortcut(&self.app, &content.state, 3);
+            let next = live_shortcut(&self.app, &content.state, 4);
+            if let Some(model) = content.speech_model.as_mut() {
+                model.next_shortcut = next;
             }
             if state != PillState::Hidden {
                 let session = self
@@ -415,9 +1134,9 @@ impl Pill {
             if state == PillState::Hidden {
                 self.emit_preview(&content);
             }
-            was_hidden
+            (was_hidden, content.visibility_generation)
         };
-        self.sync_visibility(was_hidden);
+        self.sync_visibility(was_hidden, generation);
     }
 
     pub fn begin_preview(
@@ -433,6 +1152,50 @@ impl Pill {
             let _ = self
                 .app
                 .emit("dictation-state", content.processing_snapshot());
+        }
+        drop(content);
+        self.refresh_model(session, false);
+    }
+
+    pub fn refresh_model(&self, session: &Arc<pennel_core::LiveDictationSession>, switched: bool) {
+        let shared = self.app.state::<Arc<crate::state::Shared>>();
+        let settings = shared.settings();
+        let models = shared.configured_dictation_models();
+        let model = models
+            .iter()
+            .find(|model| model.choice == session.speech_model())
+            .cloned();
+        let mut content = self.content.lock().unwrap();
+        let cancel = live_shortcut(&self.app, &content.state, 3);
+        if content.cancel_shortcut != cancel {
+            content.cancel_shortcut = cancel;
+            let _ = self.app.emit_to(LABEL, "pill-state", &*content);
+        }
+        if content
+            .preview
+            .as_ref()
+            .is_none_or(|preview| preview.session_id != session.id())
+        {
+            return;
+        }
+        let Some(model) = model else {
+            content.speech_model = None;
+            let _ = self
+                .app
+                .emit_to(LABEL, "pill-model", Option::<PillModelPresentation>::None);
+            return;
+        };
+        let next = PillModelPresentation {
+            session_id: session.id(),
+            generation: session.preview_generation(),
+            model,
+            available_models: models.len(),
+            enabled: settings.pill_model_switch_enabled,
+            switched,
+            next_shortcut: live_shortcut(&self.app, &content.state, 4),
+        };
+        if content.update_model(next.clone()) || switched {
+            let _ = self.app.emit_to(LABEL, "pill-model", next);
         }
     }
 
@@ -454,25 +1217,28 @@ impl Pill {
         let _ = self.app.emit_to(LABEL, "pill-preview", &content.preview);
     }
 
-    fn sync_visibility(&self, position: bool) {
+    fn sync_visibility(&self, position: bool, generation: u64) {
         let app = self.app.clone();
         let handle = app.clone();
+        let content = self.content.clone();
         let _ = app.run_on_main_thread(move || {
-            let current = snapshot(&handle);
+            let latest = content.lock().unwrap();
+            if latest.visibility_generation != generation {
+                return;
+            }
             let existing = handle.get_webview_window(LABEL);
             let is_new = existing.is_none();
             let window = existing.or_else(|| {
-                (current != PillState::Hidden)
+                (latest.state != PillState::Hidden)
                     .then(|| create(&handle).ok())
                     .flatten()
             });
             let Some(window) = window else {
                 return;
             };
-            let latest = content_snapshot(&handle);
-            let _ = window.emit_to(LABEL, "pill-state", &latest);
+            let _ = window.emit_to(LABEL, "pill-state", &*latest);
             if latest.state == PillState::Hidden {
-                platform::hide(&window);
+                hide_after_leaving(handle, content.clone(), generation);
             } else if position || is_new {
                 platform::show_at_bottom(&handle, &window);
             } else {
@@ -511,10 +1277,14 @@ impl Pill {
             return;
         };
         let area = monitor.work_area();
-        let Some((x, y, width, height)) = fitted_geometry(
+        let (size, position) = preferences(app);
+        let Some((x, y, width, height)) = fitted_geometry_with(
             (area.position.x, area.position.y),
             (area.size.width, area.size.height),
             monitor.scale_factor(),
+            metrics_for(size),
+            position,
+            cursor.map(|cursor| (cursor.x, cursor.y)),
         ) else {
             return;
         };
@@ -580,14 +1350,21 @@ mod platform {
     }
     /// Tauri applies position and size asynchronously on macOS, after the panel would already be
     /// ordered in at the default centred frame; the panel is placed synchronously instead.
-    pub fn show_at_bottom(_app: &tauri::AppHandle, window: &WebviewWindow) {
+    pub fn show_at_bottom(app: &tauri::AppHandle, window: &WebviewWindow) {
         if let Ok(pointer) = window.ns_window() {
-            let metrics = super::metrics();
+            let (size, position) = super::preferences(app);
+            let metrics = super::metrics_for(size);
+            let position = match position {
+                pennel_core::PillPosition::BottomCentre => 0,
+                pennel_core::PillPosition::TopCentre => 1,
+                pennel_core::PillPosition::NearCursor => 2,
+            };
             unsafe {
-                crate::macos::show_panel_at_bottom(
+                crate::macos::show_pill_at_position(
                     pointer,
                     metrics.window_width,
                     metrics.window_height,
+                    position,
                 );
             }
         }

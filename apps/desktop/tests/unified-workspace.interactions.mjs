@@ -29,7 +29,7 @@ function click(node) {
 }
 function edit(node, value) {
   assert(node && !node.disabled, "The owned fixture has no editable field.");
-  node.focus(); node.value = value;
+  node.focus(); if (node.applyUserChange) { node.applyUserChange(value); return; } node.value = value;
   node.dispatchEvent(new Event("input", { bubbles: true }));
 }
 function observeCommands() {

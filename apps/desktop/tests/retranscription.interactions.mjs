@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 import { openMeetingTool } from "./meeting-test-controls.mjs";
 
 /** Browser verification against owned synthetic fixtures only; no real audio is used here. */
@@ -25,11 +26,10 @@ export async function checkRetranscription() {
   const action = () => findButton(document, t("meetings.retranscribe_audio"));
   try {
     await until(() => document.querySelector(".live-workspace .live-notes"), "The unified saved meeting did not mount");
-    document.querySelector('[data-live-tab="notes"]').click();
+    selectMeetingPane(document.querySelector(".live-workspace"), "notes");
     const notes = document.querySelector(".live-notes");
     const expectedNotes = notes.value + "\nSynthetische eigen notitie blijft bewaard.";
-    notes.value = expectedNotes;
-    notes.dispatchEvent(new Event("input", { bubbles: true }));
+    notes.applyUserChange(expectedNotes);
     await openMeetingTool("meetings.retranscribe_audio");
     await until(() => action() && !action().disabled && action().getClientRects().length, "Local retranscription is unavailable");
     action().click();
@@ -50,9 +50,9 @@ export async function checkRetranscription() {
     await until(() => action()?.disabled && document.querySelector(".meeting-retranscription-status")?.textContent.includes("25%"), "Progress or duplicate-action protection is missing");
     assert(!commands.includes("summarize_meeting"), "Retranscription started a summary request");
     await until(() => action() && !action().disabled, "The completed replacement did not restore the retry action");
-    document.querySelector('[data-live-tab="summary"]').click();
+    selectMeetingPane(document.querySelector(".live-workspace"), "summary");
     await until(() => document.querySelector(".meeting-summary-surface")?.innerText.includes(t("meetings.summary_outdated_editor")), "The completed replacement did not mark the old summary outdated");
-    document.querySelector('[data-live-tab="notes"]').click();
+    selectMeetingPane(document.querySelector(".live-workspace"), "notes");
     assert(document.querySelector(".live-notes").value === expectedNotes, "Retranscription lost the user's note draft");
     document.querySelector('[data-live-tab="transcript"]').click();
     return { confirmed: true, progress: true, notesPreserved: true, summaryOutdated: true };

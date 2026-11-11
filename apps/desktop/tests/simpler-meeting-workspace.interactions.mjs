@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -5,6 +6,7 @@ async function until(check, message) {
   throw Error(message);
 }
 function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; }
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
@@ -15,7 +17,7 @@ async function owned() {
   return { root, fixture: window.__PENNEL_FIXTURE__, api: (await import("/src/api.ts")).api, id: () => root.dataset.meetingId };
 }
 async function summarySurface(root) {
-  root.querySelector('[data-live-tab="summary"]').click();
+  selectMeetingPane(root, "summary");
   await until(() => !root.querySelector(".meeting-summary-editor").disabled, "The saved summary did not load.");
   assert(root.querySelector(".meeting-summary-rendered").getClientRects().length > 0, "Completed summary did not open as readable content.");
   root.querySelector(".meeting-summary-edit").click();
@@ -28,13 +30,13 @@ export async function checkNotesFirstWorkspace() {
   const { root, fixture } = await owned();
   const notes = root.querySelector(".live-notes");
   assert(root.querySelector('[data-live-pane="notes"]').getClientRects().length > 0, "Notes are not the initial writing surface.");
-  for (const name of ["transcript", "questions"]) assert(root.querySelector(`[data-live-pane="${name}"]`).hidden, "A companion opened without a choice.");
-  assert(root.querySelector(".live-note-controls").hidden, "Formatting details opened before they were requested.");
+  assert(root.querySelector('[data-live-pane="questions"]').hidden && root.querySelector('[data-live-pane="transcript"]').hidden === (innerWidth < 1100), "The companion default does not match the window width.");
+  assert(root.querySelectorAll(".live-save-controls [data-live-format]").length === 4 && !root.querySelector(".live-preview-toggle"), "Inline notes did not expose their formatting footer.");
   edit(notes, "Synthetic notes while capture continues."); notes.focus(); notes.setSelectionRange(10, 15, "backward");
   root.querySelector(".live-stop").click();
   await until(() => !fixture.workspace.recording() && root.dataset.recording === "false", "Stop did not finish capture in the same workspace.");
   assert(document.querySelector(".live-workspace") === root && root.querySelector(".live-notes") === notes, "Stop replaced the meeting or notes editor.");
-  assert(notes.value === "Synthetic notes while capture continues." && notes.selectionStart === 10 && notes.selectionEnd === 15 && document.activeElement === notes,
+  assert(notes.value === "Synthetic notes while capture continues." && notes.selectionStart === 10 && notes.selectionEnd === 15 && document.activeElement === notes.contentDOM,
     "Finalization changed notes, selection or focus.");
   assert(!root.querySelector(".live-review"), "Finalization introduced a separate review transition.");
   root.querySelector('[data-live-tab="questions"]').click();
@@ -42,7 +44,7 @@ export async function checkNotesFirstWorkspace() {
   assert(!questionPanel.hidden, "Questions did not open on request.");
   root.querySelector(".meeting-companion-close").click();
   assert(questionPanel.hidden && !root.classList.contains("live-companion-open"), "Closing the companion did not restore notes.");
-  return record("notesFirstUnifiedLifecycle", { sameWorkspace: true, sameEditor: true, defaultClosed: true, stopPreservedSelection: true, syntheticOnly: true });
+  return record("notesFirstUnifiedLifecycle", { sameWorkspace: true, sameEditor: true, defaultMatchesViewport: true, stopPreservedSelection: true, syntheticOnly: true });
 }
 
 export async function checkSummaryEditingAndCandidate() {
@@ -105,7 +107,7 @@ export async function checkScopedCopyPreview() {
   const privateSummary = "PRIVATE_SYNTHETIC_OWNER_SUMMARY";
   edit(editor, privateSummary);
   await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
-  root.querySelector('[data-live-tab="notes"]').click();
+  selectMeetingPane(root, "notes");
   root.querySelector(".meeting-export-action").click();
   const preview = root.querySelector(".meeting-export-preview"), body = preview.querySelector(".meeting-export-copy");
   await until(() => !preview.hidden && !preview.querySelector(".meeting-export-generate").disabled, "The default shareable preview did not open.");

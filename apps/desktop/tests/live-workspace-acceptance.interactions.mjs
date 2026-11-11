@@ -18,6 +18,7 @@ async function owned() {
 }
 
 function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; }
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
@@ -117,26 +118,13 @@ export async function checkLiveResponsiveFollow() {
   const note = root.querySelector(".live-notes");
   const output = root.querySelector(".live-transcript");
   try {
-    content.style.width = "790px";
-    await until(() => !root.classList.contains("live-wide"), "The narrow workspace did not use four tabs.");
+    // Real viewport transitions are covered by meeting-companion-resize; keep Follow/selection checks here.
     select(root, "questions");
-    content.style.width = "810px";
-    await until(() => root.classList.contains("live-wide"), "The wide workspace did not expose both panes.");
-    assert(shown(panel(root, "notes")) && shown(panel(root, "questions")), "The wide transition lost the deliberately selected companion.");
+    assert(shown(panel(root, "notes")) && shown(panel(root, "questions")), "The companion replaced the retained document.");
     const separator = root.querySelector(".live-pane-separator");
     const ratio = Number(separator.getAttribute("aria-valuenow"));
     separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
     assert(Number(separator.getAttribute("aria-valuenow")) === ratio - 5, "The pane divider cannot be resized by keyboard.");
-    content.style.width = "790px";
-    await until(() => !root.classList.contains("live-wide"), "The workspace did not return to tabs.");
-    assert(shown(panel(root, "questions")), "The narrow transition forgot the selected Questions tab.");
-    select(root, "notes");
-    content.style.width = "810px";
-    await until(() => root.classList.contains("live-wide"), "The second wide transition failed.");
-    assert(shown(panel(root, "questions")), "Selecting Notes discarded the companion choice.");
-    content.style.width = "790px";
-    await until(() => !root.classList.contains("live-wide"), "The second narrow transition failed.");
-    assert(shown(panel(root, "notes")) && root.querySelector(".live-notes") === note, "The deliberate Notes selection or editor identity was lost.");
 
     select(root, "transcript");
     for (let index = 0; index < 80; index++) fixture.workspace.append({ start_ms: 30_000 + index * 15_000, end_ms: 45_000 + index * 15_000,

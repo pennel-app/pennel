@@ -30,6 +30,7 @@
   --success-soft: #edf6f0;
   --danger: #b93636;
   --danger-soft: #fff0ef;
+  --live: #c2410c;
   --control-edge: #00000012;
   --disabled: #f3f3f3;
   --disabled-text: #626262;
@@ -48,8 +49,9 @@
   --font-title: 20px;
   --font-onboarding: 20px;
   --font-welcome: 20px;
-  --font-page-title: 20px;
-  --font-display-title: 20px;
+  --font-page-title: 26px;
+  --font-display-title: 26px;
+  --font-dictation-instruction: 30px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,6 +86,7 @@
     --success-soft: #23352b;
     --danger: #ff9a9a;
     --danger-soft: #3b2020;
+    --live: #f2b48e;
     --control-edge: #ffffff1a;
     --disabled: #242424;
     --disabled-text: #a6a6a6;
@@ -123,6 +126,7 @@
   --success-soft: #edf6f0;
   --danger: #b93636;
   --danger-soft: #fff0ef;
+  --live: #c2410c;
   --control-edge: #00000012;
   --disabled: #f3f3f3;
   --disabled-text: #626262;
@@ -161,6 +165,7 @@
   --success-soft: #23352b;
   --danger: #ff9a9a;
   --danger-soft: #3b2020;
+  --live: #f2b48e;
   --control-edge: #ffffff1a;
   --disabled: #242424;
   --disabled-text: #a6a6a6;

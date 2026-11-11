@@ -6,8 +6,8 @@
   "onboarding.permissions_intro": "This lets Pennel work in your other apps too.",
   "onboarding.permissions_later": "Calendar and system audio access are requested when you want to record meetings.",
   "onboarding.hold_to_dictate": "Hold to dictate",
-  "onboarding.welcome_title": "Welcome to Pennel",
-  "onboarding.welcome_intro": "What would you like to do first? You can use both.",
+  "onboarding.welcome_title": "What would you like to do first?",
+  "onboarding.welcome_intro": "You can use both. No account required.",
   "onboarding.next_message": "Your next message",
   "onboarding.welcome_note": "Dictation and meeting notes. No account required.",
   "onboarding.language_auto": "Automatic",
@@ -130,5 +130,12 @@
   "onboarding.open_recording": "Continue to recording",
   "onboarding.open_dictation": "Open dictation",
   "onboarding.cloud_setup": "Set up Pennel Cloud",
-  "onboarding.cloud_setup_help": "Choose Pennel Cloud under Other options in the speech chooser, sign in, then use that setup. Your current task changes only when you apply it."
+  "onboarding.cloud_setup_help": "Choose Pennel Cloud under Other options in the speech chooser, sign in, then use that setup. Your current task changes only when you apply it.",
+  "onboarding.first_task": "First task",
+  "onboarding.recommended": "Recommended",
+  "onboarding.download_continue": "Download and continue",
+  "onboarding.downloading_progress": "Downloading… {percent}%",
+  "onboarding.other_local": "Another model on this computer",
+  "onboarding.other_local_help": "Other download sizes, or Apple dictation when supported.",
+  "onboarding.other_provider_help": "Your audio goes to the provider or server you choose."
 }

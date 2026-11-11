@@ -1,3 +1,4 @@
+import { replaceNotesSelection } from "./meeting-workspace-test-controls.mjs";
 import { selectMeetingPane, openMeetingTools } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
@@ -5,7 +6,8 @@ async function until(check, message) {
   for (let attempt = 0; attempt < 240; attempt++) { if (await check()) return; await pause(); }
   throw new Error(message);
 }
-function edit(input, value) { input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
+function edit(input, value) {
+  if (input.applyUserChange) { input.applyUserChange(value); return; } input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
 function tab(root, name) { selectMeetingPane(root, name); }
 async function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic fixture.");
@@ -41,9 +43,8 @@ export async function checkLiveSpeakerControls() {
   const text = [first.querySelector(".transcript-copy").textContent, microphone.querySelector(".transcript-copy").textContent];
   tab(root, "notes");
   const note = root.querySelector(".live-notes"); note.focus(); note.setSelectionRange(2, 10, "backward");
-  note.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-  note.setRangeText("samengesteld", note.selectionStart, note.selectionEnd, "select");
-  note.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, inputType: "insertCompositionText", data: "samengesteld" }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  replaceNotesSelection(note, "samengesteld");
   const before = { value: note.value, start: note.selectionStart, end: note.selectionEnd, direction: note.selectionDirection, scroll: note.scrollTop };
   fixture.workspace.attribution(0, { attribution: { kind: "single", voices: [2], provisional: true } });
   fixture.workspace.attribution(1, { attribution: { kind: "unknown", voices: [], provisional: true } });
@@ -71,9 +72,9 @@ export async function checkLiveSpeakerControls() {
   assert(root.querySelector('[data-segment-key="utterance:qa-utterance-0"]') === first && root.querySelector('[data-segment-key="utterance:qa-utterance-1"]') === microphone
     && first.dataset.sourceId === sources[0] && microphone.dataset.sourceId === sources[1]
     && first.querySelector(".transcript-copy").textContent === text[0] && microphone.querySelector(".transcript-copy").textContent === text[1], "Live attribution changed row identity, physical source or spoken text.");
-  assert(document.activeElement === note && root.querySelector(".live-notes") === note && note.value === before.value && note.selectionStart === before.start
+  assert(document.activeElement === note.contentDOM && root.querySelector(".live-notes") === note && note.value === before.value && note.selectionStart === before.start
     && note.selectionEnd === before.end && note.selectionDirection === before.direction && note.scrollTop === before.scroll, "Live labels or answers changed composition, focus or selection.");
-  note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   tab(root, "questions"); root.querySelector(".citation").click();
   await until(() => !root.querySelector(".live-source-notice").hidden, "Speaker revisions did not disclose the changed source context.");
   assert(root.querySelector(".live-source-notice blockquote")?.textContent === request.anchors[0].source_text && !root.querySelector(".live-source-highlight"),
@@ -211,9 +212,8 @@ export async function checkSelectedTranscriptSplit(release = "clear") {
   tab(root, "notes");
   const note = root.querySelector(".live-notes");
   note.focus(); note.setSelectionRange(2, 9, "backward");
-  note.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-  note.setRangeText("samengesteld", note.selectionStart, note.selectionEnd, "select");
-  note.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, inputType: "insertCompositionText", data: "samengesteld" }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  replaceNotesSelection(note, "samengesteld");
   tab(root, "transcript");
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const output = root.querySelector(".live-transcript");
@@ -269,7 +269,7 @@ export async function checkSelectedTranscriptSplit(release = "clear") {
   if (release === "move") assert(selection.anchorNode === movedNode && selection.toString() === movedWords, "Flushing the split destroyed the user's new selection.");
   if (release === "follow") assert(selection.isCollapsed && root.querySelector(".live-follow").hidden && output.scrollTop >= output.scrollHeight - output.clientHeight - 2,
     "Follow live did not explicitly leave the selection and resume the latest transcript.");
-  note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   tab(root, "questions");
   root.querySelector(".citation").click();
   await until(() => !root.querySelector(".live-source-notice").hidden, "A retired source identity was silently reassociated through the split.");

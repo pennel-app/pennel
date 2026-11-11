@@ -18,6 +18,44 @@ test("background summary completion cannot replace typed text or a focused clean
   assert.equal(draft.value, "Generated remotely");
 });
 
+test("record attachment metadata follows a same-body refresh without replacing the acknowledged text", () => {
+  const draft = new SummaryDraft();
+  draft.receive({ ...document(), record: { body_revision: "attached" } });
+  assert.equal(draft.receive({ ...document(), record: null }), false);
+  assert.equal(draft.document.record, null);
+  assert.equal(draft.value, "Saved summary");
+});
+
+test("same-body presentation metadata defers across protected reading and applies after release", () => {
+  for (const attached of [true, false]) {
+    const record = { body_revision: "attached", structure: { lead: "Saved summary" } };
+    const draft = new SummaryDraft();
+    draft.receive({ ...document(), record: attached ? record : null });
+    draft.receive({ ...document(), outdated: true, record: attached ? null : record }, true);
+    assert.deepEqual(draft.document.record, attached ? record : null);
+    assert.equal(draft.document.outdated, true, "Harmless status metadata was not acknowledged.");
+    assert.equal(draft.remote, null, "A presentation-only change became a body conflict.");
+    assert.ok(draft.deferredPresentation);
+    assert.equal(draft.applyPresentation(true), false);
+    assert.equal(draft.applyPresentation(), true);
+    assert.deepEqual(draft.document.record, attached ? null : record);
+    assert.equal(draft.value, "Saved summary");
+    assert.equal(draft.deferredPresentation, null);
+  }
+});
+
+test("an acknowledged write supersedes deferred presentation metadata for its old revision", () => {
+  const draft = new SummaryDraft();
+  draft.receive({ ...document(), record: { body_revision: "attached" } });
+  draft.receive({ ...document(), record: null }, true);
+  assert.ok(draft.deferredPresentation);
+  draft.value = "Acknowledged action state";
+  draft.acknowledge(document(draft.value, "r2"), draft.value);
+  assert.equal(draft.deferredPresentation, null);
+  assert.equal(draft.applyPresentation(), false);
+  assert.equal(draft.document.revision, "r2");
+});
+
 test("source changes never silently advance the expected revision of an active or dirty draft", () => {
   for (const protectedInput of [true, false]) {
     const draft = new SummaryDraft(); draft.receive(document());
@@ -80,4 +118,34 @@ test("manual review is available only for the exact clean saved outdated summary
   draft.keepEditAgainstRemote(); assert.equal(draft.canMarkReviewed, true);
   draft.acknowledge(document("Saved summary", "r1", "changed-notes-or-transcript"), "Saved summary");
   assert.equal(draft.canMarkReviewed, false);
+});
+
+test("our metadata-only acknowledgement preserves a reviewable candidate and newer typing", () => {
+  const draft = new SummaryDraft(); draft.receive(document()); draft.stage(document("Candidate"), draft.editRevision); draft.error = "Earlier generation failed";
+  assert.equal(draft.acknowledgeMetadata(document("Saved summary", "r2")), true);
+  assert.equal(draft.value, "Saved summary"); assert.equal(draft.candidate.revision, "r2"); assert.equal(draft.canAccept, true); assert.equal(draft.error, "Earlier generation failed");
+  draft.edit("Later writer text"); const revision = draft.editRevision;
+  assert.equal(draft.acknowledgeMetadata(document("Saved summary", "r3")), true);
+  assert.equal(draft.value, "Later writer text"); assert.equal(draft.dirty, true); assert.equal(draft.editRevision, revision); assert.equal(draft.canAccept, false);
+});
+test("our metadata acknowledgement supersedes deferred record presentation", () => {
+  for (const revision of ["r1", "r2"]) {
+    const record = { body_revision: "attached", structure: { lead: "Saved summary" } };
+    const draft = new SummaryDraft();
+    draft.receive({ ...document(), record });
+    draft.receive({ ...document(), record: null }, true);
+    assert.ok(draft.deferredPresentation);
+    assert.equal(draft.acknowledgeMetadata({ ...document("Saved summary", revision), record }), true);
+    assert.equal(draft.deferredPresentation, null);
+    assert.equal(draft.applyPresentation(), false);
+    assert.deepEqual(draft.document.record, record);
+    assert.equal(draft.document.revision, revision);
+  }
+});
+test("metadata acknowledgement cannot rebase changed content, sources or meeting identity", () => {
+  for (const changed of [{ ...document("Saved summary", "r2"), meeting_uid: "other" }, document("Different body", "r2"), document("Saved summary", "r2", "s2")]) {
+    const draft = new SummaryDraft(); draft.receive(document()); draft.edit("Keep my typing");
+    assert.equal(draft.acknowledgeMetadata(changed), false);
+    assert.equal(draft.document.revision, "r1"); assert.equal(draft.value, "Keep my typing"); assert.equal(draft.dirty, true);
+  }
 });

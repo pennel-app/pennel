@@ -43,7 +43,9 @@ mod meeting_preview;
 mod meeting_qualification;
 mod meeting_recording;
 mod meeting_scheduler;
+mod meeting_suggestion_automation;
 mod meeting_summary;
+mod meeting_timeline;
 mod meeting_utterances;
 mod meetings;
 mod models;
@@ -57,6 +59,7 @@ mod rules;
 mod session;
 mod settings;
 mod setup;
+mod shortcuts;
 mod speaker_commit;
 mod speaker_jobs;
 mod speakers;
@@ -66,6 +69,7 @@ mod status;
 mod storage;
 mod stt;
 mod summary;
+mod summary_structure;
 mod system_llm;
 mod system_stt;
 mod templates;
@@ -88,8 +92,9 @@ pub use cloud::setup::{CloudSyncSetup, CloudSyncSetupPhase};
 pub use cloud::sync::{MASS_DELETE, MeetingSyncState, SyncItemState, SyncReport, SyncStatus};
 pub use cpu_support::{UNSUPPORTED_PROCESSOR, local_models_unavailable_reason};
 pub use engine::{
-    ApiKeys, CleanupStatus, DictationRequest, DictationResult, LibrarySearch, MeetingQuestionScope,
-    MeetingQuestionSelection, PennelEngine, PreparedMeetingQuestion,
+    ApiKeys, CleanupStatus, ConfiguredDictationModel, DictationRequest, DictationResult,
+    LibrarySearch, MeetingQuestionScope, MeetingQuestionSelection, PennelEngine,
+    PreparedMeetingQuestion,
 };
 pub use error::PennelError;
 pub use export::MeetingExport;
@@ -148,9 +153,9 @@ pub use meeting_qualification::{
 };
 pub use meeting_recording::{
     CaptureEventKind, CaptureFormatEpoch, MeetingAudioTrack, MeetingCaptureEvent,
-    MeetingRecordingMetadata, RecordingEnvironment, RecordingRecognition, RecordingSource,
-    RecordingTrackMetadata, RecordingTranscriptionAttempt, RecordingTransport,
-    resolve_meeting_audio_tracks,
+    MeetingRecordingMetadata, MeetingTranscriptProvenance, RecordingEnvironment,
+    RecordingRecognition, RecordingSource, RecordingTrackMetadata, RecordingTranscriptionAttempt,
+    RecordingTransport, resolve_meeting_audio_tracks,
 };
 pub use meeting_scheduler::{
     ForegroundQuestionAdmission, InferencePriority, MeetingAnalysisAdmission,
@@ -161,6 +166,9 @@ pub use meeting_scheduler::{
 pub use meeting_summary::{
     MeetingOutputScope, MeetingSummaryCandidate, MeetingSummaryDocument, MeetingSummaryRevision,
     ShareableMeetingSummary,
+};
+pub use meeting_timeline::{
+    MeetingSpeakerTimeline, SpeakerTimelineKind, SpeakerTimelineLane, SpeakerTimelineSpan,
 };
 pub use meeting_utterances::{
     AcousticTurn, AttributionKind, AutomaticAttribution, ManualCorrection,
@@ -193,10 +201,18 @@ pub use rules::{
 pub use session::{MeetingHealth, MeetingRecognition, MeetingSession};
 pub use settings::{
     AppearancePreference, DictationMode, HotkeyTrigger, MeetingAppNamePolicy, ModelChoice,
-    OnboardingGoal, OnboardingProgress, OnboardingStatus, OnboardingStep, Settings,
-    SpeakerRecognitionMode, Style, StyleRule, SummaryAutomation, default_settings,
+    OnboardingGoal, OnboardingProgress, OnboardingStatus, OnboardingStep, PillColour, PillPosition,
+    PillSize, Settings, SpeakerRecognitionMode, Style, StyleRule, SuggestionAutomation,
+    SummaryAutomation, default_settings,
 };
 pub use setup::{SetupAccess, SetupFacts, SetupReadiness, dictation_readiness, meeting_readiness};
+pub use shortcuts::{
+    SHORTCUT_ACTIONS, ShortcutBinding, ShortcutCapability, ShortcutLabel, ShortcutPlatform,
+    ShortcutProblem, ShortcutRow, ShortcutScope, bindings_conflict, default_shortcut,
+    effective_shortcut, format_shortcut, legacy_dictate, menu_accelerator,
+    reconcile_legacy_shortcuts, reset_all_shortcuts, reset_shortcut, set_shortcut,
+    shortcut_capability, shortcut_rows, shortcut_scope, supported_shortcut_code, validate_shortcut,
+};
 pub use speaker_jobs::{
     RecognitionAudioBlock, RecognitionAudioInfo, RecognitionAudioReader, RecognitionFileTransport,
     RecognitionUploadProgress, RecognitionUploadRequest, RecognitionUploadResponse,
@@ -204,7 +220,11 @@ pub use speaker_jobs::{
 };
 pub use speakers::{MeetingVoice, SpeakerProcessingStatus, SpeakerRecognition};
 pub use speech_result::{SpeechTextSpan, SpeechTimingKind, SpeechTranscript};
-pub use status::{CommandIntent, DictationStatus, PillState};
+pub use status::{CommandIntent, DictationStatus, NoSoundWatch, PillState};
+pub use summary_structure::{
+    MeetingSummaryRecord, SummaryAction, SummaryActionState, SummaryItem, SummaryLabels,
+    SummaryProvenance, SummarySource, SummaryStructure, SummaryTopic,
+};
 pub use system_llm::{LanguageModelMessage, SystemLanguageModel};
 pub use system_stt::{SystemTranscriber, TimedSystemTranscriber};
 pub use templates::MeetingTemplate;

@@ -79,13 +79,16 @@
   --desktop-content-inset: 28px;
   --desktop-action-inset: 22px;
   --pill-window-width: 420px;
-  --pill-window-height: 120px;
+  --pill-window-height: 164px;
   --pill-outer-inset: 16px;
   --pill-preview-lines: 2;
   --pill-preview-limit: 180;
   --pill-preview-line-height: 18px;
   --pill-shadow-y: 6px;
   --pill-shadow-blur: 18px;
+  --pill-label-size: 12px;
+  --pill-caption-size: 11px;
+  --pill-content-size: 14px;
   --ui: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --chrome-ui: var(--ui);
   --brand-ui: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -101,6 +104,7 @@
   --font-wordmark: 29px;
   --font-page-title: 28px;
   --font-display-title: 30px;
+  --font-dictation-instruction: 30px;
 }
 
 /* System appearance uses a media query supported by the minimum WebKit. */
@@ -224,4 +228,85 @@
   --voice-2: #b9a0db;
   --voice-3: #92bae3;
   --voice-4: #d7bb83;
+}
+
+/* Configurable pill variants; scoped to the pill and its settings preview. */
+:root[data-pill-colour="ink"], [data-pill-preview][data-pill-colour="ink"] {
+  --pill-background: #2a2723;
+  --pill-text: #fcfbf8;
+  --pill-accent: #f2b48e;
+}
+
+:root[data-pill-colour="light"], [data-pill-preview][data-pill-colour="light"] {
+  --pill-background: #fcfbf8;
+  --pill-text: #2a2723;
+  --pill-accent: #87532b;
+}
+
+:root[data-pill-colour="system"], [data-pill-preview][data-pill-colour="system"] {
+  --pill-background: #fcfbf8;
+  --pill-text: #2a2723;
+  --pill-accent: #87532b;
+}
+
+@media (prefers-color-scheme: dark) {
+:root[data-pill-colour="system"], [data-pill-preview][data-pill-colour="system"] {
+  --pill-background: #2a2723;
+  --pill-text: #fcfbf8;
+  --pill-accent: #f2b48e;
+}
+}
+
+:root[data-pill-colour="system"][data-pill-appearance="light"], [data-pill-preview][data-pill-colour="system"][data-pill-appearance="light"] {
+  --pill-background: #fcfbf8;
+  --pill-text: #2a2723;
+  --pill-accent: #87532b;
+}
+
+:root[data-pill-colour="system"][data-pill-appearance="dark"], [data-pill-preview][data-pill-colour="system"][data-pill-appearance="dark"] {
+  --pill-background: #2a2723;
+  --pill-text: #fcfbf8;
+  --pill-accent: #f2b48e;
+}
+
+:root[data-pill-size="compact"], [data-pill-preview][data-pill-size="compact"] {
+  --pill-window-width: 360px;
+  --pill-window-height: 152px;
+  --pill-outer-inset: 14px;
+  --pill-preview-lines: 2;
+  --pill-preview-limit: 180;
+  --pill-preview-line-height: 17px;
+  --pill-shadow-y: 6px;
+  --pill-shadow-blur: 18px;
+  --pill-label-size: 11px;
+  --pill-caption-size: 11px;
+  --pill-content-size: 13px;
+}
+
+:root[data-pill-size="regular"], [data-pill-preview][data-pill-size="regular"] {
+  --pill-window-width: 420px;
+  --pill-window-height: 164px;
+  --pill-outer-inset: 16px;
+  --pill-preview-lines: 2;
+  --pill-preview-limit: 180;
+  --pill-preview-line-height: 18px;
+  --pill-shadow-y: 6px;
+  --pill-shadow-blur: 18px;
+  --pill-label-size: 12px;
+  --pill-caption-size: 11px;
+  --pill-content-size: 14px;
+}
+
+:root[data-pill-size="large"], [data-pill-preview][data-pill-size="large"] {
+  --pill-window-width: 500px;
+  --pill-window-height: 200px;
+  --pill-outer-inset: 18px;
+  --pill-preview-lines: 2;
+  --pill-preview-limit: 180;
+  --pill-preview-line-height: 24px;
+  --pill-shadow-y: 6px;
+  --pill-shadow-blur: 18px;
+  --pill-label-size: 16px;
+  --pill-caption-size: 13px;
+  --pill-content-size: 18px;
 }

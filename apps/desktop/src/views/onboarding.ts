@@ -5,8 +5,9 @@ import { icon } from "../icons";
 import { defaultModelId, initialEngine, manualPracticeAllowed, modelOptionLabel, onboardingFlow, onboardingProgressChange, onboardingResumeStep, onboardingRouteIntent, onboardingSteps, stepIndex, type Engine } from "../onboarding-state";
 import { trainedLabel } from "../speaker-state";
 import { EnrollmentPanel, SpeakerModels, enrollmentBlocker, enrollmentIntro, speakerDownload } from "./voices";
-import { hotkeyLabel, hotkeyKeyLabel } from "../presentation";
+import { shortcutRow, shortcutText } from "../shortcut-presentation";
 import { workspaceRoute } from "../workspace-state";
+import { recommendedSpeechModel } from "../dictation-home-state";
 import type { Context } from "../main";
 import wordmarkSource from "../../../../assets/brand/wordmark.svg?raw";
 import { VisibilityPoll } from "../window-lifecycle";
@@ -35,6 +36,8 @@ class OnboardingWizard {
   private readonly back = h("button", { class: "text-button", onclick: () => { void this.previous().catch(this.fail); } }, l("onboarding.back"));
   private readonly skip = h("button", { class: "text-button", onclick: () => { void this.leave().catch(this.fail); } });
   private readonly count = h("span", { class: "help onboarding-count" });
+  private readonly topControls = h("div", { class: "onboarding-top-controls" });
+  private readonly cancelDownload = h("button", { class: "text-button onboarding-cancel-download", hidden: true, onclick: () => { void this.cancelCurrentDownload().catch(this.fail); } }, l("onboarding.cancel_download"));
   private readonly theme = h("button", { class: "button-icon", "aria-label": l("onboarding.change_appearance"), onclick: () => {
     const dark = this.ctx.info.settings.appearance === "dark" || (this.ctx.info.settings.appearance === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     void this.ctx.save((settings) => { settings.appearance = dark ? "light" : "dark"; }).catch(this.fail);
@@ -44,6 +47,7 @@ class OnboardingWizard {
   private readonly engineDetail = h("section", { class: "onboarding-engine-detail", id: "onboarding-engine-detail" });
   private readonly advancedModel = h("div", { class: "engine-model-options" });
   private readonly localButtons = new Map<Engine, HTMLButtonElement>();
+  private readonly goalButtons = new Map<OnboardingGoal, HTMLButtonElement>();
   private index: number;
   private get step(): OnboardingStep { return onboardingSteps[this.index]; }
   private goal: OnboardingGoal;
@@ -59,6 +63,11 @@ class OnboardingWizard {
   private providerModel: string;
   private providerBaseUrl: string;
   private models: LocalModel[] = [];
+  private recommendedModelId: string | null = null;
+  private modelPicker: ChoiceElement<string> | null = null;
+  private modelPickerSignature = "";
+  private preferRecommendation: boolean;
+  private continueAfterDownload: string | null = null;
   private permissions: PermissionInfo[] = [];
   private readiness: SetupReadiness | null = null;
   private downloading = false;
@@ -83,6 +92,7 @@ class OnboardingWizard {
   private practiceKey: HTMLButtonElement | null = null;
   private voicePanel: EnrollmentPanel | null = null;
   private interfacePicker: ChoiceElement<"system" | "en" | "nl"> | null = null;
+  private topLanguagePicker: ChoiceElement<"system" | "en" | "nl"> | null = null;
   private refreshPracticePresentation: (() => void) | null = null;
   private voiceModels: SpeakerModels | null = null;
   private speechChoiceSignature: string;
@@ -93,13 +103,14 @@ class OnboardingWizard {
     const intent = onboardingRouteIntent(requested, settings.onboarding);
     this.goal = intent.goal;
     this.preserveProgress = intent.preserveProgress;
+    this.preferRecommendation = !intent.preserveProgress && settings.onboarding.status !== "completed" && settings.onboarding.resume_step === "welcome";
     this.permissionRepair = intent.preserveProgress && intent.step === "permissions";
     const choice = this.goal === "meeting" ? settings.meeting_stt : settings.dictation_stt;
     this.speechChoiceSignature = JSON.stringify(choice);
     const account = settings.providers.find((provider) => provider.id === choice.provider_id);
     this.engine = initialEngine(account?.kind, ctx.info.kinds.find((kind) => kind.kind === "local")?.availability.status !== "unsupported");
     this.language = settings.language ?? "";
-    this.localModelId = account?.kind === "local" ? choice.model : ctx.info.kinds.find((kind) => kind.kind === "local")?.default_stt_model ?? "";
+    this.localModelId = account?.kind === "local" && !this.preferRecommendation ? choice.model : "";
     this.providerChoice = account && this.customAccounts().some((item) => item.id === account.id) ? account.id
       : this.customAccounts()[0]?.id ?? `new:${this.customKinds()[0]?.kind ?? "open_ai"}`;
     const providerKind = this.customKind();
@@ -116,13 +127,16 @@ class OnboardingWizard {
     this.showOptions = this.engine !== "local";
     if (fixture.includes("download-error")) this.downloadError = t("onboarding.download_error");
     this.progress.append(...onboardingSteps.map(() => h("span")));
-    this.root.append(this.progress,
-      this.body, this.message, h("footer", { class: "onboarding-footer" }, h("div", { class: "onboarding-footer-left" }, this.theme, this.back, this.skip, this.count), this.next));
+    this.topControls.append(this.interfaceLanguageControl()); this.topLanguagePicker = this.interfacePicker;
+    this.root.append(this.topControls, this.progress,
+      this.body, this.message, h("footer", { class: "onboarding-footer" }, h("div", { class: "onboarding-footer-left" }, this.theme, this.back, this.skip, this.count), this.cancelDownload, this.next));
     ctx.onInfoChange(() => {
       const choice = this.goal === "meeting" ? ctx.info.settings.meeting_stt : ctx.info.settings.dictation_stt;
       const signature = JSON.stringify(choice);
-      if (this.step === "engine" && signature !== this.speechChoiceSignature) { this.configureGoal(this.goal); this.renderEngineDetail(); }
+      if (this.step === "engine" && signature !== this.speechChoiceSignature) { this.preferRecommendation = false; this.configureGoal(this.goal); this.renderEngineDetail(); }
       this.speechChoiceSignature = signature;
+      this.practiceKey?.querySelector("span")?.replaceChildren(this.keyLabel());
+      this.refreshPracticePresentation?.();
       this.updateCommon(); if (this.step === "permissions") void this.refreshPermissions().catch(this.fail);
     });
     ctx.onFocusChange((focused) => {
@@ -161,6 +175,7 @@ class OnboardingWizard {
       if (event.payload.id !== this.localModelId || this.disposed) return;
       this.downloading = false;
       this.downloadError = event.payload.error && !isCancellation(event.payload.error) ? event.payload.error : null;
+      if (event.payload.error) this.continueAfterDownload = null;
       void this.ctx.refresh().then(() => this.loadModels()).then(() => { if (this.step === "engine" && this.engine === "local") this.renderEngineDetail(); this.updateCommon(); }).catch(this.fail);
     }));
     const route = (event: Event) => {
@@ -203,6 +218,7 @@ class OnboardingWizard {
 
   private async move(index: number) {
     if (this.actionBusy || this.disposed) return;
+    this.continueAfterDownload = null;
     this.actionBusy = true; this.updateCommon();
     try {
       await this.closePractice(); this.closeVoice();
@@ -224,6 +240,7 @@ class OnboardingWizard {
   }
 
   private async leave() {
+    this.continueAfterDownload = null;
     this.actionBusy = true; this.updateCommon();
     // The voice step is optional, so skipping it still completes the onboarding.
     const status = onboardingSteps[this.index] === "voice" ? "completed" : "skipped";
@@ -263,15 +280,15 @@ class OnboardingWizard {
   }
 
   private hotkey(): string {
-    return hotkeyLabel(this.ctx.info.settings.hotkey, this.ctx.info.platform);
+    return shortcutText(this.ctx.info, "dictate");
   }
 
   private keycap(): HTMLButtonElement {
-    return h("button", { class: "keycap", type: "button", "aria-label": l("onboarding.hold_to_dictate") }, icon("globe"), h("span", {}, this.keyLabel()));
+    return h("button", { class: "keycap", type: "button", "aria-label": l("onboarding.hold_to_dictate") }, icon("globe"), h("span", {}, shortcutRow(this.ctx.info, "dictate")?.binding ? this.keyLabel() : l("onboarding.start_dictation")));
   }
 
   private keyLabel(): string {
-    return hotkeyKeyLabel(this.ctx.info.settings.hotkey, this.ctx.info.platform);
+    return shortcutRow(this.ctx.info, "dictate")?.binding ? shortcutText(this.ctx.info, "dictate") : t("onboarding.start_dictation");
   }
 
   private renderLanguage() {
@@ -290,19 +307,21 @@ class OnboardingWizard {
   }
 
   private renderWelcome() {
+    this.goalButtons.clear();
     this.body.replaceChildren(wordmark(),
       h("h1", {}, l("onboarding.welcome_title")), h("p", { class: "onboarding-intro" }, l("onboarding.welcome_intro")),
-      h("div", { class: "onboarding-goals" },
+      h("div", { class: "onboarding-goals", role: "group", "aria-label": l("onboarding.first_task") },
         this.goalAction("dictation", l("onboarding.try_dictation"), l("onboarding.dictation_goal_help")),
-        this.goalAction("meeting", l("onboarding.record_meeting"), l("onboarding.meeting_goal_help"))),
-      this.interfaceLanguageControl(),
-      h("p", { class: "help onboarding-welcome-note" }, l("onboarding.welcome_note")));
+        this.goalAction("meeting", l("onboarding.record_meeting"), l("onboarding.meeting_goal_help"))));
   }
 
   private goalAction(goal: OnboardingGoal, label: LocalizedText, description: LocalizedText): HTMLElement {
-    return h("div", { class: "onboarding-goal" }, h("button", { class: `btn ${goal === this.goal ? "primary" : ""}`, onclick: () => {
+    const button = h("button", { class: "onboarding-goal", "data-onboarding-goal": goal, "aria-pressed": String(goal === this.goal), "aria-label": label, onclick: () => {
       void this.chooseGoal(goal).catch(this.fail);
-    } }, icon(goal === "meeting" ? "notebook" : "mic"), label), h("p", { class: "help" }, description));
+    } }, h("span", { class: "onboarding-goal-icon" }, icon(goal === "meeting" ? "notebook" : "mic")),
+      h("span", { class: "onboarding-goal-check", "aria-hidden": true }, icon("check")),
+      h("span", { class: "onboarding-goal-copy" }, h("strong", {}, label), h("span", { class: "help" }, description)));
+    this.goalButtons.set(goal, button); return button;
   }
 
   private interfaceLanguageControl(): HTMLElement {
@@ -315,23 +334,24 @@ class OnboardingWizard {
     picker.setAttribute("aria-label", t("onboarding.interface_language"));
     bindLocalization(picker, () => picker.setAttribute("aria-label", t("onboarding.interface_language")));
     this.interfacePicker = picker;
-    return h("div", { class: "preference-row onboarding-interface-language" }, h("span", {}, l("onboarding.interface_language")), picker);
+    return h("div", { class: "onboarding-interface-language" }, icon("globe"), picker);
   }
 
   private async chooseGoal(goal: OnboardingGoal) {
     if (this.actionBusy) return;
     this.legacyStep = undefined;
     this.configureGoal(goal);
-    await this.move(stepIndex("engine"));
+    this.updateCommon();
   }
 
   private configureGoal(goal: OnboardingGoal) {
+    this.continueAfterDownload = null;
     this.goal = goal;
     const settings = this.ctx.info.settings;
     const choice = goal === "meeting" ? settings.meeting_stt : settings.dictation_stt;
     const account = settings.providers.find((provider) => provider.id === choice.provider_id);
     this.engine = initialEngine(account?.kind, this.ctx.info.kinds.find((kind) => kind.kind === "local")?.availability.status !== "unsupported");
-    this.localModelId = account?.kind === "local" ? choice.model : this.ctx.info.kinds.find((kind) => kind.kind === "local")?.default_stt_model ?? "";
+    this.localModelId = account?.kind === "local" && !this.preferRecommendation ? choice.model : "";
     this.providerChoice = account && this.customAccounts().some((item) => item.id === account.id) ? account.id : this.customAccounts()[0]?.id ?? `new:${this.customKinds()[0]?.kind ?? "open_ai"}`;
     this.providerModel = this.engine === "custom" ? choice.model : this.customKind()?.default_stt_model ?? "";
     this.providerBaseUrl = this.customAccount()?.base_url ?? this.customKind()?.default_base_url ?? "";
@@ -343,10 +363,11 @@ class OnboardingWizard {
 
   private async loadModels() {
     const generation = ++this.modelsGeneration;
-    const models = await api.localModels(this.language || null, false);
+    const [models, compatible] = await Promise.all([api.localModels(this.language || null, false), api.localModels(this.language || null, true)]);
     if (this.disposed || generation !== this.modelsGeneration) return;
     this.models = models;
-    this.localModelId = defaultModelId(models, this.localModelId);
+    this.recommendedModelId = recommendedSpeechModel(compatible)?.id ?? null;
+    this.localModelId = defaultModelId(models, this.localModelId, compatible);
     await this.attachDownload();
   }
 
@@ -375,6 +396,8 @@ class OnboardingWizard {
 
   private async chooseModel(id: string) {
     if (id === this.localModelId) return;
+    this.preferRecommendation = false;
+    this.continueAfterDownload = null;
     const previous = this.localModelId;
     if (this.downloading) await api.cancelDownload(previous).catch(() => undefined);
     this.attachedDownloads.delete(previous);
@@ -401,6 +424,7 @@ class OnboardingWizard {
     language.setAttribute("aria-label", t("onboarding.language"));
     bindLocalization(language, () => language.setAttribute("aria-label", t("onboarding.language")));
     const choices = h("div", { class: "engine-choices", role: "group", "aria-label": l("onboarding.speech_recognition") });
+    const remoteChoices: HTMLElement[] = [];
     this.localButtons.clear();
     for (const [value, label] of [["local", l("onboarding.local")], ["apple", l("onboarding.apple_dictation")], ["cloud", l("settings.setup.source.cloud")], ["custom", l("onboarding.own_provider")]] as [Engine, string | LocalizedText][]) {
       const button = h("button", { class: "engine-choice", "aria-controls": "onboarding-engine-detail", onclick: () => { void this.chooseEngine(value).catch(this.fail); } }, label);
@@ -408,13 +432,27 @@ class OnboardingWizard {
         const order: Engine[] = ["local", "apple", "cloud", "custom"];
         const index = order.indexOf(value);
         const next = event.key === "ArrowRight" ? (index + 1) % order.length : event.key === "ArrowLeft" ? (index + order.length - 1) % order.length : event.key === "Home" ? 0 : event.key === "End" ? order.length - 1 : -1;
-        if (next >= 0) { event.preventDefault(); const target = order[next]; if (!this.localButtons.get(target)?.disabled) void this.chooseEngine(target).then(() => this.localButtons.get(target)?.focus()).catch(this.fail); }
+        if (next >= 0) {
+          event.preventDefault(); const target = order[next];
+          if (!this.localButtons.get(target)?.disabled) {
+            if (target === "local" || target === "apple") localChoices.open = true;
+            void this.chooseEngine(target).then(() => this.localButtons.get(target)?.focus()).catch(this.fail);
+          }
+        }
       });
       if (value !== "custom") bindLocalization(button, () => { button.title = this.ctx.info.kinds.find((kind) => kind.kind === (value === "local" ? "local" : value === "cloud" ? "pennel_cloud" : "apple_speech"))?.availability.reason ?? ""; });
-      this.localButtons.set(value, button); choices.append(button);
+      this.localButtons.set(value, button);
+      if (value === "cloud" || value === "custom") {
+        button.classList.add("onboarding-option-row"); bindLocalization(button, () => button.setAttribute("aria-label", String(label))); button.setAttribute("aria-label", String(label));
+        button.replaceChildren(h("span", { class: "grow" }, h("strong", {}, label), h("span", { class: "help" }, l(value === "cloud" ? "settings.setup.source.cloud_help" : "onboarding.other_provider_help"))), icon("chevronRight"));
+        remoteChoices.push(button);
+      } else choices.append(button);
     }
+    const localChoices = h("details", { class: "onboarding-local-options" },
+      h("summary", {}, h("span", {}, h("strong", {}, l("onboarding.other_local")), h("span", { class: "help" }, l("onboarding.other_local_help"))), icon("chevronRight")), choices, this.advancedModel);
     const alternatives = h("details", { class: "onboarding-other-options", open: this.showOptions }, h("summary", {}, l("onboarding.other_options")),
-      h("div", { class: "engine-language" }, h("span", {}, l("onboarding.language")), language), choices, this.advancedModel,
+      h("div", { class: "onboarding-alternative-rows" }, localChoices, ...remoteChoices),
+      h("div", { class: "engine-language" }, h("span", {}, l("onboarding.language")), language),
       ...this.ctx.info.kinds.filter((kind) => ["local", "apple_speech"].includes(kind.kind) && kind.availability.status === "unsupported" && kind.availability.reason)
         .map((kind) => h("p", { class: "help" }, this.ownedStatus(() => this.ctx.info.kinds.find((item) => item.kind === kind.kind)?.availability.reason ?? ""))));
     alternatives.addEventListener("toggle", () => { this.showOptions = alternatives.open; });
@@ -424,10 +462,19 @@ class OnboardingWizard {
   }
 
   private async chooseEngine(engine: Engine) {
+    if (engine !== this.engine) this.continueAfterDownload = null;
     this.engine = engine; this.message.hidden = true; this.renderEngineDetail(); this.updateCommon();
   }
 
+  private async cancelCurrentDownload() {
+    const id = this.localModelId;
+    this.continueAfterDownload = null;
+    await api.cancelDownload(id);
+    if (!this.disposed && this.localModelId === id) { this.downloading = false; this.updateDownload(); this.updateCommon(); }
+  }
+
   private renderEngineDetail() {
+    this.engineDetail.dataset.engine = this.engine;
     this.advancedModel.hidden = this.engine !== "local";
     this.localButtons.forEach((button, engine) => button.setAttribute("aria-pressed", String(engine === this.engine)));
     const apple = this.ctx.info.kinds.find((kind) => kind.kind === "apple_speech");
@@ -439,23 +486,30 @@ class OnboardingWizard {
     if (this.engine === "local") {
       const model = this.localModel();
       const downloaded = model?.state.kind === "downloaded";
-      const picker = select(this.models.map((item): [string, UiText] => [item.id, liveText(() => modelOptionLabel(item, formatBytes))]), this.localModelId, (value) => { void this.chooseModel(value).catch(this.fail); }, "menu");
-      picker.setAttribute("aria-label", t("onboarding.speech_model"));
-      bindLocalization(picker, () => picker.setAttribute("aria-label", t("onboarding.speech_model")));
+      const signature = JSON.stringify(this.models.map(item => [item.id, item.name, item.size_bytes, item.recommended]));
+      if (!this.modelPicker || signature !== this.modelPickerSignature) {
+        const focused = this.modelPicker === document.activeElement;
+        const picker = select(this.models.map((item): [string, UiText] => [item.id, liveText(() => modelOptionLabel(item, formatBytes))]), this.localModelId, (value) => { void this.chooseModel(value).catch(this.fail); }, "menu");
+        picker.setAttribute("aria-label", t("onboarding.speech_model"));
+        bindLocalization(picker, () => picker.setAttribute("aria-label", t("onboarding.speech_model")));
+        this.advancedModel.replaceChildren(h("label", { class: "preference-row" }, l("onboarding.speech_model"), picker));
+        this.modelPicker = picker; this.modelPickerSignature = signature;
+        if (focused) picker.focus({ preventScroll: true });
+      }
+      const picker = this.modelPicker;
+      picker.value = this.localModelId;
       picker.disabled = this.models.length === 0;
-      this.advancedModel.replaceChildren(h("label", { class: "preference-row" }, l("onboarding.speech_model"), picker));
-      const name = h("div", {}, h("strong", {}, model?.name ?? l("onboarding.recommended_setup")),
+      const name = h("div", {}, h("div", { class: "engine-model-heading" }, h("strong", {}, model?.name ?? l("onboarding.recommended_setup")), model?.id === this.recommendedModelId ? h("span", { class: "onboarding-recommended-badge" }, l("onboarding.recommended")) : null),
         h("small", {}, model ? (downloaded ? liveText(() => formatBytes(model.size_bytes)) : l("onboarding.model_download_size", () => ({ size: formatBytes(model.size_bytes) }))) : l("onboarding.no_local_model")));
       const status = h("span", { class: "engine-model-status", "data-download-state": true });
       const track = h("progress", { class: "engine-download-progress", "aria-label": l("onboarding.download_model"), hidden: !this.downloading });
-      const caption = h("div", { class: "engine-download-caption", hidden: !this.downloading }, h("span", { "data-download-caption": true }), h("button", { class: "text-button", onclick: () => {
-        void api.cancelDownload(this.localModelId).then(() => { this.downloading = false; this.updateDownload(); this.updateCommon(); }).catch(this.fail);
-      } }, l("onboarding.cancel_download")));
-      this.engineDetail.replaceChildren(h("h2", {}, l(model?.recommended ? "settings.setup.recommended_speech" : "settings.setup.source.device")), h("p", { class: "engine-description" }, l("onboarding.local_audio_intro")),
-        ...(model ? [h("p", { class: "help" }, localizeBackendText(model.description))] : []),
-        ...(local?.availability.reason ? [h("p", { class: "help" }, localizeBackendText(local.availability.reason))] : []),
+      const caption = h("div", { class: "engine-download-caption", hidden: !this.downloading }, h("span", { "data-download-caption": true }));
+      this.engineDetail.replaceChildren(h("div", { class: "engine-model" }, icon("mic"), name, status),
+        h("p", { class: "onboarding-destination-chip" }, icon("laptop"), l("dictation.processing.local")),
+        ...(model ? [h("p", { class: "help" }, this.ownedStatus(() => model.description))] : []),
+        ...(local?.availability.reason ? [h("p", { class: "help" }, this.ownedStatus(() => this.ctx.info.kinds.find(kind => kind.kind === "local")?.availability.reason ?? ""))] : []),
         h("p", { class: "help" }, l(this.goal === "meeting" ? "onboarding.meeting_speech_only" : "onboarding.practice_speech_only")),
-        h("div", { class: "engine-model" }, icon("download"), name, status), track, caption,
+        track, caption,
         ...(this.downloadError ? [h("div", { class: "engine-error", role: "alert" }, h("p", {}, this.ownedStatus(() => this.downloadError ?? "")),
           h("button", { class: "text-button", disabled: apple?.availability.status === "unsupported", onclick: () => { void this.chooseEngine("apple"); } }, l("onboarding.use_apple")))] : []));
       this.updateDownload();
@@ -564,7 +618,7 @@ class OnboardingWizard {
       if (snapshot.phase === "done") this.practiceText.value = snapshot.text;
       this.refreshPracticePresentation = () => {
         if (!this.practiceStatus || !this.practiceButton || this.step !== "practice") return;
-        this.practiceStatus.textContent = snapshot.error ? localizeBackendText(snapshot.error) : snapshot.phase === "listening" ? t("onboarding.listening_release") : snapshot.phase === "working" ? t("onboarding.writing_words") : snapshot.phase === "done" ? t("onboarding.first_dictation_done") : t("onboarding.practice_gesture_help", { shortcut: this.hotkey() });
+        this.practiceStatus.textContent = snapshot.error ? localizeBackendText(snapshot.error) : snapshot.phase === "listening" ? t("onboarding.listening_release") : snapshot.phase === "working" ? t("onboarding.writing_words") : snapshot.phase === "done" ? t("onboarding.first_dictation_done") : shortcutRow(this.ctx.info, "dictate")?.binding ? t("onboarding.practice_gesture_help", { shortcut: this.hotkey() }) : t("shortcuts.button");
         this.practiceButton.textContent = snapshot.phase === "listening" ? t("onboarding.stop_dictation") : snapshot.phase === "working" ? t("onboarding.processing_text") : t("onboarding.start_dictation");
         if (this.practiceDone) {
           this.body.querySelector("h1")!.textContent = t("onboarding.practice_success_title");
@@ -601,11 +655,11 @@ class OnboardingWizard {
     this.practiceKey.addEventListener("keydown", (event) => { if ([" ", "Enter"].includes(event.key)) { event.preventDefault(); if (!event.repeat) press(); } });
     this.practiceKey.addEventListener("keyup", (event) => { if ([" ", "Enter"].includes(event.key)) { event.preventDefault(); release(); } });
     this.practiceKey.addEventListener("click", (event) => { if (event.detail === 0 && !this.held) void this.practice?.toggle().catch(this.fail); });
-    this.body.replaceChildren(this.title(l("onboarding.practice_title"), l("onboarding.practice_gesture", { shortcut: this.hotkey() })),
+    this.body.replaceChildren(this.title(l("onboarding.practice_title"), shortcutRow(this.ctx.info, "dictate")?.binding ? l("onboarding.practice_gesture", { shortcut: this.hotkey() }) : l("shortcuts.button")),
       h("div", { class: "practice-gesture" }, this.practiceKey, h("div", {}, h("p", { class: "practice-phrase" }, liveText(() => `“${phrases[this.language] ?? phrases[getInterfaceLanguage()]}”`)), h("p", { class: "help" }, l("onboarding.practice_free_speech")))),
       this.practiceText, this.practiceStatus, h("div", { class: "row practice-help" }, this.practiceButton,
-        h("details", {}, h("summary", {}, l("onboarding.shortcut_not_working", { shortcut: this.hotkey() })), h("p", { class: "help" }, this.ctx.info.platform === "macos"
-          ? l("onboarding.mac_shortcut_help")
+        h("details", {}, h("summary", {}, shortcutRow(this.ctx.info, "dictate")?.binding ? l("onboarding.shortcut_not_working", { shortcut: this.hotkey() }) : l("shortcuts.practice_trouble")), h("p", { class: "help" }, this.ctx.info.platform === "macos"
+          ? shortcutRow(this.ctx.info, "dictate")?.binding?.mods.includes("fn") ? l("onboarding.mac_shortcut_help") : l("shortcuts.practice_help")
           : this.ctx.info.capabilities.global_hotkey.reason ? this.ownedStatus(() => this.ctx.info.capabilities.global_hotkey.reason ?? "") : l("onboarding.manual_practice_help")))));
     try { await this.practice.open(); } catch (error) { this.fail(error); }
   }
@@ -705,10 +759,11 @@ class OnboardingWizard {
         const model = this.localModel();
         if (this.engine === "local" && model?.state.kind !== "downloaded") {
           if (!model || this.downloading) return;
+          this.continueAfterDownload = model.id;
           this.downloadError = null; this.downloading = true;
           this.downloadProgress = { downloaded: model.state.kind === "partial" ? model.state.bytes : 0, total: model.size_bytes };
           this.renderEngineDetail(); this.updateCommon();
-          try { await api.downloadModel(model.id); } catch (error) { this.downloading = false; this.downloadError = errorText(error); this.renderEngineDetail(); throw error; }
+          try { await api.downloadModel(model.id); } catch (error) { this.continueAfterDownload = null; this.downloading = false; this.downloadError = errorText(error); this.renderEngineDetail(); throw error; }
           return;
         }
         await this.commitEngine();
@@ -740,6 +795,9 @@ class OnboardingWizard {
   private updateCommon() {
     if (this.disposed) return;
     if (this.interfacePicker) this.interfacePicker.value = this.ctx.info.settings.ui_language ?? "system";
+    if (this.topLanguagePicker) this.topLanguagePicker.value = this.ctx.info.settings.ui_language ?? "system";
+    this.topControls.hidden = this.step === "language";
+    this.goalButtons.forEach((button, goal) => button.setAttribute("aria-pressed", String(goal === this.goal)));
     if (!this.message.hidden && this.lastError) this.message.textContent = localizeBackendText(errorText(this.lastError));
     this.body.inert = this.actionBusy;
     const current = Math.max(0, this.flow.indexOf(this.step));
@@ -751,15 +809,16 @@ class OnboardingWizard {
     this.skip.textContent = this.step === "practice" ? t("onboarding.practice_later") : this.step === "voice" ? t("onboarding.skip") : t("onboarding.setup_later");
     this.skip.disabled = this.actionBusy || !!this.voicePanel?.busy;
     this.count.textContent = t("onboarding.step_count", { current: current + 1, total: this.flow.length });
-    this.count.hidden = this.step === "welcome";
-    this.next.hidden = this.step === "welcome";
+    this.count.hidden = false;
+    this.next.hidden = false;
+    this.cancelDownload.hidden = this.step !== "engine" || !this.downloading;
     const dark = this.ctx.info.settings.appearance === "dark" || (this.ctx.info.settings.appearance === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     this.theme.replaceChildren(icon(dark ? "sun" : "moon"));
-    let label = this.step === "welcome" ? t("onboarding.get_started") : this.step === "voice" ? t("onboarding.done") : t("onboarding.continue");
+    let label = this.step === "voice" ? t("onboarding.done") : t("onboarding.continue");
     let disabled = this.actionBusy;
     if (this.step === "engine" && this.engine === "local") {
       const model = this.localModel(); disabled ||= !model || this.downloading;
-      if (model?.state.kind !== "downloaded") label = this.downloading ? t("onboarding.downloading") : this.downloadError ? t("onboarding.retry") : model?.state.kind === "partial" ? t("onboarding.resume_download") : t("onboarding.download_action");
+      if (model?.state.kind !== "downloaded") label = this.downloading ? this.downloadProgress.total ? t("onboarding.downloading_progress", { percent: Math.max(0, Math.min(100, Math.round(this.downloadProgress.downloaded / this.downloadProgress.total * 100))) }) : t("onboarding.preparing_download") : this.downloadError ? t("onboarding.retry") : t("onboarding.download_continue");
     }
     if (this.step === "engine" && this.engine === "custom") { label = t("onboarding.use_provider"); disabled ||= !this.customKind(); }
     if (this.step === "engine" && this.engine === "cloud") {
@@ -774,7 +833,7 @@ class OnboardingWizard {
     if (this.step === "permissions") {
       const manualAllowed = manualPracticeAllowed(this.readiness, this.permissions, this.ctx.info.settings, this.goal);
       disabled ||= !manualAllowed;
-      if (this.goal === "dictation" && manualAllowed && this.ctx.info.platform === "macos" && this.readiness?.can_use_shortcut === false) label = t("onboarding.continue_without_shortcut", { shortcut: this.hotkey() });
+      if (this.goal === "dictation" && manualAllowed && this.ctx.info.platform === "macos" && this.readiness?.can_use_shortcut === false) label = shortcutRow(this.ctx.info, "dictate")?.binding ? t("onboarding.continue_without_shortcut", { shortcut: this.hotkey() }) : t("shortcuts.continue_button");
     }
     if (this.step === "practice") {
       if (this.goal === "meeting") { disabled ||= !this.readiness?.can_record; label = t("onboarding.open_recording"); }
@@ -782,9 +841,14 @@ class OnboardingWizard {
     }
     if (this.step === "voice") disabled ||= !!this.voicePanel?.busy || !!this.voiceModels?.downloading;
     this.next.disabled = disabled; this.next.replaceChildren(label, icon("arrowRight"));
+    if (this.continueAfterDownload === this.localModelId && this.step === "engine" && this.engine === "local" && !this.actionBusy && !this.downloading && this.localModel()?.state.kind === "downloaded") {
+      this.continueAfterDownload = null;
+      void this.advance().catch(this.fail);
+    }
   }
 
   private dispose() {
+    this.continueAfterDownload = null;
     this.disposed = true; ++this.renderGeneration; this.poll?.dispose(); this.closeVoice();
     this.cleanup.forEach((cleanup) => cleanup());
     void this.closePractice().catch(this.ctx.report);

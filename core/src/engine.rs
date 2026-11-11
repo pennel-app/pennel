@@ -40,6 +40,10 @@ use crate::wav::{decode_wav, encode_wav};
 
 const MAX_PROMPT_CHARS: usize = 800;
 
+#[path = "dictation_models.rs"]
+mod dictation_models;
+pub use dictation_models::ConfiguredDictationModel;
+
 #[path = "writing_profile_engine.rs"]
 mod writing_profile_engine;
 
@@ -363,11 +367,35 @@ pub struct DictationResult {
     pub cleanup: CleanupStatus,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum AutomaticPolicy {
+    Summary = 0,
+    Suggestions = 1,
+}
+
+#[derive(Default)]
+struct AutomaticPolicyState {
+    revocation: u64,
+    requests: Vec<Weak<crate::InferenceCancellation>>,
+}
+
+impl AutomaticPolicy {
+    fn enabled(self, settings: &Settings) -> bool {
+        match self {
+            Self::Summary => settings.summary_automation == crate::SummaryAutomation::Automatic,
+            Self::Suggestions => {
+                settings.suggestion_automation == crate::SuggestionAutomation::Automatic
+            }
+        }
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct PennelEngine {
     settings_path: PathBuf,
     settings: RwLock<Settings>,
     pub(crate) inference_requests: Arc<Mutex<crate::inference_engine::InferenceState>>,
+    automatic_policies: Mutex<[AutomaticPolicyState; 2]>,
     #[cfg(test)]
     pub(crate) cleanup_qualification: Mutex<Option<crate::cleanup_verification::Qualification>>,
     #[cfg(test)]
@@ -390,6 +418,7 @@ pub struct PennelEngine {
     local: LocalEngine,
     index: Mutex<Option<MeetingIndex>>,
     system_stt: RwLock<Option<Arc<dyn SystemTranscriber>>>,
+    system_speech_available: std::sync::atomic::AtomicBool,
     timed_system_stt: RwLock<Option<Arc<dyn crate::TimedSystemTranscriber>>>,
     system_llm: RwLock<Option<Arc<dyn SystemLanguageModel>>>,
     secrets: RwLock<Option<Arc<dyn SecretStore>>>,
@@ -597,7 +626,16 @@ impl PennelEngine {
     /// Lets the app plug in the OS's on-device recognizer (Apple's dictation model) as a provider.
     pub fn set_system_transcriber(&self, transcriber: Arc<dyn SystemTranscriber>) {
         *self.system_stt.write().unwrap() = Some(transcriber);
+        self.system_speech_available
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         *self.timed_system_stt.write().unwrap() = None;
+    }
+
+    /// Current host capability, refreshed without prompting or changing an active capture.
+    /// Existing hosts retain their installed transcriber's availability until they supply this fact.
+    pub fn set_system_speech_available(&self, available: bool) {
+        self.system_speech_available
+            .store(available, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn set_timed_system_transcriber(
@@ -1839,6 +1877,13 @@ impl PennelEngine {
         {
             return Err(PennelError::ModelNotDownloaded);
         }
+        if task == ProviderTask::DictationStt {
+            for configured in [settings.dictation_stt.clone(), choice.clone()] {
+                if !settings.dictation_models.contains(&configured) {
+                    settings.dictation_models.push(configured);
+                }
+            }
+        }
         let selected = match task {
             ProviderTask::DictationStt => &mut settings.dictation_stt,
             ProviderTask::MeetingStt => &mut settings.meeting_stt,
@@ -2450,7 +2495,8 @@ impl PennelEngine {
         }
     }
 
-    pub(crate) fn update_settings_locked(&self, settings: Settings) -> Result<(), PennelError> {
+    pub(crate) fn update_settings_locked(&self, mut settings: Settings) -> Result<(), PennelError> {
+        crate::reconcile_legacy_shortcuts(&self.settings(), &mut settings);
         self.persist_settings_locked(settings.normalized_with(&self.models.downloaded()))
     }
 
@@ -2502,12 +2548,25 @@ impl PennelEngine {
             || current.llm != settings.llm
             || current.dictionary != settings.dictionary
             || current.cleanup_verification_enabled != settings.cleanup_verification_enabled
-            || current.summary_automation != settings.summary_automation
         {
             // Invalidate queued requests before their captured destination can be used.
             self.invalidate_inference_requests();
         }
         settings.save(&self.settings_path)?;
+        for policy in [AutomaticPolicy::Summary, AutomaticPolicy::Suggestions] {
+            if policy.enabled(&current) && !policy.enabled(&settings) {
+                let mut policies = self.automatic_policies.lock().unwrap();
+                let state = &mut policies[policy as usize];
+                state.revocation = state.revocation.wrapping_add(1);
+                for request in state
+                    .requests
+                    .drain(..)
+                    .filter_map(|request| request.upgrade())
+                {
+                    request.cancel();
+                }
+            }
+        }
         *self.settings.write().unwrap() = settings;
         if let Some(lease) = next_lease {
             *self.library_lease.lock().unwrap() = Some(lease);
@@ -2807,6 +2866,7 @@ impl PennelEngine {
             inference_requests: Arc::new(Mutex::new(
                 crate::inference_engine::InferenceState::default(),
             )),
+            automatic_policies: Mutex::default(),
             #[cfg(test)]
             cleanup_qualification: Mutex::new(None),
             #[cfg(test)]
@@ -2829,6 +2889,7 @@ impl PennelEngine {
             local: LocalEngine::default(),
             index: Mutex::new(index),
             system_stt: RwLock::new(None),
+            system_speech_available: std::sync::atomic::AtomicBool::new(false),
             timed_system_stt: RwLock::new(None),
             system_llm: RwLock::new(None),
             secrets: RwLock::new(None),
@@ -2952,14 +3013,36 @@ impl PennelEngine {
         Ok(guard)
     }
 
+    pub(crate) fn register_automatic_policy(
+        &self,
+        policy: AutomaticPolicy,
+        cancellation: &Arc<crate::InferenceCancellation>,
+    ) -> Result<u64, PennelError> {
+        let _gate = self.meeting_gate.lock().unwrap();
+        if !policy.enabled(&self.settings()) || cancellation.is_cancelled() {
+            return Err(PennelError::Cancelled);
+        }
+        let mut policies = self.automatic_policies.lock().unwrap();
+        let state = &mut policies[policy as usize];
+        state.requests.retain(|request| request.strong_count() > 0);
+        state.requests.push(Arc::downgrade(cancellation));
+        Ok(state.revocation)
+    }
+
+    pub(crate) fn automatic_policy_current(&self, policy: AutomaticPolicy, epoch: u64) -> bool {
+        policy.enabled(&self.settings())
+            && self.automatic_policies.lock().unwrap()[policy as usize].revocation == epoch
+    }
+
     /// Serialize the final automatic write with consent and inference-configuration changes.
     pub(crate) fn automatic_summary_policy_guard(
         &self,
         cancellation: &crate::InferenceCancellation,
+        epoch: u64,
     ) -> Result<std::sync::MutexGuard<'_, ()>, PennelError> {
         let guard = self.meeting_gate.lock().unwrap();
         if cancellation.is_cancelled()
-            || self.settings().summary_automation != crate::SummaryAutomation::Automatic
+            || !self.automatic_policy_current(AutomaticPolicy::Summary, epoch)
         {
             return Err(PennelError::Cancelled);
         }
@@ -3641,6 +3724,7 @@ mod tests {
             .apply_task_model_choice(ProviderTask::Llm, text)
             .unwrap();
         assert_eq!(engine.settings(), expected);
+        expected.dictation_models = vec![expected.dictation_stt.clone(), selected.clone()];
         expected.dictation_stt = selected.clone();
         engine
             .apply_task_model_choice(ProviderTask::DictationStt, selected)
@@ -3707,6 +3791,7 @@ mod tests {
             provider_id: "groq".into(),
             model: "synthetic-text-model".into(),
         };
+        expected.dictation_models = vec![expected.dictation_stt.clone(), selected.clone()];
         expected.dictation_stt = selected.clone();
         expected.llm = text.clone();
         let barrier = Arc::new(std::sync::Barrier::new(3));

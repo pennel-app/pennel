@@ -14,7 +14,7 @@ function fields(value: unknown, names: readonly string[], language?: InterfaceLa
 
 /** These are owned UI metadata/error channels. Content and machine status fields remain literal. */
 export function localizeUiResponse(command: string, value: unknown): unknown {
-  if (["app_info", "save_settings", "add_provider", "remove_provider", "set_key", "delete_model"].includes(command)
+  if (["app_info", "save_settings", "set_shortcut", "reset_shortcut", "reset_all_shortcuts", "add_provider", "remove_provider", "set_key", "delete_model"].includes(command)
       && record(value) && record(value.settings) && Array.isArray(value.kinds)) {
     const language = value.interface_language === "nl" ? "nl" : "en";
     const result = fields(value, ["hotkey_error", "migration_warning"], language) as Record<string, unknown>;
@@ -39,6 +39,6 @@ export function localizeUiResponse(command: string, value: unknown): unknown {
   };
   if (["onboarding_readiness", "test_provider_task"].includes(command)) return fields(value, ["reason", "message"]);
   if (["open_dictation_session", "get_dictation_session", "toggle_dictation_session", "save_dictation_session"].includes(command)) return fields(value, ["error", "external_paste_reason"]);
-  if (command === "dictation_state" && record(value) && value.state === "error") return fields(value, ["message"]);
+  if (command === "dictation_state" && record(value) && value.state === "problem") return fields(value, ["title", "detail"]);
   return value;
 }

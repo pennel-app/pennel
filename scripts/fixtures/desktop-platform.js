@@ -34,6 +34,7 @@
       removeItem: key => { requireCurrentReview(); rawStorage.removeItem(scopedKey(key)); }, clear: resetProfile };
     Object.defineProperty(globalThis, "localStorage", { value: scopedStorage, configurable: true });
   }
+  if (options.summary_length) globalThis.localStorage?.setItem("pennel.summary.length.v1", options.summary_length);
   let persistedSettings;
   if (profileKey) {
     try { persistedSettings = JSON.parse(globalThis.localStorage?.getItem(profileKey) || "null"); } catch {}
@@ -53,6 +54,7 @@
   const sentence = "Zullen we morgen om tien uur afspreken?";
   const pillSnapshot = options.window === "pill" ? {
     state: options.pill_state,
+    ...options.pill_fields,
     preview: { session_id: "qa-" + options.name, revision: options.preview_text ? 7 : 0, text: options.preview_text || "" },
   } : { state: "hidden" };
   let notes = options.private_notes || "- Planning afronden\n- Volgende afspraak bevestigen";
@@ -69,6 +71,13 @@
     { start_ms: 8000, end_ms: 14000, speaker: "me", text: "Ik bevestig de volgende afspraak.", failed: false, voice: null },
     { start_ms: 14000, end_ms: 21000, speaker: "others", text: "Dan zet ik het voorstel nog vandaag in de map.", failed: false, voice: 2 },
   ];
+  if (options.summary_structure) {
+    meeting.duration_min = 18;
+    transcript.splice(0, transcript.length,
+      { start_ms: 0, end_ms: 360000, speaker: "me", voice: null, failed: false, text: "The planning is confirmed for Monday.", confirmed_speaker_name: "Me", attribution: { kind: "single", voices: [], self_voice: true } },
+      { start_ms: 360000, end_ms: 660000, speaker: "others", voice: 1, failed: false, text: "Noor will share the agenda by Friday and confirm the invitation.", confirmed_speaker_name: "Noor" },
+      { start_ms: 660000, end_ms: 1080000, speaker: "others", voice: 2, failed: false, text: "Sam moves the client call to Thursday afternoon. Who books the room?", confirmed_speaker_name: "Sam" });
+  }
   if (options.failed_recovery) transcript.forEach((segment, index) => { if (index < 2) { segment.failed = true; segment.text = ""; } });
   if (options.insights_seeded) transcript.splice(0, transcript.length,
     { start_ms: 0, end_ms: 8000, speaker: "others", text: "Noor will send the draft on Friday.", failed: false, voice: 1 },
@@ -117,15 +126,21 @@
   const selectedProvider = options.engine === "apple" ? "apple-speech" : options.engine === "custom" ? "openai" : "local";
   const model = selectedProvider === "apple-speech" ? "dictation" : selectedProvider === "openai" ? "gpt-4o-mini-transcribe" : "whisper-large-v3-turbo";
   let settings = {
+    pill_colour: options.pill_colour || "ink", pill_size: options.pill_size || "regular", pill_position: options.pill_position || "bottom_centre",
+    dictation_models: options.dictation_models || [], pill_model_switch_enabled: options.pill_model_switch_enabled !== false,
     providers, dictation_stt: { provider_id: selectedProvider, model }, meeting_stt: { provider_id: "local", model: "whisper-large-v3-turbo" },
     llm: { provider_id: "groq", model: "llama-3.3-70b-versatile" }, decision: null, reranking: null, cleanup_verification_enabled: Boolean(options.cleanup_verification_enabled), mode: options.mode || "fast", language: "nl", ui_language: options.ui_language || "system", dictionary: ["Pennel", "Studio Noord"],
     style_rules: [{ bundle_id: "com.tinyspeck.slackmacgap", style: "casual" }, { bundle_id: "com.apple.MobileSMS", style: "casual" }, { bundle_id: "com.apple.mail", style: "formal" }, { bundle_id: "com.microsoft.Word", style: "formal" }, { bundle_id: "com.apple.Terminal", style: "literal" }, { bundle_id: "com.microsoft.VSCode", style: "literal" }], history_retention_days: 30, hotkey: "fn", local_unload_minutes: 5,
-    meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", summary_automation: options.summary_automation || "unanswered", meeting_audio_retention_days: 30,
+    meetings_dir: "/QA/Pennel Preview/Meetings", default_template: "algemeen", summary_automation: options.summary_automation || "unanswered", suggestion_automation: options.suggestion_automation || "unanswered", suggestion_language: options.suggestion_language || null, meeting_audio_retention_days: 30,
     app_rules: [], calendar_rules: [], event_rules: [], calendar_enabled: false, echo_cancellation: true,
     record_shortcut_enabled: true, consent_enabled: false, auto_detect: true, diarization: Boolean(options.speakers), meeting_app_speakers: Boolean(options.meeting_app_speakers), meeting_app_name_policy: options.meeting_app_name_policy || "suggest", speaker_recognition: options.speaker_mode || "local",
-    appearance: options.appearance, dictation_pad_auto_paste: false, live_text_enabled: options.live_text_enabled !== false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
+    appearance: options.app_appearance_opposite_system ? options.appearance === "dark" ? "light" : "dark" : options.appearance, dictation_pad_auto_paste: false, live_text_enabled: options.live_text_enabled !== false, cloud_sync: Boolean(options.cloud), claude_access: Boolean(options.claude),
     onboarding: { version: 1, status: options.onboarding_status || (options.window === "onboarding" ? "pending" : options.shortcut_denied ? "skipped" : "completed"), resume_step: options.step || "welcome", goal: options.goal || "dictation" },
   };
+  if (options.suggestion_configured) {
+    settings.providers.push({ id: "owned-ui", kind: "custom", name: "Owned synthetic decision fixture", base_url: "https://decision.example.invalid/v1" });
+    settings.decision = { provider_id: "owned-ui", protocol: "perplexity", model: "owned-ui-fixture", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 3 };
+  }
   if (options.cleanup_connection) {
     settings.providers.push({ id: "qa-verifier", kind: "custom", name: "Synthetic verifier", base_url: "https://verifier.example.invalid/v1" });
     settings.decision = { provider_id: "qa-verifier", protocol: "perplexity", model: "synthetic-unqualified", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 3 };
@@ -148,9 +163,14 @@
     permissions = permissions.map(permission => permission.kind === "accessibility" ? { ...permission, status: "denied" } : permission);
   }
   const updateShortcutCapabilities = () => {
+    const microphone = permissions.find(permission => permission.kind === "microphone");
+    capabilities.microphone = ["denied", "restricted", "not_determined"].includes(microphone?.status)
+      ? { status: "permission_required", reason: "Geef Pennel toegang tot je microfoon." } : available();
     const granted = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-    const status = granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
+    const status = options.copy_only ? { status: "unsupported", reason: "Wayland: configure a shortcut for pennel --toggle-dictation in your desktop settings. Pennel copies the text; paste it yourself with Ctrl+V." }
+      : granted ? available() : { status: "permission_required", reason: "Geef Pennel toegang tot Toegankelijkheid om fn in andere apps te gebruiken." };
     for (const name of ["global_hotkey", "selection", "pad_external_paste"]) capabilities[name] = clone(status);
+    if (options.platform === "linux" && !options.wayland) capabilities.record_shortcut = { status: "unsupported", reason: "x11_keyed_shortcuts_unavailable" };
   };
   updateShortcutCapabilities();
   const keys = { groq: Boolean(options.configured_text_provider), openai: false };
@@ -240,7 +260,50 @@
       reason_code: settings.cleanup_verification_enabled && settings.mode === "clean" ? config ? "unqualified" : "unconfigured" : "disabled",
       provider_id: config?.provider_id ?? null, model: config?.model ?? null, endpoint: account ? `${account.base_url}/decisions` : null };
   };
-  const info = () => ({ interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+  const configuredSpeechModels = () => {
+    const seen = new Set();
+    return [...(settings.dictation_models || []), settings.dictation_stt].filter(choice => {
+      const key = JSON.stringify(choice); if (seen.has(key)) return false; seen.add(key);
+      const account = settings.providers.find(provider => provider.id === choice.provider_id);
+      const definition = kinds.find(kind => kind.kind === account?.kind);
+      return account && definition?.stt && choice.model && (!definition.requires_key || keys[account.id])
+        && (account.kind !== "local" || models.some(model => model.id === choice.model && model.state.kind === "downloaded"));
+    }).map(choice => ({ choice: clone(choice), label: choice.model === "dictation" ? "Apple dictation" : models.find(model => model.id === choice.model)?.name || `${choice.model} · ${settings.providers.find(provider => provider.id === choice.provider_id).name}` }));
+  };
+  const shortcutPlatform = options.platform || "macos";
+  const primary = shortcutPlatform === "macos" ? "meta" : "ctrl";
+  const shortcutBinding = (mods, code = null, key = null) => ({ mods, code, key });
+  const shortcutDefaults = {
+    dictate: shortcutBinding([shortcutPlatform === "macos" ? "fn" : "right_ctrl"]),
+    cancel: shortcutBinding([], "Escape", "Escape"), next_model: shortcutPlatform === "macos" ? shortcutBinding(["left_alt"]) : null,
+    record: shortcutBinding(["shift", primary], "KeyR", "r"), open_pennel: null,
+    new_recording: shortcutBinding([primary], "KeyN", "n"), find: shortcutBinding([primary], "KeyF", "f"),
+    dictation: shortcutBinding([primary], "Digit1", "1"), meetings: shortcutBinding([primary], "Digit2", "2"), history: shortcutBinding([primary], "Digit3", "3"),
+    toggle_sidebar: shortcutBinding(shortcutPlatform === "macos" ? ["ctrl", "meta"] : ["ctrl", "shift"], "KeyS", "s"), settings: shortcutBinding([primary], "Comma", ","),
+  };
+  if (options.shortcut_bindings) settings.shortcuts = clone(options.shortcut_bindings);
+  const shortcutLabel = binding => {
+    if (!binding) return { keycaps: [], text: interfaceLanguage() === "nl" ? "Geen" : "None" };
+    const names = shortcutPlatform === "macos" ? { ctrl: "⌃", alt: "⌥", shift: "⇧", meta: "⌘", fn: "fn" } : { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: shortcutPlatform === "windows" ? "Win" : "Super" };
+    const caps = binding.mods.map(mod => {
+      const side = mod.startsWith("right_") ? interfaceLanguage() === "nl" ? "rechts " : "right " : mod.startsWith("left_") ? interfaceLanguage() === "nl" ? "links " : "left " : "";
+      return side + (names[mod.replace(/^(left|right)_/, "")] || mod);
+    });
+    if (binding.key) caps.push(binding.key === "Escape" ? "Esc" : binding.key === "Space" ? interfaceLanguage() === "nl" ? "Spatie" : "Space" : binding.key.toUpperCase());
+    return { keycaps: caps, text: caps.join(shortcutPlatform === "macos" ? "" : "+") };
+  };
+  const shortcutRows = () => Object.entries(shortcutDefaults).map(([id, default_binding]) => {
+    const preset = { fn: shortcutDefaults.dictate, right_control: shortcutBinding(["right_ctrl"]), right_option: shortcutBinding(["right_alt"]), right_command: shortcutBinding(["right_meta"]), control_super: shortcutBinding(["ctrl", "meta"]) };
+    const binding = Object.hasOwn(settings.shortcuts || {}, id) ? settings.shortcuts[id] : id === "dictate" ? preset[settings.hotkey] || default_binding : id === "record" && !settings.record_shortcut_enabled ? null : default_binding;
+    const scope = id === "dictate" ? "global_hold" : ["cancel", "next_model"].includes(id) ? "listening" : ["record", "open_pennel"].includes(id) ? "global" : "application";
+    let reason = scope !== "application" && options.wayland ? id === "dictate" ? "wayland_toggle_dictation" : id === "record" ? "wayland_toggle_meeting" : id === "open_pennel" ? "wayland_open_pennel" : "wayland_global_shortcuts" : scope !== "application" && shortcutDenied() ? "accessibility_required" : id === "next_model" ? settings.pill_model_switch_enabled === false ? "next_model_switch_disabled" : configuredSpeechModels().length < 2 ? "next_model_second_model_required" : !binding ? "next_model_shortcut_cleared" : null : null;
+    if (shortcutPlatform === "linux" && !options.wayland && (["record", "open_pennel"].includes(id) || scope !== "application" && binding?.code)) reason = "x11_keyed_shortcuts_unavailable";
+    const row = {id,scope,binding:clone(binding),default_binding:clone(default_binding),label:shortcutLabel(binding),editable:true,capability:{available:!reason,reason},changed:JSON.stringify(binding)!==JSON.stringify(default_binding)};
+    return clone(options.shortcuts?.find(value => value.id === id) || row);
+  });
+  let shortcutCapture = null, shortcutGeneration = 0;
+  const info = () => ({ pill_position_supported: options.pill_position_supported !== false, shortcuts: shortcutRows(), interface_language: interfaceLanguage(), system_interface_language: systemInterfaceLanguage, settings: clone(settings), keys: clone(keys), provider_revisions: clone(providerRevisions), cloud_account_epoch: String(cloudAccountEpoch), cloud_signed_in: signedIn, active_model_downloads: [...activeDownloads], cleanup_verification: cleanupVerification(),
+
     unsaved_history_count: history.filter(entry => entry.status === "unsaved").length,
     kinds: clone(kinds), platform: options.platform || "macos", version: "0.1.0", hotkey_error: shortcutDenied() ? capabilities.global_hotkey.reason : null,
     log_path: options.preview === false ? "/QA/Pennel/pennel.log" : "/QA/Pennel Preview/pennel.log", data_dir: options.preview === false ? "/QA/Pennel" : "/QA/Pennel Preview", capabilities: clone(capabilities), recording_app_ids: options.recording_app_ids || [], diarizer_model_id: diarizer.id, preview: options.preview !== false, migration_warning: null });
@@ -287,7 +350,7 @@
   let recordingStorageError = Boolean(options.recording_storage_error);
   let recordingRecovered = false;
   let recordingStopped = false;
-  let ownerRecording = options.owner_review && options.section === "recording";
+  let ownerRecording = options.section === "recording";
   let meetingSequence = 0;
   let transcriptRevision = 1;
   let saveFailure = Boolean(options.live_save_error || options.owner_review && options.summary_save_error);
@@ -336,7 +399,7 @@
     return true;
   };
   const meetingStatus = (includeContent = true) => {
-    const retained = (options.owner_review ? ownerRecording : options.section === "recording") && !recordingRecovered && !recordingStopped;
+    const retained = ownerRecording && !recordingRecovered && !recordingStopped;
     const storageError = retained && recordingStorageError;
     const paused = retained && Boolean(options.transcription_paused);
     const persistenceError = storageError ? "Je opname kon niet volledig worden bewaard. Probeer opnieuw te bewaren." : null;
@@ -381,6 +444,9 @@
     return { failed_count: failed, retryable_count: retryable, status: !failed ? "complete" : retryable ? "retryable" : "unavailable", reason_code: reason || null };
   };
   const summaryDocuments = new Map();
+  const dismissedSummaryPrompts = new Set();
+  const dismissedSuggestionPrompts = new Set();
+  let summaryOperation = 0;
   const summaryHistories = new Map();
   const shareableSummaries = new Map();
   const summarySourceRevision = async (id, transcriptOnly = false) => {
@@ -405,7 +471,7 @@
     const workspace = options.window === "onboarding" && latest?.version === 1 ? latest : { version: 1,
       history: history.filter(entry => entry.status !== "unsaved"), library, pad, notes, transcript, sessionCounter,
       activeMeetingId, meetingUid, liveSession, meeting: clone(meeting), meetingSequence, ownerRecording, recordingStopped,
-      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries] };
+      retainedMeetings: [...retainedMeetings], libraryUids: [...libraryUids], summaryDocuments: [...summaryDocuments], summaryHistories: [...summaryHistories], shareableSummaries: [...shareableSummaries], dismissedSummaryPrompts: [...dismissedSummaryPrompts], dismissedSuggestionPrompts: [...dismissedSuggestionPrompts] };
     globalThis.localStorage.setItem(ownerStateKey, JSON.stringify({ ...workspace, ...services }));
     restoreReviewServices(services);
   };
@@ -427,6 +493,8 @@
       activeMeetingId = saved.activeMeetingId; meetingUid = saved.meetingUid; liveSession = saved.liveSession;
       Object.assign(meeting, saved.meeting); meetingSequence = saved.meetingSequence; ownerRecording = saved.ownerRecording; recordingStopped = saved.recordingStopped;
       restoreReviewServices(saved);
+      for (const uid of saved.dismissedSummaryPrompts || []) dismissedSummaryPrompts.add(uid);
+      for (const uid of saved.dismissedSuggestionPrompts || []) dismissedSuggestionPrompts.add(uid);
       for (const [target, entries] of [[retainedMeetings, saved.retainedMeetings], [libraryUids, saved.libraryUids], [summaryDocuments, saved.summaryDocuments], [summaryHistories, saved.summaryHistories], [shareableSummaries, saved.shareableSummaries]])
         for (const [key, value] of entries || []) target.set(key, value);
     }
@@ -478,7 +546,8 @@
     if (session) {
       session.text = session.kind === "pad" ? `${pad}${pad ? "\n\n" : ""}${sentence}` : sentence;
       session.phase = "done"; session.error = null;
-      if (session.kind === "pad") { pad = session.text; retainDictation(sentence); }
+      if (session.kind === "pad") pad = session.text;
+      if (session.kind === "pad" || session.kind === "home_practice") retainDictation(sentence);
       emit("dictation-session", session);
     } else { retainDictation(sentence); pillSnapshot.state = "hidden"; emit("dictation-state", pillSnapshot); }
     persistOwnerReview(); return true;
@@ -530,16 +599,56 @@
     if (route.source_target) throw Error("Return to the main review window to inspect this source.");
     openReviewWindow("owner-review-navigation", "workspace", route);
   };
+  const summaryRecords = new Map();
+  const summaryStamp = milliseconds => `${String(Math.floor(milliseconds / 60000)).padStart(2, "0")}:${String(Math.floor(milliseconds / 1000) % 60).padStart(2, "0")}`;
+  const structureBody = value => {
+    const escape = text => String(text).replace(/[\\[\]*_`<>#]/g, "\\$&");
+    const source = value => value ? ` (${value.speaker ? `${escape(value.speaker)}, ` : ""}${summaryStamp(value.start_ms)})` : "";
+    let body = `## ${escape(value.labels.summary)}\n\n${escape(value.lead)}`;
+    for (const topic of value.topics) body += `\n\n### ${escape(topic.title)}${topic.source ? ` (${summaryStamp(topic.source.start_ms)})` : ""}\n\n${escape(topic.body)}`;
+    for (const [label, rows] of [[value.labels.decisions, value.decisions.map(item => `- ${escape(item.text)}${source(item.source)}`)],
+      [value.labels.actions, value.actions.map(item => `- [${item.state.done ? "x" : " "}] ${item.state.owner || item.owner ? `${escape(item.state.owner || item.owner)} — ` : ""}${escape(item.text)}${item.due ? ` (${escape(item.due)})` : ""}`)],
+      [value.labels.open_questions, value.open_questions.map(item => `- ${escape(item.text)}${source(item.source)}`)]]) body += `\n\n## ${escape(label)}\n\n${rows.length ? rows.join("\n") : `- ${escape(value.labels.none)}`}`;
+    return body;
+  };
+  const fixtureStructure = (generated = false) => {
+    const source = index => ({ utterance_id: transcript[index].utterance_id, start_ms: transcript[index].start_ms, speaker: transcript[index].confirmed_speaker_name || null });
+    return { labels: { summary: "Summary", decisions: "Decisions", actions: "Action items", open_questions: "Open questions", none: "None" },
+      lead: generated ? "A new structured candidate is ready for review." : "The team confirmed next week’s planning and agreed who prepares what. The client call moves to Thursday afternoon, and a room still needs to be booked.",
+      topics: [{ title: "Planning", body: "Next week’s planning is confirmed for Monday. The agreed scope stays unchanged.", source: source(0) },
+        { title: "Agenda", body: "Noor shares the agenda by Friday so everyone can prepare. She also confirms the invitation.", source: source(1) },
+        { title: "Client call", body: "The client call moves to Thursday afternoon. Nobody has taken on booking the room.", source: source(2) }],
+      decisions: [{ text: "The planning is confirmed for Monday.", source: source(0) }, { text: "The client call moves to Thursday afternoon.", source: source(2) }],
+      actions: [{ text: "Share the agenda", owner: "Noor", due: "Friday", source: source(1), state: { done: false, owner: "Sam" } },
+        { text: "Confirm the invitation", owner: "Noor", due: null, source: source(1), state: { done: false, owner: null } },
+        { text: "Book a room for the client call", owner: null, due: null, source: null, state: { done: false, owner: null } }],
+      open_questions: [{ text: "Who books the room for the client call?", source: source(2) }] };
+  };
+  const fixtureSummaryRecord = async (id, body, structure) => ({ schema_version: 1, meeting_uid: uidFor(id), body_revision: await fingerprint(body),
+    provenance: { provider_id: "original-summary-account", provider_kind: "groq", model: "frozen-summary-model", generated_at: "2026-10-24T09:30:00Z", template_id: "algemeen" }, structure });
   const summaryDocument = async id => {
     const uid = uidFor(id), source = await summarySourceRevision(id);
     const empty = options.summary_empty || options.owner_review && !recordForId(id).info.has_summary;
-    if (!summaryDocuments.has(uid)) summaryDocuments.set(uid, { meeting_uid: uid,
-      markdown: empty ? "" : summary, revision: await fingerprint(empty ? "" : summary),
-      source_revision: source, edited: false, outdated: false });
+    if (!summaryDocuments.has(uid)) {
+      const structure = options.summary_structure && options.summary_structure !== "provenance" ? fixtureStructure() : null;
+      const body = empty ? "" : structure ? structureBody(structure) : summary;
+      let record = options.summary_structure ? await fixtureSummaryRecord(id, body, structure) : null;
+      if (options.summary_structure === "corrupt") record.structure.topics = "malformed";
+      if (options.summary_structure === "foreign") record.meeting_uid = "another-meeting";
+      if (options.summary_structure === "future") record.schema_version = 2;
+      if (record) summaryRecords.set(record.body_revision, clone(record));
+      summaryDocuments.set(uid, { meeting_uid: uid, markdown: body, revision: await fingerprint(body), source_revision: source, edited: false, outdated: false, ...(record ? { record } : {}) });
+    }
     const document = summaryDocuments.get(uid);
     return { ...document, source_revision: source, outdated: document.source_revision !== source || summaryOutdated };
   };
-  const saveSummaryDocument = async (id, args, markdown, reviewed = false, restoredSource) => {
+  const withSummaryProgress = async (id, work) => {
+    const frame = { id, meeting_uid: uidFor(id), operation_id: `qa-summary-${++summaryOperation}`, stage: "summary" };
+    emit("meeting-postprocess", { ...frame, state: "started" });
+    try { const result = await work(); emit("meeting-postprocess", { ...frame, state: "finished" }); return result; }
+    catch (error) { emit("meeting-postprocess", { ...frame, state: "failed" }); throw error; }
+  };
+  const saveSummaryDocument = async (id, args, markdown, reviewed = false, restoredSource, actionRecord) => {
     if (options.owner_review ? saveFailure : options.summary_save_error) throw Error(options.summary_save_error || "Synthetic summary storage unavailable.");
     const before = await summaryDocument(id);
     requireCurrentReview();
@@ -549,7 +658,11 @@
       source_revision: before.source_revision, created_at: new ActualDate(now).toISOString() });
     summaryHistories.set(before.meeting_uid, history);
     const boundSource = restoredSource || (reviewed ? before.source_revision : summaryDocuments.get(before.meeting_uid).source_revision);
-    const saved = { ...before, markdown, revision: await fingerprint(markdown), source_revision: boundSource, edited: true, outdated: false };
+    const revision = await fingerprint(markdown);
+    let record = actionRecord || (restoredSource ? summaryRecords.get(revision) : reviewed && args.record ? args.record : before.markdown === markdown ? before.record : null);
+    if (record && (record.meeting_uid !== before.meeting_uid || record.body_revision !== revision || record.schema_version !== 1)) record = null;
+    if (record) summaryRecords.set(revision, clone(record));
+    const saved = { ...before, markdown, revision, source_revision: boundSource, edited: actionRecord ? before.edited : true, outdated: false, ...(options.summary_structure ? { record: record ? clone(record) : null } : {}) };
     requireCurrentReview();
     summaryDocuments.set(before.meeting_uid, saved);
     persistOwnerReview();
@@ -590,7 +703,7 @@
       if (!rows.length || rows.some(row => !row)) return null;
       return fingerprint(JSON.stringify(await Promise.all(rows.map(async row => [await fingerprint(JSON.stringify(evidenceValue(row))), row.attribution_revision || 0, row.confirmed_speaker_name || null]))));
     }
-    return fingerprint(anchor.passage.kind === "notes" ? record.notes : record.summary);
+    return fingerprint(anchor.passage.kind === "notes" ? record.notes : summaryDocuments.get(record.uid)?.markdown ?? record.summary);
   }
   async function resolveConversationSource(source) {
     const id = meetingIdForUid(source.passage.meeting_uid), record = id ? recordForId(id) : null;
@@ -621,6 +734,12 @@
         kind: "notes", start_ms: null, text: line, snippet: line.slice(0, 180) }, segment_keys: [], segment_fingerprints: [],
         notes_start: offset, notes_end: offset + line.length, source_text: line });
       offset += line.length + 1;
+    }
+    if (options.conversation_summary_source) {
+      const body = summaryDocuments.get(record.uid)?.markdown ?? record.summary;
+      const passage = body.split("\n").find(line => line.trim() && !line.startsWith("#"));
+      if (passage) anchors.push({ passage: { meeting_id: record.id, meeting_uid: record.uid, title: record.info.title, start_iso: record.info.start_iso,
+        kind: "summary", start_ms: null, text: passage, snippet: passage.slice(0, 180) }, segment_keys: [], segment_fingerprints: [], notes_start: null, notes_end: null, source_text: passage });
     }
     const selected = options.live_question_selected_scope ? anchors.slice(0, Math.max(1, Math.floor(anchors.length / 2))) : anchors;
     const cutoff = Math.max(0, ...record.transcript.filter(row => !row.failed && row.text.trim()).map(row => row.end_ms));
@@ -777,8 +896,17 @@
     }
     return insightStores.get(uid);
   };
+  const resolvedSuggestionLanguage = fallback => ["en", "nl"].includes(options.insight_recorded_language) ? options.insight_recorded_language
+    : options.insight_recorded_language && options.insight_recorded_language !== "auto" ? null : ["en", "nl", "mixed"].includes(fallback) ? fallback : null;
   const insightRead = id => {
     const value = clone(insightStore(id));
+    value.resolved_language = resolvedSuggestionLanguage(settings.suggestion_language);
+    const outcome = options.suggestion_attempt;
+    value.automatic_attempt = outcome ? { schema_version: 1, meeting_uid: value.meeting_uid, transcript_digest: "a".repeat(64), language_policy: value.resolved_language || "en", admitted_at: "2026-10-24T09:26:00Z",
+      ...(outcome !== "interrupted" ? { outcome, error_code: outcome === "completed" ? undefined : options.suggestion_attempt_error || "deadline_exceeded", items_found: value.items.length, finished_at: "2026-10-24T09:27:00Z" } : {}) } : null;
+    value.automatic_attempt_stale = !!options.suggestion_attempt_stale;
+    value.automatic_attempt_reason_code = options.suggestion_attempt_reason || null;
+    value.analysis_job = clone([...insightJobs.values()].filter(entry => entry.job.meeting_uid === value.meeting_uid).at(-1)?.job || null);
     if (!["missing", "ready"].includes(value.status)) { value.items = []; return value; }
     for (const item of value.items) item.source_state = item.sources.some(source => !transcript.some(row => row.utterance_id === source.utterance_id)) ? "missing"
       : item.sources.some(source => !transcript.some(row => row.utterance_id === source.utterance_id && row.source_fingerprint === source.source_fingerprint && row.text.includes(source.quote))) ? "stale" : "current";
@@ -797,9 +925,15 @@
   async function insightCommand(command, args) {
     const request = args.request || {};
     if (command === "insights_snapshot") return insightRead(args.id);
-    if (command === "insights_availability") return { configured: !!options.insights_seeded, available: !!options.insight_qualified && args.languagePolicy !== "unknown", qualified: !!options.insight_qualified && args.languagePolicy !== "unknown",
-      reason_code: args.languagePolicy === "unknown" ? "unknown_language" : options.insight_qualified ? "" : "unqualified", provider_id: options.insights_seeded ? "owned-ui" : null,
-      model: options.insights_seeded ? "owned-ui-fixture" : null, endpoint: options.insights_seeded ? "https://decision.example.invalid/v1" : null, language_policy: args.languagePolicy, task: "meeting_suggestions_v1", use_case: "manual_finished_suggestions", qualification_id: options.insight_qualified ? "owned-ui-only" : null };
+    if (command === "automatic_insights_availability") {
+      const resolved = resolvedSuggestionLanguage(args.languagePolicy ?? settings.suggestion_language), writable = ["ready", "missing"].includes(insightStore(args.id).status);
+      const configured = !!options.suggestion_configured || !!options.insights_seeded, qualified = !!options.insight_qualified && !!resolved;
+      const reason = !resolved ? "language_unknown" : !configured ? "unconfigured" : !qualified ? "unqualified" : options.suggestion_foreground_accepted === false ? "foreground_impact_unaccepted" : !writable ? "source_unavailable" : "";
+      return { configured, qualified, available: !reason, reason_code: reason, provider_id: configured ? "owned-ui" : null, model: configured ? "owned-ui-fixture" : null, endpoint: configured ? "https://decision.example.invalid/v1" : null, language_policy: resolved || "unknown", resolved_language: resolved, task: "meeting_suggestions_v1", use_case: "automatic_finished_suggestions", qualification_id: qualified ? "owned-ui-only" : null };
+    }
+    if (command === "insights_availability") return { configured: !!options.insights_seeded || !!options.suggestion_configured, available: !!options.insight_qualified && args.languagePolicy !== "unknown", qualified: !!options.insight_qualified && args.languagePolicy !== "unknown",
+      reason_code: args.languagePolicy === "unknown" ? "unknown_language" : options.insight_qualified ? "" : "unqualified", provider_id: options.insights_seeded || options.suggestion_configured ? "owned-ui" : null,
+      model: options.insights_seeded || options.suggestion_configured ? "owned-ui-fixture" : null, endpoint: options.insights_seeded || options.suggestion_configured ? "https://decision.example.invalid/v1" : null, language_policy: args.languagePolicy, task: "meeting_suggestions_v1", use_case: "manual_finished_suggestions", qualification_id: options.insight_qualified ? "owned-ui-only" : null };
     if (command === "claim_insight_edit" || command === "review_insight") {
       if (options.insight_write_fail) throw Error("Synthetic review storage unavailable.");
       if (options.insight_review_delay_ms) await new Promise(resolve => setTimeout(resolve, options.insight_review_delay_ms));
@@ -915,7 +1049,7 @@
       if (contactDelay) await new Promise(resolve => setTimeout(resolve, contactDelay));
       return options.platform && options.platform !== "macos" ? { status: "unavailable", reason: "System contact selection is unavailable on this platform." } : clone(contactResult);
     }
-    if (["insights_snapshot", "insights_availability", "claim_insight_edit", "review_insight", "insights_export", "insight_markdown",
+    if (["insights_snapshot", "insights_availability", "automatic_insights_availability", "claim_insight_edit", "review_insight", "insights_export", "insight_markdown",
       "prepare_insight_insertion", "reconcile_insight_insertions", "resolve_insight_insertion", "reassociate_insight_source",
       "begin_insights_analysis", "insights_job", "cancel_insights_analysis"].includes(command)) return insightCommand(command, args);
     switch (command) {
@@ -951,6 +1085,34 @@
       };
       case "set_desktop_command_state": globalThis.__PENNEL_DESKTOP_COMMAND_STATE__ = clone(args.state); return null;
       case "app_info": if (options.app_info_fail) throw new Error("Synthetic startup failure"); if (options.app_info_delay_ms) await new Promise(resolve => setTimeout(resolve, options.app_info_delay_ms)); return info();
+      case "shortcut_capture_start": {
+        if (shortcutCapture) throw Error("A shortcut is already being recorded");
+        const row = shortcutRows().find(row => row.id === args.action);
+        if (!row.capability.available) throw Error(row.capability.reason);
+        const native = options.shortcut_native !== false && !options.wayland && !shortcutDenied();
+        if (!native && row.scope !== "application") throw Error("Native shortcut capture is unavailable on this system");
+        shortcutCapture = { action: args.action, generation: ++shortcutGeneration, native, reason: native ? null : "native_capture_unavailable" };
+        return clone(shortcutCapture);
+      }
+      case "shortcut_capture_stop": shortcutCapture = null; return null;
+      case "reset_all_shortcuts": settings.shortcuts = {}; settings.hotkey = shortcutPlatform === "macos" ? "fn" : "right_control"; settings.record_shortcut_enabled = true; emit("settings-changed", null); return info();
+      case "reset_shortcut":
+      case "set_shortcut": {
+        const row = shortcutRows().find(row => row.id === args.action);
+        const binding = command === "reset_shortcut" ? row.default_binding : args.binding;
+        if (binding?.key && row.scope === "application" && !binding.mods.includes(primary) && !/^F\d+$/.test(binding.key)) throw {kind:"not_allowed",reason:"modifier_required",action:null};
+        if (binding?.key && binding.mods.length === 1 && binding.mods[0] === primary && ["q","w","x","c","v","a","z"].includes(binding.key.toLowerCase())) throw {kind:"reserved",reason:"system_shortcut",action:null};
+        if (binding?.mods.some(mod => mod.includes("shift")) && args.action === "dictate") throw {kind:"not_allowed",reason:"shift_is_command",action:null};
+        if (binding) {
+          const signature = value => JSON.stringify([value.mods.map(mod=>value.key ? mod.replace(/^(left|right)_/, "") : mod).sort(), value.key?.toLowerCase() || null]);
+          const other = shortcutRows().find(other => other.id !== args.action && other.binding && signature(binding) === signature(other.binding));
+          if (other && !args.replace) throw {kind:"conflict",reason:"already_assigned",action:other.id};
+          if (other) { settings.shortcuts ||= {}; settings.shortcuts[other.id] = null; }
+        }
+        settings.shortcuts ||= {}; settings.shortcuts[args.action] = clone(binding);
+        if (args.action === "record") settings.record_shortcut_enabled = JSON.stringify(binding) === JSON.stringify(row.default_binding);
+        emit("settings-changed", null); return info();
+      }
       case "save_settings": {
         if (options.settings_save_error) throw new Error(options.settings_save_error);
         settings = clone(args.settings);
@@ -960,6 +1122,14 @@
         persistOwnerReview();
         emit("settings-changed", null);
         return info();
+      }
+      case "show_pill_preview": return null;
+      case "configured_dictation_models": return configuredSpeechModels();
+      case "select_dictation_model": {
+        if (!configuredSpeechModels().some(model => JSON.stringify(model.choice) === JSON.stringify(args.choice))) throw new Error("This speech model is unavailable.");
+        settings.dictation_models ||= [];
+        if (!settings.dictation_models.some(choice => JSON.stringify(choice) === JSON.stringify(settings.dictation_stt))) settings.dictation_models.push(clone(settings.dictation_stt));
+        settings.dictation_stt = clone(args.choice); emit("settings-changed", null); return info();
       }
       case "apply_task_model_choice": {
         if (!["dictation_stt", "meeting_stt", "llm"].includes(args.slot)) throw new Error("Unknown model task.");
@@ -996,7 +1166,7 @@
           : permissions.some(permission => permission.kind === "microphone" && ["denied", "restricted", "not_determined"].includes(permission.status));
         const configured = Boolean(account && (!options.owner_review || definition?.availability.status === "available") && slot.model && (account.kind === "local" ? models.some(model => model.id === slot.model && model.state.kind === "downloaded") : !definition?.requires_key || keys[account.id]));
         const accessibility = permissions.find(permission => permission.kind === "accessibility")?.status === "granted";
-        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility, can_paste_externally: accessibility, reason: denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning.", resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
+        return { configured, can_record: configured && !denied, can_use_shortcut: accessibility && !options.copy_only && !!shortcutRows().find(row => row.id === "dictate").binding, can_paste_externally: accessibility && !options.copy_only, reason: options.home_setup_reason || (denied ? "Geef Pennel toegang tot je microfoon." : configured ? null : "Kies een werkende spraakherkenning."), resume_step: configured ? options.owner_review && !denied ? "practice" : "permissions" : "engine" };
       }
       case "pad_text": return pad;
       case "save_pad_text": {
@@ -1018,7 +1188,8 @@
         if (session.phase === "listening") {
           if (options.owner_review) { session.phase = "working"; scheduleDictation(session.session_id); }
           else { session.phase = "done"; session.text = session.kind === "pad" ? pad + "\n\n" + sentence : sentence;
-            if (session.kind === "pad") pad = session.text; }
+            if (session.kind === "pad") pad = session.text;
+            if (session.kind === "home_practice") retainDictation(sentence); }
         } else session.phase = "listening";
         emit("dictation-session", session); return null;
       }
@@ -1296,7 +1467,7 @@
       case "choose_meetings_dir": return null;
       case "pick_style_application": return options.style_picker_cancelled ? null : { id: "com.apple.mail", name: "Mail" };
       case "start_meeting": {
-        if (!options.owner_review) return meetingId;
+        if (!options.owner_review) { ownerRecording = true; recordingStopped = false; return meetingId; }
         if (meetingStatus().recording) throw Error("Finish the current recording first.");
         const seedIndex = library.indexOf(meeting); if (seedIndex !== -1) library[seedIndex] = clone(meeting);
         retainedMeetings.set(activeMeetingId, { info: clone(meetingInfo(activeMeetingId)), meeting_uid: meetingUid, session_id: liveSession, notes, transcript: clone(transcript) });
@@ -1325,8 +1496,65 @@
         const index = library.findIndex(info => info.id === args.id); if (index >= 0) library.splice(index, 1);
         conversationFixture?.deleteMeeting(uid); emit("library-changed", null); return null;
       }
-      case "summarize_meeting": return summary;
+      case "summarize_meeting": return withSummaryProgress(args.id, async () => {
+        const before = await summaryDocument(args.id), record = recordForId(args.id);
+        if (args.expectedRevision !== undefined || args.expectedSourceRevision !== undefined) {
+          if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision || before.edited || before.markdown.trim()) throw Error("The summary or its sources changed. Reload before creating it.");
+        }
+        if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
+        requireCurrentReview();
+        if (options.summary_generation_error) throw Error(options.summary_generation_error);
+        const current = await summaryDocument(args.id);
+        if (current.revision !== before.revision || current.source_revision !== before.source_revision) throw Error("The summary or its sources changed. Reload before creating it.");
+        const markdown = `${summary}\n\n${record.notes}`;
+        summaryDocuments.set(before.meeting_uid, { ...before, markdown, revision: await fingerprint(markdown), edited: false, outdated: false });
+        const info = library.find(info => info.id === args.id); if (info) info.has_summary = true;
+        persistOwnerReview(); emit("meeting-updated", args.id); return markdown;
+      });
+      case "meeting_suggestion_prompt_dismissed": {
+        const uid = uidFor(args.id); if (!uid || deletedMeetingUids.has(uid)) throw Error("This meeting is no longer available.");
+        return dismissedSuggestionPrompts.has(uid);
+      }
+      case "dismiss_meeting_suggestion_prompt": {
+        const before = await summaryDocument(args.id);
+        if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision) throw Error("The summary or its sources changed. Reload before saving.");
+        if (saveFailure || options.suggestion_prompt_error) throw Error(options.suggestion_prompt_error || "Synthetic suggestion metadata unavailable.");
+        if (!dismissedSuggestionPrompts.has(before.meeting_uid)) {
+          dismissedSuggestionPrompts.add(before.meeting_uid);
+          summaryDocuments.set(before.meeting_uid, { ...before, revision: await fingerprint(JSON.stringify([before.revision, "suggestion-prompt-dismissed"])) });
+          persistOwnerReview(); emit("meeting-updated", args.id);
+        }
+        return clone(await summaryDocument(args.id));
+      }
+      case "meeting_summary_prompt_dismissed": {
+        const uid = uidFor(args.id); if (!uid || deletedMeetingUids.has(uid)) throw Error("This meeting is no longer available.");
+        return dismissedSummaryPrompts.has(uid);
+      }
+      case "dismiss_meeting_summary_prompt": {
+        const before = await summaryDocument(args.id);
+        if (args.expectedRevision !== before.revision || args.expectedSourceRevision !== before.source_revision) throw Error("The summary or its sources changed. Reload before saving.");
+        if (saveFailure || options.summary_prompt_error) throw Error(options.summary_prompt_error || "Synthetic metadata storage unavailable.");
+        if (!dismissedSummaryPrompts.has(before.meeting_uid)) {
+          dismissedSummaryPrompts.add(before.meeting_uid);
+          summaryDocuments.set(before.meeting_uid, { ...before, revision: await fingerprint(JSON.stringify([before.revision, "prompt-dismissed"])) });
+          persistOwnerReview(); emit("meeting-updated", args.id);
+        }
+        return clone(await summaryDocument(args.id));
+      }
       case "meeting_summary": return clone(await summaryDocument(args.id));
+      case "meeting_transcript_provenance": return options.summary_structure ? { provider_kind: "local", model: "frozen-transcript-model", requested_language: "en", generated_at: "2026-10-24T09:18:00Z" } : null;
+      case "meeting_speaker_timeline": {
+        if (options.summary_timeline_error) throw Error("Synthetic timeline unavailable.");
+        const rows = recordForId(args.id).transcript.filter(row => !row.failed && row.end_ms > row.start_ms);
+        return { duration_ms: Math.max(0, ...rows.map(row => row.end_ms)), duration_is_recorded: Boolean(options.summary_structure), lanes: rows.map((row, index) => ({ key: `opaque-lane-${index}`, kind: row.confirmed_speaker_name ? "person" : "unknown", speaker: row.confirmed_speaker_name || null, duration_ms: row.end_ms - row.start_ms, spans: [{ start_ms: row.start_ms, end_ms: row.end_ms }] })) };
+      }
+      case "update_meeting_summary_action": {
+        const before = await summaryDocument(args.id), record = clone(before.record);
+        if (!record?.structure?.actions[args.actionIndex]) throw Error("The summary has no attached action structure.");
+        record.structure.actions[args.actionIndex].state = { done: Boolean(args.done), owner: args.owner || null };
+        const body = structureBody(record.structure); record.body_revision = await fingerprint(body);
+        return saveSummaryDocument(args.id, args, body, false, undefined, record);
+      }
       case "save_meeting_summary": return saveSummaryDocument(args.id, args, String(args.markdown ?? ""));
       case "accept_meeting_summary": return saveSummaryDocument(args.id, args, String(args.markdown ?? ""), true);
       case "meeting_summary_history": return clone(summaryHistories.get(uidFor(args.id)) || []);
@@ -1335,13 +1563,22 @@
         if (!revision) throw Error("The requested summary revision is unavailable.");
         return saveSummaryDocument(args.id, args, revision.markdown, false, revision.source_revision);
       }
-      case "generate_meeting_summary": {
+      case "generate_meeting_summary": return withSummaryProgress(args.id, async () => {
         const before = await summaryDocument(args.id), record = recordForId(args.id);
         if (options.summary_generation_delay_ms) await new Promise(resolve => setTimeout(resolve, options.summary_generation_delay_ms));
         requireCurrentReview();
         if (options.summary_generation_error) throw Error(options.summary_generation_error);
+        if (options.summary_structure) {
+          const structure = fixtureStructure(true);
+          for (const action of structure.actions) {
+            const saved = before.record?.structure?.actions.find(previous => previous.text === action.text && previous.source?.utterance_id === action.source?.utterance_id);
+            if (saved) action.state = clone(saved.state);
+          }
+          const body = structureBody(structure);
+          return { meeting_uid: before.meeting_uid, markdown: body, revision: before.revision, source_revision: before.source_revision, record: await fixtureSummaryRecord(args.id, body, structure) };
+        }
         return { meeting_uid: before.meeting_uid, markdown: `${summary}\n\n${record.notes}`, revision: before.revision, source_revision: before.source_revision };
-      }
+      });
       case "generate_shareable_meeting_summary": {
         const record = recordForId(args.id);
         if (!record?.transcript.length || options.shareable_missing_transcript) throw Error("A finalized transcript is required for a shareable summary.");
@@ -1522,7 +1759,7 @@
     if (event.key !== profileKey || !event.newValue) return;
     try { settings = { ...settings, ...JSON.parse(event.newValue) }; emit("settings-changed", null); } catch {}
   });
-  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
+  globalThis.__PENNEL_FIXTURE__ = { options: fixture, calls, unknown, emit, info, shortcutCapture: () => clone(shortcutCapture), completeDownload, setupTrace, frontendFlushes: () => clone(frontendFlushes), copiedTexts: () => clone(copiedTexts),
     recovery: { mode: value => { if (!["success", "zero", "partial_error"].includes(value)) throw Error("Unknown recovery fixture mode"); failedRecoveryMode = value; },
       plan: value => { failedRecoveryOverride = clone(value); }, error: value => { failedRecoveryError = value; },
       delay: value => { failedRecoveryDelay = value; }, pending: () => failedRecoveryPending },

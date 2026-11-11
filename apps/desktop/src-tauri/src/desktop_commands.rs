@@ -129,14 +129,14 @@ pub fn install(app: &AppHandle, menu: &tauri::menu::Menu<tauri::Wry>) -> tauri::
     let native = app.state::<CommandMenus>();
     let state = native.state.lock().unwrap().clone();
     let mut items = native.items.lock().unwrap();
-    for (command, title, shortcut) in [
-        (DesktopCommand::Settings, "App", "Cmd+,"),
-        (DesktopCommand::NewRecording, "File", "Cmd+N"),
-        (DesktopCommand::Find, "Edit", "Cmd+F"),
-        (DesktopCommand::ToggleSidebar, "View", "Cmd+Ctrl+S"),
-        (DesktopCommand::Dictation, "View", "Cmd+1"),
-        (DesktopCommand::Meetings, "View", "Cmd+2"),
-        (DesktopCommand::History, "View", "Cmd+3"),
+    for (command, title) in [
+        (DesktopCommand::Settings, "App"),
+        (DesktopCommand::NewRecording, "File"),
+        (DesktopCommand::Find, "Edit"),
+        (DesktopCommand::ToggleSidebar, "View"),
+        (DesktopCommand::Dictation, "View"),
+        (DesktopCommand::Meetings, "View"),
+        (DesktopCommand::History, "View"),
     ] {
         let target = if title == "App" {
             submenus.first().cloned()
@@ -147,12 +147,13 @@ pub fn install(app: &AppHandle, menu: &tauri::menu::Menu<tauri::Wry>) -> tauri::
                 .cloned()
         };
         let Some(target) = target else { continue };
+        let shortcut = accelerator(app, command);
         let item = MenuItem::with_id(
             app,
             format!("desktop-{}", command.id()),
             command.label(crate::ui::language(), &state),
             false,
-            Some(shortcut),
+            shortcut.as_deref(),
         )?;
         match title {
             "App" => {
@@ -174,6 +175,21 @@ pub fn install(app: &AppHandle, menu: &tauri::menu::Menu<tauri::Wry>) -> tauri::
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn accelerator(app: &AppHandle, command: DesktopCommand) -> Option<String> {
+    if crate::shortcut_capture::capturing() {
+        return None;
+    }
+    let shared = app.try_state::<std::sync::Arc<crate::state::Shared>>()?;
+    pennel_core::effective_shortcut(
+        &shared.settings(),
+        command.id(),
+        crate::shortcuts::platform(),
+    )
+    .as_ref()
+    .and_then(pennel_core::menu_accelerator)
+}
+
 pub fn refresh(app: &AppHandle) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     if let Some(native) = app.try_state::<CommandMenus>() {
@@ -182,6 +198,7 @@ pub fn refresh(app: &AppHandle) -> tauri::Result<()> {
         let items = native.items.lock().unwrap().clone();
         for (command, item) in items {
             item.set_text(command.label(crate::ui::language(), &state))?;
+            item.set_accelerator(accelerator(app, command))?;
             item.set_enabled(state.enabled(command))?;
         }
     }
@@ -204,6 +221,9 @@ pub fn set_desktop_command_state(window: WebviewWindow, state: CommandState) -> 
 }
 
 pub fn dispatch(app: &AppHandle, id: &str) {
+    if crate::shortcut_capture::capturing() {
+        return;
+    }
     let Some(id) = id.strip_prefix("desktop-") else {
         return;
     };
@@ -236,6 +256,45 @@ pub fn dispatch(app: &AppHandle, id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_save_refreshes_accelerators_independently_of_language_and_command_state() {
+        let source = include_str!("commands.rs");
+        let apply = source
+            .split("fn apply_settings(")
+            .nth(1)
+            .unwrap()
+            .split("fn refresh_cleanup_verification")
+            .next()
+            .unwrap();
+        assert!(apply.contains("crate::desktop_commands::refresh(app).map_err(err)?;"));
+        let state = CommandState {
+            ready: true,
+            find: true,
+            ..Default::default()
+        };
+        let mut settings = pennel_core::default_settings();
+        let get = |settings: &pennel_core::Settings| {
+            pennel_core::effective_shortcut(settings, "find", pennel_core::ShortcutPlatform::Macos)
+                .as_ref()
+                .and_then(pennel_core::menu_accelerator)
+        };
+        assert_eq!(get(&settings).as_deref(), Some("Cmd+F"));
+        settings.shortcuts.insert(
+            "find".into(),
+            Some(pennel_core::ShortcutBinding {
+                mods: vec!["meta".into(), "alt".into()],
+                code: Some("KeyG".into()),
+                key: Some("g".into()),
+            }),
+        );
+        assert_eq!(get(&settings).as_deref(), Some("Alt+Cmd+G"));
+        settings.shortcuts.insert("find".into(), None);
+        assert_eq!(get(&settings), None);
+        settings.shortcuts.remove("find");
+        assert_eq!(get(&settings).as_deref(), Some("Cmd+F"));
+        assert!(state.enabled(DesktopCommand::Find));
+    }
 
     #[test]
     fn readiness_and_per_action_state_both_gate_commands() {

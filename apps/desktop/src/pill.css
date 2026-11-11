@@ -16,6 +16,8 @@ body {
 }
 
 #pill {
+  --pill-easing: cubic-bezier(.2, .8, .2, 1);
+  --pill-quiet-text: color-mix(in srgb, var(--pill-text) 82%, var(--pill-background));
   display: inline-flex;
   flex-direction: column;
   align-items: stretch;
@@ -26,29 +28,89 @@ body {
   border-radius: var(--radius-pill);
   background: var(--pill-background);
   color: var(--pill-text);
-  font: 500 var(--font-label)/1.2 var(--ui);
+  font: 500 var(--pill-label-size)/1.2 var(--ui);
   box-shadow: 0 var(--pill-shadow-y) var(--pill-shadow-blur) var(--shadow);
+  transform-origin: 50% 100%;
 }
 
 #pill[hidden] {
   display: none;
 }
 
-#pill.has-preview {
-  width: calc(var(--pill-window-width) - 2 * var(--pill-outer-inset));
-  padding: var(--space-3);
+#pill.has-preview,
+#pill[data-state="problem"] {
   border-radius: var(--radius-panel);
 }
 
-#status {
+#pill.has-preview {
+  width: calc(var(--pill-window-width) - 2 * var(--pill-outer-inset));
+  padding: var(--space-3);
+}
+
+#pill.entering { animation: pill-enter 220ms var(--pill-easing); }
+#pill.leaving { animation: pill-leave 140ms var(--pill-easing) forwards; }
+#status.switching { animation: pill-switch-in 120ms var(--pill-easing); }
+
+#status-layers { display: grid; }
+
+.pill-status {
+  grid-area: 1 / 1;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-#label {
+.pill-status-outgoing {
+  pointer-events: none;
+  animation: pill-switch-out 120ms var(--pill-easing) forwards;
+}
+
+.pill-status[data-state="problem"] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 1px;
+}
+
+.pill-status[data-state="problem"] .pill-indicator { grid-row: 1 / span 2; }
+
+.pill-label {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.pill-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+  color: var(--pill-quiet-text);
+}
+
+.pill-detail[hidden],
+.pill-hint[hidden] { display: none; }
+
+.pill-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-weight: 400;
+  color: var(--pill-quiet-text);
+  white-space: nowrap;
+}
+
+.pill-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--pill-text) 16%, transparent);
+  color: var(--pill-text);
+  font: 600 var(--pill-caption-size)/1 var(--ui);
 }
 
 #preview {
@@ -57,7 +119,7 @@ body {
   justify-content: flex-end;
   max-height: calc(var(--pill-preview-line-height) * var(--pill-preview-lines));
   overflow: hidden;
-  font: 400 var(--font-content)/var(--pill-preview-line-height) var(--ui);
+  font: 400 var(--pill-content-size)/var(--pill-preview-line-height) var(--ui);
 }
 
 #preview[hidden] { display: none; }
@@ -67,7 +129,7 @@ body {
   overflow-wrap: anywhere;
 }
 
-#indicator {
+.pill-indicator {
   display: inline-flex;
   align-items: center;
   gap: 2.5px;
@@ -75,16 +137,16 @@ body {
   flex-shrink: 0;
 }
 
-#indicator i {
+.pill-indicator i {
   display: block;
   width: 2.5px;
   height: 16px;
   border-radius: 2px;
   background: var(--pill-accent);
-  transition: transform 0.12s ease-out;
+  transition: transform 120ms var(--pill-easing);
 }
 
-#indicator.working {
+.pill-indicator.working {
   width: 12px;
   height: 12px;
   border: 2px solid color-mix(in srgb, var(--pill-accent) 35%, transparent);
@@ -94,11 +156,17 @@ body {
   box-sizing: border-box;
 }
 
-#indicator.error {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--pill-accent);
+.pill-indicator.no_sound i { opacity: 0.55; }
+
+.pill-indicator svg {
+  width: 15px;
+  height: 15px;
+  color: var(--pill-accent);
+}
+
+.pill-indicator.problem svg {
+  width: 16px;
+  height: 16px;
 }
 
 @keyframes spin {
@@ -107,7 +175,68 @@ body {
   }
 }
 
+@keyframes pill-enter {
+  from { opacity: 0; transform: translateY(8px) scale(.96); }
+}
+
+@keyframes pill-leave {
+  to { opacity: 0; transform: translateY(4px) scale(.98); }
+}
+
+@keyframes pill-switch-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pill-switch-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes pill-enter-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pill-leave-fade { from { opacity: 1; } to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  #indicator.working { animation: none; }
-  #indicator i { transition: none; }
+  #pill.entering { animation: pill-enter-fade 120ms var(--pill-easing); }
+  #pill.leaving { animation: pill-leave-fade 120ms var(--pill-easing) forwards; }
+  .pill-indicator.working { animation: none; }
+  .pill-indicator i { transition: none; }
+}
+:root[data-reduce-motion="true"] #pill.entering { animation: pill-enter-fade 120ms var(--pill-easing); }
+:root[data-reduce-motion="true"] #pill.leaving { animation: pill-leave-fade 120ms var(--pill-easing) forwards; }
+:root[data-reduce-motion="true"] .pill-indicator.working { animation: none; }
+:root[data-reduce-motion="true"] .pill-indicator i { transition: none; }
+
+.pill-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 48%;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--pill-text) 14%, transparent);
+  color: var(--pill-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--pill-caption-size);
+}
+.pill-model-chip[hidden] { display: none; }
+.pill-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+.pill-model-chip > .ui-icon { width: 12px; height: 12px; flex: 0 0 auto; }
+.pill-model-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+:root[data-pill-position="top_centre"] body,
+:root[data-pill-position="near_cursor"] body { align-items: flex-start; }
+.pill-indicator.preview { color: var(--pill-accent); }
+
+/* A compositor may shrink the window below the selected size; retain its recovery message. */
+@media (max-height: 140px) {
+  :root, :root[data-pill-size] {
+    --pill-outer-inset: 8px;
+    --pill-label-size: 12px;
+    --pill-caption-size: 11px;
+  }
+  #preview { display: none; }
 }

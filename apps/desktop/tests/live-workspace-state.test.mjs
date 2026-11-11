@@ -2,49 +2,33 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LivePaneState, formatSelection, LiveStatusEpoch, segmentEvidenceValue } from "../src/live-workspace-state.ts";
 
-test("the deliberately selected pane survives wide and narrow transitions", () => {
-  const panes = new LivePaneState();
-  assert.equal(panes.selected, "notes");
-  assert.equal(panes.companion, "transcript");
-  assert.equal(panes.companionOpen, false);
-  panes.resize(1000);
-  assert.equal(panes.shown("notes"), true);
-  assert.equal(panes.shown("transcript"), false);
-  panes.select("questions"); panes.resize(900);
-  assert.equal(panes.selected, "questions");
-  panes.select("notes"); panes.resize(799);
-  assert.equal(panes.selected, "notes");
-  assert.equal(panes.companion, "questions");
-  panes.resize(800);
-  assert.equal(panes.wide, true);
-  assert.equal(panes.companion, "questions");
-  assert.equal(panes.companionOpen, true);
+test("wide windows default to Transcript while narrow windows start with the document", () => {
+  const panes = new LivePaneState(); panes.resize(1099);
+  assert.equal(panes.wide, false); assert.equal(panes.companionOpen, false);
+  panes.resize(1100);
+  assert.equal(panes.wide, true); assert.equal(panes.companionOpen, true);
+  assert.equal(panes.companion, "transcript"); assert.equal(panes.shown("notes"), true);
+  panes.resize(760); assert.equal(panes.companionOpen, false);
+  panes.resize(1280); assert.equal(panes.companionOpen, true);
 });
 
-test("closing a companion survives resize without losing the selected writing surface", () => {
-  const panes = new LivePaneState();
-  panes.select("summary"); panes.select("questions"); panes.resize(1000);
-  assert.equal(panes.shown("summary"), true);
-  assert.equal(panes.shown("questions"), true);
-  panes.closeCompanion(); panes.resize(700); panes.resize(1000);
-  assert.equal(panes.primary, "summary");
-  assert.equal(panes.selected, "summary");
-  assert.equal(panes.companion, "questions");
-  assert.equal(panes.shown("questions"), false);
-  assert.equal(panes.shown("summary"), true);
+test("explicit companion choices survive resize and keep the document beneath an overlay", () => {
+  const panes = new LivePaneState(); panes.setFinished(true); panes.resize(1280);
+  panes.select("questions"); panes.resize(760);
+  assert.equal(panes.companionOpen, true); assert.equal(panes.shown("questions"), true);
+  assert.equal(panes.shown("notes"), true); assert.equal(panes.shown("summary"), true);
+  panes.closeCompanion(); panes.resize(1400);
+  assert.equal(panes.companionOpen, false); assert.equal(panes.companion, "questions");
+  panes.toggleCompanion("transcript"); assert.equal(panes.companionOpen, true);
+  panes.resize(700); panes.select("notes");
+  assert.equal(panes.companionOpen, false); assert.equal(panes.shown("notes"), true);
 });
 
-test("a narrow companion is the same retained pane and returns to the selected notes or summary", () => {
-  const panes = new LivePaneState();
-  panes.select("summary"); panes.toggleCompanion("transcript"); panes.resize(700);
-  assert.equal(panes.shown("summary"), false);
-  assert.equal(panes.shown("transcript"), true);
-  panes.resize(1000);
-  assert.equal(panes.shown("summary"), true);
-  assert.equal(panes.shown("transcript"), true);
-  panes.resize(700); panes.toggleCompanion("transcript");
-  assert.equal(panes.selected, "summary");
-  assert.equal(panes.shown("summary"), true);
+test("closing a companion preserves the chosen writing section through wide and narrow layouts", () => {
+  const panes = new LivePaneState(); panes.setFinished(true); panes.select("summary"); panes.resize(1280);
+  panes.select("questions"); panes.closeCompanion(); panes.resize(760); panes.resize(1280);
+  assert.equal(panes.primary, "summary"); assert.equal(panes.selected, "summary");
+  assert.equal(panes.shown("questions"), false); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
 });
 
 test("format helpers preserve source text and the selected content", () => {
@@ -90,4 +74,31 @@ test("rich evidence uses Rust Unicode White_Space boundaries and preserves liter
   const utterance = { utterance_id: "u-bom", source_id: "microphone", start_ms: 0, end_ms: 1000,
     speaker: "others", voice: null, failed: false, text: "\u00a0\ufeffalpha\u2003beta\n😀\ufeff\u00a0" };
   assert.deepEqual(segmentEvidenceValue(utterance), ["u-bom", "microphone", 0, 1000, "\ufeffalpha beta 😀\ufeff", false]);
+});
+
+test("a finished document keeps Summary and Your notes in one writing surface", () => {
+  const panes = new LivePaneState(); panes.resize(1000); panes.setFinished(true);
+  assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
+  panes.select("summary"); assert.equal(panes.shown("notes"), true);
+  panes.select("questions"); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
+  panes.resize(700); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("questions"), true);
+  panes.closeCompanion(); assert.equal(panes.shown("summary"), true); assert.equal(panes.shown("notes"), true);
+});
+
+test("finished meetings default to Review while captures keep Transcript", () => {
+  const panes = new LivePaneState(); panes.resize(1280);
+  assert.equal(panes.companion, "transcript");
+  panes.setFinished(true);
+  assert.equal(panes.companion, "suggestions"); assert.equal(panes.companionOpen, true);
+  panes.resize(760); assert.equal(panes.companion, "suggestions"); assert.equal(panes.companionOpen, false);
+  panes.resize(1280); assert.equal(panes.companion, "suggestions"); assert.equal(panes.companionOpen, true);
+});
+
+test("finishing cannot replace an explicit companion or reopen a user's closed companion", () => {
+  const transcript = new LivePaneState(); transcript.resize(1280); transcript.select("transcript"); transcript.setFinished(true);
+  assert.equal(transcript.companion, "transcript"); assert.equal(transcript.companionOpen, true);
+  const closed = new LivePaneState(); closed.resize(1280); closed.closeCompanion(); closed.setFinished(true); closed.resize(1400);
+  assert.equal(closed.companionOpen, false);
+  const questions = new LivePaneState(); questions.resize(760); questions.select("questions"); questions.setFinished(true);
+  assert.equal(questions.companion, "questions"); assert.equal(questions.companionOpen, true);
 });

@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 import { openMeetingTool } from "./meeting-test-controls.mjs";
 
 const assert = (value, message) => { if (!value) throw Error(message); };
@@ -7,10 +8,13 @@ async function until(check, message) {
   throw Error(message);
 }
 function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; }
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
 function tab(name) {
+  const workspace = document.querySelector(".live-workspace:has(.meeting-document)");
+  if (workspace && (name === "notes" || name === "summary")) { selectMeetingPane(workspace, name); return; }
   const button = document.querySelector(`[data-live-tab="${name}"]`) || document.querySelector(`.detail-tabs [data-tab="${name}"]`);
   if (button?.getAttribute("aria-selected") !== "true") button?.click();
 }
@@ -49,8 +53,8 @@ export async function prepareRememberVoiceDialog() {
 }
 async function noteEditor() {
   tab("notes");
-  await until(() => document.querySelector(".live-notes, .own-notes textarea"), "The note editor did not mount.");
-  const editor = document.querySelector(".live-notes, .own-notes textarea"), disclosure = editor.closest("details");
+  await until(() => document.querySelector(".live-notes"), "The note editor did not mount.");
+  const editor = document.querySelector(".live-notes"), disclosure = editor.closest("details");
   if (disclosure && !disclosure.open) disclosure.querySelector("summary").click();
   assert(editor.getBoundingClientRect().height > 0, "The note editor is not visible.");
   return editor;
@@ -153,7 +157,14 @@ export async function checkPeopleMentions() {
   choose(dialog, contact.id);
   const exportResult = await api.invoke("export_meeting", { id: fixture.options.meeting_id, includeTranscript: true });
   assert(!JSON.stringify(exportResult).includes(contact.email) && !JSON.stringify(exportResult).includes(contact.private_alias), "Export enriched content with private contact details.");
-  return accepted({ exactMarkdown: true, explicitMentionRelinkUnlink: true, stableDuplicateIdentity: true, privateDetailsExcludedFromExport: true });
+  cancel(dialog); editor.focus();
+  assert(editor.undo(), "Mention insertion is missing from editor history.");
+  await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
+  assert(editor.value === original && fixture.workspace.notes() === original, "Undo did not persist the exact pre-mention Markdown.");
+  assert(editor.redo(), "Mention insertion cannot be redone.");
+  await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
+  assert(editor.value === expected && fixture.workspace.notes() === expected, "Redo did not persist the exact mention Markdown.");
+  return accepted({ exactMarkdown: true, explicitMentionRelinkUnlink: true, stableDuplicateIdentity: true, privateDetailsExcludedFromExport: true, undoRedo: true });
 }
 
 export async function checkPeopleContactSnapshot() {
@@ -192,15 +203,13 @@ export async function checkPeopleLateAndChangedInput() {
   editor.focus(); edit(editor, "Original **Markdown** to keep."); editor.setSelectionRange(0, 8); editor.dispatchEvent(new Event("select"));
   dialog = await open(".people-insert");
   choose(dialog, before.people[0].id);
-  editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-  editor.value = "Original composed text **kept**.";
-  editor.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, inputType: "insertCompositionText", data: "composed" }));
+  editor.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  editor.applyUserChange("Original composed text **kept**.");
   dialog.querySelector(".dialog-actions .primary").click();
   await until(() => dialog.querySelector(".error")?.textContent.includes(t("people.selection_changed")), "Changed composing input did not refuse mention insertion.");
   assert(editor.value === "Original composed text **kept**." && !(await fixture.people.read()).mentions.length, "A late mention overwrote composition or created a false anchor.");
   cancel(dialog);
-  editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "composed" }));
-  editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "composed" }));
+  editor.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "composed" }));
   await until(() => fixture.workspace.notes() === editor.value, "Composition did not retain its ordinary save path.");
   dialog = await open(); fixture.people.failWrites(true);
   await saveManual(dialog, t, "Unsaved synthetic person");

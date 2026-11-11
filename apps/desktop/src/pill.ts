@@ -1,52 +1,193 @@
 import "./fonts.css";
 import "./pill.css";
-import { api, listen, listenToWindow, type PillPreview, type PillState } from "./api";
+import { api, listen, listenToWindow, type AppInfo, type PillPreview, type PillState } from "./api";
+import { icon } from "./icons";
+import { desktopEnvironment } from "./desktop-chrome-state";
+import { PillModelState, type PillModelPresentation } from "./pill-model-state";
 import { PillPreviewState } from "./pill-preview-state";
 import { PILL_METRICS } from "./pill-metrics.generated";
+import { shortcutRow, shortcutText } from "./shortcut-presentation";
 import { bindLocalization, getInterfaceLanguage, localizeBackendText, setInterfaceLanguage, t } from "./i18n.ts";
 
+type RenderState = PillState | { state: "preview"; speech_model?: PillModelPresentation; preview?: null };
+const previewOnly = new URLSearchParams(location.search).get("preview") === "1";
 const pill = document.getElementById("pill")!;
+const status = document.getElementById("status")!;
 const indicator = document.getElementById("indicator")!;
 const label = document.getElementById("label")!;
+const detail = document.getElementById("detail")!;
+const hint = document.getElementById("hint")!;
 const preview = document.getElementById("preview")!;
+const modelChip = document.getElementById("model-chip")!;
+const modelState = new PillModelState();
+let modelTimer: ReturnType<typeof setTimeout> | null = null;
+let providers: AppInfo["settings"]["providers"] = [];
+let indicatorKey = "";
 const previewText = document.getElementById("preview-text")!;
 const previewState = new PillPreviewState(PILL_METRICS.previewLimit);
 let visible = false;
 let localeReady = false;
-let pendingState: PillState | null = null;
+let pendingState: RenderState | null = null;
+let shown: RenderState["state"] = "hidden";
+let doneKey = "";
+let messageKey = "";
+let hintKey = "";
+let outgoing: HTMLElement | null = null;
 const weights = [0.5, 0.8, 1, 0.75, 0.45];
 const bars = weights.map(() => document.createElement("i"));
+const listening: RenderState["state"][] = ["listening", "hands_free", "command", "no_sound"];
 
-function stateLabel(state: PillState["state"]): string {
-  switch (state) {
-    case "listening": return t("dictation.pill.listening");
-    case "hands_free": return t("dictation.pill.hands_free");
-    case "command": return t("dictation.pill.command");
-    case "working": return t("dictation.pill.working");
-    default: return "";
+function keycap(text: string): HTMLElement {
+  const key = document.createElement("kbd");
+  key.textContent = text;
+  return key;
+}
+
+function content(state: RenderState): { text: string; detail?: string; hint?: (string | Node)[] } {
+  const confirmation = modelState.confirmation(performance.now());
+  if (confirmation && listening.includes(state.state)) return { text: t("dictation.pill.model_switched", { model: confirmation }) };
+  switch (state.state) {
+    case "preview": return { text: t("dictation.pill.preview") };
+    case "listening": return { text: t("dictation.pill.listening") };
+    case "hands_free": return { text: t("dictation.pill.hands_free"), hint: [
+      ...doneKey ? [keycap(doneKey), t("dictation.pill.done")] : [],
+      ...state.cancel_shortcut?.text ? [...doneKey ? ["·"] : [], keycap(state.cancel_shortcut.text), t("dictation.pill.cancel")] : [],
+    ] };
+    case "command": return { text: t("dictation.pill.command"), hint: [t("dictation.pill.command_hint")] };
+    case "no_sound": return { text: t("dictation.pill.no_sound"), hint: [t("dictation.pill.no_sound_hint")] };
+    case "working": return { text: t("dictation.pill.working") };
+    case "inserted": return { text: state.app ? t("dictation.pill.inserted_in", { app: state.app }) : t("dictation.pill.inserted") };
+    case "copied": return { text: t("dictation.pill.copied"), hint: [keycap(state.paste_key), t("dictation.pill.to_paste")] };
+    case "problem": return { text: localizeBackendText(state.title), detail: state.detail ? localizeBackendText(state.detail) : undefined };
+    case "hidden": return { text: "" };
   }
 }
 
 function setLevel(level: number) {
-  const gain = Math.min(1, level * 12);
+  const gain = shown === "no_sound" ? 0 : Math.min(1, level * 12);
   bars.forEach((bar, i) => (bar.style.transform = `scaleY(${(4 + 12 * weights[i] * gain) / 16})`));
 }
 
-function render(next: PillState) {
+function clearOutgoing() {
+  outgoing?.remove();
+  outgoing = null;
+  status.classList.remove("switching");
+}
+
+function crossfade() {
+  clearOutgoing();
+  const layer = status.cloneNode(true) as HTMLElement;
+  for (const node of [layer, ...layer.querySelectorAll("[id], [role], [aria-live], [aria-atomic]")]) {
+    for (const attribute of ["id", "role", "aria-live", "aria-atomic"]) node.removeAttribute(attribute);
+  }
+  layer.setAttribute("aria-hidden", "true");
+  layer.classList.add("pill-status-outgoing");
+  layer.addEventListener("animationend", (event) => {
+    if (event.target !== layer) return;
+    layer.remove();
+    if (outgoing === layer) outgoing = null;
+  });
+  status.after(layer);
+  outgoing = layer;
+}
+
+function paint(next: RenderState, animate = false) {
+  const parts = content(next);
+  const nextHintKey = JSON.stringify((parts.hint ?? []).map(part => typeof part === "string" ? part : part.textContent));
+  const nextMessageKey = JSON.stringify([parts.text, parts.detail ?? "", nextHintKey]);
+  const changed = shown !== next.state || messageKey !== nextMessageKey;
+  if (!changed) return;
+  if (animate) crossfade();
+  else clearOutgoing();
+  const confirmation = !!modelState.confirmation(performance.now()) && listening.includes(next.state);
+  const nextIndicator = `${next.state}:${confirmation}`;
+  const stateChanged = indicatorKey !== nextIndicator;
+  indicatorKey = nextIndicator;
+  shown = next.state;
+  pill.dataset.state = next.state;
+  status.dataset.state = next.state;
+  if (label.textContent !== parts.text) label.textContent = parts.text;
+  if (detail.textContent !== (parts.detail ?? "")) detail.textContent = parts.detail ?? "";
+  detail.hidden = !parts.detail;
+  if (hintKey !== nextHintKey) hint.replaceChildren(...parts.hint ?? []);
+  hint.hidden = !parts.hint?.length;
+  if (stateChanged) {
+    indicator.className = `pill-indicator ${confirmation ? "inserted" : next.state}`;
+    if (listening.includes(next.state) && !confirmation) {
+      indicator.replaceChildren(...bars);
+      setLevel(0);
+    } else {
+      const symbol = next.state === "preview" ? "audioLines" : confirmation || next.state === "inserted" ? "check" : next.state === "copied" ? "copy" : next.state === "problem" ? "warning" : null;
+      indicator.replaceChildren(...symbol ? [icon(symbol)] : []);
+    }
+  }
+  messageKey = nextMessageKey;
+  hintKey = nextHintKey;
+  if (animate) replay(status, "switching");
+}
+
+/** Restarts a CSS animation that is tied to a class. */
+function replay(element: HTMLElement, name: string) {
+  element.classList.remove(name);
+  void element.offsetWidth;
+  element.classList.add(name);
+}
+
+function render(next: RenderState) {
   pendingState = next;
   if (!localeReady) return;
+  const wasVisible = visible;
   visible = next.state !== "hidden";
-  pill.hidden = next.state === "hidden";
-  if (!visible) previewState.receive(null);
-  label.textContent = next.state === "error" ? localizeBackendText(next.message) : stateLabel(next.state);
-  indicator.className = next.state;
-  if (["listening", "hands_free", "command"].includes(next.state)) {
-    indicator.replaceChildren(...bars);
-    setLevel(0);
-  } else {
-    indicator.replaceChildren();
+  if (!visible) {
+    clearModelTimer(); modelState.clear();
+    clearOutgoing();
+    previewState.receive(null);
+    shown = "hidden";
+    if (wasVisible) {
+      pill.classList.remove("entering");
+      pill.classList.add("leaving");
+    } else {
+      pill.hidden = true;
+    }
+    renderPreview();
+    return;
   }
-  renderPreview();
+  if (!listening.includes(next.state)) { clearModelTimer(); modelState.clearConfirmation(); }
+  if (next.speech_model) {
+    modelState.begin(next.speech_model.session_id);
+    modelState.receive(next.speech_model, performance.now());
+  }
+  pill.classList.remove("leaving");
+  pill.hidden = false;
+  paint(next, wasVisible);
+  if (!wasVisible) replay(pill, "entering");
+  renderPreview(); renderModel();
+}
+
+function clearModelTimer() { if (modelTimer !== null) clearTimeout(modelTimer); modelTimer = null; }
+
+function renderModel() {
+  const model = modelState.chip;
+  modelChip.hidden = !visible || !model || (!listening.includes(shown) && shown !== "preview") || !!modelState.confirmation(performance.now());
+  if (model) {
+    const kind = providers.find(provider => provider.id === model.choice.provider_id)?.kind;
+    const name = document.createElement("span"); name.textContent = model.label;
+    modelChip.replaceChildren(icon(kind === "local" || kind === "apple_speech" ? "laptop" : "globe"), name);
+  } else modelChip.replaceChildren();
+  const nextKey = modelState.nextKey;
+  modelChip.title = model ? `${model.label}${nextKey ? ` · ${t("dictation.pill.switch_key", { shortcut: nextKey })}` : ""}` : "";
+}
+
+function receiveModel(next: PillModelPresentation | null) {
+  if (next === null) { modelState.clear(); if (previewState.snapshot) modelState.begin(previewState.snapshot.session_id); }
+  else if (!modelState.receive(next, performance.now())) return;
+  clearModelTimer();
+  const remaining = modelState.confirmationRemaining(performance.now());
+  if (remaining > 0) modelTimer = setTimeout(() => {
+    modelTimer = null;
+    if (visible && pendingState) { modelState.clearConfirmation(); paint(pendingState, true); renderModel(); }
+  }, remaining);
+  if (visible && pendingState) { paint(pendingState, true); renderModel(); }
 }
 
 function renderPreview() {
@@ -56,22 +197,82 @@ function renderPreview() {
   pill.classList.toggle("has-preview", !!text);
 }
 
+function applyInfo(info: AppInfo) {
+  document.documentElement.dataset.pillColour = info.settings.pill_colour ?? "ink";
+  document.documentElement.dataset.pillAppearance = info.settings.appearance;
+  document.documentElement.dataset.pillSize = info.settings.pill_size ?? "regular";
+  document.documentElement.dataset.pillPosition = info.settings.pill_position ?? "bottom_centre";
+  providers = info.settings.providers;
+  doneKey = shortcutRow(info, "dictate")?.binding ? shortcutText(info, "dictate") : "";
+  setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
+  if (visible && pendingState) render(pendingState);
+}
+
+let infoRevision = 0;
+async function refreshInfo() {
+  const mine = ++infoRevision;
+  const info = await api.info();
+  if (mine === infoRevision) applyInfo(info);
+}
+
+let demoRevision = 0;
+async function refreshDemo() {
+  const mine = ++demoRevision;
+  try {
+    const info = await api.info();
+    const models = await api.configuredDictationModels();
+    if (mine !== demoRevision) return;
+    applyInfo(info);
+    const model = models.find(model => model.choice.provider_id === info.settings.dictation_stt.provider_id && model.choice.model === info.settings.dictation_stt.model);
+    if (!model) { modelState.clear(); modelState.begin("pill-preview"); }
+    render({ state: "preview", ...(model ? { speech_model: { session_id: "pill-preview", generation: 0, model, available_models: models.length, enabled: info.settings.pill_model_switch_enabled !== false, switched: false } } : {}) });
+  } catch { if (mine === demoRevision) { setInterfaceLanguage("en"); modelState.clear(); render({ state: "preview" }); } }
+}
+
 async function boot() {
-  bindLocalization(label, () => { if (pendingState) label.textContent = pendingState.state === "error" ? localizeBackendText(pendingState.message) : stateLabel(pendingState.state); });
-  const locale = api.info().then((info) => {
-    setInterfaceLanguage(info.interface_language ?? info.settings.ui_language ?? "en");
-  }).catch(() => { setInterfaceLanguage("en"); });
+  const applyMotion = (value: unknown) => {
+    const environment = desktopEnvironment(value);
+    if (environment) document.documentElement.dataset.reduceMotion = String(environment.reduce_motion);
+  };
+  await listenToWindow("desktop-environment-changed", event => applyMotion(event.payload));
+  await api.desktopEnvironment().then(applyMotion).catch(() => undefined);
+  if (previewOnly) {
+    localeReady = true;
+    bindLocalization(status, () => { if (pendingState) render(pendingState); });
+    await listen("settings-changed", () => { void refreshDemo(); });
+    await refreshDemo();
+    return;
+  }
+  pill.addEventListener("animationend", (event) => {
+    if (event.target === pill && ["pill-leave", "pill-leave-fade"].includes(event.animationName) && !visible) {
+      pill.classList.remove("leaving");
+      pill.hidden = true;
+    }
+  });
+  bindLocalization(status, () => { if (visible && pendingState) render(pendingState); });
+  const locale = refreshInfo().catch(() => { setInterfaceLanguage("en"); });
   let eventReceived = false;
   let previewReceived = false;
   let pendingPreview: PillPreview | null | undefined;
   await listenToWindow<PillState>("pill-state", (event) => { eventReceived = true; render(event.payload); });
   await listenToWindow<PillPreview | null>("pill-preview", (event) => {
     pendingPreview = event.payload;
-    if (previewState.receive(event.payload)) previewReceived = true;
+    const previousSession = previewState.snapshot?.session_id;
+    if (previewState.receive(event.payload)) {
+      previewReceived = true;
+      if (event.payload) modelState.begin(event.payload.session_id);
+      else modelState.clear();
+      if (previousSession !== event.payload?.session_id) {
+        clearModelTimer();
+        if (visible && pendingState) paint(pendingState);
+        renderModel();
+      }
+    }
     renderPreview();
   });
+  await listenToWindow<PillModelPresentation | null>("pill-model", event => receiveModel(event.payload));
   await listenToWindow<number>("pill-level", (event) => setLevel(event.payload));
-  await listen("settings-changed", () => { void api.info().then((info) => setInterfaceLanguage(info.interface_language)).catch(() => {}); });
+  await listen("settings-changed", () => { void refreshInfo().catch(() => {}); });
   await locale;
   document.documentElement.lang = getInterfaceLanguage();
   localeReady = true;
@@ -85,4 +286,5 @@ async function boot() {
   }
 }
 
+window.addEventListener("pagehide", () => { clearModelTimer(); modelState.clear(); infoRevision++; demoRevision++; });
 void boot();

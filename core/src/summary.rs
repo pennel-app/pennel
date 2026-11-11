@@ -6,13 +6,13 @@ use crate::{PennelError, system_llm};
 pub(crate) const MAP_REDUCE_ABOVE: usize = 40_000;
 pub(crate) const BLOCK_CHARS: usize = 30_000;
 
-const SYSTEM_PROMPT: &str = "You write meeting notes from a transcript. In legacy transcripts, \"Ik\" labels the user. \"Me\" labels an explicit own-voice estimate. Unknown, mixed or overlapping speaker labels do not establish a person's identity or who made a commitment. Speaker labels marked provisional are revisable estimates, not confirmed identities or ownership. Never infer a person from a microphone or system-audio track. Keep an owner unknown unless the source supports the assignment.
+pub(crate) const SYSTEM_PROMPT: &str = "You write meeting notes from a transcript. In legacy transcripts, \"Ik\" labels the user. \"Me\" labels an explicit own-voice estimate. Unknown, mixed or overlapping speaker labels do not establish a person's identity or who made a commitment. Speaker labels marked provisional are revisable estimates, not confirmed identities or ownership. Never infer a person from a microphone or system-audio track. Keep an owner unknown unless the source supports the assignment.
 Never invent facts that are not in the transcript or notes.";
 
-const LANGUAGE_RULE: &str = "Determine the predominant meeting language from the transcript content, ignoring speaker labels, template wording and interface language. If there is no transcript, use the notes. If the language is indeterminate, use English. Write generated prose and empty-section text in that language. Use \"- None\" in English or \"- Geen\" in Dutch for empty generated sections, or the equivalent in the meeting language.";
+pub(crate) const LANGUAGE_RULE: &str = "Determine the predominant meeting language from the transcript content, ignoring speaker labels, template wording and interface language. If there is no transcript, use the notes. If the language is indeterminate, use English. Write generated prose and empty-section text in that language. Use \"- None\" in English or \"- Geen\" in Dutch for empty generated sections, or the equivalent in the meeting language.";
 const DEFAULT_SECTION_RULE: &str = "Use Markdown with exactly these semantic sections, translating their headings into the meeting language: Summary, Decisions, Action items. English headings: ## Summary, ## Decisions, ## Action items. Dutch headings: ## Samenvatting, ## Beslissingen, ## Actiepunten. These examples do not determine the meeting language.";
 const MAP_PROMPT: &str = "Summarize this part of a meeting transcript as concise bullet points: facts, decisions and action items with who is responsible. Keep the predominant language of the source content, ignoring speaker labels. If the language is indeterminate, use English. In legacy transcripts, \"Ik\" labels the user; \"Me\" is an explicit own-voice estimate. Unknown, mixed and overlapping speech does not establish a named owner. Speaker labels marked provisional are revisable estimates, not confirmed identities or ownership. Never infer a person from an audio track; keep unsupported owners unknown.";
-const AGREEMENT_RULE: &str = "Preserve the distinction between confirmed decisions, proposals, assumptions and unresolved questions. Statements such as 'we assume', 'maybe', 'to investigate' and 'I will double-check' stay tentative and must not appear as confirmed decisions. Only a later explicit confirmation can promote a tentative statement to a decision. The confirmation must clearly refer to that proposal; a vague acknowledgment is not confirmation. Carry unresolved checks and qualifications into intermediate summaries so the final summary cannot lose them. Do not invent owners or deadlines for tentative follow-up work.";
+pub(crate) const AGREEMENT_RULE: &str = "Preserve the distinction between confirmed decisions, proposals, assumptions and unresolved questions. Statements such as 'we assume', 'maybe', 'to investigate' and 'I will double-check' stay tentative and must not appear as confirmed decisions. Only a later explicit confirmation can promote a tentative statement to a decision. The confirmation must clearly refer to that proposal; a vague acknowledgment is not confirmation. Carry unresolved checks and qualifications into intermediate summaries so the final summary cannot lose them. Do not invent owners or deadlines for tentative follow-up work.";
 
 fn section_is(section: &str, english: &str, dutch: &str) -> bool {
     let section = section.trim();
@@ -218,7 +218,11 @@ pub(crate) fn apple_summary_messages(
         let parts = byte_blocks(&source, block_size);
         let reduced = parts
             .into_iter()
-            .map(|part| ask(&map_messages(part)))
+            .map(|part| {
+                ask(&map_messages(part)).map(|output| {
+                    crate::summary_structure::retain_received_references(&output, part)
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?
             .join("\n\n");
         if reduced.len() <= available {
@@ -562,7 +566,7 @@ mod tests {
         let provider = server.mock("POST", "/chat/completions")
             .match_body(mockito::Matcher::Regex("Unknown speaker: Room commitment".into()))
             .with_body(serde_json::json!({"choices":[{"message":{"content":"## Summary\n- Owned response."}}]}).to_string())
-            .expect(1).create();
+            .expect(2).create();
         engine
             .summarize_meeting(id, "algemeen".into(), keys())
             .unwrap();
@@ -605,7 +609,7 @@ mod tests {
             .map(|i| seg(i * 1000, Speaker::Me, &line, false))
             .collect();
         store.write_transcript(&id, &segments).unwrap();
-        let mock = llm(&mut server, "## Samenvatting\n- ok").expect(3);
+        let mock = llm(&mut server, "## Samenvatting\n- ok").expect(4);
         engine
             .summarize_meeting(id, "algemeen".into(), keys())
             .unwrap();
@@ -710,6 +714,20 @@ mod tests {
                 assert!(messages[0].content.contains(DEFAULT_SECTION_RULE));
             }
         }
+    }
+
+    #[test]
+    fn apple_reduction_drops_references_the_call_never_received() {
+        let transcript = format!("[u1 00:00] Unknown: {}", "word ".repeat(2000));
+        let calls = std::cell::Cell::new(0);
+        let messages = apple_summary_messages(&spec("algemeen"), "", &transcript, |_| {
+            calls.set(calls.get() + 1);
+            Ok("- [u999999] A short reduction".into())
+        })
+        .unwrap();
+        assert!(calls.get() > 0);
+        assert!(!messages[1].content.contains("[u999999]"));
+        assert!(crate::system_llm::input_bytes(&messages) <= crate::system_llm::APPLE_INPUT_BYTES);
     }
 
     #[test]

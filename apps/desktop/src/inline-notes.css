@@ -1,0 +1,28 @@
+.inline-notes-editor { min-width: 0; min-height: 0; color: var(--foreground); background: transparent; font: var(--font-content)/1.65 var(--chrome-ui); }
+.inline-notes-editor .cm-editor { height: 100%; min-height: 100%; background: transparent; color: inherit; font: inherit; }
+.inline-notes-editor .cm-editor.cm-focused { outline: none; }
+.inline-notes-editor .cm-scroller { overflow: auto; font: inherit; scrollbar-color: var(--border) transparent; }
+.inline-notes-editor .cm-content { padding: 10px 0; min-height: 160px; caret-color: var(--accent); }
+.inline-notes-editor .cm-content[contenteditable="true"]:focus-visible { outline: none; }
+.inline-notes-editor .cm-line { padding: 0 4px; overflow-wrap: anywhere; }
+.inline-notes-editor .cm-placeholder { color: var(--muted); }
+.inline-notes-editor .cm-cursor { border-left-color: var(--accent); }
+.inline-notes-editor .cm-selectionBackground, .inline-notes-editor .cm-editor.cm-focused .cm-selectionBackground { background: var(--selection); }
+.inline-notes-editor .cm-content ::selection { background: var(--selection); color: var(--foreground); }
+.inline-notes-editor .cm-note-heading { font-weight: 600; line-height: 1.5; padding-top: 12px; padding-bottom: 5px; }
+.inline-notes-editor .cm-note-h1 { font-size: var(--font-title); }
+.inline-notes-editor .cm-note-h2 { font-size: var(--font-section); }
+.inline-notes-editor .cm-note-h3 { font-size: var(--font-content); }
+.inline-notes-editor .cm-note-strong { font-weight: 600; }
+.inline-notes-editor .cm-note-code { font-family: var(--font-mono, ui-monospace, monospace); font-size: .92em; }
+.inline-notes-editor .cm-note-bullet { display: inline-block; width: 1em; color: var(--muted); }
+.inline-notes-editor .cm-note-task-marker { position: relative; display: inline-block; width: 24px; height: 16px; vertical-align: -2px; }
+.inline-notes-editor .cm-note-task-marker input[type="checkbox"] { display: block; width: 16px; height: 16px; margin: 0; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--surface); box-shadow: none; }
+.inline-notes-editor .cm-note-task-marker input[type="checkbox"]::after { display: none; }
+.inline-notes-editor .cm-note-task-marker input:checked { border-color: var(--button); background: var(--button); }
+.inline-notes-editor .cm-note-task-marker > span { position: absolute; inset: 0 auto auto 0; display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--button-text); opacity: 0; pointer-events: none; }
+.inline-notes-editor .cm-note-task-marker .ui-icon { width: 12px; height: 12px; }
+.inline-notes-editor .cm-note-task-marker input:checked + span { opacity: 1; }
+.inline-notes-editor .cm-note-task-done { color: var(--muted); text-decoration: line-through; }
+.inline-notes-editor[data-document-mode="true"] .cm-editor { height: auto; }
+.inline-notes-editor[data-document-mode="true"] .cm-scroller { overflow: visible; }

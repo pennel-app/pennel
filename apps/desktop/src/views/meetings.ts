@@ -141,7 +141,7 @@ export async function meetingView(ctx: Context): Promise<HTMLElement> {
   if (!initial.busy && ctx.param) return meetingDetail(ctx, ctx.param);
   if (!initial.busy) {
     const title = textField({ type: "text", placeholder: l("meetings.meeting_title_placeholder"), class: "grow", "aria-label": l("meetings.meeting_title_label") });
-    const status = h("p", { class: "error", role: "status" }, initial.error ? localizeBackendText(initial.error) : "");
+    const status = h("p", { class: "error", role: "status" }, ctx.recordingStartError ? localizeBackendText(ctx.recordingStartError) : initial.error ? localizeBackendText(initial.error) : "");
     const start = controlButton({ class: "btn primary" }, l("common.start_recording"));
     const retained = !!initial.recognition && !!(initial.persistence_error || initial.terminal_error);
     const processing = meetingProcessingNotice(ctx, () => retained ? initial : undefined, retained);
@@ -163,13 +163,15 @@ export async function meetingView(ctx: Context): Promise<HTMLElement> {
     refreshMicrophoneAccess();
     start.addEventListener("click", async () => {
       start.disabled = true;
-      try { await api.startMeeting(title.value); ctx.rerender(); }
-      catch (error) { status.textContent = errorText(error); start.disabled = false; await ctx.refresh().catch(ctx.report); }
+      try { if (ctx.startRecording) await ctx.startRecording(title.value); else { await api.startMeeting(title.value); ctx.rerender(); } }
+      catch (error) { status.textContent = errorText(error); await ctx.refresh().catch(ctx.report); }
+      finally { if (start.isConnected) start.disabled = false; }
     });
     return h("div", { class: "recording-view" }, h("h1", {}, l("meetings.new_meeting")),
       h("p", { class: "muted" }, l("meetings.recording_tracks_help")),
       processing.element, h("div", { class: "row" }, title, start), status, microphoneAccess, recoveryNotice(ctx, initial), audioReason,
-      h("button", { class: "text-button", onclick: () => api.showWindow("settings", "recording") }, l("meetings.recording_settings")));
+      h("button", { class: "text-button", onclick: () => api.showWindow("settings", "recording") }, l("meetings.recording_settings")),
+      controlButton({ class: "btn", onclick: () => ctx.openSetup("meeting_stt") }, l("dictation.home.finish_setup")));
   }
   if (!initial.id) {
     schedule(ctx, 500, async () => { const status = await api.meetingRuntimeStatus(); if (status.id || !status.busy) ctx.rerender(); });

@@ -1,20 +1,29 @@
+import { replaceNotesSelection, selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) { for (let attempt = 0; attempt < 260; attempt++) { if (await check()) return; await pause(); } throw Error(message); }
-function edit(input, value) { input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
+function edit(input, value) {
+  if (input.applyUserChange) { input.applyUserChange(value); return; } input.value = value; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })); }
 async function owned() {
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.__PENNEL_FIXTURE__, "Use the owned synthetic review fixture.");
   await until(() => document.querySelector(".insight-review .insight-card"), "Reviewed suggestions did not mount.");
-  return { fixture: window.__PENNEL_FIXTURE__, root: document.querySelector(".insight-review"), api: window.__PENNEL_PLATFORM__ };
+  const root = document.querySelector(".insight-review");
+  root.querySelector(".insight-analysis-details").open = true;
+  root.querySelectorAll(".insight-card-details").forEach(details => { details.open = true; });
+  return { fixture: window.__PENNEL_FIXTURE__, root, api: window.__PENNEL_PLATFORM__ };
 }
 async function store(api) { return api.invoke("insights_snapshot", { id: window.__PENNEL_FIXTURE__.options.meeting_id }); }
 async function choose(root, key) {
-  const { t } = await import("/src/i18n.ts"); root.querySelector(".insight-language .choice").click();
+  const { t } = await import("/src/i18n.ts");
+  await until(() => !root.querySelector(".insight-analysis-details .insight-language .choice").disabled, "The visible content-language control did not become ready.");
+  root.querySelector(".insight-analysis-details .insight-language .choice").click();
   await until(() => [...document.querySelectorAll('[role="option"]')].some(option => option.textContent === t(key)), "The explicit content-language choices did not open.");
   [...document.querySelectorAll('[role="option"]')].find(option => option.textContent === t(key)).click();
   await pause(50);
 }
 function tab(name) {
+  const workspace = document.querySelector(".live-workspace:has(.meeting-document)");
+  if (workspace && (name === "notes" || name === "summary")) { selectMeetingPane(workspace, name); return; }
   const button = document.querySelector(`[data-live-tab="${name === "ask" ? "questions" : name === "insights" ? "suggestions" : name}"]`) || document.querySelector(`.detail-tabs [data-tab="${name}"]`);
   if (button?.getAttribute("aria-selected") !== "true") button?.click();
 }
@@ -96,7 +105,13 @@ export async function checkInsightNoteFailure() {
   tab("insights"); await until(async () => (await store(api)).insertion_receipts[0]?.state === "acknowledged", "The original insertion receipt was not acknowledged.");
   const attempts = (await store(api)).insertion_receipts.length; first.querySelector(".insight-add-notes").click();
   assert((await store(api)).insertion_receipts.length === attempts, "Retry created another insertion attempt after acknowledgement.");
-  return { failedSaveRetainsEditableDraft: true, ordinaryWriterRetry: true, durableAck: true, noDuplicateAttempt: true, syntheticOnly: true };
+  assert(note.undo(), "Suggestion insertion is missing from editor history.");
+  await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
+  assert(note.value === previous && fixture.workspace.notes() === previous, "Undo did not persist the pre-suggestion notes.");
+  assert(note.redo(), "Suggestion insertion cannot be redone.");
+  await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
+  assert(note.value === retained && fixture.workspace.notes() === retained && (await store(api)).insertion_receipts.length === attempts, "Redo changed insertion identity or failed to save exact notes.");
+  return { failedSaveRetainsEditableDraft: true, ordinaryWriterRetry: true, durableAck: true, noDuplicateAttempt: true, undoRedo: true, syntheticOnly: true };
 }
 
 export async function checkInsightInsertionRace() {
@@ -176,14 +191,14 @@ export async function checkFinishedInsightWorkspace() {
   const root = document.querySelector(".live-workspace"), note = root.querySelector(".live-notes");
   root.querySelector('[data-live-tab="suggestions"]').click();
   assert(!root.querySelector(".insight-review") && !fixture.calls.includes("insights_snapshot"), "Finished review activated live suggestions before qualification.");
-  note.focus(); note.setSelectionRange(2, 10, "backward"); note.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-  note.setRangeText("samengesteld", note.selectionStart, note.selectionEnd, "select"); note.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true }));
+  note.focus(); note.setSelectionRange(2, 10, "backward"); note.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  replaceNotesSelection(note, "samengesteld");
   const before = { value: note.value, start: note.selectionStart, end: note.selectionEnd };
   root.querySelector(".live-stop").click();
   await until(() => root.querySelectorAll(".insight-review .insight-card").length === 4, "Finished-only review did not reuse the suggestions pane.");
-  assert(document.activeElement === note && root.querySelector(".live-notes") === note && note.value === before.value && note.selectionStart === before.start && note.selectionEnd === before.end, "Finishing and mounting review changed the composing notes.");
+  assert(document.activeElement === note.contentDOM && root.querySelector(".live-notes") === note && note.value === before.value && note.selectionStart === before.start && note.selectionEnd === before.end, "Finishing and mounting review changed the composing notes.");
   assert(!fixture.calls.includes("begin_insights_analysis"), "Finishing automatically analyzed meeting content.");
-  note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   return { live97RemainsGated: true, finishedComponentReused: true, compositionRetained: true, noAutomaticAnalysis: true, syntheticOnly: true };
 }
 

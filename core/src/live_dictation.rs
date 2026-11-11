@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
@@ -47,6 +47,7 @@ struct PreviewState {
     observer: Arc<dyn DictationPreviewObserver>,
     cancelled: AtomicBool,
     accepting: AtomicBool,
+    generation: AtomicU64,
     emission: Mutex<()>,
     caption: Mutex<Caption>,
 }
@@ -58,6 +59,7 @@ impl PreviewState {
             observer,
             cancelled: AtomicBool::new(false),
             accepting: AtomicBool::new(true),
+            generation: AtomicU64::new(0),
             emission: Mutex::new(()),
             caption: Mutex::new(Caption::default()),
         }
@@ -72,9 +74,20 @@ impl PreviewState {
     }
 
     fn publish(&self, text: &str, final_raw: bool) -> Result<(), PennelError> {
+        self.publish_generation(text, final_raw, None)
+    }
+
+    fn publish_generation(
+        &self,
+        text: &str,
+        final_raw: bool,
+        generation: Option<u64>,
+    ) -> Result<(), PennelError> {
         let _emission = self.emission.lock().unwrap();
         self.ensure_active()?;
-        if !final_raw && !self.accepting.load(Ordering::SeqCst) {
+        if generation.is_some_and(|generation| generation != self.generation.load(Ordering::SeqCst))
+            || !final_raw && !self.accepting.load(Ordering::SeqCst)
+        {
             return Ok(());
         }
         let text: String = text.trim().chars().rev().take(MAX_PREVIEW_CHARS).collect();
@@ -182,6 +195,7 @@ impl LocalPreview {
 fn local_worker(
     local: Arc<LocalPreview>,
     state: Arc<PreviewState>,
+    generation: u64,
     mut decode: impl FnMut(&[f32], &CancelToken) -> Option<String>,
 ) {
     while let Some(samples) = local.next() {
@@ -195,8 +209,58 @@ fn local_worker(
             && !local.cancel.is_cancelled()
             && !is_hallucination(&text)
         {
-            let _ = state.publish(&text, false);
+            let _ = state.publish_generation(&text, false, Some(generation));
         }
+    }
+}
+
+struct RecognitionPresentation {
+    choice: crate::ModelChoice,
+    account: Option<crate::ProviderAccount>,
+    mode: DictationPreviewMode,
+    local: Option<Arc<LocalPreview>>,
+    worker: Option<JoinHandle<()>>,
+}
+
+fn presentation(
+    engine: &Arc<PennelEngine>,
+    settings: &Settings,
+    state: &Arc<PreviewState>,
+) -> RecognitionPresentation {
+    let resolved = settings.resolve(&settings.dictation_stt);
+    let mode = if !settings.live_text_enabled {
+        DictationPreviewMode::AfterRecording
+    } else {
+        match resolved.as_ref().map(|(account, _)| account.kind) {
+            Some(ProviderKind::AppleSpeech) => DictationPreviewMode::System,
+            Some(ProviderKind::Local) => DictationPreviewMode::Local,
+            _ => DictationPreviewMode::AfterRecording,
+        }
+    };
+    let local = (mode == DictationPreviewMode::Local).then(|| Arc::new(LocalPreview::default()));
+    let worker = local.as_ref().map(|local| {
+        let (local, state, engine, settings) = (
+            local.clone(),
+            state.clone(),
+            engine.clone(),
+            settings.clone(),
+        );
+        let generation = state.generation.load(Ordering::SeqCst);
+        std::thread::spawn(move || {
+            local_worker(local, state, generation, |samples, cancel| {
+                engine
+                    .preview_local(&settings, samples, cancel)
+                    .ok()
+                    .flatten()
+            })
+        })
+    });
+    RecognitionPresentation {
+        choice: settings.dictation_stt.clone(),
+        account: resolved.map(|(account, _)| account),
+        mode,
+        local,
+        worker,
     }
 }
 
@@ -207,10 +271,8 @@ pub struct LiveDictationSession {
     settings: Settings,
     cleanup_verification: crate::cleanup_verification::FrozenCleanupVerification,
     practice: bool,
-    mode: DictationPreviewMode,
     state: Arc<PreviewState>,
-    local: Option<Arc<LocalPreview>>,
-    worker: Mutex<Option<JoinHandle<()>>>,
+    recognition: Mutex<RecognitionPresentation>,
     finishing: Mutex<()>,
     outcome: Mutex<Option<Result<DictationResult, PennelError>>>,
     priority_released: AtomicBool,
@@ -227,37 +289,8 @@ impl LiveDictationSession {
         if practice {
             settings.mode = DictationMode::Fast;
         }
-        let mode = if !settings.live_text_enabled {
-            DictationPreviewMode::AfterRecording
-        } else {
-            match settings
-                .resolve(&settings.dictation_stt)
-                .map(|(account, _)| account.kind)
-            {
-                Some(ProviderKind::AppleSpeech) => DictationPreviewMode::System,
-                Some(ProviderKind::Local) => DictationPreviewMode::Local,
-                _ => DictationPreviewMode::AfterRecording,
-            }
-        };
         let state = Arc::new(PreviewState::new(observer));
-        let local =
-            (mode == DictationPreviewMode::Local).then(|| Arc::new(LocalPreview::default()));
-        let worker = local.as_ref().map(|local| {
-            let (local, state, engine, settings) = (
-                local.clone(),
-                state.clone(),
-                engine.clone(),
-                settings.clone(),
-            );
-            std::thread::spawn(move || {
-                local_worker(local, state, |samples, cancel| {
-                    engine
-                        .preview_local(&settings, samples, cancel)
-                        .ok()
-                        .flatten()
-                })
-            })
-        });
+        let recognition = Mutex::new(presentation(&engine, &settings, &state));
         let cleanup_verification =
             crate::cleanup_verification::FrozenCleanupVerification::capture(&engine, &settings);
         Arc::new(Self {
@@ -265,10 +298,8 @@ impl LiveDictationSession {
             settings,
             cleanup_verification,
             practice,
-            mode,
             state,
-            local,
-            worker: Mutex::new(worker),
+            recognition,
             finishing: Mutex::new(()),
             outcome: Mutex::new(None),
             priority_released: AtomicBool::new(false),
@@ -307,26 +338,37 @@ impl LiveDictationSession {
             return outcome.clone();
         }
         self.stop_preview();
-        if let Some(worker) = self.worker.lock().unwrap().take() {
+        let mut recognition = self.recognition.lock().unwrap();
+        if let Some(worker) = recognition.worker.take() {
             let _ = worker.join();
         }
+        let settings = self.recognition_settings(&recognition);
+        drop(recognition);
         self.ensure_active()?;
         let outcome = match command {
-            None => self.engine.dictate_with_settings_observed(
-                request,
-                self.settings.clone(),
-                Some(self),
-            ),
-            Some(selection) => self.engine.command_with_settings_observed(
-                request,
-                selection,
-                self.settings.clone(),
-                Some(self),
-            ),
+            None => self
+                .engine
+                .dictate_with_settings_observed(request, settings, Some(self)),
+            Some(selection) => {
+                self.engine
+                    .command_with_settings_observed(request, selection, settings, Some(self))
+            }
         };
         *self.outcome.lock().unwrap() = Some(outcome.clone());
         self.release_priority();
         outcome
+    }
+
+    fn recognition_settings(&self, recognition: &RecognitionPresentation) -> Settings {
+        let mut settings = self.settings.clone();
+        settings.dictation_stt = recognition.choice.clone();
+        if let Some(account) = &recognition.account {
+            settings
+                .providers
+                .retain(|provider| provider.id != account.id);
+            settings.providers.push(account.clone());
+        }
+        settings
     }
 
     fn release_priority(&self) {
@@ -342,7 +384,80 @@ impl LiveDictationSession {
         self.state.id.clone()
     }
     pub fn mode(&self) -> DictationPreviewMode {
-        self.mode
+        self.recognition.lock().unwrap().mode
+    }
+
+    pub fn preview_generation(&self) -> u64 {
+        self.state.generation.load(Ordering::SeqCst)
+    }
+
+    pub fn speech_model(&self) -> crate::ModelChoice {
+        self.recognition.lock().unwrap().choice.clone()
+    }
+
+    /// Explicitly changes this capture's recognition, including its final buffered pass.
+    pub fn select_speech_model(
+        &self,
+        choice: crate::ModelChoice,
+        keys: crate::ApiKeys,
+    ) -> Result<crate::ConfiguredDictationModel, PennelError> {
+        let _finishing = self.finishing.lock().unwrap();
+        self.ensure_active()?;
+        if !self.state.accepting.load(Ordering::SeqCst) || self.outcome.lock().unwrap().is_some() {
+            return Err(PennelError::Cancelled);
+        }
+        let current = self.speech_model();
+        let (selected, account) = self.engine.select_dictation_model_snapshot(choice, keys)?;
+        if current == selected.choice {
+            return Ok(selected);
+        }
+        // Existing observers may read recognition getters while their emissions drain.
+        self.state.stop(false);
+        let mut recognition = self.recognition.lock().unwrap();
+        if let Some(local) = &recognition.local {
+            local.stop();
+        }
+        if let Some(worker) = recognition.worker.take() {
+            let _ = worker.join();
+        }
+        self.ensure_active()?;
+        let mut settings = self.settings.clone();
+        settings.dictation_stt = selected.choice.clone();
+        settings
+            .providers
+            .retain(|provider| provider.id != account.id);
+        settings.providers.push(account);
+        self.state.generation.fetch_add(1, Ordering::SeqCst);
+        *recognition = presentation(&self.engine, &settings, &self.state);
+        drop(recognition);
+        // Observers may read session getters. Keep new previews paused until the clear is delivered.
+        self.state.publish("", true)?;
+        self.state.accepting.store(true, Ordering::SeqCst);
+        Ok(selected)
+    }
+
+    pub fn next_speech_model(
+        &self,
+        keys: crate::ApiKeys,
+    ) -> Result<crate::ConfiguredDictationModel, PennelError> {
+        let models = self.engine.configured_dictation_models(keys.clone());
+        if models.len() < 2 {
+            return Err(PennelError::NotFound);
+        }
+        let current = self.speech_model();
+        let next = models
+            .iter()
+            .position(|entry| entry.choice == current)
+            .map_or(0, |index| (index + 1) % models.len());
+        self.select_speech_model(models[next].choice.clone(), keys)
+    }
+
+    pub fn update_system_preview_for_generation(&self, text: String, generation: u64) {
+        if self.mode() == DictationPreviewMode::System {
+            let _ = self
+                .state
+                .publish_generation(&text, false, Some(generation));
+        }
     }
     pub fn cleanup_verification_availability(&self) -> crate::CleanupVerificationAvailability {
         let mut status = self.cleanup_verification.status();
@@ -364,21 +479,20 @@ impl LiveDictationSession {
     /// Mono 16 kHz PCM; at most six seconds and one newest pending decode are retained.
     pub fn feed_audio(&self, samples: Vec<f32>) {
         if self.state.accepting.load(Ordering::SeqCst)
-            && let Some(local) = &self.local
+            && let Some(local) = &self.recognition.lock().unwrap().local
         {
             local.feed(&samples);
         }
     }
 
     pub fn update_system_preview(&self, text: String) {
-        if self.mode == DictationPreviewMode::System {
-            let _ = self.state.publish(&text, false);
-        }
+        // Older hosts are safe for the initial presentation only; switched hosts supply a generation.
+        self.update_system_preview_for_generation(text, 0);
     }
 
     pub fn stop_preview(&self) {
         self.state.stop(false);
-        if let Some(local) = &self.local {
+        if let Some(local) = &self.recognition.lock().unwrap().local {
             local.stop();
         }
     }
@@ -386,7 +500,7 @@ impl LiveDictationSession {
     pub fn cancel(&self) {
         self.cleanup_verification.cancel();
         self.state.stop(true);
-        if let Some(local) = &self.local {
+        if let Some(local) = &self.recognition.lock().unwrap().local {
             local.stop();
         }
         if let Ok(_finishing) = self.finishing.try_lock() {
@@ -555,6 +669,274 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(engine.history(10).unwrap().len(), 1);
         assert_eq!(observer.0.lock().unwrap().last().unwrap().text, result.raw);
+    }
+
+    #[test]
+    fn explicit_model_switch_uses_current_capture_final_pass_and_rejects_old_previews() {
+        let (_directory, engine, calls) = engine();
+        let mut settings = engine.settings();
+        settings.providers.push(ProviderAccount {
+            id: "apple-second".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Second Apple setup".into(),
+            base_url: String::new(),
+        });
+        let next = ModelChoice {
+            provider_id: "apple-second".into(),
+            model: "dictation".into(),
+        };
+        settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
+        engine.update_settings(settings).unwrap();
+        let observer = Arc::new(Observer::default());
+        let session = engine
+            .clone()
+            .begin_dictation_session(observer.clone(), false);
+        let id = session.id();
+        let old_generation = session.preview_generation();
+        session.update_system_preview_for_generation("old words".into(), old_generation);
+        let selected = session
+            .select_speech_model(next.clone(), request().keys)
+            .unwrap();
+        assert_eq!(selected.choice, next);
+        assert_eq!(session.id(), id);
+        assert_eq!(session.speech_model(), next);
+        session.update_system_preview_for_generation("obsolete words".into(), old_generation);
+        assert_eq!(observer.0.lock().unwrap().last().unwrap().text, "");
+        session
+            .update_system_preview_for_generation("new words".into(), session.preview_generation());
+        assert_eq!(observer.0.lock().unwrap().last().unwrap().text, "new words");
+        // Global settings changing later must not displace the explicit session-owned model.
+        let mut later = engine.settings();
+        later
+            .providers
+            .retain(|provider| provider.id != "apple-second");
+        engine.update_settings(later).unwrap();
+        assert_eq!(session.finish(request()).unwrap().text, "Een echt dictaat.");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(session.select_speech_model(next, request().keys).is_err());
+    }
+
+    #[test]
+    fn model_switch_clear_observer_can_read_the_updated_session_without_deadlock() {
+        struct ReadingObserver {
+            session: Mutex<Option<std::sync::Weak<LiveDictationSession>>>,
+            read: std::sync::mpsc::Sender<(DictationPreviewMode, ModelChoice)>,
+        }
+        impl DictationPreviewObserver for ReadingObserver {
+            fn changed(&self, update: DictationPreviewUpdate) {
+                if update.text.is_empty()
+                    && let Some(session) = self
+                        .session
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(std::sync::Weak::upgrade)
+                {
+                    self.read
+                        .send((session.mode(), session.speech_model()))
+                        .unwrap();
+                }
+            }
+        }
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        settings.providers.push(ProviderAccount {
+            id: "second".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Second".into(),
+            base_url: String::new(),
+        });
+        let next = ModelChoice {
+            provider_id: "second".into(),
+            model: "dictation".into(),
+        };
+        settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
+        engine.update_settings(settings).unwrap();
+        let (read, received) = std::sync::mpsc::channel();
+        let observer = Arc::new(ReadingObserver {
+            session: Mutex::new(None),
+            read,
+        });
+        let session = engine.begin_dictation_session(observer.clone(), false);
+        *observer.session.lock().unwrap() = Some(Arc::downgrade(&session));
+        session.update_system_preview("previous caption".into());
+        let selecting = session.clone();
+        let selected = next.clone();
+        let worker =
+            std::thread::spawn(move || selecting.select_speech_model(selected, request().keys));
+        let observed = received
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("read-only preview observer deadlocked during model switch");
+        assert_eq!(observed, (DictationPreviewMode::System, next));
+        worker.join().unwrap().unwrap();
+        session.cancel();
+    }
+
+    #[test]
+    fn switching_drains_in_flight_observers_without_blocking_their_read_only_getters() {
+        struct PausedObserver {
+            session: Mutex<Option<std::sync::Weak<LiveDictationSession>>>,
+            entered: std::sync::mpsc::Sender<()>,
+            proceed: Mutex<std::sync::mpsc::Receiver<()>>,
+            read: std::sync::mpsc::Sender<ModelChoice>,
+        }
+        impl DictationPreviewObserver for PausedObserver {
+            fn changed(&self, update: DictationPreviewUpdate) {
+                if update.text == "old provider update" {
+                    self.entered.send(()).unwrap();
+                    self.proceed
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(std::time::Duration::from_secs(2))
+                        .unwrap();
+                    let session = self
+                        .session
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(std::sync::Weak::upgrade)
+                        .unwrap();
+                    assert_eq!(session.mode(), DictationPreviewMode::System);
+                    self.read.send(session.speech_model()).unwrap();
+                }
+            }
+        }
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        let original = settings.dictation_stt.clone();
+        let next = ModelChoice {
+            provider_id: "second".into(),
+            model: "dictation".into(),
+        };
+        settings.providers.push(ProviderAccount {
+            id: "second".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Second".into(),
+            base_url: String::new(),
+        });
+        settings.dictation_models = vec![original.clone(), next.clone()];
+        engine.update_settings(settings).unwrap();
+        let (entered, ready) = std::sync::mpsc::channel();
+        let (proceed, release) = std::sync::mpsc::channel();
+        let (read, observed) = std::sync::mpsc::channel();
+        let observer = Arc::new(PausedObserver {
+            session: Mutex::new(None),
+            entered,
+            proceed: Mutex::new(release),
+            read,
+        });
+        let session = engine
+            .clone()
+            .begin_dictation_session(observer.clone(), false);
+        *observer.session.lock().unwrap() = Some(Arc::downgrade(&session));
+        let publishing = session.clone();
+        let publisher = std::thread::spawn(move || {
+            publishing.update_system_preview("old provider update".into())
+        });
+        ready
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let selecting = session.clone();
+        let selected = next.clone();
+        let switch =
+            std::thread::spawn(move || selecting.select_speech_model(selected, request().keys));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while engine.settings().dictation_stt != next && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(engine.settings().dictation_stt, next);
+        // Let the selector reach its emission-drain boundary before resuming the real observer.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        while std::time::Instant::now() < deadline && session.recognition.try_lock().is_ok() {
+            std::thread::yield_now();
+        }
+        proceed.send(()).unwrap();
+        assert_eq!(
+            observed
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("the in-flight observer could not read session state"),
+            original
+        );
+        publisher.join().unwrap();
+        switch.join().unwrap().unwrap();
+        assert_eq!(session.speech_model(), next);
+        session.cancel();
+    }
+
+    #[test]
+    fn switching_from_system_to_batch_sends_the_original_buffer_only_to_the_new_model() {
+        for (owner, practice) in [
+            ("global", false),
+            ("pad", false),
+            ("home_practice", false),
+            ("onboarding_practice", true),
+        ] {
+            let (_directory, engine, calls) = engine();
+            let mut server = mockito::Server::new();
+            let transcription = server
+                .mock("POST", "/audio/transcriptions")
+                .match_body(mockito::Matcher::Regex(
+                    "name=\"model\"[\\r\\n]+new-model".into(),
+                ))
+                .expect(1)
+                .with_body(r#"{"text":"Nieuwe provider."}"#)
+                .create();
+            let mut settings = engine.settings();
+            settings.providers.push(ProviderAccount {
+                id: "batch".into(),
+                kind: ProviderKind::Custom,
+                name: "Batch".into(),
+                base_url: server.url(),
+            });
+            let next = ModelChoice {
+                provider_id: "batch".into(),
+                model: "new-model".into(),
+            };
+            settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
+            engine.update_settings(settings).unwrap();
+            let observer = Arc::new(Observer::default());
+            let session = engine
+                .clone()
+                .begin_dictation_session(observer.clone(), practice);
+            let id = session.id();
+            session.feed_audio(vec![0.1; 16_000]);
+            session.select_speech_model(next, request().keys).unwrap();
+            assert_eq!(session.mode(), DictationPreviewMode::AfterRecording);
+            assert_eq!(session.id(), id);
+            let mut final_request = request();
+            final_request.app_bundle_id = Some(format!("synthetic.owner.{owner}"));
+            let target = final_request.app_bundle_id.clone();
+            let result = session.finish(final_request).unwrap();
+            assert_eq!(result.text, "Nieuwe provider.");
+            let history = engine.history(1).unwrap();
+            assert_eq!(history[0].id, result.history_id);
+            assert_eq!(history[0].app_bundle_id, target);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            transcription.assert();
+        }
+    }
+
+    #[test]
+    fn a_rejected_switch_preserves_capture_and_does_not_retarget_or_fallback() {
+        let (_directory, engine, calls) = engine();
+        let session = engine.begin_dictation_session(Arc::new(Observer::default()), false);
+        let before = session.speech_model();
+        let generation = session.preview_generation();
+        assert!(
+            session
+                .select_speech_model(
+                    ModelChoice {
+                        provider_id: "groq".into(),
+                        model: "missing".into()
+                    },
+                    request().keys
+                )
+                .is_err()
+        );
+        assert_eq!(session.speech_model(), before);
+        assert_eq!(session.preview_generation(), generation);
+        assert_eq!(session.finish(request()).unwrap().text, "Een echt dictaat.");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -852,7 +1234,7 @@ mod tests {
         let work = local.clone();
         let worker = std::thread::spawn(move || {
             let mut calls = 0;
-            local_worker(work, state, |samples, _| {
+            local_worker(work, state, 0, |samples, _| {
                 calls += 1;
                 entered.send(samples.last().copied().unwrap()).unwrap();
                 if calls == 1 {
@@ -893,7 +1275,7 @@ mod tests {
         let (entered, ready) = std::sync::mpsc::channel();
         let (work, worker_state) = (local.clone(), state.clone());
         let worker = std::thread::spawn(move || {
-            local_worker(work, worker_state, |_, token| {
+            local_worker(work, worker_state, 0, |_, token| {
                 entered.send(()).unwrap();
                 let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
                 while !token.is_cancelled() && std::time::Instant::now() < until {

@@ -1,0 +1,221 @@
+{
+  "macos": [
+    {
+      "id": "settings",
+      "binding": {
+        "mods": [
+          "meta"
+        ],
+        "code": "Comma",
+        "key": ","
+      }
+    },
+    {
+      "id": "new_recording",
+      "binding": {
+        "mods": [
+          "meta"
+        ],
+        "code": "KeyN",
+        "key": "n"
+      }
+    },
+    {
+      "id": "find",
+      "binding": {
+        "mods": [
+          "meta"
+        ],
+        "code": "KeyF",
+        "key": "f"
+      }
+    },
+    {
+      "id": "toggle_sidebar",
+      "binding": {
+        "mods": [
+          "ctrl",
+          "meta"
+        ],
+        "code": "KeyS",
+        "key": "s"
+      }
+    },
+    {
+      "id": "dictation",
+      "binding": {
+        "mods": [
+          "meta"
+        ],
+        "code": "Digit1",
+        "key": "1"
+      }
+    },
+    {
+      "id": "meetings",
+      "binding": {
+        "mods": [
+          "meta"
+        ],
+        "code": "Digit2",
+        "key": "2"
+      }
+    },
+    {
+      "id": "history",
+      "binding": {
+        "mods": [
+          "meta"
+        ],
+        "code": "Digit3",
+        "key": "3"
+      }
+    }
+  ],
+  "windows": [
+    {
+      "id": "settings",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Comma",
+        "key": ","
+      }
+    },
+    {
+      "id": "new_recording",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "KeyN",
+        "key": "n"
+      }
+    },
+    {
+      "id": "find",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "KeyF",
+        "key": "f"
+      }
+    },
+    {
+      "id": "toggle_sidebar",
+      "binding": {
+        "mods": [
+          "ctrl",
+          "shift"
+        ],
+        "code": "KeyS",
+        "key": "s"
+      }
+    },
+    {
+      "id": "dictation",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Digit1",
+        "key": "1"
+      }
+    },
+    {
+      "id": "meetings",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Digit2",
+        "key": "2"
+      }
+    },
+    {
+      "id": "history",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Digit3",
+        "key": "3"
+      }
+    }
+  ],
+  "linux": [
+    {
+      "id": "settings",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Comma",
+        "key": ","
+      }
+    },
+    {
+      "id": "new_recording",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "KeyN",
+        "key": "n"
+      }
+    },
+    {
+      "id": "find",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "KeyF",
+        "key": "f"
+      }
+    },
+    {
+      "id": "toggle_sidebar",
+      "binding": {
+        "mods": [
+          "ctrl",
+          "shift"
+        ],
+        "code": "KeyS",
+        "key": "s"
+      }
+    },
+    {
+      "id": "dictation",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Digit1",
+        "key": "1"
+      }
+    },
+    {
+      "id": "meetings",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Digit2",
+        "key": "2"
+      }
+    },
+    {
+      "id": "history",
+      "binding": {
+        "mods": [
+          "ctrl"
+        ],
+        "code": "Digit3",
+        "key": "3"
+      }
+    }
+  ]
+}

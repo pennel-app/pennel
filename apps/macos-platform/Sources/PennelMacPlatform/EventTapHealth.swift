@@ -2,7 +2,17 @@ import CoreGraphics
 import Foundation
 
 struct EventTapHealth {
-    static let requiredEvents = CGEventMask(1 << CGEventType.flagsChanged.rawValue | 1 << CGEventType.keyDown.rawValue)
+    static let requiredEvents: CGEventMask = {
+        let events: [CGEventType] = [
+            .flagsChanged, .keyDown, .keyUp,
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+        ]
+        var mask: CGEventMask = 0
+        for event in events {
+            mask |= CGEventMask(1) << event.rawValue
+        }
+        return mask
+    }()
 
     let authorized: Bool
     let valid: Bool

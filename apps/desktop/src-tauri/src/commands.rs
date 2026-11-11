@@ -155,6 +155,8 @@ fn provider_kinds(
 
 #[derive(Serialize)]
 pub struct AppInfo {
+    shortcuts: Vec<pennel_core::ShortcutRow>,
+    pill_position_supported: bool,
     interface_language: pennel_core::InterfaceLanguage,
     system_interface_language: pennel_core::InterfaceLanguage,
     settings: Settings,
@@ -207,6 +209,8 @@ pub(crate) fn info(shared: &Shared) -> Result<AppInfo> {
         LOG.info("initial app information: assembling state");
     }
     Ok(AppInfo {
+        shortcuts: crate::shortcuts::rows(shared),
+        pill_position_supported: crate::pill::position_supported(),
         interface_language: settings
             .ui_language
             .resolve(&[shared.system_interface_language.code().to_owned()]),
@@ -263,9 +267,90 @@ pub async fn save_settings(
     .await
 }
 
-fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> Result<AppInfo> {
-    let _inference_mutation = crate::inference::mutation(&shared.engine);
+fn apply_settings(settings: Settings, app: &AppHandle, shared: &Shared) -> Result<AppInfo> {
+    change_settings(app, shared, |next| {
+        *next = settings;
+        Ok(())
+    })
+}
+
+/// Serialize the read, policy validation and durable save for partial settings writers.
+pub(crate) fn change_settings<E: From<String>>(
+    app: &AppHandle,
+    shared: &Shared,
+    change: impl FnOnce(&mut Settings) -> std::result::Result<(), E>,
+) -> std::result::Result<AppInfo, E> {
+    static GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _gate = GATE.lock().unwrap_or_else(|p| p.into_inner());
+    let mut settings = shared.settings();
+    change(&mut settings)?;
+    apply_settings_locked(settings, app, shared).map_err(E::from)
+}
+
+fn apply_settings_locked(settings: Settings, app: &AppHandle, shared: &Shared) -> Result<AppInfo> {
+    persist_settings_and_publish(
+        settings,
+        shared,
+        |old_settings| {
+            let previous = pennel_core::effective_shortcut(
+                old_settings,
+                "dictate",
+                crate::shortcuts::platform(),
+            );
+            let updated = shared.settings();
+            if pennel_core::effective_shortcut(&updated, "dictate", crate::shortcuts::platform())
+                != previous
+            {
+                let _ = shared.dictation.send(Msg::TriggerChanged);
+                if let Some(hint) = app.try_state::<crate::TrayHint>() {
+                    let _ = hint.0.set_text(crate::hotkey_hint(shared));
+                }
+                LOG.info("dictation shortcut changed");
+            }
+            crate::record_shortcut::refresh(app, shared);
+            crate::apply_appearance(app);
+            crate::ui::apply(app, shared).map_err(err)?;
+            // Accelerator changes must not depend on interface-language or command-state changes.
+            crate::desktop_commands::refresh(app).map_err(err)?;
+            if old_settings.dictation_pad_auto_paste && !shared.settings().dictation_pad_auto_paste
+            {
+                crate::owned_dictation::invalidate_external(app);
+            }
+            let _ = app.emit("settings-changed", ());
+            Ok(())
+        },
+        || {
+            refresh_cleanup_verification(app);
+            info(shared)
+        },
+    )
+}
+
+/// Keep the durable update and its guards shared while the host publishes native UI effects.
+fn persist_settings_and_publish<T>(
+    mut settings: Settings,
+    shared: &Shared,
+    publish: impl FnOnce(&Settings) -> Result<()>,
+    finish: impl FnOnce() -> Result<T>,
+) -> Result<T> {
     let old_settings = shared.settings();
+    let _shortcut_edit =
+        if crate::shortcut_settings::binding_fields_changed(&old_settings, &settings) {
+            Some(crate::shortcut_settings::editing(
+                &shared.dictation_active,
+                || crate::shortcut_capture::capturing() || crate::hotkey::trigger_held(),
+            )?)
+        } else {
+            None
+        };
+    // Core owns each automatic policy's revocation. Keep unrelated jobs alive for
+    // these saves, while retaining the existing mutation scope for every other edit.
+    let mut policy_update = old_settings.clone();
+    policy_update.summary_automation = settings.summary_automation;
+    policy_update.suggestion_automation = settings.suggestion_automation;
+    policy_update.suggestion_language = settings.suggestion_language.clone();
+    let policy_only = policy_update == settings && old_settings != settings;
+    let _inference_mutation = (!policy_only).then(|| crate::inference::mutation(&shared.engine));
     crate::cloud::keep_stored_cloud_sync(&mut settings, &old_settings);
     if shared.preview && old_settings.meetings_dir != settings.meetings_dir {
         return Err(
@@ -285,7 +370,6 @@ fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> R
                 .into(),
         );
     }
-    let previous = old_settings.hotkey;
     let revoke_speaker_evidence =
         old_settings.meeting_app_speakers && !settings.meeting_app_speakers;
     shared.engine.update_settings(settings).map_err(err)?;
@@ -318,31 +402,15 @@ fn apply_settings(mut settings: Settings, app: &AppHandle, shared: &Shared) -> R
             }
         }
     }
-    let hotkey = shared.settings().hotkey;
-    if hotkey != previous {
-        let listener = shared.hotkey.lock().unwrap().clone();
-        if let Some(listener) = listener {
-            listener.set_trigger(hotkey);
-        }
-        let _ = shared.dictation.send(Msg::TriggerChanged);
-        if let Some(hint) = app.try_state::<crate::TrayHint>() {
-            let _ = hint.0.set_text(crate::hotkey_hint(shared));
-        }
-        LOG.info(format!("shortcut changed to {hotkey:?}"));
-    }
-    crate::record_shortcut::refresh(app, shared);
-    crate::apply_appearance(app);
-    crate::ui::apply(app, shared).map_err(err)?;
-    if old_settings.dictation_pad_auto_paste && !shared.settings().dictation_pad_auto_paste {
-        crate::owned_dictation::invalidate_external(app);
-    }
-    let _ = app.emit("settings-changed", ());
+    publish(&old_settings)?;
     drop(_inference_mutation);
-    refresh_cleanup_verification(app);
-    info(shared)
+    finish()
 }
 
 fn refresh_cleanup_verification(app: &AppHandle) {
+    if let Some(shared) = app.try_state::<Arc<Shared>>() {
+        let _ = shared.dictation.send(Msg::RefreshSpeechModels);
+    }
     crate::pill::refresh_verification(app);
     crate::owned_dictation::refresh_verification(app);
 }
@@ -625,6 +693,37 @@ pub fn copy_history(id: String, shared: State<'_, Arc<Shared>>) -> Result<()> {
         return Err("This dictation has no text to copy yet.".into());
     }
     crate::platform_clipboard::copy(&entry.text, None)
+}
+
+#[tauri::command]
+pub async fn configured_dictation_models(
+    shared: State<'_, Arc<Shared>>,
+) -> Result<Vec<pennel_core::ConfiguredDictationModel>> {
+    let shared = shared.inner().clone();
+    off_main("configured_dictation_models", move || {
+        Ok(shared.configured_dictation_models())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn select_dictation_model(
+    choice: ModelChoice,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<AppInfo> {
+    let shared = shared.inner().clone();
+    off_main("select_dictation_model", move || {
+        let (reply, received) = std::sync::mpsc::channel();
+        shared
+            .dictation
+            .send(Msg::SelectSpeechModel { choice, reply })
+            .map_err(|_| "Dictation is unavailable".to_owned())?;
+        received
+            .recv()
+            .map_err(|_| "Dictation is unavailable".to_owned())??;
+        info(&shared)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1048,9 +1147,13 @@ fn runtime_status(
 }
 
 #[tauri::command]
-pub async fn start_meeting(title: String, shared: State<'_, Arc<Shared>>) -> Result<String> {
+pub async fn start_meeting(
+    app: AppHandle,
+    title: String,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<String> {
     let shared = shared.inner().clone();
-    blocking(move || meeting_runtime::start(&shared, title, None, Vec::new())).await
+    blocking(move || meeting_runtime::start(Some(&app), &shared, title, None, Vec::new())).await
 }
 
 #[tauri::command]
@@ -1244,21 +1347,28 @@ pub async fn meeting_templates(shared: State<'_, Arc<Shared>>) -> Result<Vec<Mee
 pub async fn summarize_meeting(
     id: String,
     template_id: String,
+    expected_revision: Option<String>,
+    expected_source_revision: Option<String>,
     app: AppHandle,
     shared: State<'_, Arc<Shared>>,
 ) -> Result<String> {
     let shared = shared.inner().clone();
+    let updated_id = id.clone();
+    let worker_app = app.clone();
     let summary = blocking(move || {
         let _library_job = meeting_runtime::LibraryJob::new(&shared)?;
         checked_meeting_dir(&shared.engine, &id)?;
         require_inactive_meeting(&shared, &id)?;
-        let keys = shared.keys();
-        shared
-            .engine
-            .summarize_meeting(id, template_id, keys)
-            .map_err(err)
-    })
-    .await?;
+        let progress = crate::meeting_postprocess::SummaryProgress::start(&worker_app, &shared, &id);
+        let result = match (expected_revision, expected_source_revision) {
+            (Some(revision), Some(source)) => shared.engine.summarize_meeting_if_empty(id, template_id, revision, source, shared.keys()).map(|document| document.markdown),
+            (None, None) => shared.engine.summarize_meeting(id, template_id, shared.keys()),
+            _ => Err(pennel_core::PennelError::Storage { message: "The summary or its source changed. Your saved text was kept. Reload before saving.".into() }),
+        };
+        if let Some(progress) = progress { progress.complete(&result); }
+        result.map_err(err)
+    }).await?;
+    let _ = app.emit("meeting-updated", updated_id);
     let _ = app.emit("library-changed", ());
     crate::cloud::poke(&app);
     Ok(summary)
@@ -2382,3 +2492,7 @@ mod tests {
         session.stop().unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "commands_settings_tests.rs"]
+mod settings_inference_tests;

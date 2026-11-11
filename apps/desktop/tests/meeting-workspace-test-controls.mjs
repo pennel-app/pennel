@@ -5,6 +5,13 @@ async function until(check, message) {
 }
 
 export function selectMeetingPane(root, pane) {
+  if (root.querySelector(".meeting-document") && (pane === "notes" || pane === "summary")) {
+    const document = root.querySelector(".meeting-document"), section = root.querySelector(`[data-live-pane="${pane}"]`);
+    if (document.hidden || root.classList.contains("live-overlay")) root.querySelector(".meeting-companion-close").click();
+    assert(section && !section.hidden && !document.hidden, `The ${pane} document section is unavailable.`);
+    document.scrollTop += section.getBoundingClientRect().top - document.getBoundingClientRect().top;
+    return;
+  }
   const button = root.querySelector(`[data-live-tab="${pane}"]`);
   assert(button && !button.hidden && button.getClientRects().length, `The ${pane} tab is not a visible meeting control.`);
   const panel = root.querySelector(`[data-live-pane="${pane}"]`);
@@ -13,6 +20,7 @@ export function selectMeetingPane(root, pane) {
 
 export async function openMeetingMore(root, key) {
   const { t } = await import("/src/i18n.ts");
+  if (root.classList.contains("live-overlay")) root.querySelector(".meeting-companion-close").click();
   const trigger = root.querySelector(".meeting-workspace-more");
   assert(trigger?.getClientRects().length, "The meeting More control is not visible.");
   trigger.click();
@@ -27,4 +35,10 @@ export async function openMeetingTools(root, section) {
   assert(key, `Unknown meeting tool ${section}.`);
   await openMeetingMore(root, key);
   await until(() => root.querySelector(`[data-meeting-tool="${section}"]`)?.getClientRects().length, `The ${section} tools are not visible.`);
+}
+
+/** Synthetic transaction during an actual contentDOM composition lifecycle; not physical IME evidence. */
+export function replaceNotesSelection(editor, text) {
+  const start = editor.selectionStart, end = editor.selectionEnd;
+  editor.applyUserChange(editor.value.slice(0, start) + text + editor.value.slice(end), { start, end: start + text.length });
 }

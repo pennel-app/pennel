@@ -23,7 +23,7 @@ const visible = node => {
   }
   return getComputedStyle(node).visibility !== "hidden";
 };
-const button = (scope, label) => [...scope.querySelectorAll("button")].find(node => node.textContent.trim() === label);
+const button = (scope, label) => [...scope.querySelectorAll("button")].find(node => node.textContent.trim() === label || node.getAttribute("aria-label") === label);
 const click = node => {
   assert(node && !node.disabled, "Required user action is missing or disabled.");
   for (let parent = node.parentElement; parent; parent = parent.parentElement) {
@@ -31,8 +31,8 @@ const click = node => {
   }
   node.focus(); node.click();
 };
-const enter = (node, value) => { assert(node, "Required input is missing."); node.focus(); node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
-const selectedTab = () => document.querySelector('.meeting-writing-tabs [aria-selected="true"]')?.dataset.liveTab;
+const enter = (node, value) => { assert(node, "Required input is missing."); node.focus(); if (node.applyUserChange) { node.applyUserChange(value); return; } node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
+const summaryInDocument = () => document.querySelector('.live-workspace[data-document-layout="continuous"] .live-summary-pane:not([hidden])');
 const dialog = () => document.querySelector("dialog.task-setup-dialog[open]");
 
 async function chooseSetupProvider(different = false, selector = "[data-setup-provider]") {
@@ -125,17 +125,20 @@ export async function checkOnboardingFlow() {
   try {
     assert(visible(button(document, t("onboarding.try_dictation"))) && visible(button(document, t("onboarding.record_meeting"))), "The two first-use jobs are not visible.");
     click(button(document, t("onboarding.record_meeting")));
+    click(document.querySelector(".onboarding-next"));
     await until(() => document.querySelector('.onboarding-shell[data-step="engine"]') && fixture.info().settings.onboarding.goal === "meeting", "Choosing meetings did not retain the task in speech setup.");
     let alternatives = document.querySelector("details.onboarding-other-options");
     assert(alternatives && !alternatives.open, "Technical alternatives are expanded before the first result.");
     assert(!visible(alternatives.querySelector(".engine-model-options")), "The local model catalogue is visible before Other options is opened.");
     click(alternatives.querySelector("summary"));
+    alternatives.querySelector(".onboarding-local-options summary")?.click();
     await until(() => alternatives.open && visible(alternatives.querySelector(".engine-model-options")), "Other options did not reveal the local model controls.");
     assert(alternatives.textContent.includes(t("onboarding.own_provider")), "The advanced provider route was removed.");
     click(alternatives.querySelector("summary"));
     click(button(document, t("onboarding.back")));
     await until(() => document.querySelector('.onboarding-shell[data-step="welcome"]'), "Back did not return to the first task choice.");
     click(button(document, t("onboarding.try_dictation")));
+    click(document.querySelector(".onboarding-next"));
     await until(() => document.querySelector('.onboarding-shell[data-step="engine"]') && fixture.info().settings.onboarding.goal === "dictation", "The dictation choice did not replace the first-use goal.");
     assert(fixture.info().settings.language === before.language && JSON.stringify(fixture.info().settings.providers) === JSON.stringify(before.providers), "Choosing a task changed speech language or provider accounts.");
     assert(!observed.operations.some(operation => ["start_meeting", "open_dictation_session", "download_model", "set_key"].includes(operation.command)), "Choosing a job started capture, downloaded a model or requested credentials automatically.");
@@ -215,17 +218,17 @@ export async function checkMeetingFlow() {
     const notes = article.querySelector(".live-notes");
     const originalNotes = notes.value;
     const synthetic = "Synthetic draft for task-local setup.\nThis text belongs only to the owned QA fixture.";
-    notes.value = synthetic; notes.dispatchEvent(new Event("input", { bubbles: true }));
+    notes.applyUserChange(synthetic);
     notes.focus(); notes.setSelectionRange(4, 17); await settle();
     selectMeetingPane(article, "summary"); await settle();
-    const panel = article.querySelector('.live-summary-pane');
+    const panel = article.querySelector('.meeting-document');
     panel.scrollTop = panel.scrollHeight;
-    const position = panel.scrollTop;
     const setup = article.querySelector(".meeting-summary-surface");
     const opener = button(setup, t("meetings.set_up_summaries"));
     assert(visible(setup) && setup.querySelector(".meeting-summary-destination")?.textContent.trim() && visible(opener), "An existing summary has no visible setup reason and recovery action.");
     const regenerate = article.querySelector('.meeting-summary-generate');
     assert(regenerate?.disabled, "Regeneration is enabled without a usable text service.");
+    opener.focus(); const position = panel.scrollTop;
     click(opener);
     await until(() => dialog()?.dataset.setupTask === "llm" && dialog().querySelector('input[type="password"]'), "Summary setup did not open beside the meeting.");
     assert(article.isConnected && document.querySelector(".live-workspace") === article, "Setup replaced the originating meeting.");
@@ -236,11 +239,11 @@ export async function checkMeetingFlow() {
     await until(() => !dialog(), "Escape/cancel did not return from task setup.");
     assert(!fixture.info().keys[fixture.info().settings.llm.provider_id], "Cancelling setup saved an unfinished service key.");
     assert(document.activeElement === opener && notes.isConnected && notes.value === synthetic && notes.selectionStart === 4 && notes.selectionEnd === 17, "Cancelling setup lost note content, caret or return focus.");
-    assert(panel.scrollTop === position && selectedTab() === "summary", "Cancelling setup lost the selected Summary tab or reading position.");
+    assert(panel.scrollTop === position && summaryInDocument(), `Cancelling setup lost the Summary section or document reading position: ${JSON.stringify({expected:position,actual:panel.scrollTop,summary:!!summaryInDocument(),height:panel.clientHeight,scrollHeight:panel.scrollHeight})}`);
 
     selectMeetingPane(article, "questions");
     await until(() => article.querySelector(".chat-setup"), "Questions does not expose contextual setup.");
-    assert(!visible(setup) && visible(article.querySelector(".chat-setup")), "Questions shows duplicate summary and question setup notices.");
+    assert(visible(article.querySelector(".chat-setup")) && (article.classList.contains("live-wide") || article.querySelector(".meeting-primary-column")?.inert || !visible(setup)), "Question setup or the narrow companion is unavailable.");
     selectMeetingPane(article, "summary");
     click(opener);
     await until(() => dialog()?.querySelector('input[type="password"]'), "Summary setup did not reveal the service key repair.");
@@ -269,16 +272,16 @@ export async function checkMeetingFlow() {
     await until(() => fixture.info().keys[fixture.info().settings.llm.provider_id] && !dialog().querySelector("[data-setup-apply]").disabled, "Retry did not save the connection key and enable explicit application.");
     click(dialog().querySelector("[data-setup-apply]"));
     await until(() => !dialog() && !regenerate.disabled, "Use this setup did not return to the repaired meeting action.");
-    assert(document.querySelector(".live-workspace") === article && notes.value === synthetic && selectedTab() === "summary", "Successful setup navigated away from the same meeting or lost its notes.");
+    assert(document.querySelector(".live-workspace") === article && notes.value === synthetic && summaryInDocument(), "Successful setup navigated away from the same meeting or lost its notes.");
     assert(!visible(opener) && !regenerate.disabled, "The repaired meeting still presents a blocked summary action.");
     assert(!observed.operations.some(operation => ["summarize_meeting", "ask_meetings", "start_meeting", "test_provider_task", "test_provider_task_choice"].includes(operation.command)), "Setup processed meeting content or started a recording without a user action.");
     selectMeetingPane(article, "notes");
-    notes.value = originalNotes; notes.dispatchEvent(new Event("input", { bubbles: true }));
+    notes.applyUserChange(originalNotes);
     notes.blur(); await settle();
     const title = article.querySelector(".live-title").value;
     click(record);
-    await until(() => document.querySelector(".recording-view") && button(document.querySelector(".recording-view"), t("common.start_recording")), "New recording did not open the next meeting's ready-to-record surface.");
-    assert(!observed.operations.some(operation => operation.command === "start_meeting"), "Opening the next recording started capture without explicit confirmation.");
+    await until(async () => (await api.meetingStatus()).recording && document.querySelector(".toolbar-capture.is-recording"), "New recording did not immediately start the next capture.");
+    assert(observed.operations.filter(operation => operation.command === "start_meeting").length === 1, "New recording did not share one guarded start path.");
     const previousMeeting = document.querySelector(`.meeting-row[data-id="${CSS.escape(fixture.options.meeting_id)}"] .meeting-select`);
     click(previousMeeting);
     await until(() => document.querySelector(".live-workspace .live-title")?.value === title, "The previous meeting became unreachable after opening the next recording.");
@@ -296,7 +299,7 @@ export async function checkActiveRecordingFlow() {
   const observed = observeCommands();
   try {
     const record = document.querySelector(".library-record");
-    assert(visible(record) && record.textContent.includes(t("meetings.return_recording")), "An active meeting has no clear return action.");
+    assert(visible(record) && record.getAttribute("aria-label")?.includes(t("meetings.return_recording")), "An active meeting has no clear return action.");
     click(record); await settle();
     const after = await api.meetingStatus();
     assert(after.recording && after.id === before.id && after.session_id === before.session_id, "Returning to recording replaced or stopped the active session.");

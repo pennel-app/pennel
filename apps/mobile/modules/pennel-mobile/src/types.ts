@@ -5,6 +5,7 @@ export type { InsightSnapshot, InsightAvailability, InsightJob, InsightItem, Ins
 export type InterfaceLanguage = 'en' | 'nl';
 export type Appearance = 'system' | 'light' | 'dark';
 export type SummaryAutomation = 'unanswered' | 'manual' | 'automatic';
+export type SuggestionAutomation = 'unanswered' | 'manual' | 'automatic';
 export type MeetingOutputScope = 'personal' | 'shareable';
 export type ProviderKind = 'open_ai' | 'open_router' | 'groq' | 'mistral' | 'ollama' | 'lm_studio' | 'custom' | 'local' | 'apple_speech' | 'apple_intelligence' | 'claude_code' | 'codex' | 'open_code' | 'copilot' | 'cursor_agent' | 'gemini_cli' | 'pennel_cloud';
 export interface Capability { status: 'available' | 'permission_required' | 'unsupported' | 'unavailable'; reason: string | null }
@@ -29,12 +30,19 @@ export interface RerankResult { scores: { passage_id: string; score: number }[];
 export interface InferenceVerification { verified: boolean; message: string; identity: InferenceIdentity | null }
 export interface ProviderAccount { id: string; kind: ProviderKind; name: string; base_url: string }
 export interface ProviderKindInfo { kind: ProviderKind; label: string; requires_key: boolean; stt: boolean; llm: boolean; availability: Capability; default_base_url: string }
+export interface ShortcutBinding { mods: string[]; code: string | null; key: string | null }
 export interface Settings {
+  shortcuts?: Record<string, ShortcutBinding | null>;
   ui_language: 'system' | InterfaceLanguage;
   appearance: Appearance;
   onboarding: { status: 'pending' | 'skipped' | 'completed'; version: number; goal?: 'dictation' | 'meeting'; resume_step?: 'language' | 'welcome' | 'engine' | 'permissions' | 'practice' | 'voice' };
   providers: ProviderAccount[];
   dictation_stt: ModelChoice;
+  dictation_models?: ModelChoice[];
+  pill_model_switch_enabled?: boolean;
+  pill_colour?: "ink" | "light" | "system";
+  pill_size?: "compact" | "regular" | "large";
+  pill_position?: "bottom_centre" | "top_centre" | "near_cursor";
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;
@@ -48,6 +56,8 @@ export interface Settings {
   history_retention_days: number;
   default_template: string;
   summary_automation: SummaryAutomation;
+  suggestion_automation: SuggestionAutomation;
+  suggestion_language: string | null;
   meeting_audio_retention_days: number;
   diarization: boolean;
   speaker_recognition: 'local' | 'cloud';

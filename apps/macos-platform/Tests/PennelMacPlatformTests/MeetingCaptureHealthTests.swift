@@ -3,6 +3,30 @@ import XCTest
 @testable import PennelMacPlatform
 
 final class MeetingCaptureHealthTests: XCTestCase {
+    func testLiveLevelsUseRawBuffersAndStopAtQuiescenceWithoutChangingArchivedAudio() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = MeetingLevelProbe()
+        let writer = try TrackWriter(track: 1, sink: { context, track, _, count, _ in
+            let probe = Unmanaged<MeetingLevelProbe>.fromOpaque(context!).takeUnretainedValue()
+            probe.track = track; probe.archivedSamples += count
+        }, context: Unmanaged.passUnretained(probe).toOpaque(), started: 0,
+        url: directory.appendingPathComponent("system.m4a"), level: { probe.levelSources.append($0); probe.levels.append($1) })
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: MonoResampler.format, frameCapacity: 800))
+        buffer.frameLength = 800
+        buffer.floatChannelData![0].initialize(repeating: 0.25, count: 800)
+        writer.append(buffer, at: 0)
+        XCTAssertEqual(probe.levelSources, [1], "raw levels retain their audio source")
+        XCTAssertEqual(probe.levels.count, 1, "levels arrive before the one-second transcript batch")
+        XCTAssertEqual(probe.levels[0], 0.25, accuracy: 0.001)
+        writer.quiesce()
+        writer.append(buffer, at: 0.05)
+        XCTAssertEqual(probe.levels.count, 1, "quiescence rejects pending level callbacks before Rust releases them")
+        XCTAssertNil(writer.finish())
+        XCTAssertEqual(probe.archivedSamples, 800)
+        XCTAssertEqual(probe.track, 1, "level reporting preserves system/microphone source identity")
+    }
+
     func testQuiescenceClosesAdmissionWithoutWaitingForBlockedArchiveWrites() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -135,4 +159,11 @@ final class MeetingCaptureHealthTests: XCTestCase {
 
 private final class CapturedSamples {
     var count = 0
+}
+
+private final class MeetingLevelProbe {
+    var levels: [Float] = []
+    var levelSources: [UInt32] = []
+    var archivedSamples = 0
+    var track: UInt32 = 0
 }

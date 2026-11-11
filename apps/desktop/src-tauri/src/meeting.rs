@@ -564,6 +564,7 @@ pub struct MeetingRecorder {
     engine: Arc<PennelEngine>,
     pub title: String,
     started: Instant,
+    #[cfg(target_os = "macos")]
     clock_verified: bool,
     quiescent_ms: Option<u64>,
     capture_failures: Vec<String>,
@@ -892,6 +893,7 @@ impl TrackSink {
 
 #[cfg(any(not(target_os = "macos"), test))]
 struct TrackIngress {
+    source: u32,
     sender: Option<std::sync::mpsc::SyncSender<(u64, Vec<f32>)>>,
     worker: Option<std::thread::JoinHandle<()>>,
     error: Arc<Mutex<Option<String>>>,
@@ -921,6 +923,7 @@ impl TrackIngress {
             })
             .map_err(|error| error.to_string())?;
         Ok(Self {
+            source: if speaker == Speaker::Me { 0 } else { 1 },
             sender: Some(sender),
             worker: Some(worker),
             error,
@@ -932,10 +935,13 @@ impl TrackIngress {
         &self,
         heard: Option<Arc<AtomicBool>>,
         started: Instant,
+        on_level: crate::meeting_level::LevelCallback,
     ) -> impl FnMut(&[f32], Instant) + Send + 'static {
         let sender = self.sender.as_ref().unwrap().clone();
         let overloaded = self.overloaded.clone();
+        let source = self.source;
         move |chunk, captured_at| {
+            on_level(source, crate::resample::rms(chunk));
             if let Some(heard) = &heard
                 && chunk.iter().any(|sample| *sample != 0.0)
             {
@@ -970,6 +976,7 @@ impl MeetingRecorder {
         echo: bool,
         engine: Arc<PennelEngine>,
         app_version: &str,
+        on_level: crate::meeting_level::LevelCallback,
     ) -> Result<Self, String> {
         let tracks = engine
             .prepare_meeting_recording(
@@ -1017,6 +1024,7 @@ impl MeetingRecorder {
                         LOG.error("An audio block could not be added to the meeting");
                     }
                 },
+                on_level,
             )?;
             let completed = Instant::now();
             let native = MacCaptureMonitor::start(
@@ -1074,46 +1082,47 @@ impl MeetingRecorder {
             ];
             let heard_system = Arc::new(AtomicBool::new(false));
             #[cfg(windows)]
-            let (mic, echo_active, mut capture_warning) = if echo {
-                match crate::windows_meetings::EchoCapture::start_timed(
-                    track_ingress[0].callback(None, started),
-                ) {
-                    Ok(capture) => (Microphone::Echo(capture), true, None),
-                    Err(error) => {
-                        LOG.error(format!("echo cancellation inactive: {error}"));
-                        let capture = Capture::start_timed(
-                            Source::Microphone,
-                            track_ingress[0].callback(None, started),
-                        )
-                        .map_err(|error| format!("microphone: {error}"))?;
-                        (
-                            Microphone::Raw(capture),
-                            false,
-                            Some(format!(
-                                "Echo cancellation is not active: {error}. Use headphones."
-                            )),
-                        )
+            let (mic, echo_active, mut capture_warning) =
+                if echo {
+                    match crate::windows_meetings::EchoCapture::start_timed(
+                        track_ingress[0].callback(None, started, on_level.clone()),
+                    ) {
+                        Ok(capture) => (Microphone::Echo(capture), true, None),
+                        Err(error) => {
+                            LOG.error(format!("echo cancellation inactive: {error}"));
+                            let capture = Capture::start_timed(
+                                Source::Microphone,
+                                track_ingress[0].callback(None, started, on_level.clone()),
+                            )
+                            .map_err(|error| format!("microphone: {error}"))?;
+                            (
+                                Microphone::Raw(capture),
+                                false,
+                                Some(format!(
+                                    "Echo cancellation is not active: {error}. Use headphones."
+                                )),
+                            )
+                        }
                     }
-                }
-            } else {
-                (
-                    Microphone::Raw(
-                        Capture::start_timed(
-                            Source::Microphone,
-                            track_ingress[0].callback(None, started),
-                        )
-                        .map_err(|error| format!("microphone: {error}"))?,
-                    ),
-                    false,
-                    None,
-                )
-            };
+                } else {
+                    (
+                        Microphone::Raw(
+                            Capture::start_timed(
+                                Source::Microphone,
+                                track_ingress[0].callback(None, started, on_level.clone()),
+                            )
+                            .map_err(|error| format!("microphone: {error}"))?,
+                        ),
+                        false,
+                        None,
+                    )
+                };
             #[cfg(not(windows))]
             let (mic, mut capture_warning) = (
                 Microphone::Raw(
                     Capture::start_timed(
                         Source::Microphone,
-                        track_ingress[0].callback(None, started),
+                        track_ingress[0].callback(None, started, on_level.clone()),
                     )
                     .map_err(|error| format!("microphone: {error}"))?,
                 ),
@@ -1123,7 +1132,7 @@ impl MeetingRecorder {
             );
             let system = match Capture::start_timed(
                 Source::SystemOutput,
-                track_ingress[1].callback(Some(heard_system.clone()), started),
+                track_ingress[1].callback(Some(heard_system.clone()), started, on_level.clone()),
             ) {
                 Ok(capture) => Some(capture),
                 Err(error) => {
@@ -1176,7 +1185,6 @@ impl MeetingRecorder {
                 engine,
                 title,
                 started,
-                clock_verified: true,
                 quiescent_ms: None,
                 capture_failures: Vec::new(),
                 #[cfg(test)]
@@ -1208,7 +1216,9 @@ impl MeetingRecorder {
 
     pub(crate) fn evidence_clock(&self) -> crate::meeting_speaker_evidence::EvidenceClock {
         crate::meeting_speaker_evidence::EvidenceClock {
+            #[cfg(target_os = "macos")]
             started: self.started,
+            #[cfg(target_os = "macos")]
             verified: self.clock_verified,
         }
     }
@@ -1225,6 +1235,7 @@ impl MeetingRecorder {
         Arc::new(|| false)
     }
 
+    #[cfg(target_os = "macos")]
     pub(crate) fn audio_source_status(&self) -> serde_json::Value {
         #[cfg(target_os = "macos")]
         if let Some(native) = &self.native {
@@ -1354,6 +1365,7 @@ impl MeetingRecorder {
             engine,
             title: "Originele titel".into(),
             started: Instant::now(),
+            #[cfg(target_os = "macos")]
             clock_verified: true,
             quiescent_ms: None,
             capture_failures: Vec::new(),
@@ -1861,7 +1873,7 @@ mod tests {
         }));
         let blocked_archive = track.lock().unwrap();
         let ingress = TrackIngress::start(session.clone(), Speaker::Me, track.clone()).unwrap();
-        let mut callback = ingress.callback(None, Instant::now());
+        let mut callback = ingress.callback(None, Instant::now(), Arc::new(|_, _| {}));
         let (finished, observed) = std::sync::mpsc::channel();
         let capture = std::thread::spawn(move || {
             for _ in 0..130 {

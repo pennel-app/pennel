@@ -24,8 +24,9 @@ const real = window.__PENNEL_NATIVE95__?.real ?? window.__TAURI_INTERNALS__.invo
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 30) => new Promise(resolve => setTimeout(resolve, ms));
 const until = async (check, message) => { for(let index=0;index<200;index++){if(await check())return;await pause();}throw new Error(message); };
-const edit = (input, text) => { input.value=text;input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text})); };
-const tab = (root, pane) => root.querySelector('[data-live-tab="'+pane+'"]').click();
+const edit = (input, text) => { if(input.applyUserChange){input.applyUserChange(text);return;}input.value=text;input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text})); };
+const replaceSelection = (note,text) => {const start=note.selectionStart,end=note.selectionEnd;note.applyUserChange(note.value.slice(0,start)+text+note.value.slice(end),{start,end:start+text.length});};
+const tab = (root, pane) => {if(pane==='notes'||pane==='summary'){if(root.classList.contains('live-overlay'))root.querySelector('.meeting-companion-close').click();const doc=root.querySelector('.meeting-document'),section=root.querySelector('[data-live-pane="'+pane+'"]');doc.scrollTop+=section.getBoundingClientRect().top-doc.getBoundingClientRect().top;return;}const button=root.querySelector('[data-live-tab="'+pane+'"]');if(button.getAttribute('aria-selected')!=='true')button.click();};
 let result = null, failure = '';
 try { result = await (async()=>{ __BODY__ })(); }
 catch(error) { failure = String(error).slice(0,2048); }
@@ -37,15 +38,14 @@ await real('capture_snapshot',{snapshot:{request_id:__REQUEST__,environment,
 
 
 REAL_MEETING = r"""
-await until(()=>document.querySelector('.own-notes textarea'),'The saved native meeting did not open.');
-const own=document.querySelector('.own-notes'); own.open=true;
-const note=own.querySelector('textarea');
+await until(()=>document.querySelector('.live-notes .cm-content'),'The saved native meeting did not open.');
+const note=document.querySelector('.live-notes');
 const text='Owned native saved note. Synthetic data only.';
 edit(note,text);
 document.querySelector('.library-settings').click();
 await until(()=>document.querySelector('.settings-back'),'Real Settings did not open.');
 document.querySelector('.settings-back').click();
-await until(()=>document.querySelector('.own-notes textarea')?.value===text,'Real Settings return lost the saved note.');
+await until(()=>document.querySelector('.live-notes')?.value===text,'Real Settings return lost the saved note.');
 return {real_backend_storage:true,real_settings_return:true,synthetic_data_only:true};
 """
 
@@ -139,18 +139,16 @@ tab(root,'questions');edit(root.querySelector('.live-question-input'),'What was 
 root.querySelector('.live-question-submit').click();
 await until(()=>qa.requests.size===1,'The synthetic native question did not start.');
 const request=[...qa.requests.values()][0];tab(root,'notes');note.focus();note.setSelectionRange(5,15,'backward');
-note.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:''}));
-note.setRangeText('samengesteld',note.selectionStart,note.selectionEnd,'select');
-note.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true,inputType:'insertCompositionText',data:'samengesteld'}));
+note.contentDOM.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:''}));
+replaceSelection(note,'samengesteld');
 const before={value:note.value,start:note.selectionStart,end:note.selectionEnd,direction:note.selectionDirection,scroll:note.scrollTop};
 qa.transcript.push({start_ms:14000,end_ms:21000,speaker:'others',text:'Later synthetic speech is outside the earlier question.',failed:false,voice:1});qa.revision++;
 await qa.complete(request.request_id);
 await until(()=>root.textContent.includes('Native synthetic answer'),'The native synthetic answer did not render.');
 await pause(750);
-assert(root.querySelector('.live-notes')===note&&document.activeElement===note&&note.value===before.value&&note.selectionStart===before.start&&note.selectionEnd===before.end&&note.selectionDirection===before.direction&&note.scrollTop===before.scroll,'Native updates changed editor/composition state.');
+assert(root.querySelector('.live-notes')===note&&document.activeElement===note.contentDOM&&note.value===before.value&&note.selectionStart===before.start&&note.selectionEnd===before.end&&note.selectionDirection===before.direction&&note.scrollTop===before.scroll,'Native updates changed editor/composition state.');
 assert(request.included_through_ms===14000,'The synthetic answer included later transcript.');
-note.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'samengesteld'}));
-note.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'samengesteld'}));
+note.contentDOM.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'samengesteld'}));
 await until(()=>qa.notes===note.value,'Completed native composition was not acknowledged.');
 const selection={start:note.selectionStart,end:note.selectionEnd,direction:note.selectionDirection,scroll:note.scrollTop};
 tab(root,'questions');root.querySelector('.citation').click();
@@ -194,22 +192,20 @@ qa.failSaves=true;tab(qa.root,'notes');edit(note,'Owned native unsaved draft sur
 qa.root.querySelector('.live-save').click();
 await until(()=>!qa.root.querySelector('.live-save-error').hidden,'The synthetic failed note write was not observed.');
 note.focus();note.setSelectionRange(6,12,'backward');
-note.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:''}));
-note.setRangeText('samengesteld',note.selectionStart,note.selectionEnd,'select');
-note.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true,inputType:'insertCompositionText',data:'samengesteld'}));
+note.contentDOM.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:''}));
+replaceSelection(note,'samengesteld');
 const before={value:note.value,start:note.selectionStart,end:note.selectionEnd,direction:note.selectionDirection,scroll:note.scrollTop};
 const started=performance.now();await window.__TAURI_INTERNALS__.invoke('stop_meeting');
 await until(()=>!qa.recording,'A failed synthetic note write prevented native Stop dispatch.');
 const stopped=performance.now()-started;
 await pause(500);
-assert(document.querySelector('.live-notes')===note&&document.activeElement===note&&note.value===before.value&&note.selectionStart===before.start&&note.selectionEnd===before.end&&note.selectionDirection===before.direction&&note.scrollTop===before.scroll,
- 'Native finalization changed composing state: '+JSON.stringify({sameEditor:document.querySelector('.live-notes')===note,focused:document.activeElement===note,
+assert(document.querySelector('.live-notes')===note&&document.activeElement===note.contentDOM&&note.value===before.value&&note.selectionStart===before.start&&note.selectionEnd===before.end&&note.selectionDirection===before.direction&&note.scrollTop===before.scroll,
+ 'Native finalization changed composing state: '+JSON.stringify({sameEditor:document.querySelector('.live-notes')===note,focused:document.activeElement===note.contentDOM,
  valueLength:note.value.length,expectedLength:before.value.length,selection:[note.selectionStart,note.selectionEnd,note.selectionDirection],expectedSelection:[before.start,before.end,before.direction],scroll:note.scrollTop,expectedScroll:before.scroll}));
 await qa.complete(pending.request_id);
 await until(()=>qa.root.querySelector('[data-request-id="'+pending.request_id+'"]').textContent.includes('Native synthetic answer'),'The original native answer did not finish after Stop.');
 qa.failSaves=false;
-note.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'samengesteld'}));
-note.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'samengesteld'}));
+note.contentDOM.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'samengesteld'}));
 qa.root.querySelector('.live-save').click();
 await until(()=>qa.root.querySelector('.live-save-status').dataset.saveState==='saved','The stopped native draft could not be saved.');
 const detail=await real('meeting_detail',{id:qa.id});assert(detail.notes===note.value,'The recovered native draft was not persisted by the real backend.');

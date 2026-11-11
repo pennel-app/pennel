@@ -208,14 +208,19 @@ impl TemplateStore {
         list
     }
 
+    #[cfg(any(test, feature = "evaluation"))]
     pub fn spec(&self, id: &str) -> TemplateSpec {
+        self.resolved_spec(id).1
+    }
+
+    pub(crate) fn resolved_spec(&self, id: &str) -> (String, TemplateSpec) {
         if let Some((name, body)) = self.read(id) {
-            return TemplateSpec::parse(&name, &body);
+            return (id.into(), TemplateSpec::parse(&name, &body));
         }
-        let (_, name, instruction) = Self::builtin(id)
+        let (id, name, instruction) = Self::builtin(id)
             .or_else(|| Self::builtin(FALLBACK_ID))
             .expect("fallback exists");
-        TemplateSpec::parse(name, instruction)
+        ((*id).into(), TemplateSpec::parse(name, instruction))
     }
 
     /// Body shown in the editor, without frontmatter.

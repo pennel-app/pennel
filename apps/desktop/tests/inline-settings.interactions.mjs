@@ -32,7 +32,7 @@ function button(owner, label) {
 }
 function edit(node, value) {
   assert(node && !node.disabled, "The fixture has no editable note or title.");
-  node.focus(); node.value = value;
+  node.focus(); if (node.applyUserChange) { node.applyUserChange(value); return; } node.value = value;
   node.dispatchEvent(new Event("input", { bubbles: true }));
 }
 function observeCommands({ longTranscript = false } = {}) {
@@ -77,7 +77,6 @@ export async function checkInlineSettingsFlow() {
     // A longer owned transcript makes reading-position restoration observable.
     fixture.emit("workspace-navigate", { section: "meetings", tab: null, meeting_id: id, jump_ms: null });
     await until(() => document.querySelectorAll('.live-transcript .transcript-line').length >= before.transcript.length * 24, "The prepared transcript did not refresh in its retained workspace.");
-    const notesTab = () => document.querySelector('.live-workspace [role="tab"][data-live-tab="notes"]');
     const transcriptTab = () => document.querySelector('.live-workspace [role="tab"][data-live-tab="transcript"]');
     selectMeetingPane(document.querySelector(".live-workspace"), "notes"); await settle();
     const note = document.querySelector(".live-notes");
@@ -105,7 +104,7 @@ export async function checkInlineSettingsFlow() {
     await until(() => transcriptTab()?.getAttribute("aria-selected") === "true", "Returning from Settings lost the selected Transcript view.");
     await until(() => Math.abs(document.querySelector(".live-transcript").scrollTop - readingPosition) <= 1, "Returning from Settings lost the reading position.");
     assert(document.querySelector(".live-workspace .live-title").value === title, "Returning selected a different meeting.");
-    click(notesTab()); await settle();
+    selectMeetingPane(document.querySelector(".live-workspace"), "notes"); await settle();
     const restored = document.querySelector(".live-notes");
     assert(restored.value === literal && !document.querySelector('[data-live-pane="notes"]').hidden, "Returning from Settings lost the note or its selected pane.");
     assert(restored.selectionStart === 6 && restored.selectionEnd === 18, "Returning from Settings lost the note selection.");
@@ -116,7 +115,7 @@ export async function checkInlineSettingsFlow() {
     fixture.emit("workspace-navigate", settingsRoute("models"));
     await until(() => document.querySelector(".models-settings"), "A Settings deep link did not open in the main window.");
     click(document.querySelector(".settings-back"));
-    await until(() => notesTab()?.getAttribute("aria-selected") === "true", "A category deep link overwrote the previous task.");
+    await until(() => document.querySelector('.live-workspace[data-document-layout="continuous"] .live-notes-pane:not([hidden])'), "A category deep link overwrote the previous task.");
     assert(document.querySelector(".live-notes").value === literal, "The deep-link roundtrip lost the note.");
     assertNoWindowHop(observed.operations.slice(operationStart));
     assert(!observed.operations.some(operation => ["start_meeting", "stop_meeting"].includes(operation.command)), "Settings navigation started or stopped recording.");

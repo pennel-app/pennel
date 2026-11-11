@@ -67,11 +67,14 @@ pub fn export_markdown_for_language(
     if !meta.is_empty() {
         out.push_str(&format!("\n{meta}\n"));
     }
-    let body = store
-        .read_meeting(id)
-        .unwrap_or_else(|| store.read_notes(id));
+    let body = store.read_meeting(id).unwrap_or_default();
     if !body.trim().is_empty() {
         out.push_str(&format!("\n{}\n", body.trim()));
+    }
+    let notes = store.read_notes(id);
+    if !notes.trim().is_empty() {
+        let heading = ui_text(language, "meetings.your_notes", &[]);
+        out.push_str(&format!("\n## {heading}\n\n{}\n", notes.trim()));
     }
     if include_transcript {
         let names = store.speaker_names(id);
@@ -340,6 +343,43 @@ mod tests {
                 .1
                 .ends_with("\n- mijn notitie\n")
         );
+    }
+
+    #[test]
+    fn personal_export_keeps_notes_after_the_summary_in_each_interface_language() {
+        let (_dir, store, id) = store();
+        store
+            .write_meeting(&id, 5, "algemeen", "## Besluit\nDe afspraak staat.")
+            .unwrap();
+        store
+            .write_notes(&id, "PRIVATE_OWNER_NOTE <literal> & unchanged")
+            .unwrap();
+        store
+            .write_transcript(&id, &[segment(0, Speaker::Me, "Transcript source", false)])
+            .unwrap();
+        for (language, heading) in [
+            (InterfaceLanguage::English, "Your notes"),
+            (InterfaceLanguage::Dutch, "Je notities"),
+        ] {
+            for include_transcript in [false, true] {
+                let (_, output) =
+                    export_markdown_for_language(&store, &id, include_transcript, language)
+                        .unwrap();
+                let notes = format!("## {heading}\n\nPRIVATE_OWNER_NOTE <literal> & unchanged");
+                assert!(
+                    output.contains(&notes),
+                    "Personal export lost its notes: {output}"
+                );
+                assert!(output.find("De afspraak staat.").unwrap() < output.find(&notes).unwrap());
+                assert_eq!(output.matches("PRIVATE_OWNER_NOTE").count(), 1);
+                if include_transcript {
+                    assert!(output.find(&notes).unwrap() < output.find("## Transcript").unwrap());
+                }
+                let html = markdown_to_html(&output);
+                assert!(html.contains("&lt;literal&gt; &amp; unchanged"));
+                assert!(!html.contains("<literal>"));
+            }
+        }
     }
 
     #[test]

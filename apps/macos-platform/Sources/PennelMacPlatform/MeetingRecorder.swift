@@ -1,12 +1,15 @@
 @preconcurrency import AVFoundation
 import CoreAudio
 
+typealias LevelSink = @convention(c) (UnsafeMutableRawPointer?, UInt32, Float) -> Void
+
 typealias AudioSink = @convention(c) (UnsafeMutableRawPointer?, UInt32, UnsafePointer<Float>?, Int, UInt64) -> Void
 
 final class TrackWriter: @unchecked Sendable {
     private let track: UInt32
     private let sink: AudioSink
     private let context: UnsafeMutableRawPointer?
+    private let level: ((UInt32, Float) -> Void)?
     private let started: TimeInterval
     private let queue: DispatchQueue
     private var file: AVAudioFile?
@@ -22,10 +25,11 @@ final class TrackWriter: @unchecked Sendable {
     private let diagnostics: CaptureDiagnostics?
     private var trackName: String { track == 0 ? "microphone" : "system" }
 
-    init(track: UInt32, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, started: TimeInterval, url: URL, diagnostics: CaptureDiagnostics? = nil, write: ((AVAudioPCMBuffer) throws -> Void)? = nil) throws {
+    init(track: UInt32, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, started: TimeInterval, url: URL, diagnostics: CaptureDiagnostics? = nil, write: ((AVAudioPCMBuffer) throws -> Void)? = nil, level: ((UInt32, Float) -> Void)? = nil) throws {
         self.track = track
         self.diagnostics = diagnostics
         self.sink = sink
+        self.level = level
         self.context = context
         self.started = started
         self.writeOverride = write
@@ -55,6 +59,11 @@ final class TrackWriter: @unchecked Sendable {
         let samples = buffer.monoSamples
         enqueueLock.withLock {
             guard accepting else { return }
+            // Admission also protects the borrowed Rust level callback until quiescence returns.
+            if let level, !samples.isEmpty {
+                let rms = sqrt(samples.reduce(Float(0)) { $0 + $1 * $1 } / Float(samples.count))
+                level(track, rms)
+            }
             diagnostics?.count(track: trackName, key: "output_samples", value: UInt64(samples.count))
             if samples.contains(where: { $0 != 0 }) { healthLock.withLock { heard = true } }
             queue.async {
@@ -265,7 +274,7 @@ final class NativeMeetingRecorder {
     /// When the recording began, for mapping wall-clock moments (dictation) onto the meeting timeline.
     var startDate: Date? { startedAt }
 
-    func start(directory: URL, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, tapProcesses: (() -> [AudioObjectID])? = nil, echoCancellation: Bool = true, microphoneURL: URL? = nil, systemURL: URL? = nil, scopeChanged: ((Bool) -> Void)? = nil) throws {
+    func start(directory: URL, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, tapProcesses: (() -> [AudioObjectID])? = nil, echoCancellation: Bool = true, microphoneURL: URL? = nil, systemURL: URL? = nil, scopeChanged: ((Bool) -> Void)? = nil, level: ((UInt32, Float) -> Void)? = nil) throws {
         quiescent = false
         self.tapProcesses = tapProcesses
         audioSource = MeetingAudioSourceIntegrity(appRequested: tapProcesses != nil)
@@ -281,8 +290,8 @@ final class NativeMeetingRecorder {
         finalHeardSystemAudio = false
         let diagnostics = CaptureDiagnostics(started: started)
         self.diagnostics = diagnostics
-        me = try TrackWriter(track: 0, sink: sink, context: context, started: started, url: microphoneURL ?? directory.appendingPathComponent("ik.m4a"), diagnostics: diagnostics)
-        others = try TrackWriter(track: 1, sink: sink, context: context, started: started, url: systemURL ?? directory.appendingPathComponent("anderen.m4a"), diagnostics: diagnostics)
+        me = try TrackWriter(track: 0, sink: sink, context: context, started: started, url: microphoneURL ?? directory.appendingPathComponent("ik.m4a"), diagnostics: diagnostics, level: level)
+        others = try TrackWriter(track: 1, sink: sink, context: context, started: started, url: systemURL ?? directory.appendingPathComponent("anderen.m4a"), diagnostics: diagnostics, level: level)
         // Device setup can stop the engine before system-audio initialization returns.
         observeMicrophoneConfiguration()
         do { try startMicrophone() } catch { _ = stop(); throw error }

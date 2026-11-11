@@ -67,6 +67,33 @@ test("known app-owned errors relabel in both directions without translating arbi
   setInterfaceLanguage("en");
 });
 
+test("legacy dictation notices retain their Dutch-to-English compatibility mappings", () => {
+  const notices = [
+    ["API key rejected — saved in History", "API-sleutel geweigerd — bewaard in geschiedenis"],
+    ["Cleanup failed — original text available (see log)", "Opkuisen mislukt — ruwe tekst beschikbaar (zie logboek)"],
+    ["Cleanup failed — original text pasted (see log)", "Opkuisen mislukt — ruwe tekst geplakt (zie logboek)"],
+    ["Cleanup timed out — original text available (see log)", "Opkuisen duurde te lang — ruwe tekst beschikbaar (zie logboek)"],
+    ["Cleanup timed out — original text pasted (see log)", "Opkuisen duurde te lang — ruwe tekst geplakt (zie logboek)"],
+    ["Copying failed — your text is in History", "Kopiëren mislukt — tekst staat in Geschiedenis"],
+    ["Failed — saved in History", "Mislukt — bewaard in geschiedenis"],
+    ["Model not downloaded — saved in History", "Model nog niet gedownload — bewaard in geschiedenis"],
+    ["No connection — saved in History", "Geen verbinding — bewaard in geschiedenis"],
+    ["Processor too old for local models — saved in History", "Processor te oud voor lokale modellen — bewaard in geschiedenis"],
+    ["Text copied — paste with Ctrl+V", "Tekst gekopieerd — plak met Ctrl+V"],
+    ["Cleanup could not preserve the wording and meaning — original text available", "Opschonen kon de bewoording en betekenis niet behouden — oorspronkelijke tekst beschikbaar"],
+    ["Cleanup could not preserve the wording and meaning — original text pasted", "Opschonen kon de bewoording en betekenis niet behouden — oorspronkelijke tekst geplakt"],
+  ];
+  try {
+    for (const [english, dutch] of notices) {
+      setInterfaceLanguage("en");
+      assert.equal(localizeBackendText(dutch), english);
+      assert.equal(localizeBackendText(`My note says: ${dutch}`), `My note says: ${dutch}`);
+      setInterfaceLanguage("nl");
+      assert.equal(localizeBackendText(english), dutch);
+    }
+  } finally { setInterfaceLanguage("en"); }
+});
+
 test("recovery diagnostics follow the interface language while provider responses stay literal", () => {
   const diagnostics = [
     ["The recovery audio changed before recognition.", "De herstelaudio is gewijzigd voordat de spraakherkenning begon."],

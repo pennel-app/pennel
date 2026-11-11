@@ -7,9 +7,14 @@
   <body>
     <div id="pill" hidden>
       <div id="preview" hidden><span id="preview-text"></span></div>
-      <div id="status" role="status" aria-live="polite">
-        <span id="indicator" aria-hidden="true"></span>
-        <span id="label"></span>
+      <div id="status-layers">
+        <div id="status" class="pill-status" role="status" aria-live="polite" aria-atomic="true">
+          <span id="indicator" class="pill-indicator" aria-hidden="true"></span>
+          <span id="label" class="pill-label"></span>
+          <span id="detail" class="pill-detail" hidden></span>
+          <span id="model-chip" class="pill-model-chip" hidden></span>
+          <span id="hint" class="pill-hint" hidden></span>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/pill.ts"></script>

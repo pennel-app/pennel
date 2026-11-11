@@ -8,7 +8,7 @@ async function until(check, message) {
   throw Error(message);
 }
 const click = node => { assert(visible(node) && !node.disabled, "The requested review action is unavailable."); node.click(); };
-const edit = (node, value) => { node.focus(); node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
+const edit = (node, value) => { node.focus(); if (node.applyUserChange) { node.applyUserChange(value); return; } node.value = value; node.dispatchEvent(new Event("input", { bubbles: true })); };
 async function owned() {
   const fixture = window.__PENNEL_FIXTURE__;
   assert(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && fixture?.review, "Use an isolated owner-review fixture.");
@@ -49,10 +49,9 @@ export async function checkOwnerReviewMeeting() {
   const { fixture, api } = await owned();
   const begin = async title => {
     click(document.querySelector(".library-record"));
-    await until(() => document.querySelector(".recording-view .btn.primary"), "New recording did not open its explicit start action.");
-    edit(document.querySelector(".recording-view input"), title);
-    click(document.querySelector(".recording-view .btn.primary"));
     await until(() => document.querySelector(".live-workspace .live-notes") && visible(document.querySelector(".live-stop")), "The synthetic meeting did not start in the notes workspace.");
+    const heading = document.querySelector(".live-title"); edit(heading, title); heading.blur();
+    await until(async () => (await api.meetingStatus()).title === title, "The running meeting title was not saved.");
     return api.meetingStatus();
   };
   await until(() => document.querySelector(".library-record"), "The meeting task did not open.");

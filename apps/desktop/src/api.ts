@@ -1,3 +1,4 @@
+import type { ConfiguredDictationModel, PillModelPresentation } from "./pill-model-state";
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -5,6 +6,8 @@ import type { ClaudeStatus } from "./claude-access";
 import type { LoginPoll } from "./cloud-login";
 export type { ClaudeStatus };
 import type { WorkspaceRoute } from "./workspace-state";
+import type { MeetingPostprocessEvent } from "./meeting-postprocess-state";
+import { meetingLevels, RecordingStopGate } from "./recording-control-state";
 import { localizeUiResponse } from "./ui-response.ts";
 import type { DesktopCommandState, DesktopEnvironment } from "./desktop-chrome-state.ts";
 import type { PeopleSnapshot, PeopleRequest, PeopleUpdateResult, ContactPickResult } from "./people-state";
@@ -76,6 +79,9 @@ export type CapabilityStatus = "available" | "permission_required" | "unsupporte
 export type PermissionKind = "microphone" | "accessibility" | "calendar" | "speech" | "system_audio";
 export type PermissionStatus = "granted" | "not_determined" | "denied" | "restricted" | "not_required" | "unsupported" | "unknown";
 export type AppWindow = "library" | "settings" | "history" | "dictation" | "live" | "onboarding";
+export interface MeetingLevel { session_id: string; level: number }
+const recordingStops = new RecordingStopGate();
+
 export type MeetingPhase = "idle" | "starting" | "recording" | "stopping" | "finalizing" | "error";
 export type Speaker = "me" | "others";
 export type AppearancePreference = "system" | "light" | "dark";
@@ -103,7 +109,7 @@ export interface SetupReadiness {
 
 export interface DictationSessionSnapshot {
   session_id: string;
-  kind: "pad" | "practice";
+  kind: "pad" | "practice" | "home_practice";
   phase: "idle" | "listening" | "working" | "done" | "error";
   text: string;
   error: string | null;
@@ -242,6 +248,11 @@ export interface Settings {
   live_text_enabled: boolean;
   providers: ProviderAccount[];
   dictation_stt: ModelChoice;
+  dictation_models?: ModelChoice[];
+  pill_model_switch_enabled?: boolean;
+  pill_colour?: "ink" | "light" | "system";
+  pill_size?: "compact" | "regular" | "large";
+  pill_position?: "bottom_centre" | "top_centre" | "near_cursor";
   meeting_stt: ModelChoice;
   llm: ModelChoice;
   decision?: InferenceConfig | null;
@@ -253,10 +264,13 @@ export interface Settings {
   style_rules: { bundle_id: string; style: Style }[];
   history_retention_days: number;
   hotkey: HotkeyTrigger;
+  shortcuts?: Record<string, ShortcutBinding | null>;
   local_unload_minutes: number;
   meetings_dir: string;
   default_template: string;
   summary_automation: SummaryAutomation;
+  suggestion_automation: "unanswered" | "manual" | "automatic";
+  suggestion_language: "en" | "nl" | "mixed" | null;
   meeting_audio_retention_days: number;
   app_rules: { bundle_id: string; action: RecordAction }[];
   calendar_rules: { calendar_id: string; calendar_name: string; action: RecordAction }[];
@@ -287,7 +301,21 @@ export interface KindInfo {
   availability: Capability;
 }
 
+export interface ShortcutBinding { mods: string[]; code: string | null; key: string | null }
+export interface ShortcutLabel { keycaps: string[]; text: string }
+export interface ShortcutRow {
+  id: string;
+  scope: "global_hold" | "listening" | "global" | "application";
+  binding: ShortcutBinding | null;
+  default_binding: ShortcutBinding | null;
+  label: ShortcutLabel;
+  editable: boolean;
+  capability: { available: boolean; reason: string | null };
+  changed: boolean;
+}
 export interface AppInfo {
+  shortcuts?: ShortcutRow[];
+  pill_position_supported?: boolean;
   interface_language: "en" | "nl";
   system_interface_language: "en" | "nl";
   settings: Settings;
@@ -571,7 +599,59 @@ export interface MeetingExport {
   html: string;
 }
 
+export interface SummaryProvenance {
+  provider_id: string;
+  provider_kind: ProviderKind;
+  model: string;
+  generated_at: string;
+  template_id: string;
+}
+export interface SummarySource { utterance_id: string; start_ms: number; speaker: string | null }
+export interface SummaryItem { text: string; source: SummarySource | null }
+export interface SummaryAction extends SummaryItem {
+  owner: string | null;
+  due: string | null;
+  state: { done: boolean; owner: string | null };
+}
+export interface SummaryStructure {
+  labels: { summary: string; decisions: string; actions: string; open_questions: string; none: string };
+  lead: string;
+  topics: { title: string; body: string; source: SummarySource | null }[];
+  decisions: SummaryItem[];
+  actions: SummaryAction[];
+  open_questions: SummaryItem[];
+}
+export interface MeetingSummaryRecord {
+  schema_version: number;
+  meeting_uid: string;
+  body_revision: string;
+  provenance: SummaryProvenance;
+  structure: SummaryStructure | null;
+}
+
+export interface SpeakerTimelineSpan { start_ms: number; end_ms: number }
+export interface SpeakerTimelineLane {
+  key: string;
+  speaker: string | null;
+  kind: "person" | "unknown" | "mixed" | "overlap";
+  duration_ms: number;
+  spans: SpeakerTimelineSpan[];
+}
+export interface MeetingTranscriptProvenance {
+  provider_kind: string;
+  model: string;
+  requested_language: string | null;
+  generated_at: string;
+}
+
+export interface MeetingSpeakerTimeline {
+  duration_ms: number;
+  duration_is_recorded: boolean;
+  lanes: SpeakerTimelineLane[];
+}
+
 export interface MeetingSummaryDocument {
+  record?: MeetingSummaryRecord | null;
   meeting_uid: string;
   markdown: string;
   revision: string;
@@ -581,6 +661,7 @@ export interface MeetingSummaryDocument {
 }
 
 export interface MeetingSummaryCandidate {
+  record?: MeetingSummaryRecord | null;
   meeting_uid: string;
   markdown: string;
   revision: string;
@@ -636,9 +717,11 @@ export interface PillPreview {
 }
 
 export type PillState = (
-  | { state: "hidden" | "listening" | "hands_free" | "command" | "working" }
-  | { state: "error"; message: string }
-) & { preview?: PillPreview | null; cleanup_verification?: CleanupVerificationAvailability | null };
+  | { state: "hidden" | "listening" | "hands_free" | "command" | "no_sound" | "working" }
+  | { state: "inserted"; app?: string | null }
+  | { state: "copied"; paste_key: string }
+  | { state: "problem"; title: string; detail?: string | null }
+) & { preview?: PillPreview | null; cleanup_verification?: CleanupVerificationAvailability | null; speech_model?: PillModelPresentation | null; cancel_shortcut?: ShortcutLabel | null };
 
 export interface UpdateInfo {
   available: boolean;
@@ -863,6 +946,7 @@ export const api = {
   onWritingProfileChanged: (handler: () => void): Promise<() => void> =>
     listen<null>("writing-profile-changed", handler),
   insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
+  automaticInsightsAvailability: (id: string, languagePolicy?: InsightLanguagePolicy) => invoke<InsightAvailability>("automatic_insights_availability", { id, languagePolicy }),
   insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),
   beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy }),
   insightsJob: (jobId: string) => invoke<InsightJob>("insights_job", { jobId }),
@@ -878,7 +962,15 @@ export const api = {
   desktopEnvironment: () => invoke<DesktopEnvironment>("desktop_environment"),
   setDesktopCommandState: (state: DesktopCommandState) => invoke<void>("set_desktop_command_state", { state }),
   info: () => invoke<AppInfo>("app_info"),
+  setShortcut: (action: string, binding: ShortcutBinding | null, replace = false) => invoke<AppInfo>("set_shortcut", { action, binding, replace }),
+  resetShortcut: (action: string) => invoke<AppInfo>("reset_shortcut", { action }),
+  resetAllShortcuts: () => invoke<AppInfo>("reset_all_shortcuts"),
+  shortcutCaptureStart: (action: string) => invoke<import("./shortcut-capture-state").CaptureStarted>("shortcut_capture_start", { action }),
+  shortcutCaptureStop: () => invoke<void>("shortcut_capture_stop"),
   saveSettings: (settings: Settings) => invoke<AppInfo>("save_settings", { settings }),
+  showPillPreview: () => invoke<void>("show_pill_preview"),
+  configuredDictationModels: () => invoke<ConfiguredDictationModel[]>("configured_dictation_models"),
+  selectDictationModel: (choice: ModelChoice) => invoke<AppInfo>("select_dictation_model", { choice }),
   applyTaskModelChoice: (slot: "dictation_stt" | "meeting_stt" | "llm", choice: ModelChoice) =>
     invoke<AppInfo>("apply_task_model_choice", { slot, choice }),
   addProvider: (kind: ProviderKind) => invoke<AppInfo>("add_provider", { kind }),
@@ -905,7 +997,7 @@ export const api = {
   dictationState: () => invoke<PillState>("dictation_state"),
   onboardingReadiness: (target: "dictation" | "global_dictation" | "dictation_pad" | "practice" | "meeting") =>
     invoke<SetupReadiness>("onboarding_readiness", { target }),
-  openDictationSession: (kind: "pad" | "practice") => invoke<DictationSessionSnapshot>("open_dictation_session", { kind }),
+  openDictationSession: (kind: DictationSessionSnapshot["kind"]) => invoke<DictationSessionSnapshot>("open_dictation_session", { kind }),
   getDictationSession: (sessionId: string) => invoke<DictationSessionSnapshot>("get_dictation_session", { sessionId }),
   toggleDictationSession: (sessionId: string) => invoke<void>("toggle_dictation_session", { sessionId }),
   cancelDictationSession: (sessionId: string) => invoke<void>("cancel_dictation_session", { sessionId }),
@@ -958,7 +1050,11 @@ export const api = {
     invoke<LiveSpeakerAttributionStatus>("set_live_speaker_attribution", { sessionId, enabled }),
   meetingRuntimeStatus: () => invoke<MeetingRuntimeStatus>("meeting_runtime_status"),
   startMeeting: (title: string) => invoke<string>("start_meeting", { title }),
-  stopMeeting: (sessionId?: string) => invoke<void>("stop_meeting", sessionId ? { sessionId } : undefined),
+  stopMeeting: (sessionId?: string) => {
+    if (!sessionId) return invoke<void>("stop_meeting");
+    meetingLevels.stop(sessionId);
+    return recordingStops.run(sessionId, () => invoke<void>("stop_meeting", { sessionId }));
+  },
   retryMeetingPersistence: (sessionId: string) => invoke<void>("retry_meeting_persistence", { sessionId }),
   setMeetingNotes: (text: string, sessionId: string) => invoke<void>("set_meeting_notes", { text, sessionId }),
   setMeetingTitle: (title: string, sessionId: string) => invoke<void>("set_meeting_title", { title, sessionId }),
@@ -980,13 +1076,22 @@ export const api = {
   saveTemplate: (id: string | null, name: string, body: string) =>
     invoke<string>("save_template", { id, name, body }),
   deleteTemplate: (id: string) => invoke<void>("delete_template", { id }),
-  summarizeMeeting: (id: string, templateId: string) =>
-    invoke<string>("summarize_meeting", { id, templateId }),
+  summarizeMeeting: (id: string, templateId: string, expected?: Pick<MeetingSummaryDocument, "revision" | "source_revision">) =>
+    invoke<string>("summarize_meeting", { id, templateId, ...expected ? { expectedRevision: expected.revision, expectedSourceRevision: expected.source_revision } : {} }),
+  meetingTranscriptProvenance: (id: string) => invoke<MeetingTranscriptProvenance | null>("meeting_transcript_provenance", { id }),
+  meetingSpeakerTimeline: (id: string) => invoke<MeetingSpeakerTimeline>("meeting_speaker_timeline", { id }),
   meetingSummary: (id: string) => invoke<MeetingSummaryDocument>("meeting_summary", { id }),
+  meetingSuggestionPromptDismissed: (id: string) => invoke<boolean>("meeting_suggestion_prompt_dismissed", { id }),
+  dismissMeetingSuggestionPrompt: (id: string, expectedRevision: string, expectedSourceRevision: string) => invoke<MeetingSummaryDocument>("dismiss_meeting_suggestion_prompt", { id, expectedRevision, expectedSourceRevision }),
+  meetingSummaryPromptDismissed: (id: string) => invoke<boolean>("meeting_summary_prompt_dismissed", { id }),
+  dismissMeetingSummaryPrompt: (id: string, expectedRevision: string, expectedSourceRevision: string) =>
+    invoke<MeetingSummaryDocument>("dismiss_meeting_summary_prompt", { id, expectedRevision, expectedSourceRevision }),
   saveMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
     invoke<MeetingSummaryDocument>("save_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
-  acceptMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string) =>
-    invoke<MeetingSummaryDocument>("accept_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown }),
+  acceptMeetingSummary: (id: string, expectedRevision: string, expectedSourceRevision: string, markdown: string, record?: MeetingSummaryRecord | null) =>
+    invoke<MeetingSummaryDocument>("accept_meeting_summary", { id, expectedRevision, expectedSourceRevision, markdown, record }),
+  updateMeetingSummaryAction: (id: string, expectedRevision: string, expectedSourceRevision: string, actionIndex: number, done: boolean, owner: string | null) =>
+    invoke<MeetingSummaryDocument>("update_meeting_summary_action", { id, expectedRevision, expectedSourceRevision, actionIndex, done, owner }),
   meetingSummaryHistory: (id: string) => invoke<MeetingSummaryRevision[]>("meeting_summary_history", { id }),
   restoreMeetingSummary: (id: string, revision: string, expectedRevision: string, expectedSourceRevision: string) =>
     invoke<MeetingSummaryDocument>("restore_meeting_summary", { id, revision, expectedRevision, expectedSourceRevision }),
@@ -1061,6 +1166,10 @@ export const api = {
   setClaudeAccess: (enabled: boolean) => invoke<ClaudeAccessView>("set_claude_access", { enabled }),
   onClaudeAccessChanged: (handler: (status: ClaudeStatus) => void): Promise<() => void> =>
     listen<ClaudeStatus>("claude-access-changed", (event) => handler(event.payload)),
+  onMeetingPostprocess: (handler: (event: MeetingPostprocessEvent) => void): Promise<() => void> =>
+    listenToWindow<MeetingPostprocessEvent>("meeting-postprocess", (event) => handler(event.payload)),
+  onMeetingLevel: (handler: (level: MeetingLevel) => void): Promise<() => void> =>
+    listen<MeetingLevel>("meeting-level", (event) => handler(event.payload)),
   onSyncChanged: (handler: (report: SyncReport) => void): Promise<() => void> =>
     listen<SyncReport>("sync-changed", (event) => handler(event.payload)),
 };

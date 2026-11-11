@@ -34,7 +34,7 @@ export async function checkTaskShell() {
       && document.querySelector(".dictation-navigation").nextElementSibling === section("meetings"), "Dictation children appear beneath the wrong primary task.");
     assert(document.querySelectorAll(".library-search input").length === 1, "The shell duplicated its search field.");
     assert(!visible(document.querySelector(".library-ask")) && !visible(document.querySelector(".meeting-list")), "Dictation exposes the meeting library or meeting questions.");
-    assert(!visible(document.querySelector(".toolbar-recording")), "Dictation exposes ordinary New recording.");
+    assert(visible(document.querySelector(".toolbar-recording")), "The shared toolbar lost New recording in Dictation.");
     const beforeSearch = operations.length;
     edit(search(), "voice result");
     await until(() => document.querySelectorAll("[data-history-result]").length === entries.length, "Dictation search did not search its retained results.");

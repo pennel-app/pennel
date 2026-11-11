@@ -10,6 +10,35 @@ import { createConversationFixture } from "./meeting-conversations.mjs";
 const script = await readFile(new URL("./desktop-platform.js", import.meta.url), "utf8");
 const cases = JSON.parse(await readFile(new URL("./visual-cases.json", import.meta.url), "utf8"));
 
+test("home practice fixture delivers to its own field and ordinary History without onboarding or clipboard effects", async () => {
+  const api = fixture("simple-task-shell").__PENNEL_PLATFORM__;
+  const before = await api.invoke("app_info");
+  const history = await api.invoke("history", { limit: 200 });
+  const session = await api.invoke("open_dictation_session", { kind: "home_practice" });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  await api.invoke("toggle_dictation_session", { sessionId: session.session_id });
+  const result = await api.invoke("get_dictation_session", { sessionId: session.session_id });
+  assert.equal(result.phase, "done");
+  assert.ok(result.text);
+  assert.equal((await api.invoke("history", { limit: 200 })).length, history.length + 1);
+  assert.deepEqual((await api.invoke("app_info")).settings.onboarding, before.settings.onboarding);
+});
+
+test("structured summary fixture round-trips candidate records and keeps both action-state fields", async () => {
+  const api = fixture("meeting-document-reference", { summary_structure: "structured", rich_utterances: true }).__PENNEL_PLATFORM__;
+  const id = "2026-10-24 0900 Projectoverleg";
+  const before = await api.invoke("meeting_summary", { id });
+  assert.ok(before.record?.structure?.lead);
+  const changed = await api.invoke("update_meeting_summary_action", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision, actionIndex: 0, done: true, owner: "Sam" });
+  assert.deepEqual(JSON.parse(JSON.stringify(changed.record.structure.actions[0].state)), { done: true, owner: "Sam" });
+  assert.equal(changed.edited, before.edited);
+  const candidate = await api.invoke("generate_meeting_summary", { id });
+  assert.ok(candidate.record);
+  assert.equal((await api.invoke("meeting_summary", { id })).revision, changed.revision, "Generating a candidate wrote the summary.");
+  const accepted = await api.invoke("accept_meeting_summary", { id, expectedRevision: candidate.revision, expectedSourceRevision: candidate.source_revision, markdown: candidate.markdown, record: candidate.record });
+  assert.equal(accepted.record.body_revision, candidate.record.body_revision);
+});
+
 test("failed transcription fixture exposes retained-chunk eligibility separately from a full archive", async () => {
   const context = fixture("meeting-notes", { failed_recovery: true, saved_audio: false });
   const api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
@@ -828,8 +857,12 @@ test("every visual scenario has a unique stable identifier and valid entry", () 
   for (const item of cases) {
     assert.match(item.name, /^[a-z][a-z0-9-]+$/);
     assert.ok(["workspace", "settings", "history", "dictation", "onboarding", "pill"].includes(item.window));
-    if (item.window === "pill") assert.ok(["listening", "working"].includes(item.pill_state));
-    else assert.ok(item.section || item.step);
+    if (item.window === "pill") {
+      if (item.pill_demo) {
+        assert.equal(item.pill_state, undefined);
+        assert.ok(item.steps?.some(step => step.eval?.includes("checkPillDemoPrivacy")));
+      } else assert.ok(["listening", "hands_free", "command", "no_sound", "working", "inserted", "copied", "problem"].includes(item.pill_state));
+    } else assert.ok(item.section || item.step);
   }
 });
 
@@ -1122,11 +1155,26 @@ test("the optional pad has an explicit route separate from the direct-dictation 
 
 test("pill snapshots provide only synthetic display text with no capture or transport calls", async () => {
   const captions = cases.filter(item => item.window === "pill");
-  assert.equal(captions.length, 4);
+  const displays = captions.filter(item => !item.steps?.length);
+  for (const state of ["listening", "hands_free", "command", "no_sound", "working", "inserted", "copied", "problem"]) {
+    assert.ok(displays.some(item => item.pill_state === state), `Missing ${state} pill display coverage`);
+  }
+  assert.ok(displays.some(item => item.pill_state === "listening" && !item.preview_text), "Missing empty listening display");
+  for (const state of ["listening", "hands_free", "working"]) {
+    assert.ok(displays.some(item => item.pill_state === state && item.preview_text), `Missing ${state} preview display`);
+  }
+  for (const name of ["pill-status-announcements", "pill-status-crossfade", "pill-preview-lifecycle", "pill-status-motion", "pill-status-motion-reduced"]) {
+    const interaction = captions.find(item => item.name === name);
+    assert.ok(interaction?.steps?.some(step => typeof step.eval === "string" && step.eval.trim()), `Missing executable ${name} interaction`);
+    assert.equal(interaction.pill_state, "listening", `${name} must begin from a visible listening snapshot`);
+  }
+  assert.equal(captions.find(item => item.name === "pill-status-motion-reduced").reduced_motion, true);
+  assert.notEqual(captions.find(item => item.name === "pill-status-motion").reduced_motion, true);
   for (const item of captions) {
     const context = fixture(item.name);
     const snapshot = await context.__PENNEL_PLATFORM__.invoke("dictation_state");
     assert.equal(snapshot.state, item.pill_state);
+    for (const [field, value] of Object.entries(item.pill_fields || {})) assert.deepEqual(structuredClone(snapshot[field]), value);
     assert.equal(snapshot.preview.session_id, "qa-" + item.name);
     assert.equal(snapshot.preview.text, item.preview_text || "");
     assert.equal(snapshot.preview.revision, item.preview_text ? 7 : 0);
@@ -1350,4 +1398,55 @@ test("saved library note writes persist by meeting without replacing active reco
   await api.invoke("save_meeting_notes", {id: savedId, text: written});
   assert.equal((await api.invoke("meeting_detail", {id: savedId})).notes, written);
   assert.equal((await api.invoke("meeting_detail", {id: activeId})).notes, activeBefore.notes);
+});
+
+test("denied microphone fixture keeps recording repair reachable until access refreshes", async () => {
+  const api = fixture("recording-capsule-blocked").__PENNEL_PLATFORM__;
+  assert.equal((await api.invoke("app_info")).capabilities.microphone.status, "permission_required");
+  await api.invoke("request_permission", { kind: "microphone" });
+  assert.equal((await api.invoke("app_info")).capabilities.microphone.status, "available");
+});
+
+test("summary consent fixture mirrors durable per-meeting dismissal without changing global policy", async () => {
+  const storage = reviewStorage(), options = { owner_review: true, profile: "summary-consent-A", summary_empty: true, summary_automation: "unanswered" };
+  const context = fixture("meeting-document-minimum", options, storage), api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  assert.equal(await api.invoke("meeting_summary_prompt_dismissed", { id }), false);
+  const before = await api.invoke("meeting_summary", { id });
+  const saved = await api.invoke("dismiss_meeting_summary_prompt", { id, expectedRevision: before.revision, expectedSourceRevision: before.source_revision });
+  assert.equal(saved.markdown, before.markdown); assert.notEqual(saved.revision, before.revision);
+  assert.equal((await api.invoke("app_info")).settings.summary_automation, "unanswered");
+  assert.equal(await fixture("meeting-document-minimum", options, storage).__PENNEL_PLATFORM__.invoke("meeting_summary_prompt_dismissed", { id }), true);
+  assert.equal(await fixture("meeting-document-minimum", { ...options, profile: "summary-consent-B" }, storage).__PENNEL_PLATFORM__.invoke("meeting_summary_prompt_dismissed", { id }), false);
+  assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command => ["summarize_meeting", "generate_meeting_summary", "save_settings"].includes(command)));
+});
+
+test("summary consent fixture direct create saves only the expected empty unedited body", async () => {
+  const context = fixture("meeting-document-minimum", { owner_review: true, summary_empty: true, summary_automation: "unanswered" }), api = context.__PENNEL_PLATFORM__, id = context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before = await api.invoke("meeting_summary", { id }); assert.equal(before.edited, false);
+  await api.invoke("summarize_meeting", { id, templateId: "algemeen", expectedRevision: before.revision, expectedSourceRevision: before.source_revision });
+  const saved = await api.invoke("meeting_summary", { id }); assert.ok(saved.markdown.trim()); assert.equal(saved.edited, false);
+  await assert.rejects(api.invoke("summarize_meeting", { id, templateId: "algemeen", expectedRevision: saved.revision, expectedSourceRevision: saved.source_revision }));
+  assert.equal((await api.invoke("meeting_summary", { id })).markdown, saved.markdown);
+  assert.equal((await api.invoke("app_info")).settings.summary_automation, "unanswered");
+});
+
+test("suggestion consent fixture previews language without policy, credential or provider effects", async () => {
+  const context=fixture("meeting-document-minimum",{suggestion_configured:true,insight_qualified:true,insight_recorded_language:"auto"}),api=context.__PENNEL_PLATFORM__,id=context.__PENNEL_FIXTURE__.options.meeting_id;
+  const before=await api.invoke("app_info");
+  assert.equal((await api.invoke("automatic_insights_availability",{id})).available,false);
+  const preview=await api.invoke("automatic_insights_availability",{id,languagePolicy:"nl"});assert.equal(preview.available,true);assert.equal(preview.resolved_language,"nl");
+  assert.deepEqual((await api.invoke("app_info")).settings,before.settings);
+  const unsupported=fixture("meeting-document-minimum",{suggestion_configured:true,insight_qualified:true,insight_recorded_language:"fr"}).__PENNEL_PLATFORM__;
+  assert.equal((await unsupported.invoke("automatic_insights_availability",{id,languagePolicy:"en"})).available,false);
+  assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command=>["save_settings","begin_insights_analysis","test_inference","set_key"].includes(command)));
+});
+test("suggestion dismissal fixture stays durable and independent of summary dismissal and global consent", async()=>{
+ const storage=reviewStorage(),options={owner_review:true,profile:"suggestion-consent-A",summary_empty:true,suggestion_configured:true,insight_qualified:true};
+ const context=fixture("meeting-document-minimum",options,storage),api=context.__PENNEL_PLATFORM__,id=context.__PENNEL_FIXTURE__.options.meeting_id,before=await api.invoke("meeting_summary",{id});
+ assert.equal(await api.invoke("meeting_suggestion_prompt_dismissed",{id}),false);
+ const saved=await api.invoke("dismiss_meeting_suggestion_prompt",{id,expectedRevision:before.revision,expectedSourceRevision:before.source_revision});assert.equal(saved.markdown,before.markdown);assert.notEqual(saved.revision,before.revision);
+ assert.equal(await api.invoke("meeting_summary_prompt_dismissed",{id}),false);assert.equal((await api.invoke("app_info")).settings.suggestion_automation,"unanswered");
+ assert.equal(await fixture("meeting-document-minimum",options,storage).__PENNEL_PLATFORM__.invoke("meeting_suggestion_prompt_dismissed",{id}),true);
+ assert.equal(await fixture("meeting-document-minimum",{...options,profile:"suggestion-consent-B"},storage).__PENNEL_PLATFORM__.invoke("meeting_suggestion_prompt_dismissed",{id}),false);
+ assert.ok(!context.__PENNEL_FIXTURE__.calls.some(command=>["save_settings","begin_insights_analysis"].includes(command)));
 });

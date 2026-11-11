@@ -35,10 +35,12 @@ export async function checkSummaryContextAndConsent() {
     "Routine notices displaced all summary content below the reading viewport.");
   const outdated = surface.querySelector(".meeting-summary-outdated");
   if (fixture.options.summary_outdated) assert(visible(outdated) && !details.contains(outdated), "The stale-source warning was hidden inside routine details.");
-  const choose = root.querySelector(".meeting-automation-choose");
-  assert(fixture.info().settings.summary_automation === "unanswered" && visible(choose), "The unanswered automation choice is not visible and nonblocking.");
+  await until(() => root.querySelector('.summary-consent[data-mode="question"]'), "The unanswered summary question did not load.");
+  const choice = root.querySelector(".summary-consent");
+  assert(fixture.info().settings.summary_automation === "unanswered" && visible(choice)
+    && !choice.querySelector("input[type=checkbox]").checked, "The unanswered automation choice is not visible and explicit.");
   const before = fixture.calls.length;
-  choose.click();
+  await openMeetingTools(root, "automation");
   await until(() => visible(root.querySelector('[data-meeting-tool="automation"]')), "The automation choice did not open its focused tool.");
   const tool = root.querySelector('[data-meeting-tool="automation"]');
   assert(visible(tool.querySelector('[data-summary-automation="automatic"]')) && visible(tool.querySelector('[data-summary-automation="manual"]')),
@@ -74,10 +76,9 @@ export async function checkFocusedToolsReturn() {
   const { root, fixture, client } = await owned();
   const { flushMeetingDrafts } = await import("/src/views/meetings.ts");
   selectMeetingPane(root, "notes");
-  const notes = root.querySelector(".live-notes"), pane = root.querySelector('[data-live-pane="notes"]');
+  const notes = root.querySelector(".live-notes"), pane = root.querySelector(".meeting-document");
   const text = Array.from({ length: 80 }, (_, index) => `Owned synthetic note ${index}.`).join("\n");
-  notes.value = text;
-  notes.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+  notes.applyUserChange(text);
   await flushMeetingDrafts();
   notes.focus(); notes.setSelectionRange(12, 22, "backward"); notes.scrollTop = 65; pane.scrollTop = 20;
   const retained = { start: notes.selectionStart, end: notes.selectionEnd, direction: notes.selectionDirection, scroll: notes.scrollTop, paneScroll: pane.scrollTop };
@@ -90,7 +91,7 @@ export async function checkFocusedToolsReturn() {
   await until(() => document.activeElement === tools.querySelector(".meeting-tool-heading"), "Keyboard focus did not enter the selected tool.");
   assert(!fixture.calls.slice(before).some(command => ["speaker_setup", "meeting_voices"].includes(command)), "Opening templates loaded unrelated speaker setup.");
   tools.querySelector(".meeting-tool-back").click();
-  assert(visible(notes) && document.activeElement === notes && notes.value === text, "Returning from a tool lost or replaced the document.");
+  assert(visible(notes) && document.activeElement === notes.contentDOM && notes.value === text, "Returning from a tool lost or replaced the document.");
   assert(notes.selectionStart === retained.start && notes.selectionEnd === retained.end && notes.selectionDirection === retained.direction
     && notes.scrollTop === retained.scroll && pane.scrollTop === retained.paneScroll, "Returning from a tool lost writing selection or reading position.");
   for (const section of ["speakers", "files", "automation"]) {
@@ -168,4 +169,31 @@ async function checkToolStatusOwnership(root, client) {
     client.invoke = original;
     tools.querySelector(".meeting-tool-back").click();
   }
+}
+
+export async function checkLongSummaryCitationReturn() {
+  const { root, fixture } = await owned();
+  const { flushMeetingDrafts } = await import("/src/views/meetings.ts");
+  const summary = root.querySelector(".meeting-summary-surface"), editor = summary.querySelector(".meeting-summary-editor");
+  summary.querySelector(".meeting-summary-edit").click();
+  const text = "## Long synthetic summary\n\n" + Array.from({ length: 100 }, (_, index) => `Paragraph ${index}: a distinct synthetic summary passage whose rendered reading position must survive citation inspection.`).join("\n\n");
+  editor.value = text; editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+  await flushMeetingDrafts(); summary.querySelector(".meeting-summary-edit").click();
+  await until(() => editor.hidden, "The saved long summary did not return to reading mode.");
+  selectMeetingPane(root, "questions");
+  const input = root.querySelector(".live-question-input"); input.value = "Which summary passage supports this answer?"; input.dispatchEvent(new Event("input", { bubbles: true }));
+  root.querySelector(".live-question-submit").click();
+  await until(() => fixture.workspace.requests().length, "The summary question was not admitted.");
+  const request = fixture.workspace.requests().at(-1), index = request.anchors.findIndex(anchor => anchor.passage.kind === "summary");
+  assert(index >= 0, "The owned question fixture did not capture the saved summary source.");
+  await fixture.conversations.complete(request.request_id, { text: `A saved summary passage [${index + 1}]`, citations: [{ number: index + 1, passage: request.anchors[index].passage }] });
+  await until(() => root.querySelector(".citation"), "The real summary citation did not render.");
+  const document = root.querySelector(".meeting-document"); document.scrollTop = Math.min(1000, document.scrollHeight - document.clientHeight);
+  const reading = document.scrollTop; assert(reading > 500, "The summary needs a deep real reading position.");
+  root.querySelector(".citation").click();
+  await until(() => !editor.hidden && editor.value.slice(editor.selectionStart, editor.selectionEnd) === request.anchors[index].source_text, "The citation did not inspect the exact saved summary passage.");
+  root.querySelector(".live-source-back").click();
+  assert(editor.hidden && document.scrollTop === reading, `Citation return lost long-summary reading position: ${document.scrollTop} instead of ${reading}.`);
+  assert(editor.value === text && !root.querySelector(".live-questions-pane").hidden, "Citation return lost summary content or its answer context.");
+  return result("longSummaryCitationReturn", { realSummaryCitation: true, renderedPresentationRestored: true, deepDocumentScrollRestored: true, exactSourceAndContentRetained: true });
 }

@@ -6,8 +6,8 @@
   "onboarding.permissions_intro": "Zo kan Pennel ook in je andere apps werken.",
   "onboarding.permissions_later": "Agenda en systeemaudio vragen we pas wanneer je meetings wilt opnemen.",
   "onboarding.hold_to_dictate": "Houd ingedrukt om te dicteren",
-  "onboarding.welcome_title": "Welkom bij Pennel",
-  "onboarding.welcome_intro": "Waar wil je mee beginnen? Je kunt beide gebruiken.",
+  "onboarding.welcome_title": "Wat wil je eerst doen?",
+  "onboarding.welcome_intro": "Je kunt beide gebruiken. Een account is niet nodig.",
   "onboarding.next_message": "Je volgende bericht",
   "onboarding.welcome_note": "Dicteren en meetingnotities. Zonder verplicht account.",
   "onboarding.language_auto": "Automatisch",
@@ -130,5 +130,12 @@
   "onboarding.open_recording": "Verder naar opnemen",
   "onboarding.open_dictation": "Open dicteren",
   "onboarding.cloud_setup": "Pennel Cloud instellen",
-  "onboarding.cloud_setup_help": "Kies Pennel Cloud onder Andere opties in de spraakinstellingen, meld je aan en gebruik die instelling. Je huidige taak verandert pas wanneer je de keuze toepast."
+  "onboarding.cloud_setup_help": "Kies Pennel Cloud onder Andere opties in de spraakinstellingen, meld je aan en gebruik die instelling. Je huidige taak verandert pas wanneer je de keuze toepast.",
+  "onboarding.first_task": "Eerste taak",
+  "onboarding.recommended": "Aanbevolen",
+  "onboarding.download_continue": "Downloaden en doorgaan",
+  "onboarding.downloading_progress": "Downloaden… {percent}%",
+  "onboarding.other_local": "Een ander model op deze computer",
+  "onboarding.other_local_help": "Andere downloadgroottes, of Apple-dicteren als dit wordt ondersteund.",
+  "onboarding.other_provider_help": "Je audio gaat naar de provider of server die je kiest."
 }

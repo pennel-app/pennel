@@ -737,6 +737,30 @@ impl MeetingStore {
         self.write_file(id, "meeting.md", &render_meeting(&front, &body))
     }
 
+    /// Resolve only frozen recording provenance or an explicit owner fallback; never infer from text.
+    pub(crate) fn suggestion_language(
+        &self,
+        id: &str,
+        fallback: Option<&str>,
+    ) -> Result<Option<String>, PennelError> {
+        let (front, _) = self.frontmatter(id).ok_or(PennelError::NotFound)?;
+        let mut languages = front
+            .extra
+            .iter()
+            .filter_map(|line| line.strip_prefix("pennel_stt_language:").map(str::trim));
+        let recorded = languages.next();
+        if languages.next().is_some() {
+            return Ok(None);
+        }
+        Ok(match recorded {
+            Some("en" | "nl") => recorded.map(str::to_owned),
+            None | Some("auto") => fallback
+                .filter(|language| matches!(*language, "en" | "nl" | "mixed"))
+                .map(str::to_owned),
+            _ => None,
+        })
+    }
+
     pub fn new(dir: &Path) -> Self {
         Self {
             dir: dir.to_owned(),
@@ -772,6 +796,13 @@ impl MeetingStore {
 
     pub fn uid_of(&self, id: &str) -> Option<String> {
         self.frontmatter(id)
+            .map(|(front, _)| front.uid)
+            .filter(|uid| valid_uid(uid))
+    }
+
+    /// Caller holds the meeting replacement gate; uid_of would acquire that gate again.
+    pub(crate) fn uid_of_locked(&self, id: &str) -> Option<String> {
+        parse_meeting(&std::fs::read_to_string(self.dir_of(id).join("meeting.md")).ok()?)
             .map(|(front, _)| front.uid)
             .filter(|uid| valid_uid(uid))
     }
@@ -1777,29 +1808,7 @@ impl MeetingStore {
     }
 
     pub fn speaker_names(&self, id: &str) -> Vec<SpeakerName> {
-        let Some((front, _)) = self.frontmatter(id) else {
-            return Vec::new();
-        };
-        let mut names: Vec<SpeakerName> = front
-            .extra
-            .iter()
-            .find_map(|line| line.strip_prefix("speakers:"))
-            .map(|list| {
-                list.split(';')
-                    .filter_map(|pair| {
-                        let (voice, name) = pair.split_once('=')?;
-                        let voice = voice.trim().parse().ok().filter(|v| VOICES.contains(v))?;
-                        Some(SpeakerName {
-                            voice,
-                            name: name.trim().to_owned(),
-                        })
-                    })
-                    .filter(|n| !n.name.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default();
-        names.sort_by_key(|n| n.voice);
-        names
+        speaker_names_from_document(&self.read_file(id, "meeting.md"))
     }
 
     /// An empty name forgets the voice's name.
@@ -2051,7 +2060,37 @@ fn refuse_unparsed(bytes: &[u8]) -> Result<(), PennelError> {
     Ok(())
 }
 
-fn snapshot_from_text(root: &Path, uid: &str, bytes: &[u8]) -> MeetingTranscriptSnapshot {
+pub(crate) fn speaker_names_from_document(raw: &str) -> Vec<SpeakerName> {
+    let Some((front, _)) = parse_meeting(raw) else {
+        return Vec::new();
+    };
+    let mut names: Vec<SpeakerName> = front
+        .extra
+        .iter()
+        .find_map(|line| line.strip_prefix("speakers:"))
+        .map(|list| {
+            list.split(';')
+                .filter_map(|pair| {
+                    let (voice, name) = pair.split_once('=')?;
+                    let voice = voice.trim().parse().ok().filter(|v| VOICES.contains(v))?;
+                    Some(SpeakerName {
+                        voice,
+                        name: name.trim().to_owned(),
+                    })
+                })
+                .filter(|n| !n.name.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort_by_key(|n| n.voice);
+    names
+}
+
+pub(crate) fn snapshot_from_text(
+    root: &Path,
+    uid: &str,
+    bytes: &[u8],
+) -> MeetingTranscriptSnapshot {
     let mut occurrences = std::collections::HashMap::new();
     let fallback = String::from_utf8_lossy(bytes)
         .lines()

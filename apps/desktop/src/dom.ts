@@ -1,5 +1,6 @@
 import { bindLocalization, formatNumber, l, liveText, LiveText, localizeBackendText, type UiText } from "./i18n.ts";
 import { contentHeadingTags } from "./content-headings.ts";
+import { icon, type IconName } from "./icons.ts";
 import { nativeMenusAvailable, popupOwnerAvailable, showNativePopup } from "./native-menu.ts";
 import type { MenuPoint } from "./native-menu-state.ts";
 
@@ -76,6 +77,16 @@ export function field(label: UiText, control: HTMLElement) {
   const formControl = control.matches("input,textarea");
   if (control.classList.contains("choice") && !control.hasAttribute("aria-label")) localizedAttribute(control, "aria-label", label);
   return h(formControl ? "label" : "div", { class: "field" }, h("span", { class: "field-label" }, label), control);
+}
+
+/** A small icon-and-label chip. Group chips in `.chips`. */
+export function chip(iconName: IconName, text: UiText): HTMLSpanElement {
+  return h("span", { class: "chip" }, icon(iconName), text);
+}
+
+/** A shortcut shown as one keycap per key, in the order they are pressed. */
+export function keycaps(keys: UiText[]): HTMLSpanElement {
+  return h("span", { class: "keycaps" }, ...keys.map((key) => h("kbd", {}, key)));
 }
 
 export interface ChoiceOption { readonly value: string; label: string; disabled: boolean }
@@ -412,7 +423,7 @@ export function snippet(text: string): HTMLElement {
 
 let dialogNumber = 0;
 
-function namedDialog(title: UiText, detail: UiText) {
+export function namedDialog(title: UiText, detail: UiText = "") {
   const id = `dialog-${++dialogNumber}`;
   const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const dialog = h("dialog", { class: "editor-dialog", "aria-modal": "true", "aria-labelledby": `${id}-title`, "aria-describedby": detail ? `${id}-detail` : null });

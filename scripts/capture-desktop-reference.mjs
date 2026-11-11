@@ -46,7 +46,7 @@ const meetingId = "2026-10-24 0900 Projectoverleg";
 const windowSizes = { workspace: [980, 640], settings: [980, 640], history: [980, 640], dictation: [980, 640], onboarding: [640, 660] };
 const urlFor = (base, item, appearance, locale) => {
   const url = new URL(item.window === "pill" ? "/pill.html" : "/index.html", base);
-  for (const [key, value] of Object.entries({ qa: item.name, theme: appearance, locale, window: item.window, section: item.section, tab: item.tab, meeting_id: item.meeting_tab ? meetingId : undefined, meeting_tab: item.meeting_tab, profile: item.profile })) if (value) url.searchParams.set(key, value);
+  for (const [key, value] of Object.entries({ qa: item.name, theme: appearance, locale, window: item.window, section: item.section, tab: item.tab, meeting_id: item.meeting_tab ? meetingId : undefined, meeting_tab: item.meeting_tab, profile: item.profile, preview: item.pill_demo ? "1" : undefined })) if (value) url.searchParams.set(key, value);
   return url.href;
 };
 const { createServer } = await import(pathToFileURL(join(appRoot, "node_modules/vite/dist/node/index.js")).href);
@@ -159,7 +159,7 @@ if (options.serve) {
         await send("Log.enable");
         await send("Emulation.setTimezoneOverride", { timezoneId: "Europe/Brussels" });
         await send("Emulation.setLocaleOverride", { locale: locale === "nl" ? "nl-BE" : "en-GB" });
-        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }] });
+        await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: appearance }, ...(item.reduced_motion ? [{ name: "prefers-reduced-motion", value: "reduce" }] : [])] });
         connection.events.length = 0;
         const [width, height] = item.size ?? (item.window === "pill" ? [pillMetrics["window-width"], pillMetrics["window-height"]] : windowSizes[item.window]);
         await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: item.scale ?? 1, mobile: false });
@@ -195,6 +195,18 @@ if (options.serve) {
             }
             if (!ready) throw Error(`${item.name}: the owned fixture did not reopen after reload`);
             await send("Runtime.evaluate", { expression: "(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));})()", awaitPromise: true });
+          } else if (step.viewport) {
+            const [width, height] = step.viewport;
+            if (![width, height].every(value => Number.isInteger(value) && value >= 240 && value <= 10000)) throw Error("Invalid owned fixture viewport");
+            await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: item.scale ?? 1, mobile: false });
+          } else if (step.pointer) {
+            // Real pointer input, so :hover and :active apply: { pointer: "<selector>", action: "move" | "press" | "release" }.
+            const target = await send("Runtime.evaluate", { expression: `(()=>{const r=document.querySelector(${JSON.stringify(step.pointer)})?.getBoundingClientRect();return r&&{x:r.x+r.width/2,y:r.y+r.height/2}})()`, returnByValue: true });
+            if (!target.result.value) throw new Error(`${item.name}: no element for pointer step ${step.pointer}`);
+            const { x, y } = target.result.value;
+            const action = step.action || "move";
+            if (action === "press") await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+            await send("Input.dispatchMouseEvent", action === "move" ? { type: "mouseMoved", x, y } : { type: action === "press" ? "mousePressed" : "mouseReleased", x, y, button: "left", buttons: action === "press" ? 1 : 0, clickCount: 1 });
           } else if (step.key) {
             const key = { key: step.key, code: step.code || step.key, windowsVirtualKeyCode: step.keyCode };
             const text = step.text ?? (step.key === "Enter" ? "\r" : step.key.length === 1 ? step.key : undefined);
@@ -211,12 +223,20 @@ if (options.serve) {
           await new Promise(resolve => setTimeout(resolve, step.wait || 300));
         }
         const metadata = await send("Runtime.evaluate", { expression: "(()=>{const pill=document.getElementById('pill'),preview=document.getElementById('preview'),text=document.getElementById('preview-text'),bounds=pill?.getBoundingClientRect();const pillError=pill?(bounds.left<0||bounds.top<0||bounds.right>innerWidth||bounds.bottom>innerHeight?'Pill exceeds the viewport':text?.querySelector('*')?'Preview interpreted markup':window.__PENNEL_FIXTURE__.options.preview_text&&preview.hidden?'Expected preview is hidden':''):'';return {document_language:document.documentElement.lang,width:innerWidth,height:innerHeight,horizontal_overflow:document.documentElement.scrollWidth>innerWidth,unknown_commands:window.__PENNEL_FIXTURE__.unknown,calls:window.__PENNEL_FIXTURE__.calls,runtime_banner:document.querySelector('.notice-banner:not([hidden]):not([data-recovery-banner])')?.textContent||'',recovery_banner:document.querySelector('[data-recovery-banner]:not([hidden])')?.textContent||'',surface_error:pillError,pill_preview:text?{text:text.textContent,visible:!preview.hidden,height:preview.getBoundingClientRect().height}:null,body:document.body.innerText.slice(0,300)}})()", returnByValue: true });
+        for (const [selector, expected] of item.expect_font_size || []) {
+          const measured = await send("Runtime.evaluate", { expression: `(()=>{const element=document.querySelector(${JSON.stringify(selector)});return element?parseFloat(getComputedStyle(element).fontSize):null})()`, returnByValue: true });
+          if (measured.result.value !== expected) throw new Error(`${item.name}: ${selector} computed font-size ${measured.result.value} px, expected ${expected} px`);
+        }
         const acceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_LIVE_ACCEPTANCE__ || null", returnByValue: true });
         metadata.result.value.live_acceptance = acceptance.result.value;
         const peopleAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_PEOPLE_ACCEPTANCE__ || null", returnByValue: true });
         metadata.result.value.people_acceptance = peopleAcceptance.result.value;
         const conversationAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_CONVERSATION_ACCEPTANCE__ || null", returnByValue: true });
         metadata.result.value.conversation_acceptance = conversationAcceptance.result.value;
+        const controlAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_CONTROL_ACCEPTANCE__ || null", returnByValue: true });
+        metadata.result.value.control_acceptance = controlAcceptance.result.value;
+        const pillAcceptance = await send("Runtime.evaluate", { expression: "window.__PENNEL_PILL_ACCEPTANCE__ || null", returnByValue: true });
+        metadata.result.value.pill_acceptance = pillAcceptance.result.value;
         const image = await send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
         const file = `${locale}/${appearance}/${item.name}.png`;
         await writeFile(join(options.output, file), Buffer.from(image.data, "base64"));

@@ -1,4 +1,4 @@
-import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
+import { replaceNotesSelection, selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const pause = (ms = 30) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, message) {
@@ -10,6 +10,7 @@ function owned() {
   return window.__PENNEL_FIXTURE__;
 }
 function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; }
   input.value = text;
   input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
 }
@@ -31,19 +32,18 @@ export async function checkLiveConcurrentEditing() {
   note.focus();
   note.setSelectionRange(17, 26, "backward");
   note.scrollTop = 72;
-  note.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
-  note.setRangeText("samengesteld", note.selectionStart, note.selectionEnd, "select");
-  note.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, inputType: "insertCompositionText", data: "samengesteld" }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
+  replaceNotesSelection(note, "samengesteld");
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const before = { value: note.value, start: note.selectionStart, end: note.selectionEnd, direction: note.selectionDirection, scroll: note.scrollTop };
   fixture.workspace.append({ start_ms: 22_000, end_ms: 28_000, speaker: "others", text: "Later synthetic speech must not enter the old answer.", failed: false, voice: 1 });
   fixture.workspace.complete(frozen.request_id);
   await until(() => root.textContent.includes("Synthetic frozen answer"), "The frozen answer did not arrive.");
   await pause(1100);
   assert(document.querySelector(".live-notes") === note, "An asynchronous update replaced the editor.");
-  assert(note.value === before.value && note.selectionStart === before.start && note.selectionEnd === before.end && note.selectionDirection === before.direction && note.scrollTop === before.scroll, "Concurrent updates changed composition, selection, text or scroll.");
+  assert(note.value === before.value && note.selectionStart === before.start && note.selectionEnd === before.end && note.selectionDirection === before.direction && note.scrollTop === before.scroll, `Concurrent updates changed composition, selection, text or scroll: ${JSON.stringify({before,after:{value:note.value,start:note.selectionStart,end:note.selectionEnd,direction:note.selectionDirection,scroll:note.scrollTop}})}`);
   assert(frozen.included_through_ms === 21_000, "The question included later transcript rows.");
-  note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "samengesteld" }));
-  note.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "samengesteld" }));
+  note.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "samengesteld" }));
   await until(() => fixture.workspace.notes() === before.value, "Completed composition was not saved.");
   return { sameEditor: true, compositionRetained: true, sourceSnapshotFrozen: true, syntheticOnly: true };
 }
@@ -101,18 +101,18 @@ export async function checkLiveFinalizationFocus() {
     await until(() => reading, "The delayed transcript read did not begin.");
     note.focus();
     note.setSelectionRange(2, 9, "backward");
-    note.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    note.contentDOM.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
     await original("stop_meeting");
     await until(() => root.dataset.recording === "false", "Finalization did not reach the retained workspace.");
     await pause(100);
-    assert(document.activeElement === note && document.querySelector(".live-workspace") === root, "Finalization detached the focused composing editor.");
+    assert(document.activeElement === note.contentDOM && document.querySelector(".live-workspace") === root, "Finalization detached the focused composing editor.");
     releaseRead();
     await pause(700);
     assert(root.dataset.recording === "false", "A late transcript read resurrected recording.");
     fixture.emit("meeting-updated", fixture.options.meeting_id);
     await pause(100);
-    assert(document.activeElement === note && note.selectionStart === 2 && note.selectionEnd === 9 && note.selectionDirection === "backward", "Review refresh lost composition focus or selection.");
-    note.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    assert(document.activeElement === note.contentDOM && note.selectionStart === 2 && note.selectionEnd === 9 && note.selectionDirection === "backward", "Review refresh lost composition focus or selection.");
+    note.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
     return { compositionFocusAcrossFinalization: true, lateStatusSuppressed: true, sameRoot: true, syntheticOnly: true };
   } finally { releaseRead(); client.invoke = original; }
 }
@@ -167,9 +167,9 @@ export async function checkLiveDuplicateNotesReview() {
   edit(note, changed);
   await import("/src/views/meetings.ts").then(module => module.flushMeetingDrafts());
   root.querySelector(".meeting-export-action").click();
-  await until(() => root.querySelector(".meeting-export-preview")?.getClientRects().length, "The exact copy/export preview is unavailable.");
-  assert(root.querySelector(".meeting-export-preview").dataset.exportScope === "shareable", "The default copy/export did not use the private-safe scope.");
-  root.querySelector(".meeting-companion-close").click();
+  await until(() => document.querySelector(".meeting-export-dialog[open] .meeting-export-preview")?.getClientRects().length, "The exact copy/export preview is unavailable.");
+  assert(document.querySelector(".meeting-export-dialog[open] .meeting-export-preview").dataset.exportScope === "shareable", "The default copy/export did not use the private-safe scope.");
+  document.querySelector(".meeting-export-dialog .meeting-export-cancel").click();
   tab("notes");
   assert(root.querySelector(".live-notes") === note && note.value === changed && fixture.workspace.notes() === changed,
     "Copy/export lost workspace identity or acknowledged note edits.");

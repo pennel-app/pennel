@@ -15,7 +15,7 @@ use pennel_core::{
     CleanupStatus, DictationPreviewObserver, DictationPreviewUpdate, DictationRequest,
     DictationResult, LiveDictationSession, PennelError,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 
 use crate::audio::{self, CaptureError, Recorder};
 #[cfg(not(target_os = "macos"))]
@@ -30,16 +30,21 @@ use crate::hotkey::{self, HotkeyEvent};
 use crate::keys;
 #[cfg(not(target_os = "macos"))]
 use crate::keys::Shortcut;
-use crate::owned_dictation::{self, OwnedCapture, SessionKind, SessionPhase};
+use crate::owned_dictation::{self, OwnedCapture, SessionPhase};
 use crate::paste_queue::PasteQueue;
 use crate::pill::Pill;
 use crate::resample::TARGET_RATE;
 use crate::state::Shared;
-use crate::status::{CommandIntent, DictationStatus};
+use crate::status::{CommandIntent, DictationStatus, NoSoundWatch, PillState};
 
 const LOG: Log = Log::new("dictation");
-const NOTICE_DURATION: Duration = Duration::from_secs(2);
 const TICK: Duration = Duration::from_secs(1);
+const PASTE_KEY: &str = if cfg!(target_os = "macos") {
+    "⌘V"
+} else {
+    "Ctrl+V"
+};
+const KEPT_IN_HISTORY: &str = "Your words are kept in History";
 
 pub enum Msg {
     PrepareShutdown(Sender<()>),
@@ -56,8 +61,20 @@ pub enum Msg {
         history_id: String,
     },
     RefreshOwned,
-    DeliveryNotice(String),
+    RefreshSpeechModels,
+    SelectSpeechModel {
+        choice: pennel_core::ModelChoice,
+        reply: Sender<Result<(), String>>,
+    },
+    Delivered {
+        preview_id: String,
+        notice: Option<PillState>,
+    },
     DeliveryRecovery(RecoveryEvent),
+    NoSound {
+        session: String,
+        silent: bool,
+    },
     Preview {
         update: DictationPreviewUpdate,
         owned: Option<OwnedCapture>,
@@ -81,90 +98,86 @@ pub enum Failure {
     AppChanged,
 }
 
+fn problem(title: &str, detail: Option<&str>) -> PillState {
+    PillState::Problem {
+        title: title.into(),
+        detail: detail.map(str::to_owned),
+    }
+}
+
+fn inserted_in(app: &str) -> PillState {
+    insertion_notice(app, cfg!(target_os = "macos"))
+}
+
+fn insertion_notice(app: &str, has_display_name: bool) -> PillState {
+    let app = app.trim();
+    PillState::Inserted {
+        app: (has_display_name && !app.is_empty()).then(|| app.to_owned()),
+    }
+}
+
 #[cfg(test)]
-fn notice_for_cleanup(cleanup: &CleanupStatus) -> Option<String> {
+fn notice_for_cleanup(cleanup: &CleanupStatus) -> Option<PillState> {
     notice_for_cleanup_destination(cleanup, false)
 }
 
-fn notice_for_cleanup_destination(cleanup: &CleanupStatus, available: bool) -> Option<String> {
-    match cleanup {
+fn notice_for_cleanup_destination(cleanup: &CleanupStatus, available: bool) -> Option<PillState> {
+    let title = match cleanup {
         CleanupStatus::Failed { message }
             if message.to_lowercase().contains("timed out")
                 || message.to_lowercase().contains("timeout") =>
         {
-            Some(
-                if available {
-                    "Cleanup timed out — original text available (see log)"
-                } else {
-                    "Cleanup timed out — original text pasted (see log)"
-                }
-                .into(),
-            )
+            "Cleanup timed out"
         }
-        CleanupStatus::Failed { .. } => Some(
-            if available {
-                "Cleanup failed — original text available (see log)"
-            } else {
-                "Cleanup failed — original text pasted (see log)"
-            }
-            .into(),
-        ),
-        CleanupStatus::Rejected => Some(
-            if available {
-                "Cleanup could not preserve the wording and meaning — original text available"
-            } else {
-                "Cleanup could not preserve the wording and meaning — original text pasted"
-            }
-            .into(),
-        ),
-        _ => None,
-    }
+        CleanupStatus::Failed { .. } => "Cleanup failed",
+        CleanupStatus::Rejected => "Cleanup could not preserve the wording and meaning",
+        _ => return None,
+    };
+    let detail = match (cleanup, available) {
+        (CleanupStatus::Rejected, true) => "Original text available",
+        (CleanupStatus::Rejected, false) => "Original text pasted",
+        (_, true) => "Original text available (see log)",
+        (_, false) => "Original text pasted (see log)",
+    };
+    Some(problem(title, Some(detail)))
 }
 
-pub fn notice_for_error(error: &PennelError) -> Option<String> {
-    Some(
-        match error {
-            PennelError::NoSpeech => return None,
-            PennelError::MissingApiKey { .. } => "No API key configured",
-            PennelError::ModelNotDownloaded => "Model not downloaded — saved in History",
-            PennelError::Http { status, .. } if *status == 401 || *status == 403 => {
-                "API key rejected — saved in History"
-            }
-            PennelError::Network { .. } => "No connection — saved in History",
-            PennelError::UnsupportedProcessor => {
-                "Processor too old for local models — saved in History"
-            }
-            PennelError::Http { .. } | PennelError::InvalidResponse { .. } => {
-                "Failed — saved in History"
-            }
-            _ => "Failed",
+pub fn notice_for_error(error: &PennelError) -> Option<PillState> {
+    let (title, kept) = match error {
+        PennelError::NoSpeech => return None,
+        PennelError::MissingApiKey { .. } => ("No API key configured", false),
+        PennelError::ModelNotDownloaded => ("Model not downloaded", true),
+        PennelError::Http { status, .. } if *status == 401 || *status == 403 => {
+            ("API key rejected", true)
         }
-        .into(),
-    )
+        PennelError::Network { .. } => ("No connection", true),
+        PennelError::UnsupportedProcessor => ("Processor too old for local models", true),
+        PennelError::Http { .. } | PennelError::InvalidResponse { .. } => ("Failed", true),
+        _ => ("Failed", false),
+    };
+    Some(problem(title, kept.then_some(KEPT_IN_HISTORY)))
 }
 
 /// Commands are not kept in history when they fail, so these notices don't promise a retry.
-pub fn notice_for_command(failure: &Failure) -> Option<String> {
+pub fn notice_for_command(failure: &Failure) -> Option<PillState> {
     let error = match failure {
-        Failure::AppChanged => return Some("Another app is active — command not pasted".into()),
+        Failure::AppChanged => {
+            return Some(problem("Another app is active — command not pasted", None));
+        }
         Failure::Core(error) => error,
     };
-    Some(
-        match error {
-            PennelError::NoSpeech => return None,
-            PennelError::MissingApiKey { .. } => "No API key configured",
-            PennelError::NotFound => "No text model configured",
-            PennelError::Http { status, .. } if *status == 401 || *status == 403 => {
-                "API key rejected"
-            }
-            PennelError::InvalidResponse { message } if message == "selection too long" => {
-                "Selection is too long for a command"
-            }
-            PennelError::Network { .. } => "No connection",
-            _ => "Command failed",
+    let title = match error {
+        PennelError::NoSpeech => return None,
+        PennelError::MissingApiKey { .. } => "No API key configured",
+        PennelError::NotFound => "No text model configured",
+        PennelError::Http { status, .. } if *status == 401 || *status == 403 => "API key rejected",
+        PennelError::InvalidResponse { message } if message == "selection too long" => {
+            "Selection is too long for a command"
         }
-        .into(),
-    )
+        PennelError::Network { .. } => "No connection",
+        _ => "Command failed",
+    };
+    Some(problem(title, None))
 }
 
 fn describe(cleanup: &CleanupStatus) -> String {
@@ -245,7 +258,10 @@ impl CaptureActivity {
         {
             return None;
         }
-        if shared.updating.load(Ordering::SeqCst) || shared.quitting.load(Ordering::SeqCst) {
+        if shared.updating.load(Ordering::SeqCst)
+            || shared.quitting.load(Ordering::SeqCst)
+            || crate::shortcut_capture::capturing()
+        {
             shared.dictation_active.store(false, Ordering::SeqCst);
             return None;
         }
@@ -263,6 +279,7 @@ impl Drop for CaptureActivity {
 
 #[derive(Debug)]
 struct PasteText<T = ExternalTarget> {
+    preview_id: String,
     history_id: String,
     text: String,
     released: Instant,
@@ -284,6 +301,7 @@ struct UndeliveredText {
 
 fn prepare_delivery<T>(
     result: DictationResult,
+    preview_id: &str,
     released: Instant,
     destination: ExternalDestination<T>,
     cancel: impl FnOnce(&ExternalDestination<T>),
@@ -300,6 +318,7 @@ fn prepare_delivery<T>(
         });
     }
     Ok(PasteText {
+        preview_id: preview_id.into(),
         history_id: result.history_id,
         text: result.text,
         released,
@@ -465,6 +484,7 @@ impl DictationPreviewObserver for PreviewObserver {
 enum CompletedDelivery {
     External(PasteText),
     Owned {
+        preview_id: String,
         capture: OwnedCapture,
         history_id: String,
         text: String,
@@ -494,18 +514,8 @@ fn copy_only_delivery(requested: bool) -> bool {
     requested
 }
 
-fn delivery_notice(result: Result<(), String>) -> String {
-    match result {
-        Ok(()) => "Text copied — paste with Ctrl+V".into(),
-        Err(_) => {
-            LOG.error("clipboard write failed");
-            "Copying failed — your text is in History".into()
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DeliveryFailure {
+pub enum DeliveryFailure {
     Missing,
     Changed,
     Permission,
@@ -530,23 +540,90 @@ fn recovery_for_failure(history_id: &str, failure: DeliveryFailure) -> RecoveryE
     }
 }
 
-fn unavailable_destination(shared: &Shared, history_id: &str, failure: DeliveryFailure) {
-    let _ = shared
-        .dictation
+fn problem_for_failure(failure: DeliveryFailure) -> PillState {
+    let title = match failure {
+        DeliveryFailure::Missing => "No active text destination",
+        DeliveryFailure::Changed => "Not pasted — the text destination changed",
+        DeliveryFailure::Permission => "Permission to paste is missing",
+        DeliveryFailure::Other => "Not pasted",
+        DeliveryFailure::Copy => "Copying failed",
+    };
+    problem(title, Some(KEPT_IN_HISTORY))
+}
+
+struct DeliveryCompletion {
+    notices: Sender<Msg>,
+    preview_id: String,
+    notice: Option<PillState>,
+}
+
+impl DeliveryCompletion {
+    fn new(notices: Sender<Msg>, preview_id: String) -> Self {
+        Self {
+            notices,
+            preview_id,
+            notice: None,
+        }
+    }
+}
+
+// Only the paste worker creates this guard, after receiving an enqueued job.
+impl Drop for DeliveryCompletion {
+    fn drop(&mut self) {
+        let _ = self.notices.send(Msg::Delivered {
+            preview_id: std::mem::take(&mut self.preview_id),
+            notice: self.notice.take(),
+        });
+    }
+}
+
+fn enqueue_delivery<T>(jobs: &Sender<T>, job: T, status: &mut DictationStatus) -> Result<(), T> {
+    jobs.send(job).map_err(|error| error.0)?;
+    status.delivery_started();
+    Ok(())
+}
+
+fn deliver_owned<T>(
+    _delivery: DeliveryCompletion,
+    allowed: bool,
+    target: Option<&T>,
+    paste: impl FnOnce(&T) -> Result<(), String>,
+    failed: impl FnOnce(),
+) {
+    if !allowed {
+        return;
+    }
+    let Some(target) = target else { return };
+    if paste(target).is_err() {
+        failed();
+    }
+}
+
+fn unavailable_destination(
+    delivery: &mut DeliveryCompletion,
+    history_id: &str,
+    failure: DeliveryFailure,
+) {
+    let _ = delivery
+        .notices
         .send(Msg::DeliveryRecovery(recovery_for_failure(
             history_id, failure,
         )));
+    delivery.notice = Some(problem_for_failure(failure));
 }
 
-fn finish_copy(notices: &Sender<Msg>, history_id: &str, result: Result<(), String>) {
-    let message = match result {
-        Ok(()) => Msg::DeliveryNotice(delivery_notice(Ok(()))),
+fn finish_copy(delivery: &mut DeliveryCompletion, history_id: &str, result: Result<(), String>) {
+    match result {
+        Ok(()) => {
+            delivery.notice = Some(PillState::Copied {
+                paste_key: PASTE_KEY.into(),
+            })
+        }
         Err(_) => {
             LOG.error("clipboard write failed");
-            Msg::DeliveryRecovery(recovery_for_failure(history_id, DeliveryFailure::Copy))
+            unavailable_destination(delivery, history_id, DeliveryFailure::Copy);
         }
-    };
-    let _ = notices.send(message);
+    }
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -591,6 +668,7 @@ enum PasteJob {
         pending: CountedWork<Arc<Shared>>,
     },
     Owned {
+        preview_id: String,
         capture: OwnedCapture,
         history_id: String,
         text: String,
@@ -634,21 +712,27 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
             None => {}
             Some(PasteJob::Paste { result, pending }) => {
                 let _pending = pending;
+                let mut delivery =
+                    DeliveryCompletion::new(shared.dictation.clone(), result.preview_id.clone());
                 late = None;
                 if matches!(result.destination, ExternalDestination::CopyOnly) {
                     let copied = copy_persistent(&result.text, &mut persistent_clipboard);
-                    finish_copy(&shared.dictation, &result.history_id, copied);
+                    finish_copy(&mut delivery, &result.history_id, copied);
                     continue;
                 }
                 let ExternalDestination::Captured(target) = &result.destination else {
-                    unavailable_destination(&shared, &result.history_id, DeliveryFailure::Missing);
+                    unavailable_destination(
+                        &mut delivery,
+                        &result.history_id,
+                        DeliveryFailure::Missing,
+                    );
                     continue;
                 };
                 keys::wait_for_release();
                 if !external_paste::availability().0 {
                     target.cancel();
                     unavailable_destination(
-                        &shared,
+                        &mut delivery,
                         &result.history_id,
                         DeliveryFailure::Permission,
                     );
@@ -658,7 +742,11 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                     || !external_paste::still_selected(target)
                 {
                     target.cancel();
-                    unavailable_destination(&shared, &result.history_id, DeliveryFailure::Changed);
+                    unavailable_destination(
+                        &mut delivery,
+                        &result.history_id,
+                        DeliveryFailure::Changed,
+                    );
                     continue;
                 }
                 let pasted = paste_transaction(
@@ -680,8 +768,13 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                         "release→paste {} ms",
                         result.released.elapsed().as_millis()
                     ));
+                    delivery.notice = Some(inserted_in(&target.name));
                 } else {
-                    unavailable_destination(&shared, &result.history_id, DeliveryFailure::Other);
+                    unavailable_destination(
+                        &mut delivery,
+                        &result.history_id,
+                        DeliveryFailure::Other,
+                    );
                 }
             }
             Some(PasteJob::ReadSelection {
@@ -718,6 +811,7 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                 let _ = reply.send(read.text);
             }
             Some(PasteJob::Owned {
+                preview_id,
                 capture,
                 history_id,
                 text,
@@ -725,40 +819,44 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
             }) => {
                 let _pending = pending;
                 late = None;
-                if !owned_dictation::external_allowed(&shared, &capture) {
-                    continue;
-                }
-                let Some(target) = &capture.external else {
-                    continue;
-                };
-                let result = crate::external_paste::prepare(target).and_then(|()| {
-                    keys::wait_for_release();
-                    if !owned_dictation::external_allowed(&shared, &capture)
-                        || !crate::external_paste::still_selected(target)
-                    {
-                        return Err("External paste was cancelled. Your text is in Pennel.".into());
-                    }
-                    paste_transaction(
-                        &mut clipboard,
-                        &text,
-                        || {
-                            if owned_dictation::external_allowed(&shared, &capture)
-                                && crate::external_paste::still_selected(target)
+                deliver_owned(
+                    DeliveryCompletion::new(shared.dictation.clone(), preview_id),
+                    owned_dictation::external_allowed(&shared, &capture),
+                    capture.external.as_ref(),
+                    |target| {
+                        crate::external_paste::prepare(target).and_then(|()| {
+                            keys::wait_for_release();
+                            if !owned_dictation::external_allowed(&shared, &capture)
+                                || !crate::external_paste::still_selected(target)
                             {
-                                keys::send(Shortcut::Paste)
-                            } else {
-                                Err("The destination app changed. Your text is in Pennel.".into())
+                                return Err(
+                                    "External paste was cancelled. Your text is in Pennel.".into(),
+                                );
                             }
-                        },
-                        || std::thread::sleep(clipboard::RESTORE_DELAY),
-                    )
-                });
-                if result.is_err() {
-                    let _ = shared.dictation.send(Msg::OwnedDeliveryError {
-                        capture,
-                        history_id,
-                    });
-                }
+                            paste_transaction(
+                                &mut clipboard,
+                                &text,
+                                || {
+                                    if owned_dictation::external_allowed(&shared, &capture)
+                                        && crate::external_paste::still_selected(target)
+                                    {
+                                        keys::send(Shortcut::Paste)
+                                    } else {
+                                        Err("The destination app changed. Your text is in Pennel."
+                                            .into())
+                                    }
+                                },
+                                || std::thread::sleep(clipboard::RESTORE_DELAY),
+                            )
+                        })
+                    },
+                    || {
+                        let _ = shared.dictation.send(Msg::OwnedDeliveryError {
+                            capture: capture.clone(),
+                            history_id,
+                        });
+                    },
+                );
             }
         }
     }
@@ -771,22 +869,28 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
         match job {
             PasteJob::Paste { result, pending } => {
                 let _pending = pending;
+                let mut delivery =
+                    DeliveryCompletion::new(shared.dictation.clone(), result.preview_id.clone());
                 if matches!(result.destination, ExternalDestination::CopyOnly) {
                     finish_copy(
-                        &shared.dictation,
+                        &mut delivery,
                         &result.history_id,
                         crate::macos::copy_text(&result.text, None),
                     );
                     continue;
                 }
                 let ExternalDestination::Captured(target) = &result.destination else {
-                    unavailable_destination(&shared, &result.history_id, DeliveryFailure::Missing);
+                    unavailable_destination(
+                        &mut delivery,
+                        &result.history_id,
+                        DeliveryFailure::Missing,
+                    );
                     continue;
                 };
                 if !external_paste::availability().0 {
                     target.cancel();
                     unavailable_destination(
-                        &shared,
+                        &mut delivery,
                         &result.history_id,
                         DeliveryFailure::Permission,
                     );
@@ -794,7 +898,11 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                 }
                 if !external_paste::is_current(target) {
                     target.cancel();
-                    unavailable_destination(&shared, &result.history_id, DeliveryFailure::Changed);
+                    unavailable_destination(
+                        &mut delivery,
+                        &result.history_id,
+                        DeliveryFailure::Changed,
+                    );
                     continue;
                 }
                 let pasted = external_paste::paste(&result.text, target).is_ok();
@@ -804,8 +912,13 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                         "release→paste {} ms",
                         result.released.elapsed().as_millis()
                     ));
+                    delivery.notice = Some(inserted_in(&target.name));
                 } else {
-                    unavailable_destination(&shared, &result.history_id, DeliveryFailure::Other);
+                    unavailable_destination(
+                        &mut delivery,
+                        &result.history_id,
+                        DeliveryFailure::Other,
+                    );
                 }
             }
             PasteJob::ReadSelection {
@@ -831,24 +944,25 @@ fn paste_worker(jobs: Receiver<PasteJob>, shared: Arc<Shared>) {
                 );
             }
             PasteJob::Owned {
+                preview_id,
                 capture,
                 history_id,
                 text,
                 pending,
             } => {
                 let _pending = pending;
-                if !owned_dictation::external_allowed(&shared, &capture) {
-                    continue;
-                }
-                let Some(target) = &capture.external else {
-                    continue;
-                };
-                if crate::external_paste::paste(&text, target).is_err() {
-                    let _ = shared.dictation.send(Msg::OwnedDeliveryError {
-                        capture,
-                        history_id,
-                    });
-                }
+                deliver_owned(
+                    DeliveryCompletion::new(shared.dictation.clone(), preview_id),
+                    owned_dictation::external_allowed(&shared, &capture),
+                    capture.external.as_ref(),
+                    |target| crate::external_paste::paste(&text, target),
+                    || {
+                        let _ = shared.dictation.send(Msg::OwnedDeliveryError {
+                            capture: capture.clone(),
+                            history_id,
+                        });
+                    },
+                );
             }
         }
     }
@@ -874,7 +988,6 @@ struct Controller {
     recording_copy_only: bool,
     requested_owned: Option<String>,
     recording_owned: Option<OwnedCapture>,
-    notice_until: Option<Instant>,
     pending_shutdown: Option<Sender<()>>,
 }
 
@@ -906,12 +1019,26 @@ pub fn spawn(app: AppHandle, shared: Arc<Shared>, rx: Receiver<Msg>, tx: Sender<
         recording_copy_only: false,
         requested_owned: None,
         recording_owned: None,
-        notice_until: None,
         pending_shutdown: None,
     };
+    let refresh_events: Vec<_> = ["settings-changed", "download-done", "sync-changed"]
+        .into_iter()
+        .map(|event| {
+            let sender = controller.tx.clone();
+            controller.app.listen(event, move |_| {
+                let _ = sender.send(Msg::RefreshSpeechModels);
+            })
+        })
+        .collect();
     std::thread::Builder::new()
         .name("pennel-dictation".into())
-        .spawn(move || controller.run(rx))
+        .spawn(move || {
+            controller.refresh_speech_models();
+            controller.run(rx);
+            for event in refresh_events {
+                controller.app.unlisten(event);
+            }
+        })
         .expect("dictation thread");
 }
 
@@ -988,11 +1115,23 @@ impl Controller {
                     }
                     self.clear_owned_preview(&id);
                 }
-                Some(Msg::DeliveryNotice(notice)) => self.notify(&notice),
-                Some(Msg::DeliveryRecovery(mut recovery)) => {
-                    recovery.reason = crate::ui::message(recovery.reason);
-                    let _ = self.app.emit("dictation-recovery", &recovery);
-                    self.notify(&recovery.reason);
+                Some(Msg::Delivered { preview_id, notice }) => {
+                    self.status
+                        .delivery_finished(&preview_id, notice, Instant::now());
+                    self.render();
+                }
+                Some(Msg::DeliveryRecovery(recovery)) => {
+                    self.emit_recovery(recovery);
+                }
+                Some(Msg::NoSound { session, silent }) => {
+                    if self
+                        .recording_session
+                        .as_ref()
+                        .is_some_and(|recording| recording.id() == session)
+                    {
+                        self.status.set_no_sound(silent);
+                        self.render();
+                    }
                 }
                 Some(Msg::Preview { update, owned }) => {
                     let owner_valid = owned.as_ref().is_none_or(OwnedCapture::valid);
@@ -1005,18 +1144,7 @@ impl Controller {
                 Some(Msg::OwnedDeliveryError {
                     capture,
                     history_id,
-                }) => {
-                    if capture.valid() {
-                        owned_dictation::delivery_error(
-                            &self.app,
-                            &capture,
-                            "External paste failed. Your text is in Pennel.".into(),
-                        );
-                        let recovery = recovery_for_failure(&history_id, DeliveryFailure::Other);
-                        let _ = self.app.emit("dictation-recovery", &recovery);
-                        self.notify(&recovery.reason);
-                    }
-                }
+                }) => self.owned_delivery_failed(&capture, &history_id),
                 Some(Msg::RefreshOwned) => {
                     owned_dictation::refresh_idle_pads(&self.app, &self.shared)
                 }
@@ -1041,6 +1169,11 @@ impl Controller {
                     },
                     pending,
                 ),
+                Some(Msg::SelectSpeechModel { choice, reply }) => {
+                    let result = self.select_speech_model(Some(choice));
+                    let _ = reply.send(result);
+                }
+                Some(Msg::RefreshSpeechModels) => self.refresh_speech_models(),
                 Some(Msg::TriggerChanged) if !self.gesture.is_manual() => {
                     if self.recorder.is_some() {
                         self.cancel();
@@ -1053,9 +1186,7 @@ impl Controller {
                 let actions = self.gesture.tick(hotkey::now());
                 self.perform(actions);
             }
-            if self.notice_until.is_some_and(|t| Instant::now() >= t) {
-                self.notice_until = None;
-                self.status.notice_expired();
+            if self.status.expire_notice(Instant::now()) {
                 self.render();
             }
             if self.pending_shutdown.is_some()
@@ -1076,19 +1207,37 @@ impl Controller {
         } else {
             self.recorder.is_some().then(|| Instant::now() + TICK)
         };
-        match (tick, self.notice_until) {
+        match (tick, self.status.notice_deadline()) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         }
     }
 
     fn hotkey(&mut self, event: HotkeyEvent) {
+        if crate::shortcut_capture::capturing() {
+            return;
+        }
         match event {
-            HotkeyEvent::MeetingShortcut => {
-                if self.shared.settings().record_shortcut_enabled {
-                    crate::call_detection::toggle_recording(self.app.clone(), self.shared.clone());
+            HotkeyEvent::Action(3) if self.recorder.is_some() => {
+                let actions = self.gesture.cancel();
+                self.perform(actions);
+            }
+            HotkeyEvent::Action(4)
+                if self.recorder.is_some()
+                    && self.shared.settings().pill_model_switch_enabled
+                    && crate::record_shortcut::listening_action_ready(&self.shared, 4) =>
+            {
+                if self.select_speech_model(None).is_err() {
+                    self.refresh_speech_models();
                 }
             }
+            HotkeyEvent::Action(1) => {
+                crate::call_detection::toggle_recording(self.app.clone(), self.shared.clone());
+            }
+            HotkeyEvent::Action(2) => {
+                crate::open_default(&self.app);
+            }
+            HotkeyEvent::Action(_) => {}
             HotkeyEvent::Edge(edge, time) => {
                 let actions = self.gesture.handle(edge, time);
                 if actions.contains(&GestureAction::Start) {
@@ -1117,6 +1266,86 @@ impl Controller {
                 }
             }
         }
+    }
+
+    fn refresh_speech_models(&self) {
+        let settings = self.shared.settings();
+        let enabled = settings.pill_model_switch_enabled
+            && self.shared.configured_dictation_models().len() > 1;
+        let listener = self
+            .shared
+            .hotkey
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        if let Some(listener) = listener {
+            if listener
+                .set_bindings_with_next_model(&settings, enabled)
+                .is_err()
+            {
+                crate::record_shortcut::set_next_model_enabled(false);
+                LOG.error("next-model shortcut registration is unavailable");
+            }
+        } else {
+            crate::record_shortcut::set_next_model_enabled(false);
+        }
+        // X11 listening grabs are separate from the raw hook's binding table.
+        crate::record_shortcut::refresh(&self.app, &self.shared);
+        crate::pill::refresh_preferences(&self.app);
+        if let Some(session) = &self.recording_session {
+            self.pill.refresh_model(session, false);
+        }
+    }
+
+    fn select_speech_model(
+        &mut self,
+        choice: Option<pennel_core::ModelChoice>,
+    ) -> Result<(), String> {
+        self.shared.refresh_system_speech_availability();
+        let keys = self.shared.keys();
+        if let Some(session) = self
+            .recording_session
+            .as_ref()
+            .filter(|_| self.recorder.is_some())
+        {
+            match choice {
+                Some(choice) => session.select_speech_model(choice, keys),
+                None => session.next_speech_model(keys),
+            }
+            .map_err(|_| {
+                "This speech model is unavailable. Your current dictation is unchanged.".to_owned()
+            })?;
+            #[cfg(target_os = "macos")]
+            if let Some(preview) = &self.apple_preview {
+                let mut service = preview.lock().unwrap();
+                if let Some(previous) = service.take() {
+                    previous.stop();
+                }
+                if session.mode() == DictationPreviewMode::System {
+                    let generation = session.preview_generation();
+                    let session = session.clone();
+                    *service = crate::macos::AppleSpeechPreview::start(
+                        session.language().as_deref(),
+                        move |text| {
+                            session.update_system_preview_for_generation(text, generation);
+                        },
+                    )
+                    .ok();
+                }
+            }
+            self.pill.refresh_model(session, true);
+        } else {
+            match choice {
+                Some(choice) => self.shared.engine.select_dictation_model(choice, keys),
+                None => self.shared.engine.next_dictation_model(keys),
+            }
+            .map_err(|_| {
+                "This speech model is unavailable. Set up speech recognition first.".to_owned()
+            })?;
+        }
+        let _ = self.app.emit("settings-changed", ());
+        self.refresh_speech_models();
+        Ok(())
     }
 
     fn perform(&mut self, actions: Vec<GestureAction>) {
@@ -1192,7 +1421,7 @@ impl Controller {
             }),
             self.recording_owned
                 .as_ref()
-                .is_some_and(|capture| capture.kind == SessionKind::Practice),
+                .is_some_and(|capture| capture.kind.onboarding_practice()),
         );
         let preview_id = session.id();
         self.recording_session = Some(session.clone());
@@ -1202,7 +1431,9 @@ impl Controller {
                 .as_ref()
                 .map(|capture| capture.id.clone()),
         );
-        self.status.recording_started(self.gesture.is_hands_free());
+        crate::record_shortcut::set_listening(&self.app, &self.shared, true);
+        self.status
+            .recording_started(&preview_id, self.gesture.is_hands_free());
         self.command.reset();
         self.command.shift(
             hotkey::shift_held(),
@@ -1215,7 +1446,7 @@ impl Controller {
             self.status.mark_command();
         }
         self.render();
-        self.pill.begin_preview(preview_id, &session);
+        self.pill.begin_preview(preview_id.clone(), &session);
         if let Some(capture) = &self.recording_owned {
             owned_dictation::verification(&self.app, capture, &session);
         }
@@ -1223,11 +1454,12 @@ impl Controller {
         #[cfg(target_os = "macos")]
         let apple_preview = {
             let service = if session.mode() == DictationPreviewMode::System {
+                let generation = session.preview_generation();
                 let session = session.clone();
                 crate::macos::AppleSpeechPreview::start(
                     session.language().as_deref(),
                     move |text| {
-                        session.update_system_preview(text);
+                        session.update_system_preview_for_generation(text, generation);
                     },
                 )
                 .ok()
@@ -1239,8 +1471,18 @@ impl Controller {
             preview
         };
         let pill = self.pill.clone();
+        let sound = self.tx.clone();
+        let mut watch = NoSoundWatch::default();
         match Recorder::start(
-            move |level| pill.level(level),
+            move |level| {
+                pill.level(level);
+                if let Some(silent) = watch.level(level, Instant::now()) {
+                    let _ = sound.send(Msg::NoSound {
+                        session: preview_id.clone(),
+                        silent,
+                    });
+                }
+            },
             move |samples| {
                 session.feed_audio(samples.to_vec());
                 #[cfg(target_os = "macos")]
@@ -1251,6 +1493,7 @@ impl Controller {
         ) {
             Ok(recorder) => self.recorder = Some(recorder),
             Err(CaptureError::NoDevice) => {
+                crate::record_shortcut::set_listening(&self.app, &self.shared, false);
                 self.discard_recording_preview();
                 self.status.recording_cancelled();
                 self.gesture = HotkeyGesture::default();
@@ -1262,6 +1505,7 @@ impl Controller {
             Err(e) => {
                 self.discard_recording_preview();
                 self.status.recording_cancelled();
+                crate::record_shortcut::set_listening(&self.app, &self.shared, false);
                 LOG.error(format!("recording start failed: {e}"));
                 self.gesture = HotkeyGesture::default();
                 if let Some(capture) = self.recording_owned.take() {
@@ -1276,9 +1520,11 @@ impl Controller {
         }
         self.capture_activity = Some(activity);
         self.shared.set_meeting_dictating(true);
+        self.refresh_speech_models();
     }
 
     fn stop_recording(&mut self) -> Vec<f32> {
+        crate::record_shortcut::set_listening(&self.app, &self.shared, false);
         let samples = self.recorder.take().map(Recorder::stop).unwrap_or_default();
         #[cfg(target_os = "macos")]
         if let Some(preview) = self.apple_preview.take()
@@ -1515,10 +1761,17 @@ impl Controller {
                 }
                 let notice =
                     notice_for_cleanup_destination(&result.cleanup, copy_only || owned.is_some());
-                match prepare_delivery(result, released, destination, cancel_destination) {
+                match prepare_delivery(
+                    result,
+                    &preview_id,
+                    released,
+                    destination,
+                    cancel_destination,
+                ) {
                     Ok(result) => (
                         Some(match &owned {
                             Some(capture) => CompletedDelivery::Owned {
+                                preview_id: result.preview_id,
                                 capture: capture.clone(),
                                 history_id: result.history_id,
                                 text: result.text,
@@ -1543,7 +1796,15 @@ impl Controller {
                         if active {
                             let _ = self.app.emit("dictation-recovery", &retained.recovery);
                         }
-                        (None, active.then_some(retained.recovery.reason))
+                        (
+                            None,
+                            active.then(|| {
+                                problem(
+                                    "Saving failed",
+                                    Some("Your words are temporarily in History"),
+                                )
+                            }),
+                        )
                     }
                 }
             }
@@ -1579,52 +1840,95 @@ impl Controller {
             }
         };
         self.clear_preview(&preview_id);
-        if notice.is_some() {
-            self.notice_until = Some(Instant::now() + NOTICE_DURATION);
-        }
-        self.status.dictation_finished(notice);
-        self.render();
+        self.status.dictation_finished(notice, Instant::now());
         let _ = self.app.emit("history-changed", ());
         for result in self.queue.fulfill(seq, text) {
             match result {
                 CompletedDelivery::External(result) => {
-                    let _ = self.paster.send(PasteJob::Paste {
-                        result,
-                        pending: paste_pending(&self.shared),
-                    });
+                    if let Err(PasteJob::Paste { result, .. }) = enqueue_delivery(
+                        &self.paster,
+                        PasteJob::Paste {
+                            result,
+                            pending: paste_pending(&self.shared),
+                        },
+                        &mut self.status,
+                    ) {
+                        cancel_destination(&result.destination);
+                        self.emit_recovery(recovery_for_failure(
+                            &result.history_id,
+                            DeliveryFailure::Other,
+                        ));
+                        self.status.show_notice(
+                            problem_for_failure(DeliveryFailure::Other),
+                            Instant::now(),
+                        );
+                    }
                 }
                 CompletedDelivery::Owned {
+                    preview_id,
                     capture,
                     history_id,
                     text,
                 } => {
                     if owned_dictation::complete(&self.app, &self.shared, &capture, text.clone())
                         && owned_dictation::external_allowed(&self.shared, &capture)
-                    {
-                        let _ = self.paster.send(PasteJob::Owned {
+                        && let Err(PasteJob::Owned {
                             capture,
                             history_id,
-                            text,
-                            pending: paste_pending(&self.shared),
-                        });
+                            ..
+                        }) = enqueue_delivery(
+                            &self.paster,
+                            PasteJob::Owned {
+                                preview_id,
+                                capture,
+                                history_id,
+                                text,
+                                pending: paste_pending(&self.shared),
+                            },
+                            &mut self.status,
+                        )
+                    {
+                        self.owned_delivery_failed(&capture, &history_id);
                     }
                 }
             }
         }
+        self.render();
         let _ = self.tx.send(Msg::RefreshOwned);
     }
 
-    fn notify(&mut self, message: &str) {
-        self.status.show_notice(message);
-        self.notice_until = Some(Instant::now() + NOTICE_DURATION);
+    fn emit_recovery(&self, mut recovery: RecoveryEvent) {
+        recovery.reason = crate::ui::message(recovery.reason);
+        let _ = self.app.emit("dictation-recovery", &recovery);
+    }
+
+    fn owned_delivery_failed(&mut self, capture: &OwnedCapture, history_id: &str) {
+        if capture.valid() {
+            owned_dictation::delivery_error(
+                &self.app,
+                capture,
+                "External paste failed. Your text is in Pennel.".into(),
+            );
+            self.emit_recovery(recovery_for_failure(history_id, DeliveryFailure::Other));
+            self.show(problem_for_failure(DeliveryFailure::Other));
+        }
+    }
+
+    fn notify(&mut self, title: &str) {
+        self.show(problem(title, None));
+    }
+
+    fn show(&mut self, notice: PillState) {
+        self.status.show_notice(notice, Instant::now());
         self.render();
     }
 
     fn render(&self) {
         let state = match self.status.pill() {
-            pennel_core::PillState::Error(message) => {
-                pennel_core::PillState::Error(crate::ui::message(message))
-            }
+            PillState::Problem { title, detail } => PillState::Problem {
+                title: crate::ui::message(title),
+                detail: detail.map(crate::ui::message),
+            },
             other => other,
         };
         self.pill.show(state);
@@ -1641,6 +1945,7 @@ impl Drop for Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::owned_dictation::SessionKind;
 
     #[derive(Default)]
     struct PendingObserver(std::sync::Mutex<Vec<DictationPreviewUpdate>>);
@@ -1693,6 +1998,138 @@ mod tests {
         settings.mode = pennel_core::DictationMode::Fast;
         engine.update_settings(settings).unwrap();
         (directory, engine)
+    }
+
+    #[test]
+    fn scoped_cancel_covers_every_owned_kind_and_leaves_processing_alone() {
+        for kind in [
+            None,
+            Some(SessionKind::Pad),
+            Some(SessionKind::HomePractice),
+            Some(SessionKind::Practice),
+        ] {
+            let (_directory, engine) = pending_engine();
+            let settings = engine.settings();
+            let practice = kind.is_some_and(SessionKind::onboarding_practice);
+            let observer = Arc::new(PendingObserver::default());
+            let request = || DictationRequest {
+                samples: vec![0.1; 16_000],
+                sample_rate: 16_000,
+                app_bundle_id: None,
+                keys: pennel_core::ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            };
+            let cancelled = engine
+                .clone()
+                .begin_dictation_session(observer.clone(), practice);
+            let mut gesture = HotkeyGesture::default();
+            let start = if kind.is_some() {
+                gesture.manual_toggle(0.0)
+            } else {
+                gesture.handle(crate::gesture::KeyEdge::Down, 0.0)
+            };
+            assert_eq!(start, [GestureAction::Start], "{kind:?}");
+            assert_eq!(gesture.cancel(), [GestureAction::Cancel], "{kind:?}");
+            cancelled.cancel();
+            assert_eq!(
+                cancelled.finish(request()),
+                Err(PennelError::Cancelled),
+                "{kind:?}"
+            );
+            cancelled.update_system_preview("discarded cancelled input".into());
+            assert!(observer.0.lock().unwrap().is_empty());
+            assert!(engine.history(10).unwrap().is_empty());
+
+            let (entered, ready) = mpsc::channel();
+            let (release, waiting) = mpsc::channel();
+            engine.set_system_transcriber(Arc::new(PendingSpeech {
+                entered,
+                release: std::sync::Mutex::new(waiting),
+            }));
+            let processing = engine.clone().begin_dictation_session(observer, practice);
+            let capture_id = processing.id();
+            let mut gesture = HotkeyGesture::default();
+            if kind.is_some() {
+                gesture.manual_toggle(0.0);
+                assert_eq!(gesture.manual_toggle(1.0), [GestureAction::Submit]);
+            } else {
+                gesture.handle(crate::gesture::KeyEdge::Down, 0.0);
+                assert_eq!(
+                    gesture.handle(crate::gesture::KeyEdge::Up, 1.0),
+                    [GestureAction::Submit]
+                );
+            }
+            let worker_session = processing.clone();
+            let work = request();
+            let worker = std::thread::spawn(move || worker_session.finish(work));
+            ready.recv_timeout(Duration::from_secs(5)).unwrap();
+            // The controller has no recorder in this phase, and a completed gesture emits no Cancel.
+            assert!(gesture.cancel().is_empty(), "{kind:?}");
+            assert_eq!(processing.id(), capture_id);
+            release.send(()).unwrap();
+            let result = worker.join().unwrap().unwrap();
+            assert_eq!(result.text, "Een laat resultaat");
+            assert!(result.history_saved);
+            assert_eq!(engine.history(10).unwrap()[0].text, result.text);
+            assert_eq!(engine.settings(), settings);
+        }
+    }
+
+    #[test]
+    fn home_practice_uses_saved_result_and_history_without_changing_onboarding_or_retention() {
+        for retention in [0, 7, 30, 90] {
+            for mode in [
+                pennel_core::DictationMode::Fast,
+                pennel_core::DictationMode::Clean,
+            ] {
+                let (_directory, engine) = pending_engine();
+                let mut settings = engine.settings();
+                settings.mode = mode;
+                settings.history_retention_days = retention;
+                // Missing cleanup setup must retain raw text with the ordinary failure notice,
+                // rather than silently forcing onboarding's Fast result or contacting a provider.
+                settings.providers.push(pennel_core::ProviderAccount {
+                    id: "home-cleanup-missing-key".into(),
+                    kind: pennel_core::ProviderKind::Groq,
+                    name: "Synthetic cleanup".into(),
+                    base_url: "https://example.invalid/v1".into(),
+                });
+                settings.llm.provider_id = "home-cleanup-missing-key".into();
+                engine.update_settings(settings.clone()).unwrap();
+                let settings = engine.settings();
+                let (entered, _ready) = mpsc::channel();
+                let (release, waiting) = mpsc::channel();
+                engine.set_system_transcriber(Arc::new(PendingSpeech {
+                    entered,
+                    release: std::sync::Mutex::new(waiting),
+                }));
+                release.send(()).unwrap();
+                let session = engine.clone().begin_dictation_session(
+                    Arc::new(PendingObserver::default()),
+                    SessionKind::HomePractice.onboarding_practice(),
+                );
+                let result = session
+                    .finish(DictationRequest {
+                        samples: vec![0.1; 16_000],
+                        sample_rate: 16_000,
+                        app_bundle_id: None,
+                        keys: pennel_core::ApiKeys {
+                            by_provider: HashMap::new(),
+                        },
+                    })
+                    .unwrap();
+                assert_eq!(result.text, "Een laat resultaat");
+                if mode == pennel_core::DictationMode::Fast {
+                    assert_eq!(result.cleanup, CleanupStatus::Skipped);
+                } else {
+                    assert!(matches!(result.cleanup, CleanupStatus::Failed { .. }));
+                }
+                assert!(result.history_saved);
+                assert_eq!(engine.history(10).unwrap()[0].text, result.text);
+                assert_eq!(engine.settings(), settings);
+            }
+        }
     }
 
     #[test]
@@ -1975,64 +2412,125 @@ mod tests {
             notice_for_error(&PennelError::Http {
                 status: 401,
                 message: String::new()
-            })
-            .as_deref(),
-            Some("API key rejected — saved in History")
+            }),
+            Some(problem("API key rejected", Some(KEPT_IN_HISTORY)))
         );
         assert_eq!(
-            notice_for_error(&PennelError::UnsupportedProcessor).as_deref(),
-            Some("Processor too old for local models — saved in History")
+            notice_for_error(&PennelError::UnsupportedProcessor),
+            Some(problem(
+                "Processor too old for local models",
+                Some("Your words are kept in History")
+            ))
+        );
+        assert_eq!(
+            notice_for_error(&PennelError::MissingApiKey { task: "stt".into() }),
+            Some(problem("No API key configured", None))
         );
         assert_eq!(
             notice_for_cleanup(&CleanupStatus::Failed {
                 message: "request Timed Out".into()
-            })
-            .as_deref(),
-            Some("Cleanup timed out — original text pasted (see log)")
+            }),
+            Some(problem(
+                "Cleanup timed out",
+                Some("Original text pasted (see log)")
+            ))
         );
         assert_eq!(notice_for_cleanup(&CleanupStatus::Applied), None);
         assert_eq!(
-            notice_for_command(&Failure::AppChanged).as_deref(),
-            Some("Another app is active — command not pasted")
+            notice_for_command(&Failure::AppChanged),
+            Some(problem("Another app is active — command not pasted", None))
         );
         assert_eq!(
             notice_for_command(&Failure::Core(PennelError::InvalidResponse {
                 message: "selection too long".into()
-            }))
-            .as_deref(),
-            Some("Selection is too long for a command")
+            })),
+            Some(problem("Selection is too long for a command", None))
         );
     }
 
     #[test]
+    fn every_pill_notice_has_english_and_dutch_text() {
+        let mut sources: Vec<String> = [
+            KEPT_IN_HISTORY,
+            "Your words are temporarily in History",
+            "Saving failed",
+            "Model not downloaded",
+            "Processor too old for local models",
+        ]
+        .map(String::from)
+        .into();
+        for failure in [
+            DeliveryFailure::Missing,
+            DeliveryFailure::Changed,
+            DeliveryFailure::Permission,
+            DeliveryFailure::Other,
+            DeliveryFailure::Copy,
+        ] {
+            let PillState::Problem { title, .. } = problem_for_failure(failure) else {
+                panic!("a failed delivery is a problem");
+            };
+            sources.push(title);
+        }
+        for cleanup in [
+            CleanupStatus::Failed {
+                message: "timed out".into(),
+            },
+            CleanupStatus::Failed {
+                message: "error".into(),
+            },
+            CleanupStatus::Rejected,
+        ] {
+            for available in [true, false] {
+                let Some(PillState::Problem { title, detail }) =
+                    notice_for_cleanup_destination(&cleanup, available)
+                else {
+                    panic!("a cleanup failure is a problem");
+                };
+                sources.extend([title, detail.unwrap()]);
+            }
+        }
+        for source in sources {
+            let dutch =
+                pennel_core::localize_ui_text(pennel_core::InterfaceLanguage::Dutch, &source);
+            assert_ne!(dutch, source, "no Dutch text for {source:?}");
+        }
+    }
+
+    #[test]
     fn cleanup_notices_describe_available_text_without_claiming_it_was_pasted() {
-        for (cleanup, expected) in [
+        for (cleanup, title, detail) in [
             (
                 CleanupStatus::Failed {
                     message: "request timed out".into(),
                 },
-                "Cleanup timed out — original text available (see log)",
+                "Cleanup timed out",
+                "Original text available (see log)",
             ),
             (
                 CleanupStatus::Failed {
                     message: "provider error".into(),
                 },
-                "Cleanup failed — original text available (see log)",
+                "Cleanup failed",
+                "Original text available (see log)",
             ),
             (
                 CleanupStatus::Rejected,
-                "Cleanup could not preserve the wording and meaning — original text available",
+                "Cleanup could not preserve the wording and meaning",
+                "Original text available",
             ),
         ] {
             assert_eq!(
-                notice_for_cleanup_destination(&cleanup, true).as_deref(),
-                Some(expected)
+                notice_for_cleanup_destination(&cleanup, true),
+                Some(problem(title, Some(detail)))
             );
-            assert!(
-                notice_for_cleanup_destination(&cleanup, false)
-                    .unwrap()
-                    .contains("pasted")
-            );
+            let Some(PillState::Problem {
+                detail: Some(pasted),
+                ..
+            }) = notice_for_cleanup_destination(&cleanup, false)
+            else {
+                panic!("a pasted cleanup failure says where the text went");
+            };
+            assert!(pasted.contains("pasted"));
         }
         assert_eq!(
             notice_for_cleanup_destination(&CleanupStatus::Applied, true),
@@ -2045,11 +2543,174 @@ mod tests {
     }
 
     #[test]
-    fn copy_confirmation_requires_a_successful_clipboard_write() {
-        assert_eq!(delivery_notice(Ok(())), "Text copied — paste with Ctrl+V");
+    fn copy_confirmation_requires_a_successful_clipboard_write_and_names_the_paste_key() {
+        let (notices, received) = mpsc::channel();
+        let mut delivery = DeliveryCompletion::new(notices.clone(), "copied-capture".into());
+        finish_copy(&mut delivery, "copied-result", Ok(()));
+        drop(delivery);
+        let Msg::Delivered {
+            preview_id,
+            notice: Some(copied),
+        } = received.try_recv().unwrap()
+        else {
+            panic!("a successful clipboard write is confirmed");
+        };
+        assert_eq!(preview_id, "copied-capture");
+        let key = if cfg!(target_os = "macos") {
+            "⌘V"
+        } else {
+            "Ctrl+V"
+        };
         assert_eq!(
-            delivery_notice(Err("unavailable".into())),
-            "Copying failed — your text is in History"
+            copied,
+            PillState::Copied {
+                paste_key: key.into()
+            }
+        );
+        let mut delivery = DeliveryCompletion::new(notices, "failed-capture".into());
+        finish_copy(&mut delivery, "copied-result", Err("unavailable".into()));
+        drop(delivery);
+        assert!(matches!(
+            received.try_recv().unwrap(),
+            Msg::DeliveryRecovery(_)
+        ));
+        let Msg::Delivered { preview_id, notice } = received.try_recv().unwrap() else {
+            panic!("failure must settle delivery")
+        };
+        assert_eq!(preview_id, "failed-capture");
+        assert_eq!(notice, Some(problem_for_failure(DeliveryFailure::Copy)));
+        assert!(received.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_delivery_without_a_confirmation_still_sends_one_terminal_capture_outcome() {
+        let (notices, received) = mpsc::channel();
+        drop(DeliveryCompletion::new(notices, "owned-capture".into()));
+        let Msg::Delivered { preview_id, notice } = received.try_recv().unwrap() else {
+            panic!("an owned or cancelled delivery still settles its pending work");
+        };
+        assert_eq!(preview_id, "owned-capture");
+        assert_eq!(notice, None);
+        assert!(received.try_recv().is_err());
+    }
+
+    #[test]
+    fn owned_worker_exits_settle_their_delivery_once_without_showing_a_success_notice() {
+        for (exit, allowed, target, paste_error, expected_attempts, expected_failures) in [
+            ("success", true, Some(42), false, 1, 0),
+            ("invalid owner", false, Some(42), false, 0, 0),
+            ("missing target", true, None, false, 0, 0),
+            ("cancelled", false, Some(42), false, 0, 0),
+            ("preparation failed", true, Some(42), true, 1, 1),
+            ("paste failed", true, Some(42), true, 1, 1),
+        ] {
+            let mut status = DictationStatus::default();
+            let (jobs, worker) = mpsc::channel();
+            let (notices, received) = mpsc::channel();
+            enqueue_delivery(&jobs, exit, &mut status).unwrap();
+            assert_eq!(status.pill(), PillState::Working, "{exit}");
+            let id = worker.try_recv().unwrap();
+            let attempts = std::cell::Cell::new(0);
+            let failures = std::cell::Cell::new(0);
+            deliver_owned(
+                DeliveryCompletion::new(notices, id.into()),
+                allowed,
+                target.as_ref(),
+                |target| {
+                    assert_eq!(*target, 42);
+                    attempts.set(attempts.get() + 1);
+                    if paste_error {
+                        Err("synthetic delivery failure".into())
+                    } else {
+                        Ok(())
+                    }
+                },
+                || failures.set(failures.get() + 1),
+            );
+            assert_eq!(attempts.get(), expected_attempts, "{exit}");
+            assert_eq!(failures.get(), expected_failures, "{exit}");
+            let Msg::Delivered { preview_id, notice } = received.try_recv().unwrap() else {
+                panic!("{exit} must send a terminal outcome");
+            };
+            assert_eq!(preview_id, exit);
+            assert_eq!(notice, None);
+            status.delivery_finished(&preview_id, notice, Instant::now());
+            assert_eq!(status.pill(), PillState::Hidden, "{exit}");
+            assert!(
+                received.try_recv().is_err(),
+                "{exit} settled more than once"
+            );
+        }
+    }
+
+    #[test]
+    fn a_failed_enqueue_retains_the_job_without_creating_pending_delivery() {
+        let (jobs, worker) = mpsc::channel();
+        drop(worker);
+        let mut status = DictationStatus::default();
+        status.delivery_started();
+        assert_eq!(
+            enqueue_delivery(&jobs, "not-enqueued", &mut status),
+            Err("not-enqueued")
+        );
+        assert_eq!(status.pill(), PillState::Working);
+        status.delivery_finished("already-pending", None, Instant::now());
+        assert_eq!(status.pill(), PillState::Hidden);
+    }
+
+    #[test]
+    fn queued_completions_preserve_old_recovery_after_a_new_capture_cancels() {
+        let now = Instant::now();
+        let (jobs, worker) = mpsc::channel();
+        let (notices, received) = mpsc::channel();
+        let mut status = DictationStatus::default();
+        status.recording_started("first", false);
+        status.recording_submitted();
+        enqueue_delivery(&jobs, "first", &mut status).unwrap();
+        status.dictation_finished(None, now);
+        status.recording_started("second", false);
+        status.recording_cancelled();
+        assert_eq!(status.pill(), PillState::Working);
+        let mut delivery = DeliveryCompletion::new(notices, worker.try_recv().unwrap().into());
+        unavailable_destination(&mut delivery, "first-history", DeliveryFailure::Changed);
+        drop(delivery);
+        let Msg::DeliveryRecovery(recovery) = received.try_recv().unwrap() else {
+            panic!("recovery must survive supersession")
+        };
+        assert_eq!(recovery.id, "first-history");
+        let Msg::Delivered { preview_id, notice } = received.try_recv().unwrap() else {
+            panic!("recovery must settle delivery")
+        };
+        status.delivery_finished(&preview_id, notice, now);
+        assert_eq!(status.pill(), problem_for_failure(DeliveryFailure::Changed));
+        status.expire_notice(now + Duration::from_millis(3500));
+        assert_eq!(status.pill(), PillState::Hidden);
+        assert!(received.try_recv().is_err());
+    }
+
+    #[test]
+    fn insertion_names_the_receiving_app_only_when_it_is_known() {
+        assert_eq!(
+            insertion_notice(" Mail ", true),
+            PillState::Inserted {
+                app: Some("Mail".into())
+            }
+        );
+        assert_eq!(inserted_in(""), PillState::Inserted { app: None });
+        assert_eq!(
+            insertion_notice("slack.exe", false),
+            PillState::Inserted { app: None }
+        );
+        assert_eq!(
+            insertion_notice("org.gnome.TextEditor", false),
+            PillState::Inserted { app: None }
+        );
+        assert_eq!(
+            problem_for_failure(DeliveryFailure::Changed),
+            problem(
+                "Not pasted — the text destination changed",
+                Some(KEPT_IN_HISTORY)
+            )
         );
     }
 
@@ -2076,6 +2737,7 @@ mod tests {
                 .fulfill(
                     second,
                     Some(PasteText {
+                        preview_id: "second-capture".into(),
                         history_id: "second-history".into(),
                         text: "second".into(),
                         released,
@@ -2087,6 +2749,7 @@ mod tests {
         let ready = queue.fulfill(
             first,
             Some(PasteText {
+                preview_id: "first-capture".into(),
                 history_id: "first-history".into(),
                 text: "first".into(),
                 released: released - Duration::from_secs(1),
@@ -2098,6 +2761,8 @@ mod tests {
         assert_eq!(ready[1].destination, ExternalDestination::Captured(42));
         assert_eq!(ready[1].released, released);
         assert_eq!(ready[0].released, released - Duration::from_secs(1));
+        assert_eq!(ready[0].preview_id, "first-capture");
+        assert_eq!(ready[1].preview_id, "second-capture");
     }
 
     fn completed_result(id: &str, history_saved: bool) -> DictationResult {
@@ -2118,6 +2783,7 @@ mod tests {
         let released = Instant::now();
         let later = prepare_delivery(
             completed_result("saved-second", true),
+            "capture-saved-second",
             released,
             ExternalDestination::Captured(99u32),
             |_| panic!("a saved result must retain its original destination"),
@@ -2128,6 +2794,7 @@ mod tests {
         let cancelled = std::cell::Cell::new(false);
         let unsaved = prepare_delivery(
             completed_result("unsaved-first", false),
+            "capture-unsaved-first",
             released,
             ExternalDestination::Captured(42u32),
             |destination| {
@@ -2158,6 +2825,7 @@ mod tests {
         let released = Instant::now();
         let later = prepare_delivery(
             completed_result("later-result", true),
+            "capture-later-result",
             released,
             ExternalDestination::Captured(20u32),
             |_| panic!("saved result was cancelled"),
@@ -2166,6 +2834,7 @@ mod tests {
         assert!(queue.fulfill(second, Some(later)).is_empty());
         let earlier = prepare_delivery(
             completed_result("earlier-result", true),
+            "capture-earlier-result",
             released,
             ExternalDestination::Captured(10u32),
             |_| panic!("saved result was cancelled"),
@@ -2183,11 +2852,13 @@ mod tests {
     #[test]
     fn copy_failure_recovery_has_a_saved_identity_and_no_dictation_content() {
         let (notices, received) = mpsc::channel();
+        let mut delivery = DeliveryCompletion::new(notices, "clipboard-capture".into());
         finish_copy(
-            &notices,
+            &mut delivery,
             "clipboard-result",
             Err("synthetic-private-finished-text".into()),
         );
+        drop(delivery);
         let Msg::DeliveryRecovery(recovery) = received.try_recv().unwrap() else {
             panic!("failed clipboard write must report recoverable text");
         };

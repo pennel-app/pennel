@@ -24,7 +24,7 @@ export async function checkFailedRecovery() {
   const editor = root().querySelector(".live-notes");
   const edited = editor.value + "\nOwned private recovery note.";
   fixture.workspace.failSaves(true);
-  editor.value = edited; editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: edited }));
+  editor.applyUserChange(edited);
   retry().click();
   await until(() => notice().querySelector(".error")?.textContent.includes("Synthetic notes storage"), "Note-save failure did not stay visible");
   assert(retryCalls() === 0 && editor.value === edited, "A failed note save started speech or lost the draft");
@@ -36,7 +36,7 @@ export async function checkFailedRecovery() {
   const before = retryCalls(); retry().click(); retry().click();
   await until(() => fixture.recovery.pending() === 1, "The explicit partial recovery did not start");
   const latest = edited + "\nTyped while recovery is running.";
-  editor.value = latest; editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: latest }));
+  editor.applyUserChange(latest);
   await until(() => notice()?.dataset.recoveryState === "partial" && !retry().disabled, "Partial failure did not refresh remaining-only recovery");
   assert(retryCalls() === before + 1, "Double click submitted duplicate failed-chunk recovery");
   assert(notice().querySelector(".error").textContent.includes("Synthetic speech"), "Partial provider error was hidden");

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,33 @@ pub enum AppearancePreference {
     Dark,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum PillColour {
+    #[default]
+    Ink,
+    Light,
+    System,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum PillSize {
+    Compact,
+    #[default]
+    Regular,
+    Large,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum PillPosition {
+    #[default]
+    BottomCentre,
+    TopCentre,
+    NearCursor,
+}
+
 /// Where meeting audio is split into speakers. Matching voices always happens on the device.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
@@ -47,6 +75,16 @@ pub enum MeetingAppNamePolicy {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum SummaryAutomation {
+    #[default]
+    Unanswered,
+    Manual,
+    Automatic,
+}
+
+/// Suggestion analysis has its own consent, independent of personal summaries.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum SuggestionAutomation {
     #[default]
     Unanswered,
     Manual,
@@ -156,6 +194,17 @@ pub struct ModelChoice {
 pub struct Settings {
     pub providers: Vec<ProviderAccount>,
     pub dictation_stt: ModelChoice,
+    /// Explicit speech setups; empty preserves the single saved choice on upgrade.
+    #[serde(default)]
+    pub dictation_models: Vec<ModelChoice>,
+    #[serde(default = "enabled")]
+    pub pill_model_switch_enabled: bool,
+    #[serde(default)]
+    pub pill_colour: PillColour,
+    #[serde(default)]
+    pub pill_size: PillSize,
+    #[serde(default)]
+    pub pill_position: PillPosition,
     pub meeting_stt: ModelChoice,
     pub llm: ModelChoice,
     #[serde(default)]
@@ -174,6 +223,12 @@ pub struct Settings {
     pub style_rules: Vec<StyleRule>,
     pub history_retention_days: u32,
     pub hotkey: HotkeyTrigger,
+    #[serde(
+        default,
+        deserialize_with = "crate::shortcuts::lenient_shortcuts",
+        skip_serializing_if = "HashMap::is_empty"
+    )]
+    pub shortcuts: HashMap<String, Option<crate::ShortcutBinding>>,
     pub local_unload_minutes: u32,
     /// Empty means `~/Pennel`.
     #[serde(default)]
@@ -184,6 +239,10 @@ pub struct Settings {
     pub default_template: String,
     #[serde(default)]
     pub summary_automation: SummaryAutomation,
+    #[serde(default)]
+    pub suggestion_automation: SuggestionAutomation,
+    #[serde(default)]
+    pub suggestion_language: Option<String>,
     #[serde(default)]
     pub app_rules: Vec<AppRule>,
     #[serde(default)]
@@ -261,6 +320,11 @@ pub fn default_settings() -> Settings {
     let local = new_account(ProviderKind::Local, vec![groq.clone()]);
     Settings {
         dictation_stt: choice(&local, ProviderTask::DictationStt),
+        dictation_models: Vec::new(),
+        pill_model_switch_enabled: true,
+        pill_colour: PillColour::Ink,
+        pill_size: PillSize::Regular,
+        pill_position: PillPosition::BottomCentre,
         meeting_stt: choice(&local, ProviderTask::MeetingStt),
         llm: choice(&groq, ProviderTask::Llm),
         decision: None,
@@ -281,10 +345,13 @@ pub fn default_settings() -> Settings {
             .collect(),
         history_retention_days: 30,
         hotkey: DEFAULT_HOTKEY,
+        shortcuts: HashMap::new(),
         local_unload_minutes: 5,
         meetings_dir: String::new(),
         meeting_audio_retention_days: 0,
         summary_automation: SummaryAutomation::Unanswered,
+        suggestion_automation: SuggestionAutomation::Unanswered,
+        suggestion_language: None,
         default_template: default_template_id(),
         app_rules: Vec::new(),
         calendar_rules: Vec::new(),
@@ -510,6 +577,48 @@ mod tests {
 
     fn ids(s: &Settings) -> Vec<&str> {
         s.providers.iter().map(|p| p.id.as_str()).collect()
+    }
+
+    #[test]
+    fn pill_preferences_upgrade_keeps_ink_regular_bottom_and_roundtrips_deliberate_choices() {
+        let original = default_settings();
+        let mut value = serde_json::to_value(&original).unwrap();
+        for field in ["pill_colour", "pill_size", "pill_position"] {
+            value.as_object_mut().unwrap().remove(field);
+        }
+        let mut restored: Settings = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.pill_colour, PillColour::Ink);
+        assert_eq!(restored.pill_size, PillSize::Regular);
+        assert_eq!(restored.pill_position, PillPosition::BottomCentre);
+        restored.pill_colour = PillColour::Light;
+        restored.pill_size = PillSize::Large;
+        restored.pill_position = PillPosition::NearCursor;
+        let reloaded: Settings =
+            serde_json::from_str(&serde_json::to_string(&restored).unwrap()).unwrap();
+        assert_eq!(reloaded, restored);
+        assert_eq!(reloaded.dictation_stt, original.dictation_stt);
+        restored.pill_colour = PillColour::System;
+        restored.pill_size = PillSize::Compact;
+        restored.pill_position = PillPosition::TopCentre;
+        assert_eq!(
+            serde_json::from_str::<Settings>(&serde_json::to_string(&restored).unwrap()).unwrap(),
+            restored
+        );
+    }
+
+    #[test]
+    fn pill_model_switch_upgrade_defaults_on_and_an_explicit_off_choice_survives() {
+        let mut value = serde_json::to_value(default_settings()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("pill_model_switch_enabled");
+        let mut restored: Settings = serde_json::from_value(value).unwrap();
+        assert!(restored.pill_model_switch_enabled);
+        restored.pill_model_switch_enabled = false;
+        let reloaded: Settings =
+            serde_json::from_str(&serde_json::to_string(&restored).unwrap()).unwrap();
+        assert!(!reloaded.pill_model_switch_enabled);
     }
 
     #[test]

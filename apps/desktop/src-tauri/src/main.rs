@@ -2,6 +2,7 @@
 
 mod app_identity;
 mod audio;
+mod automatic_suggestions;
 mod call_detection;
 mod capabilities;
 #[cfg(target_os = "macos")]
@@ -37,8 +38,11 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod macos_tray;
 mod meeting;
+mod meeting_level;
+mod meeting_postprocess;
 mod meeting_runtime;
 mod meeting_speaker_evidence;
+mod native_shortcuts;
 mod owned_dictation;
 mod paste_queue;
 mod people;
@@ -46,10 +50,14 @@ mod pill;
 mod platform_audio;
 mod platform_clipboard;
 mod platform_commands;
+mod portable_shortcuts;
 mod record_shortcut;
 mod recording_metadata;
 mod resample;
 mod secrets;
+mod shortcut_capture;
+mod shortcut_settings;
+mod shortcuts;
 mod speakers;
 mod state;
 mod status;
@@ -109,7 +117,8 @@ pub fn show_main(app: &AppHandle, tab: Option<&str>) {
         Some("pad" | "dictation-home") => "dictation",
         Some(
             "settings" | "overview" | "providers" | "models" | "dictation" | "dictionary"
-            | "styles" | "meeting-settings" | "recording" | "appearance" | "account" | "local",
+            | "styles" | "shortcuts" | "meeting-settings" | "recording" | "appearance" | "account"
+            | "local",
         ) => "settings",
         Some("meetings" | "library" | "chat") => "library",
         _ => "workspace",
@@ -424,19 +433,6 @@ pub fn apply_appearance(app: &AppHandle) {
     }
 }
 
-fn hotkey_label(trigger: pennel_core::HotkeyTrigger) -> String {
-    use pennel_core::HotkeyTrigger::*;
-    crate::ui::message(match trigger {
-        Fn if cfg!(target_os = "macos") => "fn",
-        RightControl | Fn => "right Ctrl",
-        RightOption if cfg!(target_os = "macos") => "right Option",
-        RightCommand if cfg!(target_os = "macos") => "right Command",
-        RightOption => "right Alt",
-        RightCommand => "right Windows key",
-        ControlSuper => "Ctrl + Windows key",
-    })
-}
-
 pub struct TrayHint(pub MenuItem<tauri::Wry>);
 
 #[derive(Default)]
@@ -712,9 +708,9 @@ pub fn refresh_hotkey(app: &AppHandle, shared: &Arc<Shared>) {
         return;
     }
     let (sender, receiver) = mpsc::channel();
-    match Listener::start(shared.settings().hotkey, sender) {
+    match Listener::start(&shared.settings(), sender) {
         Ok(listener) => {
-            let _ = listener.set_record_shortcut_enabled(shared.settings().record_shortcut_enabled);
+            let _ = listener.set_bindings(&shared.settings());
             let previous = shared.hotkey.lock().unwrap().replace(listener);
             drop(previous);
             record_shortcut::refresh(app, shared);
@@ -738,13 +734,23 @@ pub fn refresh_hotkey(app: &AppHandle, shared: &Arc<Shared>) {
 }
 
 pub fn hotkey_hint(shared: &Shared) -> String {
-    crate::ui::message(match shared.hotkey_error.lock().unwrap().as_ref() {
-        None => format!(
-            "Dictation — hold {}",
-            hotkey_label(shared.settings().hotkey)
-        ),
-        Some(_) => "Shortcut unavailable (see log)".into(),
-    })
+    let settings = shared.settings();
+    let language = shared.interface_language();
+    let binding =
+        pennel_core::effective_shortcut(&settings, "dictate", crate::shortcuts::platform());
+    match binding {
+        Some(binding) => {
+            let label =
+                pennel_core::format_shortcut(&binding, crate::shortcuts::platform(), language).text;
+            if language == pennel_core::InterfaceLanguage::Dutch {
+                format!("Dicteren — houd {label} ingedrukt")
+            } else {
+                format!("Dictation — hold {label}")
+            }
+        }
+        None if language == pennel_core::InterfaceLanguage::Dutch => "Dicteer met de knop.".into(),
+        None => "Dictate with the button.".into(),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -983,7 +989,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let settings = shared.settings();
     if !capture_profile {
         let (hotkey_tx, hotkey_rx) = mpsc::channel();
-        match Listener::start(settings.hotkey, hotkey_tx) {
+        match Listener::start(&settings, hotkey_tx) {
             Ok(listener) => *shared.hotkey.lock().unwrap() = Some(listener),
             Err(e) => {
                 LOG.error(format!("shortcut inactive: {e}"));
@@ -1119,6 +1125,9 @@ fn main() {
                 fit_window_to_work_area(window.app_handle(), &webview);
             }
             if let WindowEvent::Focused(false) = event {
+                if window.label() == "main" {
+                    shortcut_capture::stop(window.app_handle());
+                }
                 owned_dictation::focus_lost(window.app_handle(), window.label());
             }
             if let WindowEvent::Destroyed = event
@@ -1157,12 +1166,20 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_environment::desktop_environment,
             desktop_commands::set_desktop_command_state,
+            shortcut_capture::shortcut_capture_start,
+            shortcut_capture::shortcut_capture_stop,
+            shortcut_settings::set_shortcut,
+            shortcut_settings::reset_shortcut,
+            shortcut_settings::reset_all_shortcuts,
             #[cfg(target_os = "macos")]
             capture::capture_snapshot,
             #[cfg(target_os = "macos")]
             capture::capture_runtime_status,
             commands::app_info,
             commands::save_settings,
+            commands::configured_dictation_models,
+            pill::show_pill_preview,
+            commands::select_dictation_model,
             writing_profile::writing_profile_status,
             writing_profile::set_writing_profile_learning,
             writing_profile::refresh_writing_profile,
@@ -1196,6 +1213,7 @@ fn main() {
             inference::cancel_inference,
             insights::insights_snapshot,
             insights::insights_availability,
+            automatic_suggestions::automatic_insights_availability,
             insights::begin_insights_analysis,
             insights::insights_job,
             insights::cancel_insights_analysis,
@@ -1223,8 +1241,15 @@ fn main() {
             commands::meeting_templates,
             commands::summarize_meeting,
             summaries::meeting_summary,
+            summaries::meeting_summary_prompt_dismissed,
+            summaries::dismiss_meeting_summary_prompt,
+            summaries::meeting_suggestion_prompt_dismissed,
+            summaries::dismiss_meeting_suggestion_prompt,
+            summaries::meeting_speaker_timeline,
+            summaries::meeting_transcript_provenance,
             summaries::save_meeting_summary,
             summaries::accept_meeting_summary,
+            summaries::update_meeting_summary_action,
             summaries::meeting_summary_history,
             summaries::restore_meeting_summary,
             summaries::generate_meeting_summary,

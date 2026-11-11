@@ -1,3 +1,4 @@
+import { selectMeetingPane } from "./meeting-workspace-test-controls.mjs";
 import { conversationRequests as requests } from "../../../assets/contracts/meeting-conversations.ts";
 
 const assert = (value, message) => { if (!value) throw Error(message); };
@@ -6,7 +7,8 @@ async function until(check, message) {
   for (let attempt = 0; attempt < 360; attempt++) { if (await check()) return; await pause(); }
   throw Error(message);
 }
-function edit(input, text) { input.value = text; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text })); }
+function edit(input, text) {
+  if (input.applyUserChange) { input.applyUserChange(text); return; } input.value = text; input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text })); }
 function questions() {
   const tab = document.querySelector('[data-live-tab="questions"]') || document.querySelector('.detail-tabs [data-tab="ask"]');
   if (tab?.getAttribute("aria-selected") !== "true") tab?.click();
@@ -353,7 +355,7 @@ export function finishConversationKeyboard() {
 
 async function preparationProbe() {
   const state = await owned(), { root, fixture } = state;
-  document.querySelector('[data-live-tab="notes"]').click();
+  selectMeetingPane(document.querySelector(".live-workspace"), "notes");
   const editor = document.querySelector(".live-notes");
   fixture.workspace.notesDelay(30000); edit(editor, "Acknowledged notes prepared for this synthetic question.");
   questions();
@@ -430,7 +432,7 @@ export async function checkConversationCancelBeforeAdmissionReply() {
 
 export async function checkConversationUnicodeNoteSource() {
   const { root, fixture } = await owned();
-  document.querySelector('[data-live-tab="notes"]').click();
+  selectMeetingPane(document.querySelector(".live-workspace"), "notes");
   const editor = document.querySelector(".live-notes");
   edit(editor, "Préface 😀\nRepeated source.\nRepeated source.\n"); questions();
   const request = await ask(root, fixture, "Which second repeated note supports this answer?");
@@ -439,7 +441,7 @@ export async function checkConversationUnicodeNoteSource() {
   const row = await complete(root, fixture, request, { text: `The second repeated note [${repeated[1].number}]`,
     citations: [{ number: repeated[1].number, passage: repeated[1].anchor.passage }] });
   row.querySelector(".citation").click();
-  await until(() => document.activeElement === editor && editor.selectionStart === 28 && editor.selectionEnd === 44,
+  await until(() => document.activeElement === editor.contentDOM && editor.selectionStart === 28 && editor.selectionEnd === 44,
     "A Unicode note citation selected another occurrence or mixed UTF-8 bytes with editor offsets.");
   assert(editor.value.slice(editor.selectionStart, editor.selectionEnd) === "Repeated source.", "The selected note range did not match the original exact source.");
   document.querySelector(".live-source-back").click();

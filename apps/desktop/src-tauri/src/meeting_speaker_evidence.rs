@@ -1,10 +1,13 @@
 //! Samples one explicitly associated Teams call on the recording timeline.
 
+use std::sync::Arc;
+#[cfg(any(target_os = "macos", test))]
+use std::sync::Mutex;
 #[cfg(any(target_os = "macos", test))]
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+#[cfg(any(target_os = "macos", test))]
 use std::time::{Duration, Instant};
 
 use pennel_core::{
@@ -12,13 +15,17 @@ use pennel_core::{
 };
 
 pub const TEAMS: &str = "com.microsoft.teams2";
+#[cfg(any(target_os = "macos", test))]
 const INTERVAL: Duration = Duration::from_millis(500);
+#[cfg(any(target_os = "macos", test))]
 const MAX_READ_DURATION: Duration = Duration::from_millis(200);
 type Consent = Arc<dyn Fn() -> bool + Send + Sync>;
 pub(crate) type CaptureSourceCheck = Arc<dyn Fn() -> bool + Send + Sync>;
 pub(crate) type CleanEndCallback = Arc<dyn Fn() + Send + Sync>;
+#[cfg(any(target_os = "macos", test))]
 type SharedHealth = Arc<Mutex<SamplerHealth>>;
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy)]
 struct ObservationTiming {
     before: Instant,
@@ -29,6 +36,7 @@ struct ObservationTiming {
     duration: Option<Duration>,
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl ObservationTiming {
     fn new(origin: Instant, before: Instant, after: Instant) -> Self {
         let duration = after.checked_duration_since(before);
@@ -51,6 +59,7 @@ impl ObservationTiming {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Default)]
 struct SamplerHealth {
     sample_count: u64,
@@ -75,6 +84,7 @@ struct SamplerHealth {
     panicked: bool,
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn health_reason(reason: Option<&str>) -> Option<String> {
     const SAFE: &[&str] = &[
         "unsupported",
@@ -111,6 +121,7 @@ fn health_reason(reason: Option<&str>) -> Option<String> {
     })
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl SamplerHealth {
     fn observed(&mut self, timing: ObservationTiming, reading: &Reading) {
         self.sample_count = self.sample_count.saturating_add(1);
@@ -176,8 +187,10 @@ impl SamplerHealth {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 struct ProducerHealth(SharedHealth);
 
+#[cfg(any(target_os = "macos", test))]
 impl Drop for ProducerHealth {
     fn drop(&mut self) {
         let mut health = self.0.lock().unwrap_or_else(|poison| poison.into_inner());
@@ -193,6 +206,7 @@ impl Drop for ProducerHealth {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn publish_health(health: Option<&SharedHealth>, sampled: &Sampled) {
     if let Some(health) = health {
         health
@@ -204,10 +218,13 @@ fn publish_health(health: Option<&SharedHealth>, sampled: &Sampled) {
 
 #[derive(Clone, Copy)]
 pub(crate) struct EvidenceClock {
+    #[cfg(target_os = "macos")]
     pub(crate) started: Instant,
+    #[cfg(target_os = "macos")]
     pub(crate) verified: bool,
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Clone)]
 struct SamplingPolicy {
     consent: Consent,
@@ -216,6 +233,7 @@ struct SamplingPolicy {
     clock_verified: bool,
 }
 
+#[cfg(any(target_os = "macos", test))]
 struct SamplingChecks<'a> {
     consent: &'a dyn Fn() -> bool,
     capture_source: &'a dyn Fn() -> bool,
@@ -270,6 +288,7 @@ pub struct EvidenceSampler {
     capture_source: CaptureSourceCheck,
     clock_verified: bool,
     thread: Option<JoinHandle<Sampled>>,
+    #[cfg(any(target_os = "macos", test))]
     health: SharedHealth,
 }
 
@@ -280,6 +299,7 @@ struct CallWindow {
     window_id: String,
 }
 
+#[cfg(any(target_os = "macos", test))]
 #[derive(Default)]
 struct Reading {
     available: bool,
@@ -301,11 +321,14 @@ struct Sampled {
     unavailable_reason: Option<String>,
     duplicate_names: bool,
     invalidated: bool,
+    #[cfg(any(target_os = "macos", test))]
     ended: bool,
+    #[cfg(any(target_os = "macos", test))]
     timing_unknown_until_ms: u64,
 }
 
 impl Sampled {
+    #[cfg(any(target_os = "macos", test))]
     fn native_failure(&self, reading: &Reading) -> bool {
         (!reading.available && !reading.call_active && !reading.call_ended)
             || reading.window.is_none()
@@ -315,12 +338,14 @@ impl Sampled {
                 .is_some_and(|bound| Some(bound) != reading.window.as_ref())
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn preserve_duplicate_veto(&mut self, reading: &Reading) {
         // This boolean can only veto a name. Even a slow initial scan may conservatively
         // retain it without establishing a window binding or accepting participant strings.
         self.duplicate_names |= reading.duplicate_names;
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn discard_read(&mut self, timing: ObservationTiming, reading: Reading) {
         self.exclude_read(timing);
         if self.native_failure(&reading) || reading.call_ended {
@@ -330,6 +355,7 @@ impl Sampled {
         }
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn observe_read(&mut self, timing: ObservationTiming, reading: Reading) {
         if self.invalidated || self.ended {
             return;
@@ -367,6 +393,7 @@ impl Sampled {
         self.observe(timing.midpoint_ms, reading);
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn exclude_read(&mut self, timing: ObservationTiming) {
         let lag = pennel_core::app_speaker_highlight_latency_ms();
         let start = timing.started_ms.min(timing.ended_ms);
@@ -420,6 +447,7 @@ impl Sampled {
         self.invalidated = true;
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn observe(&mut self, at_ms: u64, reading: Reading) {
         if self.invalidated || self.ended {
             return;
@@ -532,6 +560,7 @@ impl Drop for EvidenceSampler {
 }
 
 impl EvidenceSampler {
+    #[cfg(any(target_os = "macos", test))]
     pub(crate) fn live_status(&self) -> serde_json::Value {
         let handle_running = self
             .thread
@@ -641,6 +670,7 @@ impl EvidenceSampler {
         )
     }
 
+    #[cfg(any(target_os = "macos", test))]
     fn spawn_with_policy(
         app_id: &str,
         started: Instant,
@@ -699,19 +729,25 @@ impl EvidenceSampler {
     /// Stop requests never wait for an in-flight AX read or extend the audio capture lifetime.
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
-        self.health
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .stop_requested = true;
+        #[cfg(any(target_os = "macos", test))]
+        {
+            self.health
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .stop_requested = true;
+        }
     }
 
     /// Revocation is sticky for this recording even if the setting is subsequently re-enabled.
     pub fn disable(&self) {
         self.disabled.store(true, Ordering::SeqCst);
-        self.health
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .revoke();
+        #[cfg(any(target_os = "macos", test))]
+        {
+            self.health
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner())
+                .revoke();
+        }
         self.request_stop();
     }
 
@@ -731,6 +767,7 @@ impl EvidenceSampler {
         } else if sampled.samples.is_empty() && !sampled.invalidated {
             sampled.unavailable_reason = Some("sampler_unavailable".into());
         }
+        #[cfg(any(target_os = "macos", test))]
         publish_health(Some(&self.health), &sampled);
         AppSpeakerEvidence {
             app_id: std::mem::take(&mut self.app_id),
@@ -776,6 +813,7 @@ fn sample_until(
     )
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn dispatch_clean_end(callback: Option<&CleanEndCallback>) -> bool {
     let Some(callback) = callback.cloned() else {
         return false;
@@ -786,6 +824,7 @@ fn dispatch_clean_end(callback: Option<&CleanEndCallback>) -> bool {
         .is_ok()
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn sample_until_with_end(
     stop: &AtomicBool,
     disabled: &AtomicBool,
