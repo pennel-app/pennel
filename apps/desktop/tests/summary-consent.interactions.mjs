@@ -22,7 +22,7 @@ export async function checkSummaryConsentCreate(){
  assert((await api.info()).settings.summary_automation===(automatic?'automatic':'manual'),'Create did not persist exactly the displayed checkbox choice.');
  assert(fixture.calls.filter(command=>command==='summarize_meeting').length===1&&!fixture.calls.includes('generate_meeting_summary'),'Empty creation did not use one guarded direct path.');
  assert((await api.info()).settings.llm.provider_id===info.settings.llm.provider_id,'Consent silently selected a different provider.');
- if(fixture.options.reduced_motion)assert([...root.querySelectorAll('.meeting-summary-rendered .markdown > *')].every(node=>getComputedStyle(node).animationName==='none'),'Reduced motion retained generated-section movement.');
+ if(fixture.options.reduced_motion)assert([...root.querySelectorAll('.meeting-summary-rendered .markdown > *')].every(node=>node.getAnimations().every(animation=>animation.effect.getKeyframes().every(frame=>!frame.transform||frame.transform==='none'))),'Reduced motion retained generated-section movement.');
  return{explicitPolicy:true,actualDestination:true,guardedEmptyCreate:true,realWorkingPlaceholders:true,syntheticOnly:true};
 }
 export async function dismissSummaryConsent(){

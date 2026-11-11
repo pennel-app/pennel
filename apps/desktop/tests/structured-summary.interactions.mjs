@@ -72,5 +72,6 @@ export async function checkSummarySourceRace(){
    assert(root.querySelector('.meeting-summary-surface').contains(root.querySelector('.live-source-notice')),'Stale summary source notice escaped into a hidden Questions panel.');
  }finally{if(release)release();crypto.subtle.digest=digest;}
 }
-export async function checkSummaryReducedMotion(){const root=await owned(),section=root.querySelector('.structured-summary-lead');assert(getComputedStyle(section).animationName==='structured-summary-fades','Reduced motion removed the fade or retained movement.');for(const animation of section.getAnimations())assert(animation.effect.getKeyframes().every(frame=>!frame.transform||frame.transform==='none'),'Reduced summary reveal still moves.');}
+export async function checkSummaryReducedMotion(){await owned();await import('/tests/motion.interactions.mjs').then(m=>m.checkSummaryMotion());}
+
 export async function checkTimelineRecovery(){const root=await owned();await until(()=>root.querySelector('.summary-map-status').textContent.includes(document.documentElement.lang==='nl'?'kon niet':'could not'),'Timeline read failure is not explained.');window.__PENNEL_FIXTURE_OPTIONS__.summary_timeline_error=false;root.querySelector('.structured-summary-map > button').click();await until(()=>root.querySelectorAll('.summary-map-lane').length===3,'Timeline retry did not recover.');assert(visible(root.querySelector('.meeting-summary-structured')),'Timeline failure discarded the valid structured body.');}

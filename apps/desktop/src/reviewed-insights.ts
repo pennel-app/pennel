@@ -1,3 +1,4 @@
+import { playMotion } from "./motion";
 import { api, listenToWindow, type InsightItem, type InsightSource } from "./api";
 import { bindLocalization, l, t, type TranslationKey } from "./i18n.ts";
 import { controlButton, formatClock, h, select } from "./dom";
@@ -187,7 +188,9 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
       }));
     };
     return { element, update(next: InsightItem) {
+      const accepted = item.review_state !== "accepted" && next.review_state === "accepted";
       item = next; const state = model.getSnapshot(), draft = state.edits.get(item.id);
+      if (accepted) playMotion(element, "motion-settle");
       const writable = insightsWritable(state.snapshot) && !state.busy.has("write");
       element.dataset.reviewState = item.review_state;
       text(title, t(item.review_state === "accepted" ? `insights.accepted_${item.kind}` : `insights.kind_${item.kind}`));

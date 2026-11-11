@@ -143,7 +143,7 @@ body {
   height: 16px;
   border-radius: 2px;
   background: var(--pill-accent);
-  transition: transform 0.12s ease-out;
+  transition: transform 120ms var(--pill-easing);
 }
 
 .pill-indicator.working {
@@ -193,14 +193,18 @@ body {
   to { opacity: 0; }
 }
 
+@keyframes pill-enter-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pill-leave-fade { from { opacity: 1; } to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  #pill.entering,
-  #pill.leaving { animation-duration: 120ms; }
+  #pill.entering { animation: pill-enter-fade 120ms var(--pill-easing); }
+  #pill.leaving { animation: pill-leave-fade 120ms var(--pill-easing) forwards; }
   .pill-indicator.working { animation: none; }
   .pill-indicator i { transition: none; }
-  @keyframes pill-enter { from { opacity: 0; } }
-  @keyframes pill-leave { to { opacity: 0; } }
 }
+:root[data-reduce-motion="true"] #pill.entering { animation: pill-enter-fade 120ms var(--pill-easing); }
+:root[data-reduce-motion="true"] #pill.leaving { animation: pill-leave-fade 120ms var(--pill-easing) forwards; }
+:root[data-reduce-motion="true"] .pill-indicator.working { animation: none; }
+:root[data-reduce-motion="true"] .pill-indicator i { transition: none; }
 
 .pill-model-chip {
   display: inline-flex;

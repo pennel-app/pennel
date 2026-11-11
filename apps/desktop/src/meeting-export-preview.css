@@ -8,7 +8,7 @@
   overflow-y: hidden;
 }
 .meeting-export-dialog[open] { display: flex; flex-direction: column; gap: 12px; width: min(720px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow: hidden; }
-.meeting-export-dialog > h2 { flex-shrink: 0; margin: 0; }
+.meeting-export-dialog > h2 { flex-shrink: 0; margin: 0; font-size: var(--font-title); }
 .meeting-export-preview[hidden] { display: none; }
 .meeting-export-review {
   display: flex;
@@ -21,8 +21,8 @@
   scrollbar-gutter: stable;
 }
 .meeting-export-heading, .meeting-export-options { flex-shrink: 0; flex-wrap: wrap; }
-.meeting-export-heading { align-self: flex-start; max-width: 100%; }
-.meeting-export-heading .btn { flex: 1 1 auto; }
+.meeting-export-heading { align-self: stretch; width: 100%; max-width: 100%; }
+.meeting-export-heading .btn { flex: 1 1 0; }
 .meeting-export-formats { gap: 4px; }
 .meeting-export-document { flex: 1 0 180px; min-height: 180px; }
 .meeting-export-rendered {

@@ -49,11 +49,6 @@
 .meeting-summary-provenance { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
 .summary-provenance-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--subtle); color: var(--muted); font-size: var(--font-label); overflow-wrap: anywhere; }
 .summary-provenance-chip > .ui-icon { flex-shrink: 0; width: 13px; height: 13px; }
-.summary-reveal { animation: structured-summary-arrives var(--da-motion-reveal) var(--da-motion-easing) both; animation-delay: calc(var(--summary-order) * 90ms); }
-@keyframes structured-summary-arrives { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@keyframes structured-summary-fades { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .meeting-summary-structured .summary-reveal { animation: structured-summary-fades var(--da-motion-feedback) linear both !important; transform: none !important; } }
-:root[data-reduce-motion="true"] .meeting-summary-structured .summary-reveal { animation: structured-summary-fades var(--da-motion-feedback) linear both !important; transform: none !important; }
 .meeting-summary-heading > .meeting-summary-edit { min-height: 26px; padding: 0 8px; border: 0; background: transparent; box-shadow: none; color: var(--muted); font-size: var(--font-label); }
 .meeting-summary-rendered:has(.meeting-summary-structured:not([hidden])) { padding-top: 0; }
 .meeting-summary-provenance > .summary-provenance-chip { margin: 0; }

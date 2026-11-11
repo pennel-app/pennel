@@ -1,3 +1,4 @@
+import { playMotion } from "../motion";
 import { bindLocalization, l, t, localizeBackendText, formatDateTime } from "../i18n.ts";
 import { api, listen, type DictationSessionSnapshot, type HistoryEntry, type LocalModel, type PillState, type SetupReadiness } from "../api";
 import { SerialQueue } from "../async";
@@ -314,7 +315,7 @@ function dictationHome(ctx: Context): HTMLElement {
               await api.copyText(current.entry.text);
               if (!disposed) {
                 window.clearTimeout(feedbackTimer); if (feedbackTimer) timers.delete(feedbackTimer);
-                copy.replaceChildren(icon("check")); copy.dataset.copied = "true";
+                copy.replaceChildren(icon("check")); playMotion(copy.firstElementChild as HTMLElement, "motion-feedback"); copy.dataset.copied = "true";
                 feedbackTimer = later(() => { copy.replaceChildren(icon("copy")); delete copy.dataset.copied; }, 1200);
                 recentFeedback.textContent = t("dictation.pad.copied"); recentFeedback.classList.remove("error");
               }

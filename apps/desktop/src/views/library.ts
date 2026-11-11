@@ -1,3 +1,4 @@
+import { playMotion } from "../motion";
 import { onShortcutLayoutChange } from "../shortcut-layout";
 import { shortcutRow, shortcutText } from "../shortcut-presentation";
 import { bindLocalization, getInterfaceLanguage, l, t, formatNumber, formatDateTime } from "../i18n.ts";
@@ -254,6 +255,8 @@ export class LibrarySidebar {
   }
 
   highlight() {
+    const previous = this.element.querySelector<HTMLElement>('.library-shortcuts > button[aria-current="page"]');
+    const previousTop = previous?.getBoundingClientRect().top;
     this.syncTask();
     const route = this.pendingRoute ?? this.host.current();
     for (const button of this.element.querySelectorAll<HTMLButtonElement>("[data-workspace-section]")) {
@@ -262,6 +265,11 @@ export class LibrarySidebar {
     }
     for (const button of this.dictationNavigation.querySelectorAll<HTMLButtonElement>("[data-dictation-section]")) {
       if (route.section === "dictation" && button.dataset.dictationSection === (route.tab === "pad" ? "pad" : "home")) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+    }
+    const current = this.element.querySelector<HTMLElement>('.library-shortcuts > button[aria-current="page"]');
+    if (current && previous && current !== previous && previousTop !== undefined && this.element.isConnected) {
+      current.style.setProperty("--sidebar-selection-from", `${previousTop - current.getBoundingClientRect().top}px`);
+      playMotion(current, "motion-sidebar");
     }
     const chat = route.section === "meetings" && route.tab === "chat";
     this.ask.toggleAttribute("aria-current", chat);

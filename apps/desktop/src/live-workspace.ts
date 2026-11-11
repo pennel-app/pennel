@@ -1,3 +1,4 @@
+import { companionExit, playMotion } from "./motion";
 import { api, fixtureClient, type MeetingStatus, type MeetingDetail, type MeetingFinished, type MeetingPreviewState, type Speaker, type LiveSourceAnchor, type Segment, type SummarySource } from "./api";
 import { SerialQueue, persistAll } from "./async";
 import { bindLocalization, l, t, localizeBackendText, formatNumber, type TranslationKey } from "./i18n";
@@ -306,6 +307,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const primaryColumn = h("div", { class: "meeting-primary-column" }, band, warning, recovery, failedRecoveryNotice, tabList, documentSurface);
   const backdrop = h("div", { class: "meeting-companion-backdrop", hidden: true, "aria-hidden": "true", onclick: () => returnToDocument() });
   const content = h("div", { class: "live-workspace-panes" }, primaryColumn, separator, backdrop, companion);
+  const finishCompanionSpace = () => content.classList.remove("motion-companion-space");
+  content.addEventListener("pointerdown", finishCompanionSpace, true);
+  content.addEventListener("keydown", finishCompanionSpace, true);
   root.append(sourceBack, sourceNotice, content);
   root.addEventListener("keydown", event => {
     if (event.key === "Escape" && !event.isComposing && !event.defaultPrevented && !panes.wide && panes.companionOpen) {
@@ -363,6 +367,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   const owner: LiveWorkspace = {
     root, id: initial.id!, uid, session, aliases: new Set([initial.id!]),
     bind(next) {
+      next.onDispose(() => { removeCompanionExit?.(); removeCompanionExit = null; });
       ctx = next;
       displayedSession = session;
       const mine = ++binding;
@@ -406,7 +411,18 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     },
   };
 
+  let companionWasOpen = panes.companionOpen;
+  let removeCompanionExit: (() => void) | null = null;
+  ctx.onDispose(() => { removeCompanionExit?.(); removeCompanionExit = null; });
   function updatePanes() {
+    const toggledCompanion = companionWasOpen !== panes.companionOpen && root.isConnected;
+    const previousPrimary = primaryColumn.getBoundingClientRect().width;
+    const previousCompanion = companion.hidden ? 0 : companion.getBoundingClientRect().width - 22;
+    if (toggledCompanion) {
+      removeCompanionExit?.(); removeCompanionExit = null;
+      if (!panes.companionOpen) removeCompanionExit = companionExit(companion, root);
+    }
+    companionWasOpen = panes.companionOpen;
     const keepNotesVisible = finalized && root.dataset.documentLayout !== "continuous" && editor.contains(document.activeElement);
     const previousNotesScroll = editor.scrollTop;
     panes.setFinished(finalized);
@@ -455,6 +471,15 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
     if (keepNotesVisible) documentSurface.scrollTop += editor.getBoundingClientRect().top - documentSurface.getBoundingClientRect().top + previousNotesScroll;
     restoreReading();
     if (following && panes.shown("transcript") && root.isConnected) scrollLive();
+    if (toggledCompanion) {
+      if (panes.companionOpen) playMotion(companion, "motion-companion-enter");
+      if (panes.wide) {
+        content.style.setProperty("--companion-from", `${previousPrimary}px ${previousCompanion ? 8 : 0}px ${previousCompanion}px`);
+        content.style.setProperty("--companion-to", `${primaryColumn.getBoundingClientRect().width}px ${panes.companionOpen ? 8 : 0}px ${panes.companionOpen ? companion.getBoundingClientRect().width - 22 : 0}px`);
+        content.style.setProperty("--companion-duration", `var(--da-motion-move${panes.companionOpen ? "" : "-exit"})`);
+        playMotion(content, "motion-companion-space");
+      }
+    }
   }
   function suspendReading() {
     if (!root.isConnected) return;
@@ -700,7 +725,9 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       const segment = status.transcript.find(segment => segment.utterance_id === source.utterance_id);
       return insightSourceMatches(source, segment, uid) && segment ? String(speakerUiLabel(segment, reviewDetail ?? undefined)) : null;
     }, changed: count => {
+      const changed = reviewCount.textContent !== "" && reviewCount.textContent !== formatNumber(count);
       reviewCount.textContent = formatNumber(count); reviewCount.hidden = count === 0;
+      if (changed && count > 0) playMotion(reviewCount, "motion-tick");
       tabButtons.get("suggestions")?.setAttribute("aria-label", t("meetings.companion_review_count", { count: formatNumber(count) }));
     } };
   }
@@ -736,7 +763,11 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
       const track = snapshot?.tracks.find(track => track.source === source);
       row.element.hidden = !track || source === "others" && !next.system_audio;
       const text = !captionOutput.hidden && track && !["stopped", "disabled", "unsupported", "failed"].includes(track.state) ? track.text : "";
-      if (row.body.textContent !== text) row.body.textContent = text;
+      if (row.body.textContent !== text) {
+        const arriving = !row.body.textContent && !!text;
+        row.body.textContent = text;
+        if (arriving && root.isConnected) playMotion(row.body, "motion-arrive");
+      }
       const reason = track && (track.state !== "ready" || !text) ? t(reasons[track.state]) : "";
       if (row.state.textContent !== reason) row.state.textContent = reason;
       row.state.hidden = !reason;
@@ -825,6 +856,7 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
         const element = h("div", { class: "transcript-line", "data-segment-key": key, "data-start-ms": segment.start_ms, "data-source-id": segment.source_id ?? "" }, stamp, h("div", { class: "live-transcript-speaker" }, speaker, provisional, linked), body, correction);
         row = { element, body, speaker, stamp, provisional, correction, segment };
         rows.set(key, row);
+        if (root.isConnected && status.recording) playMotion(element, "motion-arrive");
       } else if (!sameSegment(row.segment, segment)) {
         if (row.segment.text !== segment.text || row.segment.failed !== segment.failed) row.body.textContent = transcriptDisplayText(segment);
         row.segment = segment;

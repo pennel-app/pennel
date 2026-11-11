@@ -119,11 +119,8 @@
 .meeting-companion .live-captions { flex: none; max-height: none; overflow: visible; margin-top: 8px; padding-top: 8px; }
 .meeting-companion .live-caption-interim { color: var(--live); font-weight: 600; }
 .meeting-companion .live-transcript { display: block; }
-.live-overlay .meeting-companion { position: absolute; z-index: 5; inset: -20px -22px -16px auto; width: min(340px, calc(100% + 22px)); margin: 0; box-shadow: -12px 0 24px var(--shadow); animation: companion-enter var(--da-motion-move) var(--da-motion-easing); }
+.live-overlay .meeting-companion { position: absolute; z-index: 5; inset: -20px -22px -16px auto; width: min(340px, calc(100% + 22px)); margin: 0; box-shadow: -12px 0 24px var(--shadow); }
 .meeting-companion-backdrop { position: absolute; z-index: 4; inset: -20px -22px -16px -28px; background: transparent; }
-@keyframes companion-enter { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .live-overlay .meeting-companion { animation: none; } }
-:root[data-reduce-motion="true"] .live-overlay .meeting-companion { animation: none; }
 .meeting-notes-first.live-wide.live-companion-open[data-split-custom="true"] .live-workspace-panes { grid-template-columns: minmax(0, calc((100% - 28px) * var(--live-notes-ratio, .6))) 8px minmax(0, 1fr); }
 
 .meeting-companion .transcript-line { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
@@ -148,15 +145,6 @@
 .summary-placeholders > div:nth-child(2) { width: 86%; }
 .summary-placeholders > div:nth-child(3) { width: 94%; }
 .summary-placeholders > div:nth-child(4) { width: 70%; }
-.summary-reveal > .markdown > * { animation: summary-section-reveal var(--da-motion-reveal) var(--da-motion-easing) both; }
-.summary-reveal > .markdown > :nth-child(2) { animation-delay: 90ms; }
-.summary-reveal > .markdown > :nth-child(3) { animation-delay: 180ms; }
-.summary-reveal > .markdown > :nth-child(4) { animation-delay: 270ms; }
-.summary-reveal > .markdown > :nth-child(5) { animation-delay: 360ms; }
-.summary-reveal > .markdown > :nth-child(n+6) { animation-delay: 450ms; }
-@keyframes summary-section-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .summary-reveal > .markdown > * { animation: none; } }
-:root[data-reduce-motion="true"] .summary-reveal > .markdown > * { animation: none; }
 
 .summary-consent-card > p { font-size: var(--font-content); line-height: 1.6; }
 .summary-consent-card input[type="checkbox"] { appearance: none; position: relative; width: 18px; height: 18px; flex: 0 0 18px; margin: 0; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--surface); box-shadow: none; }

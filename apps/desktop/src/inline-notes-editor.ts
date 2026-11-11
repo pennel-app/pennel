@@ -1,3 +1,4 @@
+import { playMotion } from "./motion";
 import { Compartment, EditorState, Prec, StateEffect, StateField, Transaction, type Range, type SelectionRange } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, keymap, placeholder, type DecorationSet } from "@codemirror/view";
 import { historyKeymap, isolateHistory, redo, standardKeymap, undo } from "@codemirror/commands";
@@ -129,11 +130,23 @@ export function inlineNotesEditor(options: { value?: string; label: UiText; plac
       })), keymap.of([...historyKeymap, ...standardKeymap])]),
     dispatchTransactions(transactions, target) {
       const before = target.state.selection;
+      const oldState = target.state;
+      const resolving = !composing && !target.composing && !transactions.some(transaction => transaction.docChanged)
+        && oldState.field(noteDecorations).focused
+        ? noteMarkdown(oldState.doc.toString()).filter(line => line.number >= oldState.doc.lineAt(before.main.from).number
+          && line.number <= oldState.doc.lineAt(before.main.to).number && (line.heading || line.marker || line.strong.length)).map(line => line.from) : [];
       for (const transaction of transactions) {
         if (transaction.docChanged && pendingReveal) pendingReveal.range = pendingReveal.range.map(transaction.changes);
         if (transaction.docChanged || transaction.selection) ++revealGeneration;
       }
       target.update(transactions);
+      for (const from of resolving) {
+        const line = target.state.doc.lineAt(from), range = target.state.selection.main;
+        if (target.state.field(noteDecorations).focused && line.number >= target.state.doc.lineAt(range.from).number && line.number <= target.state.doc.lineAt(range.to).number) continue;
+        const node = target.domAtPos(from).node;
+        const element = (node instanceof HTMLElement ? node : node.parentElement)?.closest<HTMLElement>(".cm-line");
+        if (element) playMotion(element, "motion-resolve");
+      }
       if (!before.eq(target.state.selection)) { direction = null; element.dispatchEvent(new Event("select")); }
       const changes = transactions.filter(transaction => transaction.docChanged && !transaction.annotation(quietNoteChange));
       if (changes.length) element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: changes.some(transaction => transaction.isUserEvent("undo")) ? "historyUndo" : changes.some(transaction => transaction.isUserEvent("redo")) ? "historyRedo" : "insertText", isComposing: composing || target.composing }));

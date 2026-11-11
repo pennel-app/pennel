@@ -1,3 +1,4 @@
+import { playMotion } from "./motion";
 import { api, type MeetingSummaryDocument, type MeetingSummaryRecord, type MeetingSpeakerTimeline, type MeetingTranscriptProvenance, type SummaryAction, type SummarySource } from "./api";
 import { askText, formatClock, h, markdown, select } from "./dom";
 import { bindLocalization, formatDateTime, l, t, type TranslationKey } from "./i18n";
@@ -26,16 +27,16 @@ export function meetingSummaryReading(host: {
   lengthControl.classList.add("meeting-summary-length");
   const template = h("button", { class: "text-button meeting-summary-template", onclick: () => host.openTemplate?.() });
   const fallback = h("div", { class: "meeting-summary-markdown" });
-  const lead = h("div", { class: "structured-summary-lead summary-reveal", style: "--summary-order:0" });
-  const topics = h("section", { class: "structured-summary-topics summary-reveal", style: "--summary-order:2" });
-  const decisions = h("section", { class: "structured-summary-decisions summary-reveal", style: "--summary-order:3" });
-  const actions = h("section", { class: "structured-summary-actions summary-reveal", style: "--summary-order:4" });
-  const open = h("section", { class: "structured-summary-open summary-reveal", style: "--summary-order:5" });
+  const lead = h("div", { class: "structured-summary-lead summary-section", style: "--summary-order:0" });
+  const topics = h("section", { class: "structured-summary-topics summary-section", style: "--summary-order:2" });
+  const decisions = h("section", { class: "structured-summary-decisions summary-section", style: "--summary-order:3" });
+  const actions = h("section", { class: "structured-summary-actions summary-section", style: "--summary-order:4" });
+  const open = h("section", { class: "structured-summary-open summary-section", style: "--summary-order:5" });
   const mapTopics = h("div", { class: "summary-map-topics" });
   const lanes = h("div", { class: "summary-map-lanes" });
   const mapStatus = h("p", { class: "help summary-map-status", role: "status" });
   const mapRetry = h("button", { class: "text-button", hidden: true, onclick: () => { timelineKey = ""; void loadTimeline(); } }, l("common.retry"));
-  const map = h("section", { class: "structured-summary-map summary-reveal", style: "--summary-order:1" },
+  const map = h("section", { class: "structured-summary-map summary-section", style: "--summary-order:1" },
     h("div", { class: "summary-map-heading" }, h("h3", {}, l("meetings.structured.map")), h("p", { class: "help" }, l("meetings.structured.map_help"))), mapTopics, lanes, mapStatus, mapRetry);
   const structured = h("div", { class: "meeting-summary-structured", hidden: true }, lead, map, topics, decisions, actions, open);
   const root = h("div", { class: "meeting-summary-reading" }, fallback, structured);
@@ -85,10 +86,19 @@ export function meetingSummaryReading(host: {
     return button;
   }
   function heading(label: TranslationKey, name: "check" | "notebook" | "chat") { return h("h3", {}, icon(name), l(label)); }
+  let fallbackValue: string | null = null;
   function renderBody() {
     const structure = record?.structure;
     fallback.hidden = !!structure; structured.hidden = !structure;
-    if (!structure || !document) { fallback.replaceChildren(document?.markdown ? markdown(document.markdown) : h("p", { class: "help" }, l("meetings.summary_empty"))); return; }
+    if (!structure || !document) {
+      const value = document?.markdown ?? "";
+      if (fallbackValue !== value) {
+        fallbackValue = value;
+        fallback.replaceChildren(value ? markdown(value) : h("p", { class: "help" }, l("meetings.summary_empty")));
+        if (value) [...fallback.querySelectorAll<HTMLElement>(".markdown > *")].forEach((section, order) => { section.style.setProperty("--summary-order", String(order)); playMotion(section, "motion-summary"); });
+      }
+      return;
+    }
     const nextContent = JSON.stringify([structure.lead, structure.topics, structure.decisions, structure.actions.map(({ state: _state, ...item }) => item), structure.open_questions]);
     const reveal = contentKey !== nextContent;
     contentKey = nextContent;
@@ -98,6 +108,7 @@ export function meetingSummaryReading(host: {
       decisions.replaceChildren(heading("meetings.structured.decisions", "check"), ...structure.decisions.map(item => h("div", { class: "structured-decision" }, h("span", {}, item.text), sourceButton(item.source))));
       open.replaceChildren(heading("meetings.structured.open", "chat"), ...structure.open_questions.map(item => h("div", { class: "structured-open-item" }, h("span", {}, item.text), sourceButton(item.source))));
       mapTopics.replaceChildren(...structure.topics.flatMap(topic => topic.source ? [sourceButton(topic.source, `${topic.title} · ${formatClock(topic.source.start_ms / 1000)}`)!] : []));
+      for (const section of [lead, map, topics, decisions, actions, open]) playMotion(section, "motion-summary");
     }
     if (!actions.querySelector("h3") || reveal) actions.querySelector("h3")?.remove();
     if (!actions.querySelector("h3")) actions.prepend(heading("meetings.structured.actions", "notebook"));
@@ -139,21 +150,34 @@ export function meetingSummaryReading(host: {
     const shown = summarySections(length);
     const focused = root.ownerDocument.activeElement;
     const restoreFocus = !shown.map && map.contains(focused) || !shown.topics && topics.contains(focused) || !shown.open && open.contains(focused);
-    map.hidden = !shown.map; topics.hidden = !shown.topics; open.hidden = !shown.open;
+    for (const [section, visible] of [[map, shown.map], [topics, shown.topics], [open, shown.open]] as const) {
+      const arriving = section.hidden && visible;
+      section.hidden = !visible;
+      if (arriving) {
+        playMotion(section, "motion-summary");
+        if (section === map) lanes.querySelectorAll<HTMLElement>(".summary-map-span").forEach(span => playMotion(span, "motion-map-draw"));
+      }
+    }
     if (restoreFocus && lengthControl.isConnected) lengthControl.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
     root.dataset.summaryLength = length;
   }
+  let renderedTimeline = "", timelineData = "";
   function renderTimeline() {
     mapStatus.textContent = timelineLoading ? t("common.loading") : timelineError ? t("meetings.structured.timeline_error")
       : timeline ? t(timeline.duration_is_recorded ? "meetings.structured.recorded_extent" : "meetings.structured.observed_extent", { time: formatClock(timeline.duration_ms / 1000) }) : "";
     mapRetry.hidden = !timelineError;
     if (!timeline) return;
+    const nextTimeline = JSON.stringify([timeline, t("meetings.structured.map")]);
+    if (renderedTimeline === nextTimeline && lanes.childElementCount) return;
+    const arrive = timelineData !== JSON.stringify(timeline);
+    renderedTimeline = nextTimeline; timelineData = JSON.stringify(timeline);
     lanes.replaceChildren(...timeline.lanes.map((lane, index) => {
       const label = lane.kind === "person" && lane.speaker ? lane.speaker : t(lane.kind === "mixed" ? "meetings.attribution_mixed" : lane.kind === "overlap" ? "meetings.attribution_overlap" : "meetings.attribution_unknown");
-      const track = h("span", { class: "summary-map-track", "aria-hidden": true }, ...laneSpans(lane, timeline!.duration_ms).map(span => h("span", { class: "summary-map-span", style: `left:${span.left}%;width:${span.width}%` })));
+      const track = h("span", { class: "summary-map-track", "aria-hidden": true }, ...laneSpans(lane, timeline!.duration_ms).map(span => h("span", { style: `left:${span.left}%;width:${span.width}%;--map-order:${index};--map-wait:860ms`, class: "summary-map-span" })));
       return h("div", { class: "summary-map-lane", "data-lane-kind": lane.kind, style: `--lane-color:var(--${lane.kind === "person" ? `voice-${index % 4 + 1}` : "muted"})` }, h("span", { class: "summary-map-speaker" }, label), track,
         h("span", { class: "help summary-map-duration" }, formatClock(lane.duration_ms / 1000)));
     }));
+    if (arrive) lanes.querySelectorAll<HTMLElement>(".summary-map-span").forEach(span => playMotion(span, "motion-map-draw"));
   }
   async function loadTimeline() {
     if (!document || !record?.structure || length !== "detailed") return;

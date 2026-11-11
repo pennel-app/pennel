@@ -53,7 +53,7 @@ button.btn, summary.btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); max-width: 100%; min-height: var(--desktop-control-height); padding: var(--space-1) var(--space-3);
   border: 1px solid var(--control-edge); border-radius: var(--radius-pill); background: var(--control-surface); color: var(--foreground);
   font: 500 var(--font-body)/1.4 var(--chrome-ui); white-space: normal; text-align: center; list-style: none;
-  box-shadow: inset 0 1px 0 var(--toolbar-control-highlight), 0 1px 2px var(--shadow); transition: background 120ms ease;
+  box-shadow: inset 0 1px 0 var(--toolbar-control-highlight), 0 1px 2px var(--shadow); transition: background var(--da-motion-feedback) var(--da-motion-easing);
 }
 summary.btn::-webkit-details-marker { display: none; }
 button.btn .ui-icon { width: 14px; height: 14px; }
@@ -84,9 +84,9 @@ input[type="radio"] { margin: 0; accent-color: var(--accent); flex-shrink: 0; }
 /* On/off choices are switches in the brand colours. */
 input[type="checkbox"] {
   -webkit-appearance: none; appearance: none; position: relative; flex-shrink: 0; width: var(--space-8); height: var(--space-5); margin: 0; border-radius: var(--radius-pill);
-  background: var(--selection); box-shadow: inset 0 0 0 .5px var(--control-edge); transition: background .15s ease;
+  background: var(--selection); box-shadow: inset 0 0 0 .5px var(--control-edge); transition: background var(--da-motion-switch) var(--da-motion-easing);
 }
-input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: var(--space-4); height: var(--space-4); border-radius: 50%; background: var(--brand-paper); box-shadow: 0 .5px 1.5px var(--shadow); transition: transform .15s ease; }
+input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: var(--space-4); height: var(--space-4); border-radius: 50%; background: var(--brand-paper); box-shadow: 0 .5px 1.5px var(--shadow); transition: transform var(--da-motion-switch) var(--da-motion-easing); }
 input[type="checkbox"]:checked { background: var(--button); box-shadow: none; }
 input[type="checkbox"]:checked::after { transform: translateX(12px); }
 input[type="checkbox"]:disabled { opacity: .45; }
@@ -380,7 +380,7 @@ mark { background: none; color: inherit; font-weight: 600; }
 .setup-model-option {
   position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-3); flex-shrink: 0; width: 100%; padding: var(--space-2) var(--space-3);
   border: 0; border-radius: var(--radius-control); background: transparent; color: var(--foreground); text-align: start;
-  appearance: none; -webkit-appearance: none; box-shadow: none; transition: background-color .12s ease;
+  appearance: none; -webkit-appearance: none; box-shadow: none; transition: background-color var(--da-motion-feedback) var(--da-motion-easing);
 }
 .setup-model-option:hover { background: var(--hover); }
 .setup-model-option[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -957,9 +957,11 @@ button.btn.danger:active:not(:disabled) { background: color-mix(in srgb, var(--d
   .toolbar-capture { interpolate-size: allow-keywords; width: max-content; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .toolbar-capture, .toolbar-capture.is-recording, .recording-levels i { transition: none; }
+  .toolbar-capture, .toolbar-capture.is-recording { transition: background-color var(--da-motion-feedback) var(--da-motion-easing) !important; }
+  .recording-levels i { transition: none; }
 }
-:root[data-reduce-motion="true"] :is(.toolbar-capture, .recording-levels i) { transition: none; }
+:root[data-reduce-motion="true"] .toolbar-capture { transition: background-color var(--da-motion-feedback) var(--da-motion-easing) !important; }
+:root[data-reduce-motion="true"] .recording-levels i { transition: none; }
 .speech-model-picker { max-width: min(100%, 260px); }
 .speech-model-picker > .ui-icon { width: 12px; height: 12px; flex: 0 0 auto; transform: rotate(90deg); }
 .speech-model-picker .menu-button-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

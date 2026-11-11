@@ -55,11 +55,14 @@
 .recent-dictation > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .recent-dictation > small { flex-shrink: 0; max-width: 22ch; font-size: var(--font-label); font-variant-numeric: tabular-nums; }
 .recent-load-status { display: flex; align-items: center; gap: 12px; }
-.recent-dictation-new { animation: home-result-arrives 1600ms var(--da-motion-easing); }
-@keyframes home-result-arrives { 0% { transform: translateY(-8px); opacity: 0; background: var(--accent-soft); } 20% { transform: none; opacity: 1; background: var(--accent-soft); } 100% { background: transparent; } }
+.recent-dictation-new { animation: home-result-arrives var(--da-motion-reveal) var(--da-motion-easing), home-result-room var(--da-motion-move) var(--da-motion-easing), home-result-tint 1600ms var(--da-motion-easing); overflow: hidden; }
+@keyframes home-result-arrives { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes home-result-room { from { max-height: 0; min-height: 0; } to { max-height: 44px; min-height: 44px; } }
+@keyframes home-result-tint { from { background: var(--accent-soft); } to { background: transparent; } }
 @media (max-width: 1050px) { .dictation-home-hero { grid-template-columns: 1fr; gap: 28px; } .home-practice-panel { max-width: 560px; } }
 @media (max-width: 850px) { .dictation-home { padding-top: 28px; } .dictation-home-guidance { gap: 12px; } .dictation-recent { margin-top: 28px; } .home-practice-panel { padding: 16px; } }
-@media (prefers-reduced-motion: reduce) { .recent-dictation-new { animation-name: home-result-fades; } @keyframes home-result-fades { from { background: var(--accent-soft); } to { background: transparent; } } }
+@media (prefers-reduced-motion: reduce) { .recent-dictation-new { animation: desktop-fade var(--da-motion-feedback) var(--da-motion-easing), home-result-tint 1600ms var(--da-motion-easing) !important; } }
+:root[data-reduce-motion="true"] .recent-dictation-new { animation: desktop-fade var(--da-motion-feedback) var(--da-motion-easing), home-result-tint 1600ms var(--da-motion-easing) !important; }
 .task-settings-detail { margin: var(--space-5) 0; }
 .task-settings-detail > summary, .task-setup-other-options > summary { min-height: var(--desktop-sidebar-row-height); padding: var(--space-2) 0; color: var(--foreground); font-size: var(--font-body); cursor: pointer; }
 .task-settings-detail > summary:focus-visible, .task-setup-other-options > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-control); }

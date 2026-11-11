@@ -1,0 +1,41 @@
+/* One desktop curve and semantic durations; the fixed Figtree pill owns its own sheet. */
+.motion-arrive { animation: desktop-arrive var(--da-motion-reveal) var(--da-motion-easing) both; }
+.motion-feedback { animation: desktop-pop var(--da-motion-feedback) var(--da-motion-easing) both; }
+.motion-settle { animation: desktop-settle var(--da-motion-move) var(--da-motion-easing) both; }
+.motion-tick { animation: desktop-tick var(--da-motion-move) var(--da-motion-easing) both; }
+.motion-resolve { animation: desktop-resolve var(--da-motion-move) var(--da-motion-easing) both; }
+.motion-companion-enter { animation: desktop-companion-enter var(--da-motion-move) var(--da-motion-easing) both; }
+.motion-companion-outgoing { animation: desktop-companion-exit var(--da-motion-move-exit) var(--da-motion-easing) both; overflow: hidden; }
+.motion-companion-space { display: grid !important; gap: 10px !important; animation: desktop-companion-space var(--companion-duration) var(--da-motion-easing) both; }
+.motion-summary { animation: desktop-arrive var(--da-motion-reveal) var(--da-motion-easing) both; animation-delay: calc(var(--summary-order, 0) * 90ms); }
+.motion-map-draw { transform-origin: left; animation: desktop-map-draw var(--da-motion-move) var(--da-motion-easing) both; animation-delay: calc(var(--map-order, 0) * 90ms + var(--map-wait, 0ms)); }
+.shortcut-record[aria-pressed="true"] { animation: shortcut-waiting 1200ms var(--da-motion-easing) infinite; }
+.summary-placeholders:not([hidden]) > div { animation: summary-waiting 1200ms var(--da-motion-easing) infinite alternate; }
+.summary-placeholders:not([hidden]) > div:nth-child(even) { animation-delay: 120ms; }
+@keyframes desktop-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes desktop-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes desktop-pop { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: none; } }
+@keyframes desktop-settle { from { opacity: .65; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+@keyframes desktop-tick { from { opacity: .5; transform: scale(1.2); } to { opacity: 1; transform: none; } }
+@keyframes desktop-resolve { from { background-color: var(--subtle); color: var(--muted); } to { background-color: transparent; color: var(--foreground); } }
+@keyframes desktop-companion-enter { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes desktop-companion-exit { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(16px); } }
+@keyframes desktop-companion-space { from { grid-template-columns: var(--companion-from); } to { grid-template-columns: var(--companion-to); } }
+@keyframes desktop-map-draw { from { opacity: 0; transform: scaleX(0); } to { opacity: 1; transform: scaleX(1); } }
+@keyframes shortcut-waiting { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 5px var(--accent-soft); } }
+@keyframes summary-waiting { from { opacity: .5; } to { opacity: 1; } }
+@keyframes desktop-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  :is(.motion-arrive,.motion-feedback,.motion-settle,.motion-tick,.motion-resolve,.motion-companion-enter,.motion-summary,.motion-map-draw,.summary-placeholders:not([hidden]) > div) { animation: desktop-fade var(--da-motion-feedback) var(--da-motion-easing) both !important; }
+  .motion-companion-outgoing { animation: desktop-fade-out var(--da-motion-feedback) var(--da-motion-easing) both !important; }
+  .motion-companion-space, .shortcut-record[aria-pressed="true"] { animation: none !important; }
+}
+:root[data-reduce-motion="true"] :is(.motion-arrive,.motion-feedback,.motion-settle,.motion-tick,.motion-resolve,.motion-companion-enter,.motion-summary,.motion-map-draw,.summary-placeholders:not([hidden]) > div) { animation: desktop-fade var(--da-motion-feedback) var(--da-motion-easing) both !important; }
+:root[data-reduce-motion="true"] .motion-companion-outgoing { animation: desktop-fade-out var(--da-motion-feedback) var(--da-motion-easing) both !important; }
+:root[data-reduce-motion="true"] :is(.motion-companion-space,.shortcut-record[aria-pressed="true"]) { animation: none !important; }
+
+.library-shortcuts > button.motion-sidebar { position: relative; isolation: isolate; background: transparent; }
+.library-shortcuts > button.motion-sidebar::before { content: ""; position: absolute; z-index: -1; inset: 0; border-radius: inherit; background: var(--selection); animation: desktop-sidebar-selection var(--da-motion-move) var(--da-motion-easing) both; pointer-events: none; }
+@keyframes desktop-sidebar-selection { from { transform: translateY(var(--sidebar-selection-from)); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .library-shortcuts > button.motion-sidebar::before { animation: desktop-fade var(--da-motion-feedback) var(--da-motion-easing) both !important; } }
+:root[data-reduce-motion="true"] .library-shortcuts > button.motion-sidebar::before { animation: desktop-fade var(--da-motion-feedback) var(--da-motion-easing) both !important; }

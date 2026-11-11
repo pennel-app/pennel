@@ -83,7 +83,10 @@ export async function checkRecordingCapsule() {
     record.focus();
     record.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
     assert(document.activeElement === capsule.querySelector(".toolbar-capture-stop"), "Toolbar keyboard navigation did not reach Stop.");
-    if (fixture.options.reduced_motion) assert([...capsule.querySelectorAll(".recording-levels i"), capsule].every(node => getComputedStyle(node).transitionDuration.split(",").every(value => parseFloat(value) === 0)), "Reduced motion retained waveform or growing-capsule transitions.");
+    if (fixture.options.reduced_motion || fixture.options.reduce_motion) {
+      assert(getComputedStyle(capsule).transitionProperty === "background-color" && parseFloat(getComputedStyle(capsule).transitionDuration) > 0, "Reduced motion lost the capsule colour fade or retained width movement.");
+      assert([...capsule.querySelectorAll(".recording-levels i")].every(node => getComputedStyle(node).transitionDuration.split(",").every(value => parseFloat(value) === 0)), "Reduced motion retained waveform transitions.");
+    }
     const stop = capsule.querySelector(".toolbar-capture-stop"); stop.click();
     const duplicateStop = api.stopMeeting(session);
     await until(() => releaseStop, "Stop did not reach capture.");

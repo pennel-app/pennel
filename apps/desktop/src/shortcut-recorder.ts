@@ -1,3 +1,4 @@
+import { playMotion } from "./motion";
 import { api, listen, listenToWindow, type PillState, type ShortcutBinding, type ShortcutRow } from './api';
 import { bindLocalization, l, t, type UiText } from './i18n.ts';
 import { controlButton, errorText, h, keycaps } from './dom';
@@ -59,6 +60,7 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
     return row.capability.available || row.capability.reason === 'dom_layout_unavailable'
       || action === 'next_model' && ['next_model_switch_disabled','next_model_shortcut_cleared'].includes(row.capability.reason ?? '');
   }
+  let displayKey = '';
   function refresh() {
     if (disposed) return;
     const row = shortcutRow(ctx.info, action), recording = state.phase === 'starting' || state.phase === 'listening';
@@ -67,7 +69,13 @@ export function shortcutRecorder(ctx: Context, action: string, options: { preset
     record.disabled = saving || blocked;
     record.setAttribute('aria-label', `${name}: ${recording ? t('shortcuts.press') : shortcutText(ctx.info, action)}. ${t('shortcuts.record')}`);
     record.setAttribute('aria-pressed', String(recording));
-    display.replaceChildren(...recording ? state.keycaps.length ? [keycaps(state.keycaps)] : [t(state.phase === 'starting' ? 'shortcuts.starting' : 'shortcuts.press')] : row?.binding ? [keycaps(row.label.keycaps)] : [t('shortcuts.none')]);
+    const nextDisplay = JSON.stringify(recording ? [state.phase, state.keycaps, t('shortcuts.press')] : [row?.binding, row?.label.keycaps, t('shortcuts.none')]);
+    if (displayKey !== nextDisplay) {
+      const previousKeys = [...display.querySelectorAll('kbd')].map(key => key.textContent);
+      displayKey = nextDisplay;
+      display.replaceChildren(...recording ? state.keycaps.length ? [keycaps(state.keycaps)] : [t(state.phase === 'starting' ? 'shortcuts.starting' : 'shortcuts.press')] : row?.binding ? [keycaps(row.label.keycaps)] : [t('shortcuts.none')]);
+      if (recording) display.querySelectorAll('kbd').forEach((key, index) => { if (previousKeys[index] !== key.textContent) playMotion(key, 'motion-feedback'); });
+    }
     let label = record.querySelector<HTMLElement>('.shortcut-record-label');
     if (options.recordLabel && !recording) { if (!label) { label = h('span', { class: 'shortcut-record-label' }); record.append(label); } label.textContent = t('shortcuts.record'); } else label?.remove();
     clear.hidden = !row?.binding || recording; clear.disabled = saving || blocked; clear.setAttribute('aria-label', t('shortcuts.clear', { action: name }));

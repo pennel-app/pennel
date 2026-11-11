@@ -2,6 +2,7 @@ import "./fonts.css";
 import "./pill.css";
 import { api, listen, listenToWindow, type AppInfo, type PillPreview, type PillState } from "./api";
 import { icon } from "./icons";
+import { desktopEnvironment } from "./desktop-chrome-state";
 import { PillModelState, type PillModelPresentation } from "./pill-model-state";
 import { PillPreviewState } from "./pill-preview-state";
 import { PILL_METRICS } from "./pill-metrics.generated";
@@ -229,6 +230,12 @@ async function refreshDemo() {
 }
 
 async function boot() {
+  const applyMotion = (value: unknown) => {
+    const environment = desktopEnvironment(value);
+    if (environment) document.documentElement.dataset.reduceMotion = String(environment.reduce_motion);
+  };
+  await listenToWindow("desktop-environment-changed", event => applyMotion(event.payload));
+  await api.desktopEnvironment().then(applyMotion).catch(() => undefined);
   if (previewOnly) {
     localeReady = true;
     bindLocalization(status, () => { if (pendingState) render(pendingState); });
@@ -237,7 +244,7 @@ async function boot() {
     return;
   }
   pill.addEventListener("animationend", (event) => {
-    if (event.target === pill && event.animationName === "pill-leave" && !visible) {
+    if (event.target === pill && ["pill-leave", "pill-leave-fade"].includes(event.animationName) && !visible) {
       pill.classList.remove("leaving");
       pill.hidden = true;
     }
