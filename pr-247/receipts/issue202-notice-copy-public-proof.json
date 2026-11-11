@@ -1,0 +1,8 @@
+{
+  "public": "apps/desktop/public/third-party-codemirror.txt",
+  "dist": "apps/desktop/dist/third-party-codemirror.txt",
+  "bytes": 14928,
+  "sha256": "981ae28ca158ae6266fcdc9986bc6539e08ac02e80e5758b4ace6c6a5c796a30",
+  "byte_identical": true,
+  "permission_notices": 12
+}

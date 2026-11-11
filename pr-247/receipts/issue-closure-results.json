@@ -1,0 +1,230 @@
+{
+  "closed": [
+    {
+      "number": 191,
+      "pr": 221,
+      "reason": "The additive theme/icon/helper/capture foundations, contrast checks and owner title comparison are complete. The owner chose the title sizes; no own device criterion remains.",
+      "closed_at": "2026-11-11T14:45:18Z",
+      "state": "CLOSED",
+      "state_reason": "completed",
+      "project_status": "Done"
+    },
+    {
+      "number": 193,
+      "pr": 225,
+      "reason": "The approved 26 px page/onboarding titles, 30 px dictation instruction and 20 px setup heading scope are applied and verified, including corrected EN/NL light/dark minimum/enlarged captures.",
+      "closed_at": "2026-11-11T14:45:21Z",
+      "state": "CLOSED",
+      "state_reason": "completed",
+      "project_status": "Done"
+    },
+    {
+      "number": 205,
+      "pr": 222,
+      "reason": "The structured-summary ADR is accepted. The owner explicitly signed off all seven recommendations, and the accepted note is merged. This task contains no runtime/device acceptance requirement.",
+      "closed_at": "2026-11-11T14:45:23Z",
+      "state": "CLOSED",
+      "state_reason": "completed",
+      "project_status": "Done"
+    },
+    {
+      "number": 206,
+      "pr": 235,
+      "reason": "Core parsing/validation, revision sidecars, candidate/accept/history/restore/fallback and sync scanning are implemented, tested, reviewed and merged. Its own required verification is complete.",
+      "closed_at": "2026-11-11T14:45:26Z",
+      "state": "CLOSED",
+      "state_reason": "completed",
+      "project_status": "Done"
+    },
+    {
+      "number": 207,
+      "pr": 235,
+      "reason": "Generation provenance and mixed/overlap-safe speaker timeline helpers are implemented with round-trip/overlap tests, reviewed and merged. Its own required verification is complete.",
+      "closed_at": "2026-11-11T14:45:29Z",
+      "state": "CLOSED",
+      "state_reason": "completed",
+      "project_status": "Done"
+    },
+    {
+      "number": 209,
+      "pr": 237,
+      "reason": "The accepted shortcut ADR, lenient model/validator, legacy derivation/compatibility and mobile type mirror are implemented and verified. Actual native key/permission/withholding acceptance is owned separately by #212\u2013#215.",
+      "closed_at": "2026-11-11T14:45:32Z",
+      "state": "CLOSED",
+      "state_reason": "completed",
+      "project_status": "Done"
+    },
+    {
+      "number": 210,
+      "pr": 237,
+      "reason": "Binding-aware keys/tracking, own-key handling, hold/hands-free Cancel and preset compatibility are implemented and tested. This issue explicitly assigns physical-keyboard evidence to #212 and #213.",
+      "closed_at": "2026-11-11T14:45:35Z",
+      "state": "CLOSED",
+      "state_reason": "completed",
+      "project_status": "Done"
+    }
+  ],
+  "held": [
+    {
+      "number": 192,
+      "remaining": "Actual Mac VoiceOver and the operating system\u2019s Reduce Motion setting.",
+      "pr": 227,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 194,
+      "remaining": "Real dictation into Home practice, actual focus loss, and use while a real meeting is recording.",
+      "pr": 229,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 195,
+      "remaining": "Real recording level bars, an actually denied microphone, and the capsule while visiting other views.",
+      "pr": 228,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 196,
+      "remaining": "VoiceOver reading order of the continuous meeting document.",
+      "pr": 231,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 197,
+      "remaining": "Native split dragging and Follow during a real recording.",
+      "pr": 236,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 198,
+      "remaining": "Actual macOS Email and Share service hand-off.",
+      "pr": 234,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 199,
+      "remaining": "A real application summary run with a configured model and with no model configured.",
+      "pr": 239,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 200,
+      "remaining": "VoiceOver on accepted and undone Review cards.",
+      "pr": 240,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 201,
+      "remaining": "Production qualification adoption under #98, a real qualified meeting/provider run, and native VoiceOver/accessibility. The intentionally empty qualification registry is an accepted gate, not missing implementation.",
+      "pr": 246,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 202,
+      "remaining": "Physical IME, native WebKit/menu dispatch and VoiceOver, plus execution of native verification and large-note typing/performance measurements.",
+      "pr": 243,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 203,
+      "remaining": "The actual Mac permission-repair/System Settings routes.",
+      "pr": 230,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 204,
+      "remaining": "A real model download and the first microphone practice.",
+      "pr": 233,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 208,
+      "remaining": "VoiceOver interaction with the speaker lanes and meeting map.",
+      "pr": 238,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 211,
+      "remaining": "Actual Mac menu accelerators with a non-US keyboard layout.",
+      "pr": 237,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 212,
+      "remaining": "Physical fn capture, global shortcuts in other applications, and actual withholding of the bound key from the receiving app.",
+      "pr": 237,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 213,
+      "remaining": "Deferred Windows menu masking and X11 modifier/capture/layout runtime evidence; overlapping Mac fn/layout/focus/secure-input/withholding checks remain owned by #212/#214/#215. Existing portable acceptance owners #7/#8/#9 remain separate.",
+      "pr": 241,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 214,
+      "remaining": "Real Mac fn/modifier-side/IME/layout recording and receiving-app withholding, signed focus/permissions, secure input and VoiceOver.",
+      "pr": 242,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 215,
+      "remaining": "Recording actual keys in the native app across fn/modifier sides/layouts, signed focus/permissions, secure input, receiving-app withholding and VoiceOver.",
+      "pr": 242,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 216,
+      "remaining": "Native pill nonactivation/click-through and the real paste key/delivery on the supported installed platforms.",
+      "pr": 226,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 217,
+      "remaining": "Real microphone/current-capture model switching, the native picker and hook delivery, signed permissions, receiving-app insertion, focus and secure input on a Mac.",
+      "pr": 244,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 218,
+      "remaining": "Actual multi-display/cursor placement, native focus/permissions, VoiceOver and receiving-app/microphone behavior.",
+      "pr": 245,
+      "state": "OPEN",
+      "project_status": "In review"
+    },
+    {
+      "number": 219,
+      "remaining": "Actual WKWebView/compositor motion and the OS Reduce Motion setting, with the named native VoiceOver/IME/focus and capture/delivery integration evidence.",
+      "pr": 247,
+      "state": "OPEN",
+      "project_status": "In review"
+    }
+  ],
+  "umbrella": {
+    "number": 220,
+    "state": "OPEN",
+    "project_status": "In review"
+  },
+  "source_commit": "27b75bec05bd78370dab4d8f277bbfae25b06367",
+  "release": "v0.1.45"
+}
