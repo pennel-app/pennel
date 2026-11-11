@@ -47,6 +47,9 @@ def write_json(path, value):
         json.dump(value, handle, ensure_ascii=False, indent=2, allow_nan=False)
         handle.write('\n');handle.flush();os.fsync(handle.fileno())
     temporary.replace(path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try: os.fsync(directory)
+    finally: os.close(directory)
 
 
 @contextmanager
@@ -218,11 +221,11 @@ def run_job(exported, freeze_sha256, bridge, credential, ledger, output, *, exec
         request_sha = hashlib.sha256(body).hexdigest()
         try:
             bound = reservation_bound(batch['wire_body'], prompt_price, completion_price)
-            if ledger.spent + sum(ledger.pending.values()) + bound + NATIVE_SMOKE_ALLOWANCE > ledger.limit:
+            if ledger.total_exposure + bound + NATIVE_SMOKE_ALLOWANCE > ledger.limit:
                 return finish('reserved_native_smoke_budget_unavailable')
-            token = ledger.reserve(bound)
+            token = ledger.reserve(bound, {'fixture_id': run['fixture_id'], 'batch_index': batch['index'], 'request_sha256': request_sha})
         except runners.EvaluationError as error: return finish(str(error))
-        entry = {'batch_index': batch['index'], 'request_sha256': request_sha, 'input_bytes': len(body),
+        entry = {'batch_index': batch['index'], 'reservation_id': token, 'request_sha256': request_sha, 'input_bytes': len(body),
             'http_status': None, 'raw_response': None, 'elapsed_ms': None}
         run['requests'].append(entry);write_json(output, run)
         request_started = clock()
@@ -265,9 +268,14 @@ def run_job(exported, freeze_sha256, bridge, credential, ledger, output, *, exec
     return finish()
 
 
-def credential():
-    result = subprocess.run(['security', 'find-generic-password', '-s', 'dev.pennel.evaluation.openrouter',
-                             '-a', 'OPENROUTER_API_KEY', '-w'], capture_output=True, check=False)
+def credential(*, deadline=None, clock=time.monotonic):
+    timeout = 15 if deadline is None else min(15, deadline-clock())
+    if timeout <= 0: raise ValueError('evaluation_budget_exceeded')
+    try:
+        result = subprocess.run(['security', 'find-generic-password', '-s', 'dev.pennel.evaluation.openrouter',
+                                 '-a', 'OPENROUTER_API_KEY', '-w'], capture_output=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise ValueError('evaluation_credential_timeout') from None
     if result.returncode or not result.stdout.strip(): raise ValueError('evaluation_credential_unavailable')
     return result.stdout.decode().rstrip('\r\n')
 
@@ -374,13 +382,13 @@ def main():
     if time.monotonic() >= global_deadline: raise ValueError('evaluation_budget_exceeded')
     prices = _prices(args.pricing)
     if time.monotonic() >= global_deadline: raise ValueError('evaluation_budget_exceeded')
-    secret = credential()
+    secret = credential(deadline=global_deadline)
     runs = []
     with locked_ledger(args.ledger) as ledger:
         if args.phase == 'resources':
             exported = next(row for row in frozen['production']['exports'] if row['fixture']['id'] == frozen['resource_fixture_id'])
             full_panel_bound = sum(reservation_bound(batch['wire_body'], *prices) for batch in qualification.physical_requests(exported)) * 35
-            if ledger.spent + full_panel_bound + NATIVE_SMOKE_ALLOWANCE > ledger.limit or ledger.unresolved:
+            if ledger.total_exposure + full_panel_bound + NATIVE_SMOKE_ALLOWANCE > ledger.limit or ledger.unresolved:
                 raise ValueError('fixed_resource_panel_exceeds_reconciled_budget')
             samples = []
             for phase, count in [('cold', 5), ('warm', 30)]:

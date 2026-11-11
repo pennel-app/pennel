@@ -6,6 +6,8 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
+import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import finished
@@ -110,6 +112,24 @@ class ExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'client_deadline_exceeded'):
                 client.call(value)
             self.assertIsNotNone(client.process.poll())
+
+    def test_native_smoke_allowance_includes_conservative_exposure(self):
+        token = self.ledger.reserve('1.79999', {'request_sha256': 'a'*64})
+        self.ledger.resolve_upper_bound(token, {'request_sha256': 'a'*64}, {'reason': 'synthetic interruption'})
+        run = self.run_job()
+        self.assertEqual(run['reason'], 'reserved_native_smoke_budget_unavailable')
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.ledger.spent, Decimal('0.00001416'))
+
+    def test_credential_lookup_is_bounded_and_global_expiry_sends_nothing(self):
+        with patch.object(experiment.subprocess, 'run', side_effect=subprocess.TimeoutExpired(['security'], 15)) as call:
+            with self.assertRaisesRegex(ValueError, 'evaluation_credential_timeout'):
+                experiment.credential(deadline=100, clock=lambda: 0)
+            self.assertEqual(call.call_args.kwargs['timeout'], 15)
+        with patch.object(experiment.subprocess, 'run') as call:
+            with self.assertRaisesRegex(ValueError, 'evaluation_budget_exceeded'):
+                experiment.credential(deadline=5, clock=lambda: 5)
+            call.assert_not_called()
 
     def test_price_evidence_must_name_the_exact_model_and_upstream(self):
         price = Path(self.directory.name) / 'price.json'

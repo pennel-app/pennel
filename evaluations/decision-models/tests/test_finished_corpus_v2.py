@@ -38,6 +38,17 @@ class AuthoredCorpusTests(unittest.TestCase):
                 self.assertIsNone(judgment['due'])
                 self.assertNotIn(judgment['commitment'], ('none', 'negated'))
 
+    def test_attempt_b_replaces_only_calibration_text_without_reusing_attempt_a(self):
+        prior = corpus.experiment('A');current = corpus.experiment('B')
+        for split in ('development', 'heldout'):
+            self.assertEqual([f for f in prior['fixtures'] if f['split'] == split], [f for f in current['fixtures'] if f['split'] == split])
+        old = [f for f in prior['fixtures'] if f['split'] == 'calibration']
+        new = [f for f in current['fixtures'] if f['split'] == 'calibration']
+        self.assertTrue({f['id'] for f in old}.isdisjoint(f['id'] for f in new))
+        self.assertTrue({f['family_id'] for f in old}.isdisjoint(f['family_id'] for f in new))
+        self.assertTrue({r['text'] for f in old for r in f['utterances']}.isdisjoint(r['text'] for f in new for r in f['utterances']))
+        self.assertEqual([prior['expected_answers'][f['id']] for f in old], [current['expected_answers'][f['id']] for f in new])
+
     def test_long_stress_and_fixed_resource_source_are_development_only(self):
         by_id = {item['id']: item for item in self.spec['fixtures']}
         panel = by_id[self.spec['resource_fixture_id']]

@@ -14,6 +14,7 @@ import calibration
 import finished
 import finished_v2
 import metrics
+import runners
 
 PROTOCOL = Path(__file__).with_name('protocol-finished-qualification-v1.json')
 KINDS = ('action', 'decision', 'open_question', 'changed_commitment')
@@ -205,10 +206,9 @@ def _execution_reconciled(run):
             or ledger.get('pending_reservations') != {}):
         return False
     try:
-        limit, spent, reserved = (Decimal(str(ledger[key])) for key in ('limit_usd', 'known_billed_usd', 'reserved_usd'))
-        return (all(value.is_finite() for value in (limit, spent, reserved))
-                and 0 <= spent <= limit <= 2 and reserved == 0)
-    except (KeyError, InvalidOperation, ValueError, TypeError):
+        restored = runners.SpendLedger.from_dict(ledger)
+        return not restored.unresolved and 0 <= restored.total_exposure <= restored.limit <= 2 and not restored.pending
+    except (runners.EvaluationError, KeyError, InvalidOperation, ValueError, TypeError):
         return False
 
 
