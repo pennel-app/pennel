@@ -423,10 +423,16 @@ mod tests {
         let shared = Shared::testing(directory.path().join("preview"));
         for title in [None, Some("Calendar planning".to_owned())] {
             let expected = title.clone();
-            let session = shared.engine.clone().start_meeting(
-                detected_recording_title(title),
-                pennel_core::ApiKeys { by_provider: Default::default() },
-            ).unwrap();
+            let session = shared
+                .engine
+                .clone()
+                .start_meeting(
+                    detected_recording_title(title),
+                    pennel_core::ApiKeys {
+                        by_provider: Default::default(),
+                    },
+                )
+                .unwrap();
             let actual = shared.engine.meeting_info(session.id()).unwrap().title;
             match expected {
                 Some(expected) => assert_eq!(actual, expected),
