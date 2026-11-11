@@ -202,3 +202,34 @@ export async function checkSidebarMotion() {
   window.__PENNEL_CONTROL_ACCEPTANCE__ = { sidebar_motion: { name: animation.animationName, duration: animation.effect.getTiming().duration, keyframes: frames, reduced: reduced() } };
   finish(document.body); await frame();
 }
+
+export async function checkCompanionExitScroll() {
+  const root = document.querySelector('.live-workspace');
+  await until(() => root?.querySelectorAll('.transcript-line').length > 100 && window.__PENNEL_DESKTOP_COMMAND_STATE__?.ready, 'Use the actually overflowing owned transcript fixture.');
+  const companion = root.querySelector('.meeting-companion'), note = root.querySelector('.live-notes'), tab = root.querySelector('[data-live-tab="transcript"]');
+  note.applyUserChange('Synthetic draft and selection retained through a deep-scrolled close.'); note.focus(); note.setSelectionRange(10, 23, 'backward');
+  const draft = [note.value, note.selectionStart, note.selectionEnd, note.selectionDirection];
+  tab.focus(); if (companion.hidden || tab.getAttribute('aria-selected') !== 'true') tab.click(); finish(root); await frame();
+  const source = companion.querySelector('.live-transcript');
+  assert(source.scrollHeight > source.clientHeight + 1000, 'The real transcript is not deeply scrollable.');
+  source.scrollTop = Math.round((source.scrollHeight - source.clientHeight) * .6); source.dispatchEvent(new Event('scroll')); await frame();
+  const top = source.scrollTop, left = source.scrollLeft, bounds = source.getBoundingClientRect(), rows = [...source.querySelectorAll('.transcript-line')];
+  assert(top > 1000, 'The source did not retain a nonzero deep reading offset.');
+  const visibleIndex = rows.findIndex(row => row.getBoundingClientRect().bottom > bounds.top + 1), passage = rows[visibleIndex].querySelector('.transcript-copy').textContent;
+  const passageTop = rows[visibleIndex].getBoundingClientRect().top - bounds.top;
+  root.querySelector('.meeting-companion-close').click();
+  assert(companion.hidden && document.activeElement === note.contentDOM, 'The paint correction delayed logical close or its focus return.');
+  const outgoing = document.querySelector('.motion-companion-outgoing');
+  proof(outgoing, reduced() ? 120 : 130, !reduced());
+  const animation = outgoing.getAnimations()[0]; animation.pause(); animation.currentTime = (reduced() ? 120 : 130) / 2;
+  const copy = outgoing.shadowRoot.querySelector('.live-transcript'), copyRow = copy.querySelectorAll('.transcript-line')[visibleIndex];
+  const snapshotScroll = { top: copy.scrollTop, left: copy.scrollLeft };
+  assert(copy.scrollTop === top && copy.scrollLeft === left, `The mid-exit copy lost the real nested scroll offset: ${copy.scrollTop}/${copy.scrollLeft}, expected ${top}/${left}.`);
+  assert(copyRow.querySelector('.transcript-copy').textContent === passage && Math.abs(copyRow.getBoundingClientRect().top - copy.getBoundingClientRect().top - passageTop) < 1, 'The outgoing paint shows a different visible passage.');
+  assert(outgoing.inert && outgoing.getAttribute('aria-hidden') === 'true' && !outgoing.shadowRoot.querySelector('[id],[role],[aria-live],[data-live-pane],[data-insight-id],[data-live-tab]'), 'The scroll correction weakened outgoing-copy semantics.');
+  tab.focus(); tab.click(); finish(root); await frame();
+  assert(!outgoing.isConnected && !companion.hidden && companion.querySelector('.live-transcript') === source && source.scrollTop === top && source.scrollLeft === left && document.activeElement === tab, 'Rapid reopen lost the real reader position/focus or retained the old paint.');
+  assert(JSON.stringify([note.value, note.selectionStart, note.selectionEnd, note.selectionDirection]) === JSON.stringify(draft), 'The paint correction changed the real draft or selection.');
+  await pause(280); assert(!companion.hidden && source.scrollTop === top && !document.querySelector('.motion-companion-outgoing'), 'An old paint cleanup disturbed the reopened reader.');
+  window.__PENNEL_CONTROL_ACCEPTANCE__.companion_exit_scroll = { source: { top, left }, copy_at_mid_exit: snapshotScroll, matched_visible_passage: true, draft_selection_retained: true, immediate_close_focus: true, rapid_reopen_retained: true };
+}

@@ -25,11 +25,23 @@ export function companionExit(element: HTMLElement, owner: HTMLElement): () => v
   const wrapper = document.createElement('div');
   wrapper.className = owner.className;
   const copy = element.cloneNode(true) as HTMLElement;
-  for (const node of [copy, ...copy.querySelectorAll<HTMLElement>('*')]) {
+  const sourceNodes = [element, ...element.querySelectorAll<HTMLElement>('*')];
+  const copyNodes = [copy, ...copy.querySelectorAll<HTMLElement>('*')];
+  const scrollPositions = sourceNodes.flatMap((node, index) => node.scrollTop || node.scrollLeft
+    ? [{ node: copyNodes[index], top: node.scrollTop, left: node.scrollLeft }] : []);
+  for (const node of copyNodes) {
     for (const attribute of [...node.attributes]) if (/^(id|role|aria-live|aria-labelledby|aria-describedby|data-.+)$/.test(attribute.name)) node.removeAttribute(attribute.name);
   }
   Object.assign(copy.style, { position: 'absolute', inset: '0', margin: '0', width: '100%', height: '100%', boxSizing: 'border-box', animation: 'none' });
   wrapper.append(copy); shadow.append(wrapper); document.body.append(host);
+  const restoreScroll = () => {
+    if (!host.isConnected) return;
+    // cloneNode omits public scroll state; layout must exist before offsets can be restored.
+    void copy.offsetHeight;
+    for (const position of scrollPositions) { position.node.scrollTop = position.top; position.node.scrollLeft = position.left; }
+  };
+  for (const style of shadow.querySelectorAll('link[rel="stylesheet"]')) style.addEventListener('load', restoreScroll, { once: true });
+  restoreScroll();
   let timer: ReturnType<typeof setTimeout>;
   const remove = () => { clearTimeout(timer); host.remove(); };
   host.addEventListener('animationend', remove, { once: true });
