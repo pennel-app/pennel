@@ -817,5 +817,7 @@
   "backend.shortcut_native_shortcut_unavailable": "Keyboard shortcuts are unavailable on this system.",
   "backend.shortcut_wayland_global_shortcuts": "Global shortcuts are unavailable on Wayland.",
   "backend.shortcut_x11_keyed_shortcuts_unavailable": "Keyed global shortcuts are unavailable on X11. Use a modifier-only shortcut, the buttons or a desktop command.",
-  "backend.x11_keyed_shortcuts_unavailable": "Global shortcuts with a regular key cannot yet be safely released on X11. Use Pennel’s buttons or your desktop’s shortcut settings."
+  "backend.x11_keyed_shortcuts_unavailable": "Global shortcuts with a regular key cannot yet be safely released on X11. Use Pennel’s buttons or your desktop’s shortcut settings.",
+  "backend.recording_shortcut_unavailable": "The recording shortcut is unavailable. Try resetting it in Settings.",
+  "backend.recording_shortcut_unavailable_named": "The {label} recording shortcut is unavailable. Choose another shortcut in Settings."
 }
