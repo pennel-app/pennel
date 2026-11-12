@@ -354,4 +354,50 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn incompatible_positive_kind_states_cannot_establish_assessment_or_empty_success() {
+        let mut request = input();
+        request["configuration"] = json!({"protocol":"open_router_decisions",
+            "endpoint":"https://openrouter.ai/api/alpha/decisions","upstream":"fixture-provider",
+            "model":"fixture-model","expected_model":"fixture-model","max_input_bytes":16000,"timeout_secs":30});
+        request["expected_actual"] = json!({"model":"fixture-model","provider":"fixture-provider",
+            "revision":"fixture-revision","artifact_sha256":"a".repeat(64)});
+        let exported = export(request).unwrap();
+        let answers=exported["batches"][0]["request"]["questions"].as_array().unwrap().iter().map(|question|{
+            let id=question["id"].as_str().unwrap();
+            let chosen=if id.ends_with("_support"){"supported"}else if id=="open_question"{"confirmed"}else{"unresolved"};
+            (id.to_owned(),json!({"type":"choice","choice":chosen,"probabilities":
+                question["options"].as_array().unwrap().iter().map(|option|{
+                    let key=option["id"].as_str().unwrap();(key.to_owned(),json!(if key==chosen{1.0}else{0.0}))
+                }).collect::<serde_json::Map<_,_>>()}))
+        }).collect::<serde_json::Map<_,_>>();
+        let body=json!({"model":"fixture-model","model_revision":"fixture-revision","provider":"fixture-provider","answers":answers}).to_string();
+        let replay = replay(
+            json!({"op":"finished_meeting_replay","export":exported,"responses":[{
+            "batch_index":0,"http_status":200,"body":body}]}),
+        )
+        .unwrap();
+        assert_eq!(replay["status"], "insufficient_evidence");
+        assert_eq!(replay["complete"], true);
+        assert!(
+            replay["windows"][0]["assessed_kinds"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            replay["windows"][0]["candidates"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            replay["windows"][0]["result"]["answers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|answer| { answer["id"] == "decision" && answer["choice"] == "unresolved" })
+        );
+    }
 }

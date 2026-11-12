@@ -494,13 +494,27 @@ fn classified_states(
             {
                 return Ok((*kind, state, selected.is_some()));
             }
-            match choice(&result.answers, &support_id)? {
-                Some("supported") => Ok((*kind, state, selected.is_some())),
-                Some("absent") => Ok((*kind, None, true)),
-                Some("unclear") | None => Ok((*kind, None, false)),
-                _ => Err(invalid(
-                    "The analysis returned an unknown kind-support value.",
-                )),
+            let support = match choice(&result.answers, &support_id)? {
+                Some("supported") => Some(true),
+                Some("absent") => Some(false),
+                Some("unclear") | None => None,
+                _ => {
+                    return Err(invalid(
+                        "The analysis returned an unknown kind-support value.",
+                    ));
+                }
+            };
+            // Unresolved describes an unanswered information need, not a task or
+            // choice. Conflicting positive types cannot establish a negative either.
+            if state.is_some_and(|state| {
+                (*kind == InsightKind::OpenQuestion) != (state == CommitmentState::Unresolved)
+            }) {
+                return Ok((*kind, None, false));
+            }
+            match support {
+                Some(true) => Ok((*kind, state, selected.is_some())),
+                Some(false) => Ok((*kind, None, true)),
+                None => Ok((*kind, None, false)),
             }
         })
         .collect()
@@ -903,7 +917,7 @@ pub(crate) fn qualification_request(
         .expect("authored labels")),
         grouping: GROUPING.into(),
         preprocessing_sha256: sha(
-            "finalized-exact-utf8-source0;one-prev-next;512-window-refusal;encoded-byte-bounded-greedy-max8-openrouter-choice-batches;other-protocol-singletons;independent-kinds;openrouter-source0-kind-support-required;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v5",
+            "finalized-exact-utf8-source0;one-prev-next;512-window-refusal;encoded-byte-bounded-greedy-max8-openrouter-choice-batches;other-protocol-singletons;independent-kinds;openrouter-source0-kind-support-required;openrouter-unresolved-only-open-question;incompatible-positive-unassessed;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v6",
         ),
         resource_profile_sha256: sha(&format!(
             "{}:{}:{}:{}:physical2-optional1-absolute-deadline-v1",
@@ -2851,7 +2865,10 @@ mod tests {
             let assessed = classified_states(&window, &response).unwrap();
             assert_eq!(assessed[0].2, support != "unclear");
         }
-        for (state, commitment) in EVENT_STATES {
+        for (state, commitment) in EVENT_STATES
+            .into_iter()
+            .filter(|(state, _)| *state != "unresolved")
+        {
             let response = passage_result("action", state, "supported");
             let candidates =
                 decode_candidates(&window, &response, &source, processing(&response)).unwrap();
@@ -2870,6 +2887,63 @@ mod tests {
                 .is_empty()
         );
         assert!(!classified_states(&window, &response).unwrap()[0].2);
+    }
+
+    #[test]
+    fn openrouter_incompatible_kind_states_are_unassessed_without_rewriting_raw_answers() {
+        let source = source(&["Invented source used only to exercise typed decisions."]);
+        let window = windows(&source, &passage_config()).unwrap().remove(0);
+        for (id, kind) in EVENT_KINDS {
+            for (state, commitment) in EVENT_STATES {
+                let response = passage_result(id, state, "supported");
+                let raw = response.answers.clone();
+                let candidates =
+                    decode_candidates(&window, &response, &source, processing(&response)).unwrap();
+                let valid = if kind == InsightKind::OpenQuestion {
+                    commitment == CommitmentState::Unresolved
+                } else {
+                    commitment != CommitmentState::Unresolved
+                };
+                assert_eq!(candidates.len(), usize::from(valid), "{id}/{state}");
+                let assessed = classified_states(&window, &response).unwrap();
+                assert_eq!(
+                    assessed
+                        .iter()
+                        .find(|(candidate, _, _)| *candidate == kind)
+                        .unwrap()
+                        .2,
+                    valid,
+                    "{id}/{state}"
+                );
+                assert_eq!(response.answers, raw);
+            }
+        }
+        for support in ["supported", "absent", "unclear"] {
+            let response = passage_result("decision", "unresolved", support);
+            assert!(
+                !assessed_kinds(&window, &response, &[])
+                    .unwrap()
+                    .contains(&InsightKind::Decision)
+            );
+        }
+        let invalid = passage_result("decision", "unresolved", "invented");
+        assert!(decode_candidates(&window, &invalid, &source, processing(&invalid)).is_err());
+
+        let mut legacy_config = passage_config();
+        legacy_config.protocol = InferenceProtocol::LocalDecider;
+        let legacy = windows(&source, &legacy_config).unwrap().remove(0);
+        for (id, _) in EVENT_KINDS {
+            for (state, _) in EVENT_STATES {
+                let response = result(id, state);
+                assert_eq!(
+                    decode_candidates(&legacy, &response, &source, processing(&response))
+                        .unwrap()
+                        .len(),
+                    1,
+                    "legacy {id}/{state}"
+                );
+            }
+        }
     }
 
     #[test]
