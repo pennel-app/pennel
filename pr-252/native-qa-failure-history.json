@@ -1,0 +1,83 @@
+{
+  "scope": "honest QA history; no failure relabelled as passing; raw logs/receipts retained locally",
+  "versions": [
+    {
+      "complete": false,
+      "scope": "genuine native functional smoke; no held-out quality credit",
+      "failure_type": "RuntimeError",
+      "binary_sha256": "0077b29445055a74e33f739391ebd122578a7d3ad3e90a98edbfa57af37b43af",
+      "registry_sha256": "cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f",
+      "owned_capture_account": "review96-owned-08fe9c4ee065488581092b6d4c62384a",
+      "capture_credential_creation_attempted": true,
+      "capture_credential_created": true,
+      "capture_credential_deleted": false,
+      "capture_credential_cleanup_incomplete": true,
+      "version": 1,
+      "original_receipt_sha256": "85a5ca0c31525270913c1b4355bd35245f06d23965c162bed7e501c13ee6050e",
+      "role": "retained QA execution failure, not a model qualification result",
+      "provider_job": null,
+      "provider_requests": 0,
+      "outcome": "pre-inference initialization failure",
+      "cleanup_follow_up": {
+        "owned_account": "review96-owned-08fe9c4ee065488581092b6d4c62384a",
+        "targeted_security_delete_exit_code": 0,
+        "removed": true,
+        "provider_requests": 0,
+        "original_failure_preserved": true
+      }
+    },
+    {
+      "complete": false,
+      "scope": "genuine native functional smoke; no held-out quality credit",
+      "failure_type": "RuntimeError",
+      "binary_sha256": "0077b29445055a74e33f739391ebd122578a7d3ad3e90a98edbfa57af37b43af",
+      "registry_sha256": "cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f",
+      "owned_capture_account": "review96-owned-a0ae89b749e84320acaadb0434d39eb1",
+      "capture_credential_creation_attempted": true,
+      "capture_credential_created": true,
+      "capture_credential_deleted": true,
+      "version": 2,
+      "original_receipt_sha256": "7c0e4d9f752926600e37aa00faec1c5932f01731f6d68ea436c6cbfc2adac850",
+      "role": "retained QA execution failure, not a model qualification result",
+      "provider_job": {
+        "billing_complete": true,
+        "completed_provider_requests": 2,
+        "completed_windows": 16,
+        "endpoint": "https://openrouter.ai/api/alpha/decisions",
+        "error_code": null,
+        "finalization_finished": true,
+        "included_through_ms": 75000,
+        "job_id": "01a1d175-a4b1-72c1-9230-2028a6097332",
+        "language_policy": "nl",
+        "meeting_uid": "5f3d50ff-dc9b-48a8-ace9-948f4a6b9e16",
+        "model": "perplexity/pplx-decider-v1.2",
+        "physical_running": false,
+        "provider_id": "review96-owned-a0ae89b749e84320acaadb0434d39eb1",
+        "reported_billed_cost_usd": 0.0005448,
+        "revision": 31,
+        "state": "completed",
+        "total_windows": 16
+      },
+      "provider_requests": 2,
+      "outcome": "completed real provider job followed by QA lexical checker ReferenceError; see derived sidecar"
+    },
+    {
+      "complete": false,
+      "scope": "genuine native functional smoke; no held-out quality credit",
+      "failure_type": "RuntimeError",
+      "binary_sha256": "0077b29445055a74e33f739391ebd122578a7d3ad3e90a98edbfa57af37b43af",
+      "registry_sha256": "cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f",
+      "owned_capture_account": "review96-owned-e86f1ea88b3342f59e12ae8d37768395",
+      "capture_credential_creation_attempted": true,
+      "capture_credential_created": true,
+      "capture_credential_deleted": true,
+      "version": 3,
+      "original_receipt_sha256": "957260f72fa916c9d900f0a48f70a1ad4ec7f9101d1e35690ba5a6a6e6f2b6cc",
+      "role": "retained QA execution failure, not a model qualification result",
+      "provider_job": null,
+      "provider_requests": 0,
+      "outcome": "pre-inference initialization failure"
+    }
+  ],
+  "v4_complete": true
+}

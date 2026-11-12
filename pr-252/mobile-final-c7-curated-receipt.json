@@ -1,0 +1,234 @@
+{
+  "label": "final C7 source and genuinely adopted manual Dutch Review registry compatibility",
+  "inputs": {
+    "observed_at_unix": 1794514992.917504,
+    "head": "5d880a16a31bd643ae17f3cca459940f8554c738",
+    "core_sha256": "27570b9a919e118fb0e1ffdc3c3770dc9748ba26c86fbd3ee78e1cd05a103b34",
+    "qualification_registry_sha256": "cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f",
+    "qualification_registry_adopted_records": 1,
+    "bindings_before_sha256": "daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21"
+  },
+  "manifest": {
+    "schema": 1,
+    "revision": "5d880a16a31bd643ae17f3cca459940f8554c738",
+    "core_sha256": "27570b9a919e118fb0e1ffdc3c3770dc9748ba26c86fbd3ee78e1cd05a103b34",
+    "bindings_sha256": "daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21",
+    "qualification_registry_sha256": "cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f",
+    "qualification_registry_adopted_records": 1,
+    "features": [],
+    "targets": [
+      "aarch64-apple-ios",
+      "aarch64-apple-ios-sim"
+    ]
+  },
+  "mobile_node_test_totals": [
+    "17",
+    "7",
+    "160"
+  ],
+  "mobilekit_test_totals": [
+    "116"
+  ],
+  "prebuild_node_test_totals": [
+    "1",
+    "6"
+  ],
+  "source_registry_and_manifest_match": true,
+  "bindings_match_retained_bytes": true,
+  "registry_tracked_in_cargo_dependencies": {
+    "aarch64-apple-ios": true,
+    "aarch64-apple-ios-sim": true
+  },
+  "hosted_test_runs": [
+    [
+      "36",
+      "5"
+    ],
+    [
+      "144",
+      "20"
+    ]
+  ],
+  "hosted_native_test_count": 180,
+  "receipt_postprocessing": "All commands passed. Initial final receipt assertion compared a canonical absolute asset path to Cargo paths retaining core/src/../.. . This receipt canonicalizes actual recorded paths; no build rerun or product source edit was required.",
+  "limitations": [
+    "Unsigned builds and hosted tests only; no physical iPhone, signed upgrade, keyboard cold-start, live-provider mobile, Cloud, store, human or Android acceptance.",
+    "Adopted record remains bound to its exact manual Dutch desktop resource context; no mobile route qualification claimed."
+  ],
+  "compiled_registry_verification": {
+    "core/target/aarch64-apple-ios/release/libpennel_core.a": {
+      "exact_adopted_registry_bytes_present": true
+    },
+    "core/target/aarch64-apple-ios-sim/release/libpennel_core.a": {
+      "exact_adopted_registry_bytes_present": true
+    },
+    "apps/mobile/build/DerivedData/Build/Products/Release-iphonesimulator/Pennel.app/Pennel": {
+      "exact_adopted_registry_bytes_present": true
+    },
+    "apps/mobile/build/DerivedData/Build/Products/Release-iphoneos/Pennel.app/Pennel": {
+      "exact_adopted_registry_bytes_present": true
+    }
+  },
+  "derived_curated_copy": true,
+  "original_receipt_sha256": "1ee6f1b8d74fb1e9773b13ff833c125dfc33d36e1b49027458bf1f589f7aa7fd",
+  "macos_platform_test_count": 217,
+  "owned_simulator_shutdown": true,
+  "unrelated_simulator_state_change_count": 0,
+  "tracked_mobile_changes": [],
+  "stages": {
+    "simulator-bootstatus": {
+      "exit_code": 0,
+      "elapsed_secs": 0.5919506669742987,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "xcrun",
+        "simctl",
+        "bootstatus",
+        "7B5A513C-6538-4F9C-AE8A-8C5DC2FACEA3",
+        "-b"
+      ]
+    },
+    "mobile-test": {
+      "exit_code": 0,
+      "elapsed_secs": 18.592579207965173,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "worktree-storage",
+        "run",
+        "--",
+        "make",
+        "mobile-test"
+      ]
+    },
+    "release-simulator": {
+      "exit_code": 0,
+      "elapsed_secs": 101.70938033296261,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "worktree-storage",
+        "run",
+        "--",
+        "env",
+        "CI=1",
+        "PENNEL_VARIANT=preview",
+        "npm",
+        "--prefix",
+        "apps/mobile",
+        "run",
+        "build:ios"
+      ]
+    },
+    "macos-platform-test": {
+      "exit_code": 0,
+      "elapsed_secs": 8.065176749951206,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "worktree-storage",
+        "run",
+        "--",
+        "swift",
+        "test",
+        "--package-path",
+        "apps/macos-platform"
+      ]
+    },
+    "prebuild": {
+      "exit_code": 0,
+      "elapsed_secs": 139.81465662491973,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "worktree-storage",
+        "run",
+        "--",
+        "env",
+        "CI=1",
+        "PENNEL_VARIANT=preview",
+        "make",
+        "mobile-prebuild"
+      ]
+    },
+    "native-tests": {
+      "exit_code": 0,
+      "elapsed_secs": 133.53283562499564,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "worktree-storage",
+        "run",
+        "--",
+        "make",
+        "mobile-native-test",
+        "IOS_DESTINATION=platform=iOS Simulator,id=7B5A513C-6538-4F9C-AE8A-8C5DC2FACEA3"
+      ]
+    },
+    "simulator-boot": {
+      "exit_code": 0,
+      "elapsed_secs": 0.4073247089982033,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "xcrun",
+        "simctl",
+        "boot",
+        "7B5A513C-6538-4F9C-AE8A-8C5DC2FACEA3"
+      ]
+    },
+    "release-device": {
+      "exit_code": 0,
+      "elapsed_secs": 101.5871421250049,
+      "registry_unchanged": true,
+      "core_unchanged": true,
+      "command": [
+        "worktree-storage",
+        "run",
+        "--",
+        "env",
+        "CI=1",
+        "PENNEL_VARIANT=preview",
+        "PENNEL_IOS_DESTINATION=generic/platform=iOS",
+        "npm",
+        "--prefix",
+        "apps/mobile",
+        "run",
+        "build:ios"
+      ]
+    },
+    "simulator-shutdown": {
+      "exit_code": 0,
+      "elapsed_secs": 3.153803125023842,
+      "command": [
+        "xcrun",
+        "simctl",
+        "shutdown",
+        "7B5A513C-6538-4F9C-AE8A-8C5DC2FACEA3"
+      ]
+    }
+  },
+  "products": [
+    {
+      "sdk": "Release-iphonesimulator",
+      "bundle_id": "app.pennel.ios.preview",
+      "binary_sha256": "b1582468adb821536ecf1cc4c5437e090bdc22a16b4746afe2d441f98bef2d86",
+      "architectures": "arm64",
+      "manifest": {
+        "files": 218,
+        "sha256": "f512bdb1261846aea35f11c1abe3bf1eef044b6a297ef6b07c7e125d7653e202"
+      }
+    },
+    {
+      "sdk": "Release-iphoneos",
+      "bundle_id": "app.pennel.ios.preview",
+      "binary_sha256": "79faa352b479ae5c9065d83df838545e7dc006942184674ae06394a29a27b5c6",
+      "architectures": "arm64",
+      "manifest": {
+        "files": 187,
+        "sha256": "1c6b15f5ab595a2b18bd022440fb3d6fe10580e916394d692cb526ffdaf36732"
+      }
+    }
+  ]
+}

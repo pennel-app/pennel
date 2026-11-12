@@ -1,0 +1,20 @@
+{
+  "fixtures": 291,
+  "logical_windows": 4047,
+  "physical_requests": 632,
+  "all_nonhash_export_fields_equal": true,
+  "wire_bodies_byte_identical": true,
+  "request_contexts_and_source_maps_identical": true,
+  "excluded_export_fields": [
+    "source_sha256",
+    "freeze_sha256"
+  ],
+  "source_delta": {
+    "meeting_qualification.rs": {
+      "measured_sha256": "0d8afdc62c0b2673dcf9a58d0bd62da26687d822c58c84e790719c761d69f5a9",
+      "final_sha256": "2ac1cec3f4c75cbfa6348a479d5298d620f4ab39a7bcee04b7102cdfb8710ab3",
+      "allowed_delta": "cfg(test) module only; empty-registry assertion replaced after genuine adoption",
+      "unchanged_runtime_prefix_sha256": "28954272ae0491bac6e95334e439c37035919b5242eda5e8b989d308aabfdae3"
+    }
+  }
+}

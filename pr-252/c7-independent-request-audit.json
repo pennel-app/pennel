@@ -1,0 +1,29 @@
+{
+  "calibration": {
+    "original_jobs": 96,
+    "physical_requests": 180,
+    "max_original_job_ms": 13615.78324995935,
+    "reported_billed_usd": "0.03774426",
+    "all_reconciled_http200_exact_wire_identity_privacy_answer_ids": true
+  },
+  "heldout": {
+    "original_jobs": 96,
+    "physical_requests": 180,
+    "max_original_job_ms": 4540.6843749806285,
+    "reported_billed_usd": "0.03780728",
+    "all_reconciled_http200_exact_wire_identity_privacy_answer_ids": true
+  },
+  "resources": {
+    "original_jobs": 35,
+    "physical_requests": 70,
+    "max_original_job_ms": 3973.5002079978585,
+    "reported_billed_usd": "0.01924440",
+    "all_reconciled_http200_exact_wire_identity_privacy_answer_ids": true
+  },
+  "resource_phases": {
+    "cold": 5,
+    "warm": 30
+  },
+  "total_c7_reported_billed_usd": "0.09479594",
+  "new_provider_requests": 0
+}

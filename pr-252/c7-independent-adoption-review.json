@@ -1,0 +1,23 @@
+{
+  "verdict": "PASS_NO_FINDINGS",
+  "reviewed_commit": "5d880a16a31bd643ae17f3cca459940f8554c738",
+  "changed_files": [
+    "assets/qualifications/meeting-assistance.json",
+    "core/src/meeting_qualification.rs"
+  ],
+  "candidate_structurally_equal_to_genuine_report": true,
+  "candidate_id": "finished-nl-19bd8056cf84da327bad",
+  "manual_nl_exact_context_only": true,
+  "foreground_background_flags_false": true,
+  "missing_revision_and_artifact_preserved": true,
+  "runtime_prefix_unchanged": true,
+  "runtime_prefix_sha256": "28954272ae0491bac6e95334e439c37035919b5242eda5e8b989d308aabfdae3",
+  "rust_delta_cfg_test_only": true,
+  "preset_generation_runtime_unchanged": true,
+  "host_cohort_handling": "The new cfg(test) admission assertion constructs the measured resource request solely to validate its exact non-resource context on other CI hosts. It does not alter the record or production getter. The production preset getter independently recomputes the actual current host request and rejects any mismatch; its existing foreign-resource negative test remains.",
+  "production_preset_fabrication": false,
+  "qualification_tests_root_reported_passed": 16,
+  "reviewer_test_execution": "static/hash/data review only; no duplicate native build during concurrent builds",
+  "new_provider_requests": 0,
+  "source_registry_credential_or_ledger_mutations": false
+}

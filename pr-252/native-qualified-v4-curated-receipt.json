@@ -1,0 +1,252 @@
+{
+  "complete": true,
+  "scope": "genuine native functional smoke; no held-out quality credit",
+  "capture_identifier": "dev.pennel.Pennel.capture.preview",
+  "personal_team": "B538Q2K76C",
+  "actual_hardware_capture": false,
+  "real_meeting_content": false,
+  "automatic_retries": false,
+  "fallbacks": false,
+  "binary_sha256": "0077b29445055a74e33f739391ebd122578a7d3ad3e90a98edbfa57af37b43af",
+  "registry_sha256": "cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f",
+  "fixture": {
+    "id": "nl-development-f00-v0-resource-panel",
+    "turns": 16,
+    "quality_credit": false,
+    "expected_items": [
+      {
+        "window_index": 0,
+        "kind": "action",
+        "commitment": "confirmed",
+        "text": "Ik zal de controlekaart A01 voor de havenkiosk morgen controleren en dat werk zelf afmaken.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 1,
+        "kind": "decision",
+        "commitment": "confirmed",
+        "text": "We hebben de keuze voor de voorraadlijst A02 voor de havenkiosk gemaakt: het wordt definitief de blauwe versie.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 2,
+        "kind": "open_question",
+        "commitment": "unresolved",
+        "text": "Wie wordt de beheerder van de toegangspas A03 voor de havenkiosk? Dat punt is nog onbeantwoord.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 3,
+        "kind": "decision",
+        "commitment": "changed",
+        "text": "Ons eerdere besluit over de leveringsmap A04 voor de havenkiosk wordt gewijzigd: in plaats van de rode versie kiezen we nu de groene.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 3,
+        "kind": "changed_commitment",
+        "commitment": "changed",
+        "text": "Ons eerdere besluit over de leveringsmap A04 voor de havenkiosk wordt gewijzigd: in plaats van de rode versie kiezen we nu de groene.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 4,
+        "kind": "action",
+        "commitment": "tentative",
+        "text": "Misschien bereid ik de reserveringsblad A05 voor de havenkiosk voor. Ik overweeg die taak, maar heb ze nog niet toegezegd.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 7,
+        "kind": "action",
+        "commitment": "retracted",
+        "text": "Mijn eerdere belofte voor de controle van de weekplanning A08 voor de havenkiosk vervalt. Ik trek die concrete toezegging terug.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 7,
+        "kind": "changed_commitment",
+        "commitment": "retracted",
+        "text": "Mijn eerdere belofte voor de controle van de weekplanning A08 voor de havenkiosk vervalt. Ik trek die concrete toezegging terug.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 9,
+        "kind": "action",
+        "commitment": "confirmed",
+        "text": "Ik werk de bestelkaart A10 voor de havenkiosk morgen bij. Wie zal de verzendfiche A10 voor de havenkiosk beheren? Die laatste vraag is nog open.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 9,
+        "kind": "open_question",
+        "commitment": "unresolved",
+        "text": "Ik werk de bestelkaart A10 voor de havenkiosk morgen bij. Wie zal de verzendfiche A10 voor de havenkiosk beheren? Die laatste vraag is nog open.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 10,
+        "kind": "decision",
+        "commitment": "tentative",
+        "text": "Voor de inventarisblad A11 voor de havenkiosk hebben we een tentatieve keuze: de kleine variant. De definitieve bevestiging ontbreekt nog.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 12,
+        "kind": "action",
+        "commitment": "confirmed",
+        "text": "Het definitieve besluit is dat de veiligheidsfiche A13 voor de havenkiosk digitaal wordt bewaard. Ik zal het document daarom morgen inscannen.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 12,
+        "kind": "decision",
+        "commitment": "confirmed",
+        "text": "Het definitieve besluit is dat de veiligheidsfiche A13 voor de havenkiosk digitaal wordt bewaard. Ik zal het document daarom morgen inscannen.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 14,
+        "kind": "action",
+        "commitment": "unknown",
+        "text": "Mijn controle van de ontwerptekening A15 voor de havenkiosk staat vast voor morgen, maar een controle van de voorraadlijst A15 voor de havenkiosk is alleen een tentatief voorstel.",
+        "owner": null,
+        "due": null
+      },
+      {
+        "window_index": 15,
+        "kind": "open_question",
+        "commitment": "unresolved",
+        "text": "Hoe raakt de afsprakenblad A16 voor de havenkiosk volgende week ter plaatse? Niemand kent het antwoord en de vraag blijft open.",
+        "owner": null,
+        "due": null
+      }
+    ],
+    "sha256": "96bb1ec4a0192470d3e75c18135631103bf72c487dc453c7d406718533178091"
+  },
+  "locale": "en",
+  "appearance": "dark",
+  "owned_capture_account": "review96-owned-95a5c989937b4283bb5fc5ccbc6991dd",
+  "capture_credential_creation_attempted": true,
+  "capture_credential_created": true,
+  "capture_credential_deleted": true,
+  "wall_elapsed_ms": 2499.230165965855,
+  "derived_curated_copy": true,
+  "original_receipt_sha256": "91529a7db008795515d313ddedc0660e9dfc8cb28fe094df3cac2ce6b6fd7ed8",
+  "job": {
+    "billing_complete": true,
+    "completed_provider_requests": 2,
+    "completed_windows": 16,
+    "endpoint": "https://openrouter.ai/api/alpha/decisions",
+    "error_code": null,
+    "finalization_finished": true,
+    "included_through_ms": 75000,
+    "job_id": "01a1d179-72b0-7280-b0b1-26e27d429160",
+    "language_policy": "nl",
+    "meeting_uid": "94607837-0949-4362-bbd8-4a2037d94b4b",
+    "model": "perplexity/pplx-decider-v1.2",
+    "physical_running": false,
+    "provider_id": "review96-owned-95a5c989937b4283bb5fc5ccbc6991dd",
+    "reported_billed_cost_usd": 0.0005448,
+    "revision": 31,
+    "state": "completed",
+    "total_windows": 16
+  },
+  "billing_summary": {
+    "limit_usd": "2.00",
+    "known_billed_usd": "0.23149650",
+    "conservative_upper_bound_usd": "0.01270636",
+    "total_exposure_usd": "0.24420286",
+    "reserved_usd": "0",
+    "pending_reservations": {},
+    "unresolved_charge": false
+  },
+  "checks": {
+    "initialize": {
+      "isolated_settings_saved": true,
+      "automatic_analysis": false,
+      "text_model_selected": false
+    },
+    "preset": {
+      "qualification_id": "finished-nl-19bd8056cf84da327bad",
+      "configured": {
+        "provider_id": "review96-owned-95a5c989937b4283bb5fc5ccbc6991dd",
+        "protocol": "open_router_decisions",
+        "model": "perplexity/pplx-decider-v1.2",
+        "expected_model": "perplexity/pplx-decider-v1.2-20261016",
+        "upstream": "perplexity",
+        "max_input_bytes": 65536,
+        "timeout_secs": 90
+      },
+      "apply_was_draft_only": true,
+      "setup_inference_requests": 0,
+      "weights_independently_verified": false,
+      "identity_evidence": "provider_reported_version"
+    },
+    "open": {
+      "manual_available": true,
+      "automatic_available": false,
+      "automatic_reason": "foreground_impact_unaccepted",
+      "opening_inference_requests": 0,
+      "canonical_sources": 16,
+      "language_policy": "nl"
+    },
+    "reopen": {
+      "process_restart": true,
+      "accepted_state_retained": true,
+      "stored_item_count": 15,
+      "reopen_inference_requests": 0,
+      "analysis_job": null,
+      "notes_unchanged": true
+    },
+    "generated": {
+      "meeting_uid": "94607837-0949-4362-bbd8-4a2037d94b4b",
+      "notes_unchanged": true,
+      "exact_sources": true,
+      "actual_provider_generation": true,
+      "development_precision": 1,
+      "development_recall": 1,
+      "remote_weights_independently_verified": false,
+      "item_count": 15,
+      "owners_and_due_uninvented": true,
+      "source_state_current": true,
+      "actual_identity": {
+        "actual_model": "perplexity/pplx-decider-v1.2-20261016",
+        "actual_provider": "Perplexity",
+        "actual_revision": null,
+        "endpoint": "https://openrouter.ai/api/alpha/decisions",
+        "protocol": "open_router_decisions",
+        "request_id": "gen-dec-1794515760-A05CaxEQHGOOsSRuCKLT",
+        "requested_model": "perplexity/pplx-decider-v1.2",
+        "requested_upstream": "perplexity"
+      },
+      "qualification_id": "finished-nl-19bd8056cf84da327bad"
+    },
+    "accepted": {
+      "accepted_id": "01a1d179-7aa7-7573-be29-de883dc312c3",
+      "exact_source_navigation": true,
+      "notes_unchanged": true,
+      "clipboard_changed": false,
+      "ui_admissions": 1,
+      "accepted_export_sha256": "9203efd998a66e21a55f3d877cb654f86a94192611071cc0f98f15dc408383e4",
+      "accepted_export_bytes": 1610
+    }
+  },
+  "images": {
+    "before": "native-qualified-en-dark-before-find.png",
+    "after": "native-qualified-en-dark-after-find.png"
+  }
+}

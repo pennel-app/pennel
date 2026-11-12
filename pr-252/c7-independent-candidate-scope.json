@@ -1,0 +1,16 @@
+{
+  "candidate_id": "finished-nl-19bd8056cf84da327bad",
+  "candidate_context_and_evidence_hashes_valid": true,
+  "scope": "manual_finished_suggestions/nl/exact configured host resource profile",
+  "automatic_foreground_background_flags": false,
+  "weights_independently_verified": false,
+  "resource_scope": "owned client; maximum individual process lifetime RSS, not aggregate/native GUI/remote",
+  "resource_cpu_sum_matches": true,
+  "resource_rss_max_matches": true,
+  "known_billed_usd": "0.23040690",
+  "conservative_upper_bound_usd": "0.01270636",
+  "total_exposure_usd": "0.24311326",
+  "fully_covered_unreported_charge_count": 2,
+  "ledger_arithmetic_reconciled": true,
+  "new_provider_requests": 0
+}

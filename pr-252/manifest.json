@@ -1,6 +1,13 @@
 {
-  "scope": "owned synthetic renderer before/after; native empty-registry compatibility; incomplete qualification; no adoption",
+  "schema_version": 2,
+  "scope": "real C7 PASS/adoption; manual NL exact recorded resource cohort only; genuine owned native smoke and final mobile compatibility",
+  "production_adopted_records": 1,
+  "candidate_id": "finished-nl-19bd8056cf84da327bad",
+  "weights_independently_verified": false,
+  "automatic_accepted": false,
   "fixture_sha256": "13aceb2ede0abdba7ba4a04bf1f831f1999a9877d90afb78f22e6b9254e83f2f",
+  "renderer_images_preserved": 16,
+  "actual_native_images": 2,
   "images": [
     {
       "phase": "before",
@@ -129,35 +136,559 @@
       "case": "tested-setup",
       "file": "after-nl-dark-tested-setup.png",
       "fixture_case_sha256": "9a4e5746b41f417db8a67ca04498c3b7ae502a2ac970f9f6a75f8ddd3e1962b2"
+    },
+    {
+      "phase": "before",
+      "locale": "en",
+      "appearance": "dark",
+      "case": "actual-native-qualified-find",
+      "file": "native-qualified-en-dark-before-find.png",
+      "evidence_class": "actual_native_provider_generation"
+    },
+    {
+      "phase": "after",
+      "locale": "en",
+      "appearance": "dark",
+      "case": "actual-native-qualified-find",
+      "file": "native-qualified-en-dark-after-find.png",
+      "evidence_class": "actual_native_provider_generation"
     }
   ],
-  "omitted": [],
   "files": {
-    "before-en-light-manual-review.png": "e1fbd19047f601936d80a9f9ab8009480183398902be6727d3e0dbfd6ff3a014",
-    "before-en-light-tested-setup.png": "cd6c0a8eb3d487b7b9c175650f2baca9289a960c2a693998199d0c2e73a8900f",
-    "before-en-dark-manual-review.png": "95e0549b2570a48be4a28990c25e5f74754c42c99f9aa5a3d205275a0794d743",
-    "before-en-dark-tested-setup.png": "6d2743733f9fe896289c8f8113bc9025b7f96dcf378c7668bb4c1a445370cd1f",
-    "before-nl-light-manual-review.png": "de3e40a83175ab0c8a8ff803037dffd26cadcbe02e0af55d01553dcff3dc152d",
-    "before-nl-light-tested-setup.png": "0935ad9f844e8d8c1a950325daac0e44be5678d116dafdc4343fc4c0436686b6",
-    "before-nl-dark-manual-review.png": "5e0c41d07e33d56848f433401c5ea4f4b95e3cde4a76f7ebe9fffb382eb6c36b",
-    "before-nl-dark-tested-setup.png": "eb44bc7b70490608ab6c2984e76bce7aaf2aad710db1e4c0115b7b758ae257dc",
-    "after-en-light-manual-review.png": "3605ffa758f1575f647bf1799770015cf2f3d2be84c4f2430db0988b07479af0",
-    "after-en-light-tested-setup.png": "720579a3495f423377871c08ad292e8ec510be799879cbf06d62a6d6fc515db0",
+    "historical-prequalification-README.md": "5331dfbb4d0bad699d95349d71512463c518e7f47e9f3d3d522a5c42d41aa40e",
     "after-en-dark-manual-review.png": "cc8e54c69786f817045f05b5b37b88a0b7258c601449f39a7341eb026fce7fd2",
     "after-en-dark-tested-setup.png": "bc1380aa5dd310188e16424979ced83678e7a028fb967a165685db5fcd605a85",
-    "after-nl-light-manual-review.png": "8e55a606a77129ec7c649aa44404c33e0bc849474551cf04bb9d43e22ca0b99f",
-    "after-nl-light-tested-setup.png": "6af90f6d2e62101ec26196fef8c1c6884bf0d2c9480aa5339665aac9c3763ae3",
+    "after-en-light-manual-review.png": "3605ffa758f1575f647bf1799770015cf2f3d2be84c4f2430db0988b07479af0",
+    "after-en-light-tested-setup.png": "720579a3495f423377871c08ad292e8ec510be799879cbf06d62a6d6fc515db0",
     "after-nl-dark-manual-review.png": "9168f741855adf00442ddb18a477f8ca3c471c881b5fe4a31e74358016e70422",
     "after-nl-dark-tested-setup.png": "cdb92be5511ffa73d77fb43c8451be3e17bb4e2c86ac27750e0820dc96b04061",
-    "renderer-receipt.json": "b3748b3f7d854505ef669808f4e09a370b2e1dd8fd862111e8a156fa06918dc8",
-    "native-empty-registry-dom.json": "2629ba9396c6fa143b9ffd2feb73f443dbfcc1bba652dd4ec63514f5978af77f",
+    "after-nl-light-manual-review.png": "8e55a606a77129ec7c649aa44404c33e0bc849474551cf04bb9d43e22ca0b99f",
+    "after-nl-light-tested-setup.png": "6af90f6d2e62101ec26196fef8c1c6884bf0d2c9480aa5339665aac9c3763ae3",
     "attempt-a-incomplete-report.json": "1d7185518b55e6c387b35c36fe175fae04593c24f9d527160c5158bc329370aa",
     "attempt-a-interruption.json": "402ab2ea82699d7465eeee2b7e0a7a8cab988dd435975d962b3a6a4bb36a8150",
-    "conservative-charge-resolution.json": "edba8805ec4eefce7a4e014829ff333226aefec8f20124f065433c557319a2ac",
-    "key-usage-observation.json": "bcd02e94e231177f17f11a4e93b1c9d818d53bac243265df30141be3bb07fe86",
-    "mobile-empty-registry.json": "2dd04f429504f5b4b4282458d0d661bf16881843a0f18365cbd6588fa2b53eb7",
+    "attempt-a-preserved-predictions.json.gz": "a99f72eba8da3e8ba55bd7a6c099f35ec9c260a2bd0119695cc80d35d958b62a",
     "attempt-b-auth-pipe-freeze.json.gz": "c4345972e5c5957b3edf328aa657e5c7a9ffb61e5e7833c5fcb35bc255e4ec92",
     "attempt-b-authored-spec.json.gz": "c65030aaa64f03edd194ab0c28f409337c0742fe098d32caea7b5651d01d144e",
-    "attempt-a-preserved-predictions.json.gz": "a99f72eba8da3e8ba55bd7a6c099f35ec9c260a2bd0119695cc80d35d958b62a"
-  }
+    "before-en-dark-manual-review.png": "95e0549b2570a48be4a28990c25e5f74754c42c99f9aa5a3d205275a0794d743",
+    "before-en-dark-tested-setup.png": "6d2743733f9fe896289c8f8113bc9025b7f96dcf378c7668bb4c1a445370cd1f",
+    "before-en-light-manual-review.png": "e1fbd19047f601936d80a9f9ab8009480183398902be6727d3e0dbfd6ff3a014",
+    "before-en-light-tested-setup.png": "cd6c0a8eb3d487b7b9c175650f2baca9289a960c2a693998199d0c2e73a8900f",
+    "before-nl-dark-manual-review.png": "5e0c41d07e33d56848f433401c5ea4f4b95e3cde4a76f7ebe9fffb382eb6c36b",
+    "before-nl-dark-tested-setup.png": "eb44bc7b70490608ab6c2984e76bce7aaf2aad710db1e4c0115b7b758ae257dc",
+    "before-nl-light-manual-review.png": "de3e40a83175ab0c8a8ff803037dffd26cadcbe02e0af55d01553dcff3dc152d",
+    "before-nl-light-tested-setup.png": "0935ad9f844e8d8c1a950325daac0e44be5678d116dafdc4343fc4c0436686b6",
+    "conservative-charge-resolution.json": "edba8805ec4eefce7a4e014829ff333226aefec8f20124f065433c557319a2ac",
+    "key-usage-observation.json": "bcd02e94e231177f17f11a4e93b1c9d818d53bac243265df30141be3bb07fe86",
+    "historical-prequalification-manifest.json": "05f36fc82b4de7df699523f39aa99e75f38b57b2dc9a170b86eed94167ab75b6",
+    "mobile-empty-registry.json": "2dd04f429504f5b4b4282458d0d661bf16881843a0f18365cbd6588fa2b53eb7",
+    "native-empty-registry-dom.json": "2629ba9396c6fa143b9ffd2feb73f443dbfcc1bba652dd4ec63514f5978af77f",
+    "renderer-receipt.json": "b3748b3f7d854505ef669808f4e09a370b2e1dd8fd862111e8a156fa06918dc8",
+    "native-qualified-en-dark-before-find.png": "6ae498b5b78b95e18c684fb336bbd4dcaa906519419b3aa18c215a2c9026d458",
+    "native-qualified-en-dark-after-find.png": "a2b698ca6ee69af9860fe68f6dd285b51f053e9aa71ebd38920772b8d10a72f6",
+    "attempt-b-full-failed-report.json": "e4e6b83d241a32ab19057f018bf36b66f5dc5332936130e1cd10bc80a6912c4d",
+    "c7-final-report.json": "97adfe5d161593d492273cbb75f815665972bfe7fa8695a6076981179eaa1c28",
+    "c7-independent-acceptance.json": "ac5dac306b96970c12091224491395ac4cee7f2852e2c7c8ca9f84ebd4204420",
+    "c7-independent-request-audit.json": "c9d902a2482e34c9cce2db481362d552df8fec2c4c18b9d70fd58bf0549bf57c",
+    "c7-independent-candidate-scope.json": "1da9ec680269ab5139f6af51d13e5d7731fef0ecad89efcea9639a3e704421ea",
+    "c7-independent-fitted-lock-review.json": "b0635c1d0b551a9342419f612bc44b6ecb2b9e38671e2c44b5d716d920ece236",
+    "final-source-parity-c7-summary-final.json": "d55692fa71ffde94122fca0525f12e4c84f08a1aacd94038ceba3a5201ab4cdb",
+    "final-source-parity-c7-export-summary.json": "ceb260a70ae33282c2ec1519541b5a7cb2e94cfa74d107134e49f54fe8e64560",
+    "final-source-parity-c7-metric-parity.json": "7f560bd8678fe407a8c4e1b230d10c1eceb5f1b4e29784c0a200ef7bc235a630",
+    "c7-development-panel-diagnostic.json": "09f893a38caf450f0ec8b1beb11bef35c8e2b730d14cffeeef804ceaf0bad1cc",
+    "c7-development-stress-diagnostic.json": "7d5ad3de26675ee0b74cd1b9db6938f84dd7f607f314c64d66c2f39d59ffebfa",
+    "native-v2-derived-checker-failure-follow-up.json": "2e6d6f0252507e2b7b769b72353cebc6ca6ba7ff5e048431865cf0c04203478c",
+    "c7-independent-adoption-review.json": "804f84925325111985a25b4c8cfedc209a1d546497d793289856a076b14e796f",
+    "native-independent-functional-review.json": "ce57fc74613e12caa0f6931d40ecdcc2b2bcf3085ae0a18fbc8c607a84e1419a",
+    "c7-authored-spec.json.gz": "21437db102e41e82c11f9f207e8e369419a05c92d1ab902c537718d4497d17ad",
+    "c7-base-freeze.json.gz": "ce8188caaf2541ef315a6ab612642f35cefcc28e063a06ce6a0a93feb2fe9036",
+    "c7-fitted-freeze.json.gz": "b68508ce9bb8339ad6800f981d4666458d3d6ea75f4aeca85cac89e318bc9942",
+    "c7-calibration-predictions.json.gz": "b112206d472a64deb986c52c9f9daf202e367aae56b5ee1fb9aa3e38d324a56f",
+    "c7-heldout-predictions.json.gz": "6aa96a423f6469805de125c2a9eaa5bb0976280a813692cefb8d7353a69a4d1c",
+    "c7-resources.json.gz": "0676b3717e10a287ce9361f3d32d2c70038fa24df0155f793c7b52af3254fc2f",
+    "native-qualified-v4-curated-receipt.json": "b403f3dbdb73b56a1cfec96ae4d8d861d521958e2c698c340da172b312a3aed9",
+    "native-qa-failure-history.json": "9ad866e19b91934850d076ac449fabce682a40547765170b933d37ccfaac091d",
+    "mobile-final-c7-curated-receipt.json": "dfa17d9aa241027eb8833a1ff28695003e874e878f8fb6b3d5f7fe06d8f6657d",
+    "native-credential-helper.swift": "31b729f68be80a052e339ea968537dd577efefc0ad1251b3b1124644e725d542",
+    "native-credential-helper-v1-historical.swift": "bc58b36a58c5a862df6edec83439eb536c6b5d00acabac7dbb321be52040116f",
+    "native-credential-helper-v2-static-review.json": "e17efd6372ff58f473317aae3dbbf9c654d812e4f98f4aad0c4159ed719f4588",
+    "README.md": "178a2fe22fb146b183f8f76a3dcdb0ceee80c545b5a7115c362ea100c777efea",
+    "attempt-b-independent-semantic-failures.json": "60d24fa10b6b14a55a038e935743ee1b9eee1289b91fb5128b730d080abc8a63",
+    "c7-independent-semantic-audit.json": "e9a31ddbc1475cfa79f4564682d784b847792e22197d72aea6f9d2b7128b132e"
+  },
+  "file_metadata": {
+    "historical-prequalification-README.md": {
+      "bytes": 917,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/README.md",
+      "original_content_sha256": "5331dfbb4d0bad699d95349d71512463c518e7f47e9f3d3d522a5c42d41aa40e",
+      "original_content_bytes": 917,
+      "immutable_source_bytes": true
+    },
+    "after-en-dark-manual-review.png": {
+      "bytes": 112132,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-en-dark-manual-review.png",
+      "original_content_sha256": "cc8e54c69786f817045f05b5b37b88a0b7258c601449f39a7341eb026fce7fd2",
+      "original_content_bytes": 112132,
+      "immutable_source_bytes": true
+    },
+    "after-en-dark-tested-setup.png": {
+      "bytes": 70922,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-en-dark-tested-setup.png",
+      "original_content_sha256": "bc1380aa5dd310188e16424979ced83678e7a028fb967a165685db5fcd605a85",
+      "original_content_bytes": 70922,
+      "immutable_source_bytes": true
+    },
+    "after-en-light-manual-review.png": {
+      "bytes": 112557,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-en-light-manual-review.png",
+      "original_content_sha256": "3605ffa758f1575f647bf1799770015cf2f3d2be84c4f2430db0988b07479af0",
+      "original_content_bytes": 112557,
+      "immutable_source_bytes": true
+    },
+    "after-en-light-tested-setup.png": {
+      "bytes": 70461,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-en-light-tested-setup.png",
+      "original_content_sha256": "720579a3495f423377871c08ad292e8ec510be799879cbf06d62a6d6fc515db0",
+      "original_content_bytes": 70461,
+      "immutable_source_bytes": true
+    },
+    "after-nl-dark-manual-review.png": {
+      "bytes": 119718,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-nl-dark-manual-review.png",
+      "original_content_sha256": "9168f741855adf00442ddb18a477f8ca3c471c881b5fe4a31e74358016e70422",
+      "original_content_bytes": 119718,
+      "immutable_source_bytes": true
+    },
+    "after-nl-dark-tested-setup.png": {
+      "bytes": 77594,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-nl-dark-tested-setup.png",
+      "original_content_sha256": "cdb92be5511ffa73d77fb43c8451be3e17bb4e2c86ac27750e0820dc96b04061",
+      "original_content_bytes": 77594,
+      "immutable_source_bytes": true
+    },
+    "after-nl-light-manual-review.png": {
+      "bytes": 120005,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-nl-light-manual-review.png",
+      "original_content_sha256": "8e55a606a77129ec7c649aa44404c33e0bc849474551cf04bb9d43e22ca0b99f",
+      "original_content_bytes": 120005,
+      "immutable_source_bytes": true
+    },
+    "after-nl-light-tested-setup.png": {
+      "bytes": 76752,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/after-nl-light-tested-setup.png",
+      "original_content_sha256": "6af90f6d2e62101ec26196fef8c1c6884bf0d2c9480aa5339665aac9c3763ae3",
+      "original_content_bytes": 76752,
+      "immutable_source_bytes": true
+    },
+    "attempt-a-incomplete-report.json": {
+      "bytes": 13204,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/attempt-a-incomplete-report.json",
+      "original_content_sha256": "1d7185518b55e6c387b35c36fe175fae04593c24f9d527160c5158bc329370aa",
+      "original_content_bytes": 13204,
+      "immutable_source_bytes": true
+    },
+    "attempt-a-interruption.json": {
+      "bytes": 1863,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/attempt-a-interruption.json",
+      "original_content_sha256": "402ab2ea82699d7465eeee2b7e0a7a8cab988dd435975d962b3a6a4bb36a8150",
+      "original_content_bytes": 1863,
+      "immutable_source_bytes": true
+    },
+    "attempt-a-preserved-predictions.json.gz": {
+      "bytes": 344494,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/attempt-a-preserved-predictions.json.gz",
+      "original_content_sha256": "2fee9e598ba484a3a4af8255b84ee9fb0747d6c96f49ff580016d298129bb789",
+      "original_content_bytes": 2238628,
+      "immutable_source_bytes": true
+    },
+    "attempt-b-auth-pipe-freeze.json.gz": {
+      "bytes": 4172665,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/attempt-b-auth-pipe-freeze.json.gz",
+      "original_content_sha256": "c050cabb616259dd67e16bd6bf3568fad883bb3c143eb0fd81ae2cd3d0ea33b2",
+      "original_content_bytes": 112985794,
+      "immutable_source_bytes": true
+    },
+    "attempt-b-authored-spec.json.gz": {
+      "bytes": 125536,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/attempt-b-authored-spec.json.gz",
+      "original_content_sha256": "994dbf8e26fd215dfa7d983466054c2e842468eb9d0c33c6937b50b7151a2054",
+      "original_content_bytes": 2723661,
+      "immutable_source_bytes": true
+    },
+    "before-en-dark-manual-review.png": {
+      "bytes": 109913,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-en-dark-manual-review.png",
+      "original_content_sha256": "95e0549b2570a48be4a28990c25e5f74754c42c99f9aa5a3d205275a0794d743",
+      "original_content_bytes": 109913,
+      "immutable_source_bytes": true
+    },
+    "before-en-dark-tested-setup.png": {
+      "bytes": 69805,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-en-dark-tested-setup.png",
+      "original_content_sha256": "6d2743733f9fe896289c8f8113bc9025b7f96dcf378c7668bb4c1a445370cd1f",
+      "original_content_bytes": 69805,
+      "immutable_source_bytes": true
+    },
+    "before-en-light-manual-review.png": {
+      "bytes": 109906,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-en-light-manual-review.png",
+      "original_content_sha256": "e1fbd19047f601936d80a9f9ab8009480183398902be6727d3e0dbfd6ff3a014",
+      "original_content_bytes": 109906,
+      "immutable_source_bytes": true
+    },
+    "before-en-light-tested-setup.png": {
+      "bytes": 69392,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-en-light-tested-setup.png",
+      "original_content_sha256": "cd6c0a8eb3d487b7b9c175650f2baca9289a960c2a693998199d0c2e73a8900f",
+      "original_content_bytes": 69392,
+      "immutable_source_bytes": true
+    },
+    "before-nl-dark-manual-review.png": {
+      "bytes": 114721,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-nl-dark-manual-review.png",
+      "original_content_sha256": "5e0c41d07e33d56848f433401c5ea4f4b95e3cde4a76f7ebe9fffb382eb6c36b",
+      "original_content_bytes": 114721,
+      "immutable_source_bytes": true
+    },
+    "before-nl-dark-tested-setup.png": {
+      "bytes": 72414,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-nl-dark-tested-setup.png",
+      "original_content_sha256": "eb44bc7b70490608ab6c2984e76bce7aaf2aad710db1e4c0115b7b758ae257dc",
+      "original_content_bytes": 72414,
+      "immutable_source_bytes": true
+    },
+    "before-nl-light-manual-review.png": {
+      "bytes": 114733,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-nl-light-manual-review.png",
+      "original_content_sha256": "de3e40a83175ab0c8a8ff803037dffd26cadcbe02e0af55d01553dcff3dc152d",
+      "original_content_bytes": 114733,
+      "immutable_source_bytes": true
+    },
+    "before-nl-light-tested-setup.png": {
+      "bytes": 71871,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/before-nl-light-tested-setup.png",
+      "original_content_sha256": "0935ad9f844e8d8c1a950325daac0e44be5678d116dafdc4343fc4c0436686b6",
+      "original_content_bytes": 71871,
+      "immutable_source_bytes": true
+    },
+    "conservative-charge-resolution.json": {
+      "bytes": 1424,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/conservative-charge-resolution.json",
+      "original_content_sha256": "edba8805ec4eefce7a4e014829ff333226aefec8f20124f065433c557319a2ac",
+      "original_content_bytes": 1424,
+      "immutable_source_bytes": true
+    },
+    "key-usage-observation.json": {
+      "bytes": 658,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/key-usage-observation.json",
+      "original_content_sha256": "bcd02e94e231177f17f11a4e93b1c9d818d53bac243265df30141be3bb07fe86",
+      "original_content_bytes": 658,
+      "immutable_source_bytes": true
+    },
+    "historical-prequalification-manifest.json": {
+      "bytes": 7276,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/manifest.json",
+      "original_content_sha256": "05f36fc82b4de7df699523f39aa99e75f38b57b2dc9a170b86eed94167ab75b6",
+      "original_content_bytes": 7276,
+      "immutable_source_bytes": true
+    },
+    "mobile-empty-registry.json": {
+      "bytes": 2077,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/mobile-empty-registry.json",
+      "original_content_sha256": "2dd04f429504f5b4b4282458d0d661bf16881843a0f18365cbd6588fa2b53eb7",
+      "original_content_bytes": 2077,
+      "immutable_source_bytes": true
+    },
+    "native-empty-registry-dom.json": {
+      "bytes": 2130,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/native-empty-registry-dom.json",
+      "original_content_sha256": "2629ba9396c6fa143b9ffd2feb73f443dbfcc1bba652dd4ec63514f5978af77f",
+      "original_content_bytes": 2130,
+      "immutable_source_bytes": true
+    },
+    "renderer-receipt.json": {
+      "bytes": 8150,
+      "role": "historical owned renderer / A-B preregistration evidence",
+      "source": "build/review-functional-96/public-pr252/renderer-receipt.json",
+      "original_content_sha256": "b3748b3f7d854505ef669808f4e09a370b2e1dd8fd862111e8a156fa06918dc8",
+      "original_content_bytes": 8150,
+      "immutable_source_bytes": true
+    },
+    "native-qualified-en-dark-before-find.png": {
+      "bytes": 434128,
+      "role": "actual owned native UI Find; synthetic development fixture; no held-out quality credit",
+      "source": "build/review-functional-96/native/qualified-c7-smoke-v4/en/dark/before-find.png",
+      "original_content_sha256": "6ae498b5b78b95e18c684fb336bbd4dcaa906519419b3aa18c215a2c9026d458",
+      "original_content_bytes": 434128,
+      "immutable_source_bytes": true
+    },
+    "native-qualified-en-dark-after-find.png": {
+      "bytes": 473112,
+      "role": "actual owned native UI Find; synthetic development fixture; no held-out quality credit",
+      "source": "build/review-functional-96/native/qualified-c7-smoke-v4/en/dark/after-find.png",
+      "original_content_sha256": "a2b698ca6ee69af9860fe68f6dd285b51f053e9aa71ebd38920772b8d10a72f6",
+      "original_content_bytes": 473112,
+      "immutable_source_bytes": true
+    },
+    "attempt-b-full-failed-report.json": {
+      "bytes": 14553,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/attempt-b-auth-final-report.json",
+      "original_content_sha256": "e4e6b83d241a32ab19057f018bf36b66f5dc5332936130e1cd10bc80a6912c4d",
+      "original_content_bytes": 14553,
+      "immutable_source_bytes": true
+    },
+    "c7-final-report.json": {
+      "bytes": 23029,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/attempt-c7-final-report.json",
+      "original_content_sha256": "97adfe5d161593d492273cbb75f815665972bfe7fa8695a6076981179eaa1c28",
+      "original_content_bytes": 23029,
+      "immutable_source_bytes": true
+    },
+    "c7-independent-acceptance.json": {
+      "bytes": 1628,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/independent-c7/acceptance-summary.json",
+      "original_content_sha256": "ac5dac306b96970c12091224491395ac4cee7f2852e2c7c8ca9f84ebd4204420",
+      "original_content_bytes": 1628,
+      "immutable_source_bytes": true
+    },
+    "c7-independent-request-audit.json": {
+      "bytes": 854,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/independent-c7/raw-request-audit.json",
+      "original_content_sha256": "c9d902a2482e34c9cce2db481362d552df8fec2c4c18b9d70fd58bf0549bf57c",
+      "original_content_bytes": 854,
+      "immutable_source_bytes": true
+    },
+    "c7-independent-candidate-scope.json": {
+      "bytes": 709,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/independent-c7/candidate-and-scope-audit.json",
+      "original_content_sha256": "1da9ec680269ab5139f6af51d13e5d7731fef0ecad89efcea9639a3e704421ea",
+      "original_content_bytes": 709,
+      "immutable_source_bytes": true
+    },
+    "c7-independent-fitted-lock-review.json": {
+      "bytes": 579,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/independent-c7/fitted-lock-structural-review.json",
+      "original_content_sha256": "b0635c1d0b551a9342419f612bc44b6ecb2b9e38671e2c44b5d716d920ece236",
+      "original_content_bytes": 579,
+      "immutable_source_bytes": true
+    },
+    "final-source-parity-c7-summary-final.json": {
+      "bytes": 3600,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/final-source-parity-c7/summary-final.json",
+      "original_content_sha256": "d55692fa71ffde94122fca0525f12e4c84f08a1aacd94038ceba3a5201ab4cdb",
+      "original_content_bytes": 3600,
+      "immutable_source_bytes": true
+    },
+    "final-source-parity-c7-export-summary.json": {
+      "bytes": 750,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/final-source-parity-c7/export-summary.json",
+      "original_content_sha256": "ceb260a70ae33282c2ec1519541b5a7cb2e94cfa74d107134e49f54fe8e64560",
+      "original_content_bytes": 750,
+      "immutable_source_bytes": true
+    },
+    "final-source-parity-c7-metric-parity.json": {
+      "bytes": 21442,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/final-source-parity-c7/metric-parity.json",
+      "original_content_sha256": "7f560bd8678fe407a8c4e1b230d10c1eceb5f1b4e29784c0a200ef7bc235a630",
+      "original_content_bytes": 21442,
+      "immutable_source_bytes": true
+    },
+    "c7-development-panel-diagnostic.json": {
+      "bytes": 154,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/attempt-c7-development-panel-diagnostic.json",
+      "original_content_sha256": "09f893a38caf450f0ec8b1beb11bef35c8e2b730d14cffeeef804ceaf0bad1cc",
+      "original_content_bytes": 154,
+      "immutable_source_bytes": true
+    },
+    "c7-development-stress-diagnostic.json": {
+      "bytes": 175,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/attempt-c7-long-stress-diagnostic.json",
+      "original_content_sha256": "7d5ad3de26675ee0b74cd1b9db6938f84dd7f607f314c64d66c2f39d59ffebfa",
+      "original_content_bytes": 175,
+      "immutable_source_bytes": true
+    },
+    "native-v2-derived-checker-failure-follow-up.json": {
+      "bytes": 555,
+      "role": "immutable research/verification receipt; development diagnostics do not grant held-out credit",
+      "source": "build/review-functional-96/native/qualified-c7-smoke-v2/checker-failure-follow-up.json",
+      "original_content_sha256": "2e6d6f0252507e2b7b769b72353cebc6ca6ba7ff5e048431865cf0c04203478c",
+      "original_content_bytes": 555,
+      "immutable_source_bytes": true
+    },
+    "c7-independent-adoption-review.json": {
+      "bytes": 1369,
+      "role": "independent final acceptance review",
+      "source": "build/independent-c7/adoption-source-review.json",
+      "original_content_sha256": "804f84925325111985a25b4c8cfedc209a1d546497d793289856a076b14e796f",
+      "original_content_bytes": 1369,
+      "immutable_source_bytes": true
+    },
+    "native-independent-functional-review.json": {
+      "bytes": 2587,
+      "role": "independent final acceptance review",
+      "source": "build/independent-c7/native-functional-review.json",
+      "original_content_sha256": "ce57fc74613e12caa0f6931d40ecdcc2b2bcf3085ae0a18fbc8c607a84e1419a",
+      "original_content_bytes": 2587,
+      "immutable_source_bytes": true
+    },
+    "c7-authored-spec.json.gz": {
+      "bytes": 125747,
+      "role": "immutable synthetic frozen execution; original embedded accounting snapshots retained",
+      "source": "build/review-functional-96/attempt-c-authored-spec.json",
+      "original_content_sha256": "93e666c9508f6e72646f9c3668958d69a177d8a207f6e6bd00b8a38b3a012fc5",
+      "original_content_bytes": 3620133,
+      "immutable_source_bytes": true
+    },
+    "c7-base-freeze.json.gz": {
+      "bytes": 5548467,
+      "role": "immutable synthetic frozen execution; original embedded accounting snapshots retained",
+      "source": "build/review-functional-96/attempt-c7-base-freeze.json",
+      "original_content_sha256": "0811b9de30301908f8daea4035ab9df332dbb553d1521cb0234ac89b87ef3711",
+      "original_content_bytes": 168147953,
+      "immutable_source_bytes": true
+    },
+    "c7-fitted-freeze.json.gz": {
+      "bytes": 11150909,
+      "role": "immutable synthetic frozen execution; original embedded accounting snapshots retained",
+      "source": "build/review-functional-96/attempt-c7-heldout-ready.json",
+      "original_content_sha256": "4ff126ed81ca3e865add35661fc2cc0316cff25eb55da8ed333126f839740b14",
+      "original_content_bytes": 208772374,
+      "immutable_source_bytes": true
+    },
+    "c7-calibration-predictions.json.gz": {
+      "bytes": 5497215,
+      "role": "immutable synthetic frozen execution; original embedded accounting snapshots retained",
+      "source": "build/review-functional-96/attempt-c7-calibration-run/predictions.json",
+      "original_content_sha256": "defe10f47cffedb62ca159a382cd63b3a5eec60aa71f7ce271d54d3d22f427ae",
+      "original_content_bytes": 37207171,
+      "immutable_source_bytes": true
+    },
+    "c7-heldout-predictions.json.gz": {
+      "bytes": 6501221,
+      "role": "immutable synthetic frozen execution; original embedded accounting snapshots retained",
+      "source": "build/review-functional-96/attempt-c7-heldout-run/predictions.json",
+      "original_content_sha256": "af477849f4c0e934447c427d1c3a2f7da9eb8fd57454486cf97a69d60b639f5b",
+      "original_content_bytes": 43857698,
+      "immutable_source_bytes": true
+    },
+    "c7-resources.json.gz": {
+      "bytes": 2896807,
+      "role": "immutable synthetic frozen execution; original embedded accounting snapshots retained",
+      "source": "build/review-functional-96/attempt-c7-resource-run/resources.json",
+      "original_content_sha256": "b6c056725ac48ef7084c58181e2eeb7ad558743e6c3c1b46a31a6a2935ec7c00",
+      "original_content_bytes": 20257982,
+      "immutable_source_bytes": true
+    },
+    "native-qualified-v4-curated-receipt.json": {
+      "bytes": 9246,
+      "role": "actual successful native UI generation/storage/reopen; no held-out quality credit",
+      "derived_curated_copy": true
+    },
+    "native-qa-failure-history.json": {
+      "bytes": 3867,
+      "role": "derived pre-inference/lexical-check failure and cleanup summary",
+      "derived_curated_copy": true
+    },
+    "mobile-final-c7-curated-receipt.json": {
+      "bytes": 6801,
+      "role": "final adopted-registry generated/native compatibility; no mobile provider qualification",
+      "derived_curated_copy": true
+    },
+    "native-credential-helper.swift": {
+      "bytes": 2053,
+      "role": "final v2 helper source; no secret literals; exact Capture-only ownership",
+      "source": "build/review-functional-96/native/credential-bridge.swift",
+      "original_content_sha256": "31b729f68be80a052e339ea968537dd577efefc0ad1251b3b1124644e725d542",
+      "original_content_bytes": 2053,
+      "immutable_source_bytes": true
+    },
+    "native-credential-helper-v1-historical.swift": {
+      "bytes": 1731,
+      "role": "historical helper source; v1 initialization/cleanup failure retained",
+      "source": "build/review-functional-96/native/credential-bridge-v1.swift",
+      "original_content_sha256": "bc58b36a58c5a862df6edec83439eb536c6b5d00acabac7dbb321be52040116f",
+      "original_content_bytes": 1731,
+      "immutable_source_bytes": true
+    },
+    "native-credential-helper-v2-static-review.json": {
+      "bytes": 1104,
+      "role": "sanitized derived static helper review",
+      "derived_curated_copy": true
+    },
+    "README.md": {
+      "bytes": 2783,
+      "role": "current final evidence scope and history"
+    },
+    "attempt-b-independent-semantic-failures.json": {
+      "bytes": 36595,
+      "role": "immutable independent semantic audit; historical failure / passing result retained separately",
+      "source": "build/review-functional-96/independent-acceptance/heldout-semantic-audit.json",
+      "original_content_sha256": "60d24fa10b6b14a55a038e935743ee1b9eee1289b91fb5128b730d080abc8a63",
+      "original_content_bytes": 36595,
+      "immutable_source_bytes": true
+    },
+    "c7-independent-semantic-audit.json": {
+      "bytes": 211,
+      "role": "immutable independent semantic audit; historical failure / passing result retained separately",
+      "source": "build/review-functional-96/independent-c7/heldout-semantic-audit.json",
+      "original_content_sha256": "e9a31ddbc1475cfa79f4564682d784b847792e22197d72aea6f9d2b7128b132e",
+      "original_content_bytes": 211,
+      "immutable_source_bytes": true
+    }
+  },
+  "omitted": [],
+  "security_scan": {
+    "files_scanned": 59,
+    "decompressed_archives_scanned": true,
+    "credential_or_private_path_findings": 0,
+    "canonical_full_ledger_published": false
+  },
+  "final_accounting": {
+    "limit_usd": "2.00",
+    "known_billed_usd": "0.23149650",
+    "conservative_upper_bound_usd": "0.01270636",
+    "total_exposure_usd": "0.24420286",
+    "reserved_usd": "0",
+    "pending_reservations": {},
+    "unresolved_charge": false
+  },
+  "broker_closed": true,
+  "uncompressed_frozen_artifacts_redacted": false
 }

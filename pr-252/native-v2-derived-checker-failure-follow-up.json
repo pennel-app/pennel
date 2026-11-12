@@ -1,0 +1,11 @@
+{
+  "kind": "derived follow-up from observed credential-session child stderr; original receipt unchanged",
+  "original_receipt_sha256": "7c0e4d9f752926600e37aa00faec1c5932f01731f6d68ea436c6cbfc2adac850",
+  "stage": "genuine source-linked suggestions",
+  "error": "ReferenceError: Cannot access 'expected' before initialization.",
+  "cause": "CHECK scoped its adjacent-source expected array over its outer semantic expected Set",
+  "provider_job_completed": true,
+  "provider_requests": 2,
+  "quality_credit": false,
+  "original_failure_preserved": true
+}

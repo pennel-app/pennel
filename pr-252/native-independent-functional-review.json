@@ -1,0 +1,72 @@
+{
+  "verdict": "PASS_NO_FINDINGS",
+  "scope": "owned actual native functional smoke; development fixture only, no extra heldout quality credit",
+  "receipt_complete": true,
+  "saved_items": 15,
+  "expected_semantic_items_matched": 15,
+  "source_utterance_ids_and_evidence_fingerprints_independently_recomputed": true,
+  "all_context_source_maps_utf8_bounds_times_exact": true,
+  "actual_distinct_request_ids": 2,
+  "first_manual_consent": "START checkpoint asserts1checkedpolicywrite/1UIadmission; persisted policy ismanual",
+  "automatic_available": false,
+  "accepted_state_persisted": 1,
+  "notes_unchanged": true,
+  "clipboard_changed": false,
+  "accepted_export_preserves_quote_and_excludes_notes": true,
+  "reopen_inference_requests": 0,
+  "manual_provider_model_identity_exact_revision_null": true,
+  "owned_credential_deleted_v4": true,
+  "failed_attempts": {
+    "qualified-c7-smoke": {
+      "complete": false,
+      "requests": 0,
+      "reported_cost": null,
+      "cleanup_recorded": false,
+      "original_failure_preserved": true
+    },
+    "qualified-c7-smoke-v2": {
+      "complete": false,
+      "requests": 2,
+      "reported_cost": 0.0005448,
+      "cleanup_recorded": true,
+      "original_failure_preserved": true
+    },
+    "qualified-c7-smoke-v3": {
+      "complete": false,
+      "requests": 0,
+      "reported_cost": null,
+      "cleanup_recorded": true,
+      "original_failure_preserved": true
+    }
+  },
+  "v1_targeted_cleanup_followup_verified": true,
+  "qa_helper_delta_only": true,
+  "tdz_fix_retains_same_gold_test_semantics": true,
+  "profile_initialization_before_credential_and_restart": true,
+  "production_runtime_changes": false,
+  "known_billed_usd": "0.23149650",
+  "conservative_upper_bound_usd": "0.01270636",
+  "total_exposure_usd": "0.24420286",
+  "pending_reservations": {},
+  "new_provider_requests_by_reviewer": 0,
+  "wall_elapsed_ms": 2499.230165965855,
+  "physical_requests_v4": 2,
+  "v2_and_v4_total_physical_requests": 4,
+  "v2_and_v4_combined_reported_cost_usd": "0.00108960",
+  "native_binary_and_registry_hashes_match": true,
+  "strict_deep_signature_valid": true,
+  "personal_team_verified": "B538Q2K76C",
+  "owned_before_after_images": {
+    "before-find.png": {
+      "width": 2800,
+      "height": 1700,
+      "sha256": "6ae498b5b78b95e18c684fb336bbd4dcaa906519419b3aa18c215a2c9026d458"
+    },
+    "after-find.png": {
+      "width": 2800,
+      "height": 1700,
+      "sha256": "a2b698ca6ee69af9860fe68f6dd285b51f053e9aa71ebd38920772b8d10a72f6"
+    }
+  },
+  "canonical_credential_or_ledger_access_or_writes_by_reviewer": false
+}

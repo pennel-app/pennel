@@ -1,0 +1,11 @@
+{
+  "scope": "original C7 heldout raw replay; no model calls or tuning",
+  "counts": {
+    "proposed": 1034,
+    "correct": 1034,
+    "expected": 1034,
+    "missed": 0
+  },
+  "unsupported": [],
+  "missed": []
+}

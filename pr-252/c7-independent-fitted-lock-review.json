@@ -1,0 +1,18 @@
+{
+  "structural_pass": true,
+  "freeze_sha256": "19bd8056cf84da327bad25605f47d6f9853f2ad91a6f0786624f3d6e53074eca",
+  "base_freeze_sha256": "4107c25d257b4ff280bfe7c5692730c45daa0c08282ac4e1d9db3762c4d69543",
+  "calibration_jobs": 96,
+  "physical_requests": 180,
+  "max_original_job_ms": 13615.78324995935,
+  "fit_count": 288,
+  "fit_statuses": {
+    "fitted": 288
+  },
+  "min_observations": 12,
+  "min_classes": 2,
+  "min_families": 12,
+  "seal_base_and_artifact_hashes_verified": true,
+  "new_provider_requests": 0,
+  "full_offline_reexport_raw_replay_and_refit_passed": true
+}
