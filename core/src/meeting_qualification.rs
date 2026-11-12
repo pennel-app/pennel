@@ -1039,12 +1039,51 @@ mod tests {
     }
 
     #[test]
-    fn production_registry_has_no_adopted_routes() {
-        assert!(MeetingQualificationRegistry::bundled().records.is_empty());
+    fn production_registry_admits_only_the_reviewed_manual_dutch_context() {
+        let registry = MeetingQualificationRegistry::bundled();
+        assert!(registry.valid);
+        assert_eq!(registry.records.len(), 1);
+        let record = &registry.records[0];
+        assert_eq!(record.qualification_id, "finished-nl-19bd8056cf84da327bad");
+        assert!(record.valid());
         assert_eq!(
-            MeetingQualificationRegistry::bundled()
-                .admit(&request())
-                .unwrap_err(),
+            record.context.request.use_case,
+            MeetingAnalysisUseCase::ManualFinishedSuggestions
+        );
+        assert_eq!(record.context.request.language_policy, "nl");
+        assert_eq!(
+            record.context.actual.identity_evidence,
+            MeetingIdentityEvidence::ProviderReportedVersion
+        );
+        assert!(record.context.actual.revision.is_empty());
+        assert!(record.context.actual.artifact_sha256.is_empty());
+        assert!(!record.evidence.foreground_impact_accepted);
+        assert!(!record.evidence.background_resource_accepted);
+
+        let mut current = crate::meeting_insight_engine::qualification_request(
+            record.context.request.configured.clone(),
+            "nl",
+        );
+        // Other build hosts retain the measured cohort rather than claiming qualification.
+        current.resource_profile_sha256 = record.context.request.resource_profile_sha256.clone();
+        assert_eq!(current, record.context.request);
+        assert_eq!(
+            registry.admit(&current).unwrap().record().qualification_id,
+            record.qualification_id
+        );
+        for use_case in [
+            MeetingAnalysisUseCase::ManualLiveSuggestions,
+            MeetingAnalysisUseCase::BackgroundLiveSuggestions,
+        ] {
+            let mut automatic = current.clone();
+            automatic.use_case = use_case;
+            assert_eq!(
+                registry.admit(&automatic).unwrap_err(),
+                MeetingQualificationError::Unqualified
+            );
+        }
+        assert_eq!(
+            registry.admit(&request()).unwrap_err(),
             MeetingQualificationError::Unqualified
         );
     }
