@@ -1,59 +1,102 @@
-# Functional Review follow-up under #96
+# Functional Review qualification under #96
 
-12 November 2026. **Activation is incomplete: the production registry has zero adopted records.** This report distinguishes implemented behavior, actual development inference, incomplete qualification and native compatibility. No passing record is inferred from UI fixtures or connectivity.
+12 November 2026. **C7 passed real hosted qualification, and its exact candidate is adopted for manual Dutch Review in the measured resource context.** The personally signed desktop application generated real source-linked cards, and final registry-sensitive iPhone builds/tests passed. UI fixtures and connectivity alone grant no approval.
 
 ## Implemented behavior
 
-The owner selected exact provider-reported version/route pinning, without independently verified remote weights. [ADR 0005](../adr/0005-review-provider-version-identity.md) records this bounded change. The only newly eligible identity kind is manual finished Dutch Review through official OpenRouter Decisions, requested model `perplexity/pplx-decider-v1.2`, expected/returned model `perplexity/pplx-decider-v1.2-20261016`, and Perplexity upstream. Missing revision/artifact fields remain missing. Legacy and local identity requirements remain strict.
+The owner selected exact provider-reported version/route pinning without independently verified remote weights. [ADR 0005](../adr/0005-review-provider-version-identity.md) records the bounded policy. The adopted route uses official OpenRouter Decisions, requested model `perplexity/pplx-decider-v1.2`, expected/returned model `perplexity/pplx-decider-v1.2-20261016`, and Perplexity upstream. Missing revision/artifact fields remain missing. The local candidate remains unavailable because the retained loader/runtime provides no verifiable loaded-artifact serving identity; configuration and filenames cannot supply it.
 
-The production builder serially groups at most eight independently scoped source windows within actual encoded byte bounds. Exact namespaced answer mapping, original source bytes, absolute whole-job deadlines, configuration/credential/source cancellation and all-or-nothing commits remain. Extraction and other transports retain singleton requests. Tested setup may explicitly select the supported 65,536-byte/90-second limits; ordinary configuration defaults remain unchanged.
+V3 independently checks event state and SOURCE-0 kind support. A card requires an emission-eligible state and explicitly supported kind. Absent support is a clear negative; unclear support or a provider abstention remains unassessed, including after diagnostic calibration. A wholly unassessed job reports insufficient evidence. Production and raw replay share the assessment helper.
 
-Manual setup and consent operate independently of automatic eligibility. Presets are read-only, matching adopted metadata, applied only to a draft and saved explicitly for the selected compatible account. Analysis carries the displayed configuration fingerprint through checked native admission before retrieving keys. Scoped consent preserves concurrent unrelated settings. A failed availability refresh cannot revive a cached Find action. The setup action opens Models. Automatic foreground/resource evidence and separate consent remain mandatory.
+Serial physical requests contain at most eight source windows within actual encoded byte bounds. Namespaced answer mapping, exact central/adjacent source anchors, absolute whole-job deadlines, source/configuration/credential cancellation and all-or-nothing commits remain. Extraction and other transports retain singleton requests and existing questions. Tested setup explicitly selects 65,536 bytes and 90 seconds; ordinary defaults remain unchanged.
+
+Manual setup and consent are separate from automatic eligibility. Only matching adopted metadata offers a preset, applied to a draft and saved explicitly for the selected compatible account. Analysis carries the displayed configuration fingerprint through checked native admission before retrieving keys. Scoped consent preserves concurrent unrelated settings. Failed metadata reads keep Find disabled until a successful refresh. Opening Review reads stored results and availability without inference; prior suggestions remain reviewable when a connection becomes unavailable.
 
 ## Actual inference and retained failures
 
-All model input was invented Dutch text. Personal meetings and notes were excluded; there were no new model/runtime downloads, automatic retries or provider fallbacks.
+All input was invented Dutch text, excluding personal meetings and notes. There were no new model/runtime downloads, automatic retries or provider fallbacks.
 
-| Run | Actual observations | Qualification |
+| Run | Actual evidence | Outcome |
 | --- | --- | --- |
-| Historical local/hosted preflights | Both returned typed output but lacked the previously required identity. See [the historical report](meeting-review-qualification-96-2026-11-11.md). | No adoption. Local remains unavailable. |
-| Hosted development panel | 16 turns, 64 labels, 15/15 exact source-linked cards, 2 physical requests, 2,549 ms. | Development only. |
-| Hosted development stress | 512 turns, 64 physical requests, 72,037 ms within the explicitly selected 90-second whole-job limit. | Development only; not held-out or native GUI evidence. |
-| Isolated client development check | 16 turns, 2 requests, 2,464 ms, 355 ms CPU, maximum individual-process peak 50,429,952 bytes. | No extra semantic quality credit. |
-| Frozen attempt A | 29 complete calibration documents and one partial document. The coordinator interrupted a previously stalled credential lookup after it resumed. Original replies and the incomplete report are preserved. | Failed completeness/execution/deadline gates; zero candidates. No quality credit transfers to B. |
-| Fresh frozen attempt B | Fresh calibration text/identities, unchanged unseen held-out families and unchanged semantic labels, requests, scoring and acceptance gates. Credential reads stopped before any B request. | Unexecuted; cannot qualify. |
+| Historical local/hosted preflights | Typed output lacked the previously required identity; see [the retained report](meeting-review-qualification-96-2026-11-11.md). | No adoption. Local identity remains insufficient. |
+| Attempt A | 29 complete calibration documents and one partial document after an administrative interruption. Original replies and the incomplete report remain preserved. | Incomplete; zero candidates and no transferred quality credit. |
+| Attempt B | Complete original calibration/held-out/resource execution, with exact source maps but 69 unsupported items: 62 wrong kinds and 7 wrong states. Precision 0.936639 and item-classification F1 0.954929. | Failed precision and zero-unsupported requirements; zero candidates. |
+| C7 development | The 16-turn panel produced 15/15 correct cards in 4,451.536 ms. The 512-turn stress job produced 480/480 correct cards in 85,660.085 ms over 64 requests. | Development diagnostics only. Seen-B regressions have no C7 quality credit. |
+| C7 qualification | 96 calibration jobs/180 requests, 96 held-out jobs/180 requests and 35 resource jobs/70 requests. All original jobs were complete, reconciled and within 90 seconds. | PASS; independently reproduced exactly and audited across all 430 physical requests. |
 
-Known cumulative billed spend is **US$0.02062200**. The interrupted request's unreported charge remains `null`; its complete **US$0.00244460** reservation is permanently accounted as a separate conservative upper bound. Total exposure is **US$0.02306660**, pending reservations are empty, and the original cumulative **US$2** cap is unchanged. Every reservation, resource-panel check and native allowance includes known billed, covered unknown and pending exposure. Aggregate account usage did not justify reducing that bound.
+The kind-support change addresses B's semantic false positives without weakening state, item, precision, source, complete-job or resource requirements. Fresh C7 wording/topics and independent judgments were frozen before inference. No failed A/B result was discarded or relabelled as passing.
 
-The frozen runtime policy emits raw closed-set decisions. Calibration is diagnostic evidence only; no fitted runtime filter or calibrated UI confidence is claimed. Raw component/item F1, accepted precision, unsupported-source/state/owner/due/duplicate checks, complete original jobs and resource gates must all pass before a record can be adopted.
+## C7 results and scope
 
-## Frozen evidence and resumption
+| Measurement | Actual result |
+| --- | ---: |
+| Expected / proposed / correct source-linked items | 1,034 / 1,034 / 1,034 |
+| Item precision / recall | 1.0 / 1.0 |
+| Unsupported / missed / duplicate items | 0 / 0 / 0 |
+| Literal quote or complete source-map mismatches | 0 |
+| Raw / diagnostic calibrated state macro-F1 | 0.98084694 / 0.96452203 |
+| Raw / diagnostic calibrated support macro-F1 | 0.99217284 / 0.98700426 |
+| Complete-item classification macro-F1 | 0.98929289 |
+| Resource samples / physical requests | 5 fresh + 30 retained-client jobs / 70 |
+| Warm complete-job p95 | 3,617.687 ms |
+| Maximum individual-process lifetime RSS | 59,752,448 bytes |
+| Summed client-scope CPU across 35 resource jobs | 14,564.651 ms |
 
-Core/source request behavior was frozen at `4a78575b18f1d0120d9a5ab5ee0bae0b843d4cd3`. The immutable evaluation binary SHA-256 is `0e8cfed0f78ac8dd220b0cfc09d4b0a8db7213c5e5432b509b073707a2640371`.
+State and support metrics each contain 4,416 held-out observations. Item classification retains the original four state components; support rows cannot inflate its F1 and unassessed slots receive no successful item credit. All 288 diagnostic calibration contexts were fitted with minima of 12 observations, two classes and 12 families. Runtime uses raw state/support choices, not a fitted threshold or calibrated UI confidence.
 
-The latest [committed B preregistration](../../evaluations/decision-models/locks/review-provider-version-nl-2026-11-11-attempt-b-auth-pipe-base.json) binds freeze `8b89407b66e66ac4aa029b0d88aa6646c36e800495cd80c23ee147d691dd9b63`, physical request manifest `b7d2dbe576a482660da607338e1e904869445fb27ad38946dd5445747cf49992`, source, binary, protocol, complete corpus/gold/splits and credential-delivery code. All 290 exports were reverified offline. The 144 calibration contexts each have at least 12 observations, two classes and 12 families before inference. Earlier locks and no-send failures remain preserved.
+Resource measurements cover the isolated client and waited HTTP/Rust children. RSS is a maximum individual-process high-water mark, not aggregate process-tree, native GUI or remote-server memory. Each physical request uses a new HTTPS transport; remote server cold/warm state and CPU/RSS are unavailable. Development stress is separate from held-out and fixed resource-panel evidence.
 
-macOS reported the console screen locked. The evaluation key exists in the login keychain, but secret reads timed out and a noninteractive Security-framework read returned `errSecAuthFailed`. Native window capture also failed. No keychain ACL, credential, lock policy or unrelated process was changed. The Mac must be unlocked for the required interactive read and native captures.
+The exact candidate `finished-nl-19bd8056cf84da327bad` was copied unchanged into the production registry after independent clearance. It is limited to `manual_finished_suggestions`, `nl`, the pinned provider/model/route, full request/decoder context and recorded resource cohort. Foreground-impact and background-resource flags remain false. It does not qualify English/mixed-language analysis, automatic processing, natural ASR or human/device acceptance. Remote weights are not independently verified.
 
-The optional parent credential session reads the exact OS-stored evaluation key once and keeps it in process memory. Explicit child phases receive it through bounded inherited anonymous pipes, never arguments, environment, files or logs. It cannot advance phases automatically; the original frozen actor and cumulative-budget gates still apply.
+## Frozen evidence and accounting
 
-After unlocking, execute only the committed B calibration phase first. Fit its diagnostic artifact and commit a second fitted lock before any held-out/resource inference. Run the fixed five fresh-client and thirty retained-client resource jobs, retaining every failed/abstained case and original timing. Adopt only a genuinely passing candidate. Native UI Find must then prove actual production generation, exact sources, acceptance/export and inference-free reopening against the adopted registry. No phase is silently retried.
+Measured source is `611e542072e0917d6f74203bfc12bad777e95bbf`; immutable binary SHA-256 is `2403d274f2d95534ec4574f9d4efc80526083531821d561db6c60c78a306fc12`. The [base lock](../../evaluations/decision-models/locks/review-supported-passages-c7-2026-11-12-base.json) binds freeze `4107c25d257b4ff280bfe7c5692730c45daa0c08282ac4e1d9db3762c4d69543`. The [fitted lock](../../evaluations/decision-models/locks/review-supported-passages-c7-2026-11-12-fitted.json), committed as `6ae67107375f4726c9339d03ffb5f37ae4270bc2` before held-out inference, binds fitted freeze `19bd8056cf84da327bad25605f47d6f9853f2ad91a6f0786624f3d6e53074eca`. All 291 production exports and actual calibration contexts were verified offline before inference.
 
-Full local artifacts remain under `build/review-functional-96/`, with the original cumulative ledger under `build/review-qualification-96/20261111/`. These include unchanged raw A responses, immutable source/binary snapshots, both corpus freezes, incomplete reports, ledger before/after reconciliation, bounded credential failures and owned fixture receipts. Credentials and private local path inventories must not enter public assets.
+The independent C7 audit reproduced every report field, checked all 430 request bodies/identities/billing records and confirmed all 1,034 complete source maps and semantic items. The immutable measured-source snapshot and original A/B/C7 artifacts remain under `build/review-functional-96/`; independent receipts are under `independent-c7/`. The measured snapshot retains its pre-adoption empty registry. Adding the reviewed record and updating the empty-registry test do not manufacture a new timing measurement.
 
-## Verification
+C7's 430 qualification requests reported **US$0.09479594**, included in cumulative known billed spend. Including both actual native jobs, final known billed spend is **US$0.23149650**. Two unreported charges retain their full reservations as separate permanent conservative bounds totaling **US$0.01270636**. Final exposure is **US$0.24420286** under the original cumulative **US$2** cap, with no pending reservation or unresolved uncovered charge. Unknown raw bills remain `null`; aggregate usage did not reduce their bounds. All capacity checks include known billed, covered unknown and pending exposure, including the separate native-smoke allowance.
 
-| Scope | Result |
+Earlier locked-console/key-reader failures are retained; access resumed after the owner unlocked the Mac. The parent credential session reads the OS-stored key once into process memory and supplies explicitly requested phases through bounded inherited anonymous pipes, never arguments, environment, files or logs. There are no automatic phase transitions or provider retries. The credential session is closed; every temporary Capture credential was deleted. Credentials and private local path inventories are excluded from public assets.
+
+## Native application confirmation
+
+A fresh owned Capture Preview profile exercised the real bundled renderer, Rust core, OS credential store and adopted record. **Use tested setup** changed only the draft; explicit Save retained the selected account. Opening Review admitted manual Dutch analysis, kept automatic analysis unavailable and sent no inference. First-time Find saved only manual consent and admitted exactly one job. The provider completed two physical requests over 16 finalized turns in 2,499.230 ms and produced all 15 expected development cards, with exact source maps and no invented owner/deadline. This is functional confirmation, not additional held-out quality credit.
+
+Accepting a card, opening its exact source, returning to Review and exporting accepted items all passed. Notes and the user's clipboard remained unchanged. After a process restart, all 15 cards and the accepted state persisted; opening the meeting sent zero new requests. Window captures contain only the owned fixture. Strict/deep signing verification confirms personal team `B538Q2K76C`.
+
+Earlier native attempts remain preserved. Two stopped during isolated initial credential setup before inference. A third completed and fully billed two requests but stopped on a lexical-shadowing bug in the QA assertion. The helper now initializes the profile before inserting its temporary credential and restarting, and the assertion uses distinct variable names. The final full run passes without product/runtime changes. The first cleanup required a targeted deletion of its exact owned nonce; all later helper cleanups succeeded. No provider failure was retried or relabelled as passing.
+
+## Verification and delivery
+
+| Scope | Verified result |
 | --- | --- |
-| Core | Release build; 1,324 tests plus 17 typing tests; strict formatting and Clippy. |
+| Core | Release build; 1,332 tests plus 17 typing tests; strict formatting and Clippy. |
 | Desktop | 532 frontend tests; TypeScript/Vite/theme; 408 backend tests and strict backend Clippy/formatting. |
-| Evaluation | 352 tests; independently reviewed budget recovery; all production exports verified offline. |
-| Owned renderer | 88 EN/NL light/dark frames, eight matched before/after pairs, four setup-navigation cases; no unintended inference. Qualified UI fixtures are synthetic and cannot adopt a record. |
-| Native helpers and UI | Nine focused smoke/credential/wire-shape tests; four real Capture EN/NL light/dark DOM/IPC cases verify disabled unqualified Find, no inference on opening, unchanged notes and contained transcript geometry. Native visual capture remains blocked by the locked console. |
-| Mac/mobile compatibility | 217 Mac-platform and 116 MobileKit tests; mobile typecheck, 17 plugin, 7 widget and 160 UI tests. |
-| Generated iPhone baseline | Both lean core slices/bindings, clean and repeated Prebuild, locked Pods and six ownership checks; unsigned ARM64 Release device/simulator builds; 180 hosted native tests. Registry remained empty throughout. |
-| Signing/storage | Capture Preview release built and passed strict/deep verification with personal team `B538Q2K76C`. Native builds used the repository storage guard; prior owned artifacts were retained. No notarization or physical-device acceptance is claimed. |
+| Evaluation | 363 tests, real C7 qualification and independent source/request/item/accounting audits. |
+| Owned renderer | 88 EN/NL light/dark frames, eight matched before/after pairs and four setup-navigation cases. Synthetic qualified fixtures do not grant approval. |
+| Native desktop | Nine helper tests; four retained empty-registry EN/NL light/dark geometry cases plus the genuine adopted-route generation, acceptance/export, exact-source and restart checks above. Matching owned images were captured after unlocking. |
+| Final Mac/mobile | 217 Mac-platform and 116 MobileKit tests; mobile typecheck, 17 plugin, 7 widget and 160 UI tests. |
+| Final generated iPhone | Matching lean libraries/bindings, clean/repeated Prebuild, locked Pods and six ownership checks; unsigned ARM64 Release simulator/device builds and 180 hosted native tests, with the exact adopted registry in both libraries and app executables. |
+| Signing/storage | Capture Preview release passed strict/deep verification with personal team `B538Q2K76C`; native builds used the storage guard and retained prior artifacts. No notarization or physical-device acceptance is implied. |
 
-The native cache now includes the registry as a build input, and generation records its hash/count separately from existing core/binding digests. Preparation pins registry bytes before compilation and rejects mutation across build/binding/framework/manifest stages; a six-stage regression and 116 helper checks passed. The current empty-registry baseline has registry SHA `1bd30884…` and bindings `daf6056f…`. A future adoption requires registry-sensitive regeneration; these builds do not prove activation.
+The registry is a native cache/build input, with its hash/count recorded separately from core/binding digests. Preparation pins registry bytes before compilation and rejects changes across compile/binding/framework/manifest stages; a six-stage regression and 116 helper checks passed. The retained empty-registry baseline has registry SHA `1bd30884…` and bindings `daf6056f…`; it cannot stand in for the final adopted-registry build.
 
-Panel PR #249, historical qualification PR #250 and naming PR #251 were independently reviewed and merged into main. Main `fd34775ff311b4362bdfe5d29b21abce678d58df` passed all selected CI, desktop, mobile and offline-evaluation workflows. Functional Review activation, its native generation proof, broader languages/natural ASR, human acceptance and automatic foreground/background qualification remain open under [#96](https://github.com/pennel-app/pennel/issues/96).
+Final-source parity independently re-exported all 291 fixtures and replayed 229 original runs/496 physical responses using the newly built final binary (`c89d3f254cd3951727027013c0a121ca0f1a073578d58d7bd98eaecaef709a21`). Request bodies, answer maps, source context, decoded output and quality metrics match C7 exactly. Only the explicit `cfg(test)` registry assertion changed inside measured Rust source; original model timings remain original measurements.
+
+Final iPhone preparation records core SHA `27570b9a919e118fb0e1ffdc3c3770dc9748ba26c86fbd3ee78e1cd05a103b34`, registry SHA `cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f` and one adopted record. Binding bytes remain `daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21`. The owned simulator is shut down and unrelated simulators are unchanged. [Mobile commands and acceptance limits](../mobile.md) remain explicit.
+
+Representative final commands (logs/results remain under `build/review-functional-96/`):
+
+```sh
+scripts/with-toolchain.sh cargo test --manifest-path core/Cargo.toml
+scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check
+scripts/with-toolchain.sh cargo clippy --manifest-path core/Cargo.toml --lib --tests -- -D warnings
+(cd apps/desktop/src-tauri && ../../../scripts/with-toolchain.sh cargo test)
+python3 -m unittest scripts/tests/test_qualified_review_native.py
+```
+
+The signed Capture build used `worktree-storage run -- ../../scripts/with-toolchain.sh npm run tauri -- build --bundles app --config src-tauri/tauri.capture.conf.json` from `apps/desktop`, with both signing variables pinned to the owner's personal certificate. Real native verification used `scripts/verify-qualified-review-native.py --execute`, owned window/credential helpers, an explicit output directory and the credential session's inherited anonymous pipe. Public synthetic results and matching images live on [PR #252's asset branch](https://github.com/pennel-app/pennel/tree/pr-assets/pr-252); private path inventories remain local.
+
+Final PR review/CI/merge is the remaining delivery gate at this source snapshot. Broader approvals remain separate.
+
+Panel PR #249, historical qualification PR #250 and naming PR #251 were independently reviewed and merged. Main `fd34775ff311b4362bdfe5d29b21abce678d58df` passed all selected CI, desktop, mobile and offline-evaluation workflows. Broader languages/natural ASR, human acceptance and automatic foreground/background qualification remain open under [#96](https://github.com/pennel-app/pennel/issues/96).
