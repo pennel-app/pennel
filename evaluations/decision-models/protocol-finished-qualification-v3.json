@@ -1,0 +1,39 @@
+{
+  "schema_version": 3,
+  "protocol_id": "production-finished-qualification-v3",
+  "use_case": "manual_finished_suggestions",
+  "languages": [
+    "nl"
+  ],
+  "production_contract": "Batched Rust v3 finished_meeting_export/replay, actual request/raw parser, independent state and support answers, full source-map quoted-passage decoder",
+  "runtime_policy": "raw_supported_passage_decisions_v3",
+  "calibration_role": "Diagnostic only. Calibrate every state and support context on the calibration split; runtime uses explicit support/state choices without a fitted threshold.",
+  "identity_evidence": "provider_reported_version; exact returned dated model, actual provider, requested upstream and official endpoint are pinned. No independently verified remote artifact or serving revision is claimed.",
+  "acceptance": {
+    "component_macro_f1_min": 0.9,
+    "complete_item_macro_f1_min": 0.9,
+    "accepted_item_precision_min": 0.95,
+    "unsupported_or_duplicate_items_max": 0,
+    "minimum_calibration_observations": 10,
+    "minimum_calibration_classes": 2,
+    "minimum_calibration_families": 2,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "hosted_warm_complete_job_p95": "within the frozen configured whole-job deadline, never over 90 seconds",
+    "support_macro_f1_min": 0.9,
+    "calibrated_support_macro_f1_min": 0.9
+  },
+  "bounds": {
+    "whole_job_timeout_secs_max": 90,
+    "hosted_total_usd_max": "2.00",
+    "budget_is_cumulative": true,
+    "automatic_retries": false,
+    "fallbacks": false,
+    "new_model_runtime_downloads": false
+  },
+  "items": "Independently authored SOURCE0 state and kind-support judgments. Complete-item metrics include original four state components only, exact literal quotes and every frozen central/adjacent source anchor. Unsupported owner/due/prior extraction remains null. Easy support rows cannot inflate item F1.",
+  "calibration": "Only calibration distributions fit artifacts. Actual authored physical template, slot, batch size, question, label order, provider/model and grouping bind each context. Require actual export coverage across every intended split before inference; commit fitted lock before heldout.",
+  "resource_scope": "Owned application-client preparation, HTTP transport and final Rust raw replay. Per-original-job whole_job_elapsed_ms is mandatory. Fixed five fresh-client and thirty warm complete jobs on a frozen development source, plus separately reported maximum512-turn development stress. Remote server CPU/RSS/weight contents are unavailable and are not claimed measured. RSS is the maximum individual-process lifetime high-water mark across the isolated client and waited children; individual client/child marks are retained. Aggregate process-tree and native GUI RSS are unmeasured and are not claimed by this manual-route gate.",
+  "adoption": "Emit a candidate only after unchanged exact-source, original-job, state/item/precision/resource gates and separate raw/calibrated support quality gates pass. Never write the registry or reuse failed A/B quality credit.",
+  "support_abstention": "Unclear or model-abstained support is a null prediction counted as a missed class/coverage loss, not a third event class. Retain its raw distribution for calibration. State unknown remains a real state."
+}

@@ -27,6 +27,7 @@ import urllib.request
 
 import finished
 import finished_corpus_v2 as corpus
+import finished_corpus_v3 as corpus_v3
 import finished_qualification as qualification
 import runners
 
@@ -85,8 +86,10 @@ def _canonical_fixture(value):
         for row in value['utterances']]}
 
 
-def _approved_fixture(fixture):
-    approved = {item['id']: item for item in corpus.experiment()['fixtures']}
+def _approved_fixture(fixture, version=2):
+    if version not in (2,3):raise ValueError('approved_invented_corpus_required')
+    module = corpus_v3 if version==3 else corpus
+    approved = {item['id']: item for item in module.experiment()['fixtures']}
     if fixture.get('id') not in approved or _canonical_fixture(fixture) != _canonical_fixture(approved[fixture['id']]):
         raise ValueError('approved_invented_corpus_required')
 
@@ -180,7 +183,7 @@ def run_job(exported, freeze_sha256, bridge, credential, ledger, output, *, exec
             transport=None, clock=time.monotonic, global_deadline=None, prompt_price=Decimal('.00000002'),
             completion_price=Decimal(0)):
     if not execute: raise ValueError('execution_not_enabled')
-    _approved_fixture(exported['fixture']);_route(exported['configuration'], exported['expected_actual'])
+    _approved_fixture(exported['fixture'],exported.get('schema_version',2));_route(exported['configuration'], exported['expected_actual'])
     batches = qualification.physical_requests(exported)
     for batch in batches: _body(batch['wire_body'], exported['configuration'])
     output = Path(output)
@@ -424,12 +427,12 @@ def main():
     secret = credential(args.credential_fd, deadline=global_deadline) if args.credential_fd is not None else None
     frozen = json.loads(Path(args.freeze).read_text());bridge = finished.CoreBridge(args.bridge)
     qualification.verify_freeze(frozen, bridge, deadline=global_deadline, clock=time.monotonic)
-    if not qualification._v2(frozen): raise ValueError('batched_provider_version_freeze_required')
+    if not qualification._batched(frozen): raise ValueError('batched_provider_version_freeze_required')
     if args.phase != 'development': _verify_committed_lock(args.freeze_commit, args.freeze_lock, frozen)
     if args.phase in ('heldout', 'resources') and frozen['stage'] != 'heldout_ready':
         raise ValueError('calibration_before_heldout_required')
     for exported in frozen['production']['exports']:
-        _approved_fixture(exported['fixture']);_route(exported['configuration'], exported['expected_actual'])
+        _approved_fixture(exported['fixture'],exported.get('schema_version',2));_route(exported['configuration'], exported['expected_actual'])
     if time.monotonic() >= global_deadline: raise ValueError('evaluation_budget_exceeded')
     prices = _prices(args.pricing)
     if time.monotonic() >= global_deadline: raise ValueError('evaluation_budget_exceeded')

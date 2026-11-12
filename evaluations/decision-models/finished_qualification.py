@@ -13,6 +13,7 @@ from pathlib import Path
 import calibration
 import finished
 import finished_v2
+import finished_v3
 import metrics
 import runners
 
@@ -22,6 +23,10 @@ SOURCES = ('finished_qualification.py', 'finished.py', 'finished_preflight.py', 
 V2_SOURCES = SOURCES + ('finished_v2.py', 'finished_experiment.py', 'finished_corpus_v2.py', 'runners.py')
 PROTOCOL_V2 = PROTOCOL.with_name('protocol-finished-qualification-v2.json')
 RUNTIME_POLICY = 'raw_closed_set_passage_decisions_v2'
+V3_SOURCES = SOURCES + ('finished_v3.py', 'finished_experiment.py', 'finished_corpus_v3.py', 'runners.py',
+    'fixtures/seen-b-semantic-regression-v3.json')
+PROTOCOL_V3 = PROTOCOL.with_name('protocol-finished-qualification-v3.json')
+RUNTIME_POLICY_V3 = 'raw_supported_passage_decisions_v3'
 
 
 def _seal(value):
@@ -36,24 +41,37 @@ def _base(frozen):
     return _seal(value)
 
 
-def _source_hashes(v2=False):
-    return {name: finished.file_hash(Path(__file__).with_name(name)) for name in (V2_SOURCES if v2 else SOURCES)}
+def _source_hashes(v2=False, *, v3=False):
+    names = V3_SOURCES if v3 else V2_SOURCES if v2 else SOURCES
+    return {name: finished.file_hash(Path(__file__).parent/name) for name in names}
 
 
 def _v2(frozen):
     return frozen.get('schema_version') == 2 and frozen.get('protocol_id') == 'production-finished-qualification-v2'
 
 
+def _v3(frozen):
+    return frozen.get('schema_version') == 3 and frozen.get('protocol_id') == 'production-finished-qualification-v3'
+
+
+def _batched(frozen):
+    return _v2(frozen) or _v3(frozen)
+
+
+def _runtime_policy(frozen):
+    return RUNTIME_POLICY_V3 if _v3(frozen) else RUNTIME_POLICY
+
+
 def _protocol(frozen):
-    return PROTOCOL_V2 if _v2(frozen) else PROTOCOL
+    return PROTOCOL_V3 if _v3(frozen) else PROTOCOL_V2 if _v2(frozen) else PROTOCOL
 
 
 def _contract(frozen):
-    return finished_v2 if _v2(frozen) else finished
+    return finished_v3 if _v3(frozen) else finished_v2 if _v2(frozen) else finished
 
 
 def physical_requests(exported):
-    return exported['batches'] if exported.get('schema_version') == 2 else exported['windows']
+    return exported['batches'] if exported.get('schema_version') in (2,3) else exported['windows']
 
 
 def _valid_actual(configuration, actual):
@@ -111,13 +129,17 @@ def _gold(exported, rows):
     return result
 
 
-def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, gold_items):
+def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, gold_items, *, schema_version=None):
     if not _valid_actual(configuration, expected_actual):
         raise ValueError('verified_actual_identity_required')
     v2 = expected_actual.get('identity_evidence') == 'provider_reported_version'
+    version = schema_version if schema_version is not None else 2 if v2 else 1
+    if version not in (1,2,3) or version in (2,3) and not v2:
+        raise ValueError('unsupported_qualification_contract')
     if any(item.get('language') != 'nl' for item in fixtures):
         raise ValueError('initial_qualification_is_dutch_only')
-    production = (finished_v2 if v2 else finished).freeze(fixtures, configuration, bridge, expected_actual, expected_answers)
+    contract = {1:finished,2:finished_v2,3:finished_v3}[version]
+    production = contract.freeze(fixtures, configuration, bridge, expected_actual, expected_answers)
     ids = {item['fixture']['id'] for item in production['exports']}
     if not isinstance(gold_items, dict) or set(gold_items) != ids:
         raise ValueError('complete_item_judgments_required')
@@ -125,11 +147,13 @@ def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, g
     splits = {item['fixture']['split'] for item in production['exports']}
     if splits != {'development', 'calibration', 'heldout'}:
         raise ValueError('all_disjoint_splits_required')
-    value = {'schema_version': 2 if v2 else 1, 'protocol_id': f'production-finished-qualification-v{2 if v2 else 1}',
-        'protocol_sha256': finished.file_hash(PROTOCOL_V2 if v2 else PROTOCOL), 'source_sha256': _source_hashes(v2),
+    value = {'schema_version': version, 'protocol_id': f'production-finished-qualification-v{version}',
+        'protocol_sha256': finished.file_hash({1:PROTOCOL,2:PROTOCOL_V2,3:PROTOCOL_V3}[version]),
+        'source_sha256': _source_hashes(version==2,v3=version==3),
         'production': production, 'gold_items': gold, 'stage': 'calibration', 'production_admission': False}
-    if v2:
-        value.update(runtime_policy=RUNTIME_POLICY, resource_fixture_id=next(item['id'] for item in fixtures if item['split'] == 'development'))
+    if version in (2,3):
+        value.update(runtime_policy=RUNTIME_POLICY_V3 if version==3 else RUNTIME_POLICY,
+            resource_fixture_id=next(item['id'] for item in fixtures if item['split'] == 'development'))
     return _seal(value)
 
 
@@ -140,12 +164,12 @@ def _deadline(deadline, clock):
 
 def verify_freeze(frozen, bridge, *, deadline=None, clock=time.monotonic):
     _deadline(deadline, clock)
-    if ((frozen.get('schema_version'), frozen.get('protocol_id')) not in ((1, 'production-finished-qualification-v1'), (2, 'production-finished-qualification-v2'))
-            or frozen.get('protocol_sha256') != finished.file_hash(_protocol(frozen)) or frozen.get('source_sha256') != _source_hashes(_v2(frozen))
+    if ((frozen.get('schema_version'), frozen.get('protocol_id')) not in ((1, 'production-finished-qualification-v1'), (2, 'production-finished-qualification-v2'), (3, 'production-finished-qualification-v3'))
+            or frozen.get('protocol_sha256') != finished.file_hash(_protocol(frozen)) or frozen.get('source_sha256') != _source_hashes(_v2(frozen),v3=_v3(frozen))
             or frozen.get('freeze_sha256') != finished.digest({key: item for key, item in frozen.items() if key != 'freeze_sha256'})
             or frozen.get('production_admission') is not False or frozen.get('stage') not in ('calibration', 'heldout_ready')):
         raise ValueError('qualification_freeze_changed')
-    if _v2(frozen) and frozen.get('runtime_policy') != RUNTIME_POLICY:
+    if _batched(frozen) and frozen.get('runtime_policy') != _runtime_policy(frozen):
         raise ValueError('runtime_selection_policy_changed')
     _contract(frozen).verify_freeze(frozen['production'], bridge, deadline=deadline, clock=clock)
     if frozen['stage'] == 'heldout_ready':
@@ -166,7 +190,7 @@ def requests(frozen, split, bridge):
     if split == 'heldout' and frozen['stage'] != 'heldout_ready':
         raise ValueError('calibration_before_heldout_required')
     return [{'fixture_id': exported['fixture']['id'],
-             ('batch_index' if _v2(frozen) else 'window_index'): batch['index'],
+             ('batch_index' if _batched(frozen) else 'window_index'): batch['index'],
              'freeze_sha256': frozen['freeze_sha256'], 'export_sha256': exported['freeze_sha256'],
              'wire_body': batch['wire_body'], 'request_sha256': hashlib.sha256(batch['wire_body'].encode()).hexdigest(),
              'endpoint': exported['configuration']['endpoint'], 'whole_job_timeout_secs': exported['configuration']['timeout_secs']}
@@ -241,17 +265,22 @@ def _runs(frozen, predictions, bridge, split, *, deadline=None, clock=time.monot
                 key = question['id']
                 answer = answers.get(key, {})
                 valid = actual.get('status') == 'ok' and answer.get('abstained') is False
-                rows.append({'id': f'{identifier}:{index}:{key}', 'fixture_id': identifier, 'window_index': index,
+                support = _v3(frozen) and key in {kind+'_support' for kind in KINDS}
+                probability_valid = actual.get('status') == 'ok' and (valid or support)
+                value = {'id': f'{identifier}:{index}:{key}', 'fixture_id': identifier, 'window_index': index,
                     'task': 'events', 'subtask': key, 'component': key, 'split': split, 'language': 'nl',
                     'group_id': exported['fixture']['family_id'], 'runner_id': 'production-finished',
                     'expected': frozen['production']['expected_answers'][identifier][index][key],
                     'prediction': answer.get('choice') if valid else None,
-                    'probabilities': {value['option_id']: value['probability'] for value in answer.get('probabilities', [])} if valid else None,
-                    'score_type': 'uncalibrated_typed_probability', 'prompt_hash': finished.digest({'question': question, 'physical_prompt_context_sha256': window['prompt_context_sha256']}) if _v2(frozen) else finished.digest(question),
+                    'probabilities': ({value['option_id']: value['probability'] for value in answer.get('probabilities', [])} or None) if probability_valid else None,
+                    'score_type': 'uncalibrated_typed_probability', 'prompt_hash': finished.digest({'question': question, 'physical_prompt_context_sha256': window['prompt_context_sha256']}) if _batched(frozen) else finished.digest(question),
                     'label_order': [option['id'] for option in question['options']],
                     'grouping': exported['qualification_request']['grouping'],
                     'identity': {'transport': exported['configuration']['protocol'], **identity},
-                    'run_manifest_hash': frozen.get('base_freeze_sha256', frozen['freeze_sha256'])})
+                    'run_manifest_hash': frozen.get('base_freeze_sha256', frozen['freeze_sha256'])}
+                if support and (not valid or value['prediction']=='unclear'):
+                    value.update(prediction=None,accepted=False,support_abstained=True)
+                rows.append(value)
     return rows, jobs, len(exports)
 
 
@@ -287,6 +316,11 @@ def _calibrated(rows, artifact):
     return result
 
 
+def _support_abstentions(rows):
+    return [{**row,'prediction':None,'accepted':False}
+            if row.get('support_abstained') or row['prediction']=='unclear' else row for row in rows]
+
+
 def _items(frozen, jobs, rows):
     counts = Counter(expected_count=0, proposed_count=0, correct_count=0, duplicates=0, unsupported=0)
     complete_rows = []
@@ -299,6 +333,8 @@ def _items(frozen, jobs, rows):
                       for item in window.get('candidates', [])] if job['complete'] else []
         counts['proposed_count'] += len(candidates)
         available = [dict(item) for item in gold]
+        assessed = {window['window_index']:set(window.get('assessed_kinds',[]))
+                    for window in job['replay'].get('windows',[])}
         correct = Counter()
         seen = set()
         for index, item in candidates:
@@ -316,9 +352,12 @@ def _items(frozen, jobs, rows):
         for row in rows:
             if row['fixture_id'] != identifier:
                 continue
+            if _v3(frozen) and row['component'] not in KINDS:
+                continue
             value = dict(row)
             required = sum(item['window_index'] == row['window_index'] and item['kind'] == row['component'] for item in gold)
-            if required and correct[row['window_index'], row['component']] != required:
+            unassessed = _v3(frozen) and (not job['complete'] or row['component'] not in assessed.get(row['window_index'],set()))
+            if unassessed or required and correct[row['window_index'], row['component']] != required:
                 value.update(prediction=None, accepted=False)
             complete_rows.append(value)
     counts.update(missed=counts['expected_count'] - counts['correct_count'],
@@ -334,7 +373,7 @@ def _resources(frozen, resources, bridge):
                'remote_server_cpu_rss': 'unavailable'}
     if resources is None:
         return missing
-    exported = next(item for item in frozen['production']['exports'] if item['fixture']['id'] == frozen.get('resource_fixture_id')) if _v2(frozen) else next(item for item in frozen['production']['exports'] if item['fixture']['split'] == 'development')
+    exported = next(item for item in frozen['production']['exports'] if item['fixture']['id'] == frozen.get('resource_fixture_id')) if _batched(frozen) else next(item for item in frozen['production']['exports'] if item['fixture']['split'] == 'development')
     profile = exported['qualification_request'].get('resource_profile_sha256')
     if resources.get('freeze_sha256') != frozen['freeze_sha256'] or resources.get('resource_profile_sha256') != profile:
         raise ValueError('unlinked_runtime_resource_evidence')
@@ -372,9 +411,13 @@ def evaluate(frozen, predictions, bridge, resources=None):
         raise ValueError('calibration_before_heldout_required')
     rows, jobs, scheduled = _runs(frozen, predictions, bridge, 'heldout')
     _, calibration_jobs, calibration_scheduled = _runs(_base(frozen), frozen['calibration_runs'], bridge, 'calibration')
-    raw = metrics.classification_metrics(rows)
-    calibrated = metrics.classification_metrics(_calibrated(rows, frozen['calibration']))
-    items, runtime = _items(frozen, jobs, rows), _resources(frozen, resources, bridge)
+    state_rows = [row for row in rows if row['component'] in KINDS] if _v3(frozen) else rows
+    raw = metrics.classification_metrics(state_rows)
+    calibrated = metrics.classification_metrics(_calibrated(state_rows, frozen['calibration']))
+    items, runtime = _items(frozen, jobs, state_rows), _resources(frozen, resources, bridge)
+    support_rows = [row for row in rows if row['component'] in {kind+'_support' for kind in KINDS}]
+    support_raw = metrics.classification_metrics(_support_abstentions(support_rows)) if _v3(frozen) else None
+    support_calibrated = metrics.classification_metrics(_support_abstentions(_calibrated(support_rows,frozen['calibration']))) if _v3(frozen) else None
     calibration_actual = bool(frozen['calibration_runs']) and all(row['evidence_class'] == 'recorded_inference' for row in frozen['calibration_runs'])
     actual = len(predictions) == scheduled and all(row['evidence_class'] == 'recorded_inference' for row in predictions)
     complete = all(job['complete'] for job in jobs.values())
@@ -392,6 +435,9 @@ def evaluate(frozen, predictions, bridge, resources=None):
     if not fits or any(fit['status'] != 'fitted' for fit in fits): gates.append('uncalibrated_contexts')
     if raw['macro_f1'] is None or raw['macro_f1'] < .90 or calibrated['macro_f1'] is None or calibrated['macro_f1'] < .90:
         gates.append('component_quality_failed')
+    if _v3(frozen) and (support_raw['macro_f1'] is None or support_raw['macro_f1'] < .90
+            or support_calibrated['macro_f1'] is None or support_calibrated['macro_f1'] < .90):
+        gates.append('support_component_quality_failed')
     if items['classification']['macro_f1'] is None or items['classification']['macro_f1'] < .90:
         gates.append('complete_item_quality_failed')
     if items['precision'] is None or items['precision'] < .95: gates.append('accepted_item_precision_failed')
@@ -407,8 +453,13 @@ def evaluate(frozen, predictions, bridge, resources=None):
         'original_job_deadlines': {'calibration_verified': all(job['deadline_verified'] for job in calibration_jobs.values()),
                                    'heldout_verified': all(job['deadline_verified'] for job in jobs.values())},
         'natural_asr_acceptance': False, 'human_acceptance': False, 'automatic_analysis_accepted': False}
-    if _v2(frozen):
-        report.update(runtime_policy=RUNTIME_POLICY, runtime_calibration_applied=False, calibration_role='diagnostic_evidence_only', remote_weights_independently_verified=False)
+    if _batched(frozen):
+        report.update(runtime_policy=_runtime_policy(frozen), runtime_calibration_applied=False,
+            calibration_role='diagnostic_evidence_only', remote_weights_independently_verified=False)
+    if _v3(frozen):
+        report.update(runtime_support_check_applied=True,raw_support_metrics=support_raw,
+            calibrated_support_metrics=support_calibrated,
+            support_abstention_policy='unclear_or_model_abstained_count_as_misses_with_probabilities_retained')
     if not gates:
         exported = frozen['production']['exports'][0]
         context = {**exported['qualification_request'], 'actual': exported['expected_actual'],
@@ -420,13 +471,14 @@ def evaluate(frozen, predictions, bridge, resources=None):
                 'report_sha256': finished.digest(report), 'prefix_isolation': True, 'heldout_disjoint': True,
                 'source_judgments_complete': True, 'failures_counted': True, 'resource_measurements_complete': True,
                 'foreground_impact_accepted': False, 'background_resource_accepted': False},
-            'metrics': {'macro_f1': min(raw['macro_f1'], calibrated['macro_f1'], items['classification']['macro_f1']),
+            'metrics': {'macro_f1': min([raw['macro_f1'], calibrated['macro_f1'], items['classification']['macro_f1']]
+                    + ([support_raw['macro_f1'],support_calibrated['macro_f1']] if _v3(frozen) else [])),
                 'accepted_item_precision': items['precision'], 'correct_owner_and_final_status': True,
                 'selective_precision': None, 'coverage': raw['coverage'], 'warm_p95_ms': runtime['warm_p95_ms'],
                 'peak_rss_bytes': runtime['peak_rss_bytes'], 'cpu_time_ms': runtime['cpu_time_ms'],
                 'calibration_observations': min(fit['sample_count'] for fit in fits),
                 'calibration_classes': min(fit['observed_class_count'] for fit in fits),
-                'calibration_meeting_groups': min(fit['meeting_group_count'] for fit in fits), 'heldout_observations': len(rows)}}]
+                'calibration_meeting_groups': min(fit['meeting_group_count'] for fit in fits), 'heldout_observations': len(state_rows)}}]
     return report
 
 
@@ -443,7 +495,7 @@ def main():
     bridge = finished.CoreBridge(args.bridge)
     value = json.loads(Path(args.input).read_text())
     if args.operation == 'freeze':
-        result = freeze(value['fixtures'], value['configuration'], bridge, value['expected_actual'], value['expected_answers'], value['gold_items'])
+        result = freeze(value['fixtures'], value['configuration'], bridge, value['expected_actual'], value['expected_answers'], value['gold_items'],schema_version=value.get('schema_version'))
     elif args.operation == 'requests': result = requests(value, args.split, bridge)
     else:
         predictions = json.loads(Path(args.predictions).read_text())

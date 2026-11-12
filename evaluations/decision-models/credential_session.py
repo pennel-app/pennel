@@ -42,14 +42,18 @@ def command(value, args, descriptor):
         raise ValueError('phase_object_required')
     phase = value.get('phase')
     output = owned_output(value.get('output', ''))
-    if phase in ('calibration', 'heldout', 'resources'):
-        if set(value) != {'phase', 'output', 'freeze', 'freeze_lock', 'freeze_commit'}:
+    if phase in ('development', 'calibration', 'heldout', 'resources'):
+        required = {'phase', 'output', 'freeze', 'freeze_lock', 'freeze_commit'}
+        if phase == 'development': required.add('fixture_id')
+        if set(value) != required or phase == 'development' and not isinstance(value['fixture_id'], str):
             raise ValueError('explicit_frozen_phase_required')
-        return [sys.executable, str(ROOT / 'evaluations/decision-models/finished_experiment.py'), phase,
+        arguments = [sys.executable, str(ROOT / 'evaluations/decision-models/finished_experiment.py'), phase,
             '--freeze', value['freeze'], '--bridge', args.bridge, '--output', output,
             '--pricing', args.pricing, '--ledger', args.ledger,
             '--freeze-lock', value['freeze_lock'], '--freeze-commit', value['freeze_commit'],
             '--credential-fd', str(descriptor), '--execute']
+        if phase == 'development': arguments.extend(['--fixture-id', value['fixture_id']])
+        return arguments
     if phase == 'native':
         if set(value) - {'phase', 'output', 'locale', 'appearance'}:
             raise ValueError('explicit_owned_native_phase_required')

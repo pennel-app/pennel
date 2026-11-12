@@ -49,7 +49,7 @@ SETUP = r"""
 const account=__ACCOUNT__,info=await real('app_info'),s=info.settings;
 Object.assign(s,{appearance:__APPEARANCE__,ui_language:__LOCALE__,history_retention_days:0,
  auto_detect:false,record_shortcut_enabled:false,calendar_enabled:false,cloud_sync:false,
- claude_access:false,llm:{provider_id:'',model:''},summary_automation:'manual',suggestion_automation:'manual',suggestion_language:'nl'});
+ claude_access:false,llm:{provider_id:'',model:''},summary_automation:'manual',suggestion_automation:'unanswered',suggestion_language:'nl'});
 s.onboarding.status='completed';
 s.providers.push({id:account,kind:'open_router',name:'Owned Review smoke',base_url:'https://openrouter.ai/api/v1'});
 s.decision={provider_id:account,protocol:'open_router_decisions',model:'unqualified-native-smoke',
@@ -115,7 +115,11 @@ assert(detail.notes===__NOTES__,'Opening Review changed the private-note fixture
 assert(!snapshot.items.length&&!snapshot.analysis_job,'A fresh profile already contains analysis.');
 assert(!qa.commands.includes('begin_insights_analysis'),'Opening Review performed inference.');
 const options=root.querySelector('.insight-analysis-details');if(!options.open)options.querySelector('summary').click();
-await until(()=>!root.querySelector('.insight-find').disabled,'Manual Find did not become available.');
+await until(()=>{const find=root.querySelector('[data-suggestion-consent="find"]');return find&&!find.disabled&&find.getClientRects().length>0;},
+ 'The initial manual-consent Find did not become available.');
+const checkbox=root.querySelector('[data-suggestion-consent-automatic]');
+assert(checkbox.disabled&&!checkbox.checked,'The manual record offered automatic consent.');
+assert((await real('app_info')).settings.suggestion_automation==='unanswered','Opening Review saved consent.');
 qa.id=id;qa.beforeNotes=detail.notes;qa.expectedFingerprint=availability.configuration_fingerprint;
 return {manual_available:true,automatic_available:false,automatic_reason:automatic.reason_code,
  opening_inference_requests:0,canonical_sources:detail.transcript.length,language_policy:availability.language_policy};
@@ -124,21 +128,29 @@ return {manual_available:true,automatic_available:false,automatic_reason:automat
 START = r"""
 const qa=window.__PENNEL_NATIVE96__,root=document.querySelector('.insight-review');
 assert(!qa.commands.includes('begin_insights_analysis'),'Find was already invoked.');
-assert(!root.querySelector('.insight-find').disabled,'Find is disabled.');
-root.querySelector('.insight-find').click();
+const find=root.querySelector('[data-suggestion-consent="find"]');
+assert(find&&!find.disabled&&find.getClientRects().length>0,'The visible initial-consent Find is unavailable.');
+find.click();
 await until(async()=>!!(await real('insights_snapshot',{id:qa.id})).analysis_job,'The genuine UI Find did not admit a job.');
 const job=(await real('insights_snapshot',{id:qa.id})).analysis_job;
 qa.jobId=job.job_id;
 assert(qa.commands.filter(command=>command==='begin_insights_analysis').length===1,'Find did not produce exactly one native admission.');
-return {job_id:job.job_id,genuine_ui_find:true};
+assert(qa.commands.filter(command=>command==='set_meeting_suggestion_policy_checked').length===1,
+ 'Initial consent did not use exactly one checked native policy write.');
+assert((await real('app_info')).settings.suggestion_automation==='manual','Initial consent enabled another policy.');
+return {job_id:job.job_id,genuine_ui_find:true,initial_manual_consent:true,checked_policy_write:true};
 """
 
 CHECK = r"""
 const qa=window.__PENNEL_NATIVE96__,snapshot=await real('insights_snapshot',{id:qa.id}),detail=await real('meeting_detail',{id:qa.id});
 assert(snapshot.items.length>0,'The actual provider returned no reviewable items.');
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
+const finalized=detail.transcript.filter(row=>!row.failed&&row.text.trim());
+const semanticKey=item=>JSON.stringify([item.kind,item.commitment,item.text,item.owner??null,item.due??null]);
+const expected=new Set(__EXPECTED_ITEMS__.map(semanticKey)),seen=new Set();
 for(const item of snapshot.items){
- assert(item.source_state==='current'&&item.sources.length===1,'A generated source is not current and exact.');
+ const key=semanticKey(item);assert(expected.has(key)&&!seen.has(key),'Native generation proposed an unsupported or duplicate development item.');seen.add(key);
+ assert(item.source_state==='current'&&item.sources.length>=1&&item.sources.length<=3,'A generated source map is not current.');
  assert(item.owner===null&&item.due===null,'Passage review invented an owner or due date.');
  const identity=item.processing.identity;
  assert(identity.actual_model===__MODEL__&&identity.actual_provider==='Perplexity'&&identity.actual_revision===null,
@@ -150,20 +162,29 @@ for(const item of snapshot.items){
   item.processing.task==='meeting_suggestions_v1','A different qualification, language or task committed the items.');
  assert(item.extraction_scope==='passage'&&!item.related_item_ids.length&&!(item.prior_evidence??[]).length,
   'Passage review claimed unsupported extraction or prior links.');
- const source=item.sources[0],row=detail.transcript.find(row=>row.utterance_id===source.utterance_id);
- assert(row&&row.source_fingerprint===source.source_fingerprint&&source.meeting_uid===snapshot.meeting_uid,'A durable source identity differs.');
- assert(Number.isInteger(source.start_byte)&&Number.isInteger(source.end_byte)&&source.start_byte>=0&&
-  source.start_byte<source.end_byte&&source.end_byte<=encoder.encode(row.text).length&&
-  source.start_ms===row.start_ms&&source.end_ms===row.end_ms,'A source byte range or timestamp differs.');
- assert(decoder.decode(encoder.encode(row.text).slice(source.start_byte,source.end_byte))===source.quote&&item.text===source.quote,
-  'A source quote differs from its exact finalized transcript bytes.');
+ const centre=finalized.findIndex(row=>row.utterance_id===item.sources[0].utterance_id);
+ assert(centre>=0,'The central source is missing.');
+ const expected=[finalized[centre],...(centre>0?[finalized[centre-1]]:[]),...(centre+1<finalized.length?[finalized[centre+1]]:[])];
+ assert(item.sources.length===expected.length,'The full central and adjacent source map differs.');
+ for(let index=0;index<expected.length;index++){
+  const source=item.sources[index],row=expected[index];
+  assert(row.utterance_id===source.utterance_id&&row.source_fingerprint===source.source_fingerprint&&source.meeting_uid===snapshot.meeting_uid,
+   'A durable source identity or its order differs.');
+  assert(Number.isInteger(source.start_byte)&&Number.isInteger(source.end_byte)&&source.start_byte>=0&&
+   source.start_byte<source.end_byte&&source.end_byte<=encoder.encode(row.text).length&&
+   source.start_ms===row.start_ms&&source.end_ms===row.end_ms,'A source byte range or timestamp differs.');
+  assert(decoder.decode(encoder.encode(row.text).slice(source.start_byte,source.end_byte))===source.quote,
+   'A source quote differs from its exact finalized transcript bytes.');
+ }
+ assert(item.text===item.sources[0].quote,'The card changed its central passage.');
  assert(!item.text.includes('private-note sentinel'),'Personal notes entered generated suggestions.');
 }
 assert(detail.notes===qa.beforeNotes,'Analysis changed the personal notes.');
 await until(()=>document.querySelectorAll('.insight-card').length===snapshot.items.length,'The generated cards did not render.');
 qa.item=snapshot.items[0].id;qa.source=snapshot.items[0].sources[0];qa.count=snapshot.items.length;
 return {items:snapshot.items,meeting_uid:snapshot.meeting_uid,notes_unchanged:true,
- exact_sources:true,actual_provider_generation:true,remote_weights_independently_verified:false};
+ exact_sources:true,actual_provider_generation:true,development_precision:1,development_recall:seen.size/expected.size,
+ remote_weights_independently_verified:false};
 """
 
 ACCEPT = r"""
@@ -232,6 +253,7 @@ def write_fixture(profile):
         for row in fixture["utterances"]
     ))
     return identifier, {"id": fixture["id"], "turns": len(fixture["utterances"]), "quality_credit": False,
+                        "expected_items": spec["gold_items"][fixture["id"]],
                         "sha256": hashlib.sha256(json.dumps(fixture, sort_keys=True, ensure_ascii=False).encode()).hexdigest()}
 
 
@@ -377,9 +399,12 @@ def main(arguments=None):
                 "physical_request_count": job.get("completed_provider_requests"), "actual_provider_generation": True})
             reservation = None
             save()
-            if job["state"] != "completed" or job.get("completed_provider_requests") != 2 or cost is None or ledger.unresolved:
-                raise ValueError("The genuine native job did not complete exactly two fully billed requests")
-            receipt["checks"]["generated"] = workspace.checkpoint(session, expand(CHECK, model=MODEL), "genuine source-linked suggestions")
+            requests = job.get("completed_provider_requests")
+            if (job["state"] != "completed" or isinstance(requests, bool) or not isinstance(requests, int)
+                    or not 0 < requests <= fixture["turns"] or cost is None or ledger.unresolved):
+                raise ValueError("The genuine native job did not complete its bounded, fully billed requests")
+            receipt["checks"]["generated"] = workspace.checkpoint(session, expand(CHECK, model=MODEL,
+                expected_items=fixture["expected_items"]), "genuine source-linked suggestions")
             receipt["after_image"] = workspace.image(session, images / "after-find.png")
             receipt["checks"]["accepted"] = workspace.checkpoint(session, ACCEPT, "accept source navigation and export")
             accepted = receipt["checks"]["accepted"]

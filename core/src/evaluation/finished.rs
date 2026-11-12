@@ -120,10 +120,10 @@ fn exported(input: &ExportRequest) -> Result<Value, &'static str> {
     let p = prepared(input)?;
     let mut value = p.export().map_err(|_| "finished_contract_invalid")?;
     let object = value.as_object_mut().ok_or("finished_contract_invalid")?;
-    object.insert("schema_version".into(), json!(2));
+    object.insert("schema_version".into(), json!(3));
     object.insert(
         "protocol_id".into(),
-        json!("production-finished-meeting-v2"),
+        json!("production-finished-meeting-v3"),
     );
     object.insert(
         "fixture".into(),
@@ -209,12 +209,21 @@ pub(super) fn replay(input: Value) -> Result<Value, &'static str> {
         }
         physical.push(batch);
     }
-    let status = physical
+    let mut status = physical
         .iter()
         .find_map(|batch| batch["status"].as_str().filter(|status| *status != "ok"))
         .unwrap_or("ok");
+    if status == "ok"
+        && input.responses.len() == count
+        && rows
+            .iter()
+            .all(|row| row["assessed_kinds"].as_array().is_none_or(Vec::is_empty))
+    {
+        status = "insufficient_evidence";
+    }
     Ok(
-        json!({"schema_version":2,"protocol_id":"production-finished-meeting-v2","status":status,
+        json!({"schema_version":3,"protocol_id":"production-finished-meeting-v3","status":status,
+        "runtime_policy":input.export["runtime_policy"],
         "complete":input.responses.len()==count,"windows":rows,"batches":physical,
         "received_batches":input.responses.len(),"production_admission":false,
         "qualification":false,"freeze_sha256":input.export["freeze_sha256"]}),
@@ -285,5 +294,64 @@ mod tests {
         );
         value["configuration"]["max_input_bytes"] = 100.into();
         assert_eq!(export(value), Err("finished_contract_invalid"));
+    }
+
+    #[test]
+    fn complete_transport_cannot_turn_wholly_unclear_analysis_into_a_success() {
+        for protocol in ["local_decider", "open_router_decisions"] {
+            let mut request = input();
+            request["configuration"]["protocol"] = protocol.into();
+            request["configuration"]["expected_model"] = "fixture-model".into();
+            if protocol == "open_router_decisions" {
+                request["configuration"]["endpoint"] =
+                    "https://openrouter.ai/api/alpha/decisions".into();
+                request["configuration"]["upstream"] = "fixture-provider".into();
+            }
+            request["expected_actual"] = json!({"model":"fixture-model","provider":"fixture-provider",
+                "revision":"fixture-revision","artifact_sha256":"a".repeat(64)});
+            let exported = export(request).unwrap();
+            assert_eq!(exported["schema_version"], 3);
+            assert_eq!(exported["protocol_id"], "production-finished-meeting-v3");
+            for assessed in [false, true] {
+                let answers = exported["batches"][0]["request"]["questions"].as_array().unwrap().iter().map(|question| {
+                    let id=question["id"].as_str().unwrap();
+                    let support=id.ends_with("_support");
+                    let chosen=if support {if assessed {"absent"}else{"unclear"}}else{"none"};
+                    (id.to_owned(),json!({"type":"choice","choice":chosen,
+                        "abstained":!support&&!assessed&&protocol=="local_decider",
+                        "probabilities":question["options"].as_array().unwrap().iter().map(|option|{
+                            let key=option["id"].as_str().unwrap();(key.to_owned(),json!(if key==chosen {1.0}else{0.0}))
+                        }).collect::<serde_json::Map<_,_>>()}))
+                }).collect::<serde_json::Map<_,_>>();
+                let body=json!({"model":"fixture-model","model_revision":"fixture-revision","provider":"fixture-provider","answers":answers}).to_string();
+                let replay = replay(
+                    json!({"op":"finished_meeting_replay","export":exported,"responses":[{
+                    "batch_index":0,"http_status":200,"body":body}]}),
+                )
+                .unwrap();
+                assert_eq!(replay["complete"], true);
+                assert_eq!(
+                    replay["status"],
+                    if assessed {
+                        "ok"
+                    } else {
+                        "insufficient_evidence"
+                    }
+                );
+                assert_eq!(
+                    replay["windows"][0]["assessed_kinds"]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    if assessed { 4 } else { 0 }
+                );
+                assert!(
+                    replay["windows"][0]["candidates"]
+                        .as_array()
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+        }
     }
 }

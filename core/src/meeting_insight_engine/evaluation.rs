@@ -75,6 +75,9 @@ impl Prepared {
                 "wire_body":wire_body}))
         }).collect::<Result<Vec<_>, PennelError>>()?;
         Ok(json!({
+            "runtime_policy":if self.config.protocol == InferenceProtocol::OpenRouterDecisions {
+                "raw_supported_passage_decisions_v3"
+            } else { "raw_closed_set_passage_decisions_v2" },
             "qualification_request":qualification_request(self.configured.clone(),&self.language),
             "snapshot":{"meeting_uid":self.source.meeting_uid,"revision":self.source.revision,
                 "transcript_digest":self.source.transcript_digest},
@@ -126,9 +129,12 @@ impl Prepared {
                 task: TASK.into(),
             };
             match decode_candidates(&self.windows[window_index], &logical, &self.source, processing) {
-                Ok(candidates) => json!({"status":"ok","window_index":window_index,
-                    "observed_identity":logical.identity,"result":logical,"candidates":candidates,
-                    "artifact_attestation":false,"identity_evidence":expected.identity_evidence}),
+                Ok(candidates) => match assessed_kinds(&self.windows[window_index], &logical, &candidates) {
+                    Ok(kinds) => json!({"status":"ok","window_index":window_index,
+                        "observed_identity":logical.identity,"result":logical,"candidates":candidates,
+                        "assessed_kinds":kinds,"artifact_attestation":false,"identity_evidence":expected.identity_evidence}),
+                    Err(_) => json!({"status":"invalid_output","window_index":window_index,"observed_identity":logical.identity}),
+                },
                 Err(_) => json!({"status":"invalid_output","window_index":window_index,"observed_identity":logical.identity}),
             }
         }).collect::<Vec<_>>();
@@ -254,14 +260,32 @@ mod tests {
         // Replaying metadata here is a parser regression, not a new quality measurement.
         let raw = include_str!("fixtures/provider-versioned-response.json");
         let single = pinned_prepared(&["Ik zal de offerte sturen."]);
-        let replay = single.replay(0, raw.as_bytes(), Some(&pinned_actual()));
+        assert_eq!(
+            single.replay(0, raw.as_bytes(), Some(&pinned_actual()))["status"],
+            "invalid_response"
+        );
+        // Preserve the actual v2 reply unchanged. New support answers below are
+        // explicitly synthetic parser scaffolding, not measured model evidence.
+        let mut synthetic: Value = serde_json::from_str(raw).unwrap();
+        for (id, _) in EVENT_KINDS {
+            let chosen = if synthetic["answers"][id]["choice"] == "none"
+                || synthetic["answers"][id]["choice"] == "negated"
+            {
+                "absent"
+            } else {
+                "supported"
+            };
+            synthetic["answers"][format!("{id}_support")] = json!({"type":"choice","choice":chosen,
+                "probabilities":{"supported":if chosen=="supported"{1.0}else{0.0},
+                    "absent":if chosen=="absent"{1.0}else{0.0},"unclear":0.0}});
+        }
+        let replay = single.replay(0, synthetic.to_string().as_bytes(), Some(&pinned_actual()));
         assert_eq!(replay["status"], "ok");
         assert_eq!(replay["observed_identity"]["actual_revision"], Value::Null);
         assert_eq!(replay["identity_evidence"], "provider_reported_version");
         assert_eq!(replay["artifact_attestation"], false);
 
         let multiple = pinned_prepared(&["Ik zal de offerte sturen.", "We kiezen maandag."]);
-        let mut synthetic: Value = serde_json::from_str(raw).unwrap();
         let original = synthetic["answers"].as_object().unwrap().clone();
         synthetic["answers"] = Value::Object(
             multiple.batches[0]
@@ -303,24 +327,42 @@ mod tests {
         // These scaffold passages exercise parsing/mapping, not the reply's semantic quality.
         let raw = include_str!("fixtures/batched-provider-versioned-response.json");
         let prepared = pinned_prepared(&["Owned parser scaffold."; 8]);
-        let replay = prepared.replay(0, raw.as_bytes(), Some(&pinned_actual()));
-        assert_eq!(replay["status"], "ok");
-        assert_eq!(replay["result"]["answers"].as_array().unwrap().len(), 32);
-        assert_eq!(replay["windows"].as_array().unwrap().len(), 8);
-        assert_eq!(replay["observed_identity"]["actual_revision"], Value::Null);
-        assert_eq!(replay["identity_evidence"], "provider_reported_version");
-        assert_eq!(replay["artifact_attestation"], false);
-        for (index, row) in replay["windows"].as_array().unwrap().iter().enumerate() {
-            assert_eq!(row["window_index"], index);
-            assert_eq!(row["result"]["answers"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            prepared.replay(0, raw.as_bytes(), Some(&pinned_actual()))["status"],
+            "invalid_response"
+        );
+        let mut old_windows = prepared.windows.clone();
+        for window in &mut old_windows {
+            window
+                .request
+                .questions
+                .retain(|question| !question.id.ends_with("_support"));
+        }
+        let historical_batch = make_batch(&old_windows, 0, 8);
+        let parsed = crate::inference::evaluation_decision_response(
+            &prepared.config,
+            prepared.configured.endpoint.clone(),
+            &historical_batch.request,
+            raw.as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(parsed.answers.len(), 32);
+        assert_eq!(parsed.identity.actual_revision, None);
+        assert_eq!(
+            parsed.identity.actual_model.as_deref(),
+            Some("perplexity/pplx-decider-v1.2-20261016")
+        );
+        let logical = split_batch_result(&historical_batch, &parsed).unwrap();
+        assert_eq!(logical.len(), 8);
+        for (index, row) in logical {
+            assert_eq!(row.answers.len(), 4);
+            assert_eq!(index, historical_batch.window_indices[index]);
             assert!(
-                row["result"]["answers"]
-                    .as_array()
-                    .unwrap()
+                row.answers
                     .iter()
-                    .all(|answer| { EVENT_KINDS.iter().any(|(id, _)| answer["id"] == *id) })
+                    .all(|answer| EVENT_KINDS.iter().any(|(id, _)| answer.id == *id))
             );
-            assert_eq!(row["result"]["usage"]["billed_cost_usd"], Value::Null);
+            assert_eq!(row.usage.billed_cost_usd, None);
         }
     }
 
@@ -334,6 +376,10 @@ mod tests {
             } else {
                 let choice = if q.id == "action" {
                     "confirmed"
+                } else if q.id == "action_support" {
+                    "supported"
+                } else if q.id.ends_with("_support") {
+                    "absent"
                 } else {
                     "none"
                 };

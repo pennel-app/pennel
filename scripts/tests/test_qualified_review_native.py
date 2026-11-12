@@ -91,7 +91,7 @@ new Function('real','return(async()=>{'+body+'})()')(real).catch(error=>{console
     @unittest.skipUnless(shutil.which("node"), "Node is required to parse the native checkpoint JavaScript")
     def test_every_native_checkpoint_is_valid_javascript_after_expansion(self):
         values = {"account": "review96-owned-test", "appearance": "dark", "locale": "en", "model": native.MODEL,
-                  "meeting_id": "owned", "notes": native.NOTES,
+                  "meeting_id": "owned", "notes": native.NOTES, "expected_items": [],
                   "expected": {"qualification_id": "real-record", "item_count": 15, "accepted_id": "owned-item"}}
         scripts = [native.expand(getattr(native, name), **values)
                    for name in ("OBSERVE", "SETUP", "PRESET", "OPEN", "START", "CHECK", "ACCEPT", "REOPEN")]
