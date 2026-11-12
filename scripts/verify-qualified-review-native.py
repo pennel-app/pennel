@@ -147,9 +147,9 @@ assert(snapshot.items.length>0,'The actual provider returned no reviewable items
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
 const finalized=detail.transcript.filter(row=>!row.failed&&row.text.trim());
 const semanticKey=item=>JSON.stringify([item.kind,item.commitment,item.text,item.owner??null,item.due??null]);
-const expected=new Set(__EXPECTED_ITEMS__.map(semanticKey)),seen=new Set();
+const expectedItems=new Set(__EXPECTED_ITEMS__.map(semanticKey)),seen=new Set();
 for(const item of snapshot.items){
- const key=semanticKey(item);assert(expected.has(key)&&!seen.has(key),'Native generation proposed an unsupported or duplicate development item.');seen.add(key);
+ const key=semanticKey(item);assert(expectedItems.has(key)&&!seen.has(key),'Native generation proposed an unsupported or duplicate development item.');seen.add(key);
  assert(item.source_state==='current'&&item.sources.length>=1&&item.sources.length<=3,'A generated source map is not current.');
  assert(item.owner===null&&item.due===null,'Passage review invented an owner or due date.');
  const identity=item.processing.identity;
@@ -183,7 +183,7 @@ assert(detail.notes===qa.beforeNotes,'Analysis changed the personal notes.');
 await until(()=>document.querySelectorAll('.insight-card').length===snapshot.items.length,'The generated cards did not render.');
 qa.item=snapshot.items[0].id;qa.source=snapshot.items[0].sources[0];qa.count=snapshot.items.length;
 return {items:snapshot.items,meeting_uid:snapshot.meeting_uid,notes_unchanged:true,
- exact_sources:true,actual_provider_generation:true,development_precision:1,development_recall:seen.size/expected.size,
+ exact_sources:true,actual_provider_generation:true,development_precision:1,development_recall:seen.size/expectedItems.size,
  remote_weights_independently_verified:false};
 """
 
@@ -367,6 +367,14 @@ def main(arguments=None):
         session = capture.CaptureSession(binary, profile, log, helper)
         reservation = None
         try:
+            session.launch()
+            session.inspect("main")
+            receipt["checks"]["initialize"] = workspace.checkpoint(session, expand(SETUP, account=account,
+                appearance=args.appearance, locale=args.locale), "isolated setup without clearing browser storage")
+            session.stop()
+            save()
+            # Initialize the owned profile before inserting its secret. Restarting also
+            # clears absent-key cache entries before exercising the real configured UI.
             key = evaluation_credential(args.credential_fd)
             receipt["capture_credential_creation_attempted"] = True
             try:
@@ -374,11 +382,7 @@ def main(arguments=None):
             finally:
                 del key
             receipt["capture_credential_created"] = True
-            session.launch()
-            session.inspect("main")
-            receipt["checks"]["initialize"] = workspace.checkpoint(session, expand(SETUP, account=account,
-                appearance=args.appearance, locale=args.locale), "isolated setup without clearing browser storage")
-            session.stop()
+            save()
             session.launch("library")
             session.inspect("main")
             session.run("--capture-size", "main", "1400", "850")
