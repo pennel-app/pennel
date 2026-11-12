@@ -45,12 +45,48 @@ test("editing is protected before opening and typing during save survives the ac
 
 test("logical cancellation does not admit replacement while the physical worker is running", async () => {
   const cancelled = { job_id: "job", meeting_uid: "meeting", revision: 2, state: "cancelled", physical_running: true };
-  const model = new InsightReviewModel("folder", "meeting", service({ availability: async () => ({ available: true }),
+  const model = new InsightReviewModel("folder", "meeting", service({ availability: async () => ({ available: true, configuration_fingerprint: "a".repeat(64) }),
     start: async () => ({ ...cancelled, revision: 1, state: "running" }), cancel: async () => cancelled,
     job: async () => ({ ...cancelled, revision: 3, physical_running: false }) }));
   await model.load(); await model.choosePolicy("en"); assert.equal(await model.analyze(), true);
   await model.cancel(); assert.equal(model.canAnalyze, false);
   await model.poll(); assert.equal(model.canAnalyze, true);
+});
+
+test("manual analysis is bound to the configuration displayed at the click, including listener changes", async () => {
+  const calls=[],pin="a".repeat(64),other="b".repeat(64),job={job_id:"job",meeting_uid:"meeting",revision:1,state:"completed",physical_running:false};
+  const create=fingerprint=>new InsightReviewModel("folder","meeting",service({availability:async()=>({available:true,configuration_fingerprint:fingerprint}),start:async(...args)=>{calls.push(args);return job;}}));
+  let model=create(pin);await model.load();await model.choosePolicy("nl");assert.equal(await model.analyze(pin),true);assert.deepEqual(calls,[["folder","nl",pin]]);
+  for(const absent of [null,undefined,"","not-a-pin"]){calls.length=0;model=create(absent);await model.load();await model.choosePolicy("nl");assert.equal(await model.analyze(),false);assert.equal(calls.length,0);assert.equal(model.getSnapshot().availability.reason_code,"configuration_changed");}
+  calls.length=0;model=create(other);await model.load();await model.choosePolicy("nl");assert.equal(await model.analyze(pin),false);assert.equal(calls.length,0);assert.equal(model.getSnapshot().error.code,"configuration_changed");
+  calls.length=0;model=create(pin);await model.load();await model.choosePolicy("nl");let changed=false;
+  model.subscribe(()=>{if(!changed&&model.getSnapshot().busy.has("analysis")){changed=true;void model.choosePolicy("en");}});
+  assert.equal(await model.analyze(pin),false);assert.equal(calls.length,0);assert.equal(model.getSnapshot().error.code,"configuration_changed");
+});
+
+test("analysis waits for the current availability refresh instead of using a cached pin",async()=>{
+ const waiting=deferred(),pin="a".repeat(64);let reads=0,starts=0;
+ const model=new InsightReviewModel("folder","meeting",service({availability:async()=>++reads===1?{available:true,configuration_fingerprint:pin}:waiting.promise,
+  start:async()=>{++starts;return{job_id:"job",meeting_uid:"meeting",revision:1,state:"completed",physical_running:false};}}));
+ await model.load();await model.choosePolicy("nl");assert.equal(model.canAnalyze,true);
+ const refreshing=model.choosePolicy("nl");assert.equal(model.canAnalyze,false);assert.equal(await model.analyze(pin),false);assert.equal(starts,0);
+ waiting.resolve({available:true,configuration_fingerprint:pin});await refreshing;assert.equal(await model.analyze(pin),true);assert.equal(starts,1);
+});
+
+test("a failed availability refresh keeps analysis disabled until a successful retry", async () => {
+  const pin = "a".repeat(64), next = "b".repeat(64); let reads = 0, starts = 0;
+  const model = new InsightReviewModel("folder", "meeting", service({
+    availability: async () => {
+      if (++reads === 2) throw Error("Owned metadata failure");
+      return { available: true, configuration_fingerprint: reads === 1 ? pin : next };
+    },
+    start: async () => { starts++; return { job_id: "job", meeting_uid: "meeting", revision: 1, state: "completed", physical_running: false }; },
+  }));
+  await model.load(); await model.choosePolicy("nl"); assert.equal(model.canAnalyze, true);
+  await model.choosePolicy("nl");
+  assert.equal(model.canAnalyze, false); assert.equal(await model.analyze(pin), false); assert.equal(starts, 0);
+  await model.choosePolicy("nl");
+  assert.equal(await model.analyze(next), true); assert.equal(starts, 1);
 });
 
 test("opening and blurring an unchanged editor does not manufacture a user edit", async () => {

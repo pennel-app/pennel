@@ -148,9 +148,10 @@ pub use meeting_preview::{
 };
 pub use meeting_qualification::{
     MeetingActualInference, MeetingAnalysisAvailability, MeetingAnalysisUseCase,
-    MeetingConfiguredInference, MeetingQualificationContext, MeetingQualificationError,
-    MeetingQualificationEvidence, MeetingQualificationMetrics, MeetingQualificationRecord,
-    MeetingQualificationRegistry, MeetingQualificationRequest, QualifiedMeetingAnalysis,
+    MeetingConfiguredInference, MeetingIdentityEvidence, MeetingQualificationContext,
+    MeetingQualificationError, MeetingQualificationEvidence, MeetingQualificationMetrics,
+    MeetingQualificationRecord, MeetingQualificationRegistry, MeetingQualificationRequest,
+    QualifiedMeetingAnalysis,
 };
 pub use meeting_recording::{
     CaptureEventKind, CaptureFormatEpoch, MeetingAudioTrack, MeetingCaptureEvent,

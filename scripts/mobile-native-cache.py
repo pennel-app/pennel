@@ -27,6 +27,7 @@ APP_GROUP = "group.app.pennel.preview"
 EXPECTED_TARGETS = {"Pennel": BUNDLE_ID, "PennelKeyboard": BUNDLE_ID + ".keyboard",
                     "ExpoWidgetsTarget": BUNDLE_ID + ".widgets"}
 ARTIFACTS = Path("apps/mobile/artifacts/ios")
+QUALIFICATION_REGISTRY = Path("assets/qualifications/meeting-assistance.json")
 SNAPSHOT = Path("apps/mobile/ios/pennel-testflight.json")
 SNAPSHOT_ORIGIN = Path("build/testflight/cloud-snapshot-origin.json")
 GENERATED_SEAL = Path("build/testflight/cloud-generated-seal.json")
@@ -126,7 +127,7 @@ def fingerprint(root, toolchain=None, environment=None):
                 if not stat.S_ISREG(file.lstat().st_mode):
                     raise ValueError("Native inputs require regular files")
                 inputs[file.relative_to(root).as_posix()] = digest(file)
-    for relative in NATIVE_SCRIPTS:
+    for relative in (*NATIVE_SCRIPTS, QUALIFICATION_REGISTRY.as_posix()):
         file = root / relative
         no_symlink_path(file)
         if not file.is_file():
@@ -207,7 +208,20 @@ def validate_bundle(directory, inspector=None):
         raise ValueError("Native artifact mode or features do not match an archive")
     if manifest.get("bindings_sha256") != digest(directory / "PennelCore/pennel_core.swift"):
         raise ValueError("Native bindings do not match the artifact manifest")
+    registry_hash = manifest.get("qualification_registry_sha256")
+    registry_count = manifest.get("qualification_registry_adopted_records")
+    if (not isinstance(registry_hash, str) or not HEX.fullmatch(registry_hash)
+            or not isinstance(registry_count, int) or isinstance(registry_count, bool)
+            or registry_count < 0):
+        raise ValueError("Native artifact qualification registry provenance is missing or invalid")
     return files, symbol_paths
+
+
+def validate_registry_input(directory, context):
+    expected = context["context"]["inputs"].get(QUALIFICATION_REGISTRY.as_posix())
+    manifest = json.loads((directory / "manifest.json").read_text())
+    if not expected or manifest.get("qualification_registry_sha256") != expected:
+        raise ValueError("Native artifact qualification registry does not match its build inputs")
 
 
 def validate_entry(entry, context, inspector=None):
@@ -233,6 +247,7 @@ def validate_entry(entry, context, inspector=None):
     actual, symbols = validate_bundle(entry / "artifacts", inspector)
     if actual != declared or symbols != manifest.get("symbol_paths"):
         raise ValueError("Native cache files or symbols do not match their checksums")
+    validate_registry_input(entry / "artifacts", context)
     return manifest
 
 
@@ -276,6 +291,7 @@ def store(root, cache_root, context, source_sha, inspector=None):
         raise ValueError("A complete native producer source SHA is required")
     artifacts = Path(root) / ARTIFACTS
     files, symbols = validate_bundle(artifacts, inspector)
+    validate_registry_input(artifacts, context)
     cache_root = Path(cache_root)
     no_symlink_path(cache_root)
     cache_root.mkdir(parents=True, exist_ok=True)

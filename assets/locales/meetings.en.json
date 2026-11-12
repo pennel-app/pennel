@@ -98,6 +98,7 @@
   "meetings.audio_unavailable": "Audio playback is unavailable.",
   "meetings.edit_recording_notes": "Edit your notes in the recording window until recording is finished.",
   "meetings.default_title": "Meeting",
+  "insights.manual_only": "Find suggestions is available. Automatic analysis is not yet approved for this setup.",
   "meetings.stop_audio": "Stop audio",
   "meetings.empty_summary": "No summary yet.",
   "meetings.notes": "Notes",

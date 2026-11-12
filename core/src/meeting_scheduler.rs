@@ -1260,6 +1260,7 @@ mod tests {
                 revision: "v1".into(),
                 provider: "owned-local-worker".into(),
                 artifact_sha256: "6".repeat(64),
+                identity_evidence: Default::default(),
             },
         )
     }

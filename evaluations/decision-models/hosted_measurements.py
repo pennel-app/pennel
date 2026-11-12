@@ -51,7 +51,7 @@ def _budget(ledger):
     state = ledger.snapshot()
     if state.get("unresolved_charge") or Decimal(state.get("reserved_usd", "0")):
         return None
-    return Decimal(state["limit_usd"]) - Decimal(state["known_billed_usd"])
+    return Decimal(state["limit_usd"]) - Decimal(state.get("total_exposure_usd", str(Decimal(state["known_billed_usd"]) + Decimal(state.get("conservative_upper_bound_usd", "0")))))
 
 
 def measure_hosted(config, corpus, ranking_cases, ledger, runner_factory=DecisionRunner, cancel_event=None, checkpoint=None):

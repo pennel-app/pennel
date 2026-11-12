@@ -62,7 +62,7 @@ def predictions(frozen, split, evidence='offline_fixture'):
             continue
         identifier = exported['fixture']['id']
         result.append({'fixture_id': identifier, 'freeze_sha256': frozen['freeze_sha256'],
-            'export_sha256': exported['freeze_sha256'], 'evidence_class': evidence,
+            'export_sha256': exported['freeze_sha256'], 'evidence_class': evidence, 'status': 'ok', 'reason': None, 'spend_ledger': {'limit_usd': '2.00', 'known_billed_usd': '0.00001', 'reserved_usd': '0', 'pending_reservations': {}, 'unresolved_charge': False},
             'request_sha256s': [hashlib.sha256(w['wire_body'].encode()).hexdigest() for w in exported['windows']],
             'responses': [{'window_index': 0, 'http_status': 200,
                 'body': json.dumps(frozen['production']['expected_answers'][identifier][0])}],

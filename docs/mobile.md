@@ -125,6 +125,8 @@ make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=<assigned-sim
 
 `mobile-prebuild` prepares matched lean Rust artifacts/bindings, compares clean/non-clean generation, restores a clean generated project, installs pods and checks actual dependency/source/linker ownership. Never place owned sources in `apps/mobile/ios` or `android`. SDK 58's repeated generation command explicitly uses `--no-clean`.
 
+The generated native manifest records `qualification_registry_sha256` and `qualification_registry_adopted_records` separately from `core_sha256`. The latter retains its Rust/TOML/lock-file meaning and does not identify the external qualification registry. Preparation pins registry bytes before compiling, stops if they change during the build, and emits that pinned provenance. Registry bytes participate in the native release-cache key, and cached artifacts must declare that same registry hash. A qualification-only asset change selects core/desktop checks and the mobile generation pipeline.
+
 `build:ios` produces an unsigned ARM64 Release candidate in `apps/mobile/build/DerivedData/Build/Products`; it does not create a signed distribution archive. Native hosted tests use a separate Debug build directory and simulator ad-hoc signing. `mobile-native-test` runs the generated runtime, migrated native service suites and keyboard tests. `mobile-test` also runs the MobileKit Swift package tests. Run these builds sequentially: some Expo pod scripts switch shared precompiled SDK frameworks by configuration.
 
 The [qualified CI schedule](ci-performance.md#complete-pr-validation-qualification) keeps both Release builds sequentially in one hosted workspace and runs Debug runtime/keyboard checks in a second fully isolated workspace. Eligible same-repository PRs and exact main pushes select it by default after the complete matched qualification; each lane repeats preparation and generation validation. A final result requires every selected job and phase with current source/run/attempt receipts. Manual, fork/privileged and force-serial contexts retain the complete serial three-configuration fallback. Builds sharing a workspace must still run sequentially.
@@ -613,3 +615,22 @@ The desktop's [automatic-name change #248](https://github.com/pennel-app/pennel/
 Verification used guarded `make mobile-test`, `swift test --package-path apps/macos-platform`, `env CI=1 PENNEL_VARIANT=preview make mobile-prebuild`, sequential unsigned Release simulator `npm --prefix apps/mobile run build:ios` and device `PENNEL_IOS_DESTINATION=generic/platform=iOS npm --prefix apps/mobile run build:ios`, then `make mobile-native-test` on the dedicated Titles QA simulator. Typecheck, 17 plugin, seven widget, 160 UI, 116 MobileKit and 217 Mac platform tests passed; clean/repeated generation, locked Pods and six ownership checks passed; both Release builds and 180 hosted native tests (144 runtime/service + 36 keyboard) passed.
 
 The final core digest `ecfc5fe81a0255f24c2d2a88cc920ef2c96859c19b4c1db72eb3281cd62a64c1` matches the generated manifest. Bindings digest `daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21` is not compared to the retained pre-main artifact to claim task-specific ABI equality. Prior products were retained; only the owned simulator was started and shut down. Physical iPhone, signed upgrades, keyboard cold start, live providers, Cloud/store and other existing acceptance gates remain separate. [Exact source/build boundaries](evidence/automatic-meeting-titles-248.md).
+
+## Review registry shared-core compatibility — 12 November 2026
+
+The [C7 Review change under #96](evidence/review-provider-version-96-2026-11-12.md) passed iPhone compatibility checks with its adopted manual Dutch record. At source `5d880a16a31bd643ae17f3cca459940f8554c738`, both lean iOS libraries and matching bindings were regenerated. Each command below ran through `/Users/landerparren/.local/bin/worktree-storage run --`, after checking storage status:
+
+```sh
+make mobile-test
+swift test --package-path apps/macos-platform
+env CI=1 PENNEL_VARIANT=preview make mobile-prebuild
+env CI=1 PENNEL_VARIANT=preview npm --prefix apps/mobile run build:ios
+env CI=1 PENNEL_VARIANT=preview PENNEL_IOS_DESTINATION=generic/platform=iOS npm --prefix apps/mobile run build:ios
+make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=7B5A513C-6538-4F9C-AE8A-8C5DC2FACEA3'
+```
+
+Typecheck, 17 plugin, seven widget, 160 UI, 116 MobileKit and 217 Mac platform tests passed. Prebuild passed clean/repeated non-clean generation, canonical `pod _1.16.2_ install --deployment` and all six actual pod/source/linker ownership checks. Sequential unsigned ARM64 Release simulator/device builds and 180 hosted native tests (144 runtime/service + 36 keyboard) passed.
+
+The generated manifest matches core SHA `27570b9a919e118fb0e1ffdc3c3770dc9748ba26c86fbd3ee78e1cd05a103b34` and registry SHA `cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f`, with one adopted record. Bindings remain byte-identical to the retained bytes at SHA `daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21`. Exact adopted registry bytes were verified in both libraries and both final app executables; Cargo tracks the registry as an input. Prior products were retained, the owned simulator returned to Shutdown, and unrelated simulator states and tracked mobile source stayed unchanged.
+
+This proves shared-core compatibility. The record remains bound to its tested manual Dutch desktop resource context; it does not qualify mobile Review. Physical iPhone, signed upgrades, keyboard cold start, Cloud/store, human and Android acceptance remain separate.

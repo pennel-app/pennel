@@ -1,0 +1,166 @@
+{
+  "schema_version": 3,
+  "experiment_id": "review-supported-passages-c7-2026-11-12",
+  "stage": "heldout_ready",
+  "code_source_commit": "611e542072e0917d6f74203bfc12bad777e95bbf",
+  "freeze_sha256": "19bd8056cf84da327bad25605f47d6f9853f2ad91a6f0786624f3d6e53074eca",
+  "production_freeze_sha256": "3b905e1d0bcd2aaef82b00c3327a9a22f18c901e98ee71d9ddc170e803c7602f",
+  "bridge_sha256": "2403d274f2d95534ec4574f9d4efc80526083531821d561db6c60c78a306fc12",
+  "protocol_sha256": "0c22ad949eaa6507f11d55f2bbe7c63413142bb439872b92c69e1c07e0708ef5",
+  "production_protocol_sha256": "ebf3471fc643157d855bfa75dc1457113c18d184fdb05504b2ef868e2f500b98",
+  "python_source_sha256": {
+    "finished_qualification.py": "7147476809b622580762e41f1b20687e606c6f1ad899d10a5fb3c00e295110a0",
+    "finished.py": "96b301b8c6ed9ddf33cd200865ec03c6f47ff8327fd04ae5ba2498f7847719d2",
+    "finished_preflight.py": "4123008d3dee2fdd838914bf998353d9889232b142d70c3975bf6a05bfc4b9c8",
+    "calibration.py": "af2ba3806a3f46a89c7b00c68ff9ac1a75847958fe0fe4ec6681fe0bc468c515",
+    "metrics.py": "b4e5821c5f9a6163733a1f1c73c98f26391b6e960d2977185c3d51e4f0e1a9c9",
+    "finished_v3.py": "a61d614b1fa64ce5e4bbf22bdaf2c9540fd7861e27355c325555a657efb62408",
+    "finished_experiment.py": "2c48278cd04bf1728698cc9c5d466758a289df483293be37ced6861c8fa50633",
+    "finished_corpus_v3.py": "cc9bcefb2e3e82b6643ff680ffab3422e7e2aab2aa18d3835f45bbf5d2ced3c0",
+    "runners.py": "fcb573407a0be4f4e841617d710428d821586735e59961fc4d566d66deedecab",
+    "fixtures/seen-b-semantic-regression-v3.json": "1ff3e5789b1e126fbb01f80a62c9213666b378e54e3afbcc8b31c8d04c5d43a5"
+  },
+  "authored_spec_file_sha256": "93e666c9508f6e72646f9c3668958d69a177d8a207f6e6bd00b8a38b3a012fc5",
+  "corpus_sha256": "9d14274663cc494c3e85a83bce96e1c50a64d29c4dd533d73dfdefd8fa7e8d6e",
+  "split_sha256": "226ac306617f3aa53c386e5c0f008ee9f6a4d799e4be6789603d8cbc344b3ec1",
+  "physical_request_manifest_sha256": "dffa8116b071143535c6928181945b1724266f6cdc648193b99cf6dc4f0453fb",
+  "configuration": {
+    "protocol": "open_router_decisions",
+    "endpoint": "https://openrouter.ai/api/alpha/decisions",
+    "model": "perplexity/pplx-decider-v1.2",
+    "expected_model": "perplexity/pplx-decider-v1.2-20261016",
+    "upstream": "perplexity",
+    "max_input_bytes": 65536,
+    "timeout_secs": 90
+  },
+  "expected_actual": {
+    "model": "perplexity/pplx-decider-v1.2-20261016",
+    "provider": "Perplexity",
+    "revision": "",
+    "artifact_sha256": "",
+    "identity_evidence": "provider_reported_version"
+  },
+  "runtime_policy": "raw_supported_passage_decisions_v3",
+  "runtime_calibration_applied": false,
+  "explicit_kind_support_required": true,
+  "remote_weights_independently_verified": false,
+  "export_summary": {
+    "fixtures": 291,
+    "physical_requests_by_split": {
+      "development": 272,
+      "calibration": 180,
+      "heldout": 180
+    },
+    "max_encoded_bytes": 64342,
+    "max_questions": 64
+  },
+  "prior_experiment_b": {
+    "outcome": "failed_quality_no_adoption",
+    "precision": 0.9366391184573003,
+    "unsupported_items": 69,
+    "unchanged_failure_report": "build/review-functional-96/attempt-b-auth-final-report.json",
+    "seen_regressions_development_only": true,
+    "fresh_calibration_and_heldout_material": true,
+    "thresholds_not_relaxed": true
+  },
+  "budget": {
+    "cumulative_ceiling_usd": "2.00",
+    "known_billed_usd": "0.17335522",
+    "conservative_upper_bound_usd": "0.01270636",
+    "total_exposure_usd": "0.18606158",
+    "native_smoke_allowance_usd": "0.20",
+    "automatic_retries": false,
+    "fallbacks": false
+  },
+  "credential_delivery": {
+    "mode": "anonymous_pipe_from_os_parent",
+    "source_sha256": "98ae806c6239ad553be9c00c555dd37cb96089323ca9304d596eb8b48cf87ac9",
+    "automatic_phase_transition": false
+  },
+  "freeze_artifact": "build/review-functional-96/attempt-c7-heldout-ready.json",
+  "production_admission": false,
+  "actual_c_calibration_executed": true,
+  "actual_c_heldout_executed": false,
+  "actual_c_resources_executed": false,
+  "calibration_design": {
+    "contexts": 288,
+    "minimum_observations": 12,
+    "minimum_classes": 2,
+    "minimum_families": 12,
+    "derived_from_actual_exported_templates": true
+  },
+  "production_source_sha256": {
+    "evaluation/finished.rs": "3a99eaa02fb0e7678c5d994a06206bac3924ca27fd53cefb94cbba5dc625573c",
+    "inference.rs": "5b05c6e40e1e3277734711f5fb2ab96bb3bb3bc2409b37ddcc9f6ec75796ed40",
+    "meeting_insight_engine.rs": "f71a9b7a6e8ec113e9c528e9fe6dde5d3a62a3ad709690556132ab3c9b8be5c9",
+    "meeting_insight_engine/evaluation.rs": "6d253d2df6d9651e22cbce1af3bc8b5a9377412a93f8a00065a3aeb5d295577a",
+    "meeting_insights.rs": "cc670d7584ca18c125f21c7298591d2063425caba8f474366beffcbd85c14719",
+    "meeting_qualification.rs": "0d8afdc62c0b2673dcf9a58d0bd62da26687d822c58c84e790719c761d69f5a9",
+    "meeting_utterances.rs": "3ad472ac3db0c4e3e2e9fa51c62b6865faed2418a32b460280ec2a837b4f9b14"
+  },
+  "supersedes_c1_development": {
+    "lock": "review-supported-passages-c-2026-11-12-base.json",
+    "outcome": "development_wrong_aggregate_state_no_qualification",
+    "source_and_responses_retained": true,
+    "calibration_and_heldout_unqueried": true,
+    "same_authored_gold_and_thresholds": true,
+    "change": "explicit_aggregate_state_criteria"
+  },
+  "kind_state_consistency": {
+    "unresolved_only_open_question": true,
+    "positive_open_question_only_unresolved": true,
+    "incompatible_pairs_unassessed": true,
+    "raw_labels_and_scores_unchanged": true
+  },
+  "supersedes_c2_development": {
+    "outcome": "incompatible_decision_unresolved_on_no_decision",
+    "original_data_retained": true,
+    "http_bodies_unchanged": true,
+    "offline_actual_response_parity": "15of15exact_noextra",
+    "new_latency_unmeasured": true,
+    "calibration_and_heldout_unqueried": true
+  },
+  "supersedes_c3_development": {
+    "original_job_incomplete_http429_no_retry": true,
+    "partial_diagnostics_no_qualification_credit": true,
+    "three_unsupported_action_changed_on_revised_choices": "retained_as_seen_development",
+    "change": "explicit_per_kind_support_criteria",
+    "unchanged_gold_thresholds_and_unqueried_calibration_heldout": true
+  },
+  "supersedes_c4_development": {
+    "original_provider_output_retained": true,
+    "unqueried_calibration_and_heldout_unchanged": true,
+    "change": "state_aggregation_uses_same_kind_ontology_as_support",
+    "no_threshold_or_gold_change": true
+  },
+  "supersedes_c5_development": {
+    "original_provider_output_retained": true,
+    "unqueried_calibration_and_heldout_unchanged": true,
+    "change": "explicit_considered_work_ideas_are_tentative_not_excluded",
+    "no_threshold_or_gold_change": true
+  },
+  "supersedes_c6_development": {
+    "all_original_outputs_retained": true,
+    "long_job_completed_with_five_state_errors": true,
+    "unqueried_calibration_and_heldout_unchanged": true,
+    "change": "ignore_question_only_work_directly_in_task_state_criteria",
+    "no_threshold_or_gold_change": true
+  },
+  "base_freeze_sha256": "4107c25d257b4ff280bfe7c5692730c45daa0c08282ac4e1d9db3762c4d69543",
+  "calibration_sha256": "5fc2498c5dc0a035f61a19aabf618ed91b42fd1857ead626053454b9b21cd8b0",
+  "calibration_runs_sha256": "7701d554557047a535e7c2f626bfb53390da3f9304cf5df9363120e05c55fa68",
+  "fitted_artifact_file_sha256": "4ff126ed81ca3e865add35661fc2cc0316cff25eb55da8ed333126f839740b14",
+  "base_lock": "evaluations/decision-models/locks/review-supported-passages-c7-2026-11-12-base.json",
+  "base_lock_commit": "991c52e4c0c9b312239cd4c4cf3d56fd67b7568c",
+  "calibration_fit_summary": {
+    "stage": "heldout_ready",
+    "fits": 288,
+    "statuses": {
+      "fitted": 288
+    },
+    "min_observations": 12,
+    "min_classes": 2,
+    "min_families": 12,
+    "calibration_jobs": 96
+  }
+}

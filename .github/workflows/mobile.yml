@@ -8,6 +8,7 @@ on:
       - "core/**"
       - "assets/brand/**"
       - "assets/locales/**"
+      - "assets/qualifications/**"
       - "scripts/build-mobile-*.sh"
       - "scripts/build-keyboard-core-ios.sh"
       - "scripts/tests/test_mobile*.py"

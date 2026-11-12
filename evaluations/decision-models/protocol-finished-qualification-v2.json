@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "protocol_id": "production-finished-qualification-v2",
+  "use_case": "manual_finished_suggestions",
+  "languages": [
+    "nl"
+  ],
+  "production_contract": "Batched Rust finished_meeting_export/replay, raw parser, exact per-window answer mapping and quoted-passage decoder",
+  "runtime_policy": "raw_closed_set_passage_decisions_v2",
+  "calibration_role": "Diagnostic, calibration-split-only evidence. Runtime emits raw closed-set choices; raw production outputs independently must satisfy every source/item/precision gate. No fitted threshold is claimed executed.",
+  "identity_evidence": "provider_reported_version; exact returned dated model, actual provider, requested upstream and official endpoint are pinned. No independently verified remote artifact or serving revision is claimed.",
+  "acceptance": {
+    "component_macro_f1_min": 0.9,
+    "complete_item_macro_f1_min": 0.9,
+    "accepted_item_precision_min": 0.95,
+    "unsupported_or_duplicate_items_max": 0,
+    "minimum_calibration_observations": 10,
+    "minimum_calibration_classes": 2,
+    "minimum_calibration_families": 2,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "hosted_warm_complete_job_p95": "within the frozen configured whole-job deadline, never over 90 seconds"
+  },
+  "bounds": {
+    "whole_job_timeout_secs_max": 90,
+    "hosted_total_usd_max": "2.00",
+    "budget_is_cumulative": true,
+    "automatic_retries": false,
+    "fallbacks": false,
+    "new_model_runtime_downloads": false
+  },
+  "items": "Independently authored exact SOURCE0 passage labels, commitment state, literal quote and complete production source-byte/fingerprint bindings. Unsupported owner, due and prior-event link extraction remain null. Raw candidates cannot be hidden by calibration.",
+  "calibration": "Only calibration distributions fit artifacts. Exact authored physical batch templates, slot, actual batch size, original question, ordered labels, provider-model identity and grouping bind each context. Freeze fitted artifact before any held-out request.",
+  "resource_scope": "Owned application-client preparation, HTTP transport and final Rust raw replay. Per-original-job whole_job_elapsed_ms is mandatory. Fixed five fresh-client and thirty warm complete jobs on a frozen development source, plus separately reported maximum512-turn development stress. Remote server CPU/RSS/weight contents are unavailable and are not claimed measured. RSS is the maximum individual-process lifetime high-water mark across the isolated client and waited children; individual client/child marks are retained. Aggregate process-tree and native GUI RSS are unmeasured and are not claimed by this manual-route gate.",
+  "adoption": "Emit a candidate only after every exact-context raw/calibrated diagnostic/source/quality/resource gate passes. This runner never writes the registry. Synthetic qualification is not natural-ASR, human or automatic/background acceptance."
+}

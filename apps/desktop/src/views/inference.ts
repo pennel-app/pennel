@@ -1,13 +1,24 @@
-import { api, type InferenceAvailability, type InferenceCapability, type InferenceConfig, type InferenceProtocolInfo } from "../api";
+import { api, type FinishedSuggestionPreset, type InferenceAvailability, type InferenceCapability, type InferenceConfig, type InferenceProtocolInfo } from "../api";
 import { errorText, field, h, section, select } from "../dom";
 import { bindLocalization, getInterfaceLanguage, liveText, localizeBackendText } from "../i18n.ts";
-import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState } from "../inference-state.ts";
+import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState, testedSuggestionDraft } from "../inference-state.ts";
 import type { Context } from "../main";
 import { providerDestination } from "../processing-state";
 
 const copy = {
   experimental: ["Experimental connections — setup and testing only", "Experimentele verbindingen — alleen instellen en testen"],
   experimental_help: ["These optional connections are for setup and sample testing. Pennel does not currently use them for dictation, meeting processing or search.", "Deze optionele verbindingen zijn bedoeld om in te stellen en met een voorbeeld te testen. Pennel gebruikt ze momenteel niet voor dicteren, het verwerken van vergaderingen of zoeken."],
+  experimental_review: ["Experimental connections", "Experimentele verbindingen"],
+  experimental_review_help: ["A qualified Decision setup can be used for manual Dutch Review. Other connections remain available for setup and sample testing.", "Een goedgekeurde beslissingsverbinding kan worden gebruikt om handmatig Nederlandse meetings te beoordelen. Andere verbindingen blijven beschikbaar om in te stellen en met een voorbeeld te testen."],
+  tested_setup: ["Tested Review setup", "Geteste instelling voor Beoordelen"],
+  use_tested: ["Use tested setup", "Geteste instelling gebruiken"],
+  tested_help: ["Fill the tested model and limits, then save. Your selected connection and its API key are reused.", "Vul het geteste model en de limieten in en bewaar daarna. Je gekozen verbinding en de bijbehorende API-sleutel worden hergebruikt."],
+  tested_need_router: ["Choose an existing OpenRouter connection to use this setup.", "Kies een bestaande OpenRouter-verbinding om deze instelling te gebruiken."],
+  tested_add_router: ["Add OpenRouter connection", "OpenRouter-verbinding toevoegen"],
+  tested_details: ["Verification details", "Verificatiegegevens"],
+  tested_identity: ["Manual Dutch Review. The provider reports this exact model version; its weights are not independently verified. Automatic analysis needs separate qualification.", "Handmatig beoordelen van Nederlandse meetings. De provider meldt deze exacte modelversie; de modelgewichten zijn niet onafhankelijk gecontroleerd. Automatische analyse vereist een aparte goedkeuring."],
+  tested_changed: ["This tested setup is no longer available for this connection. Refresh the settings and choose again.", "Deze geteste instelling is niet meer beschikbaar voor deze verbinding. Vernieuw de instellingen en kies opnieuw."],
+  tested_unavailable: ["No tested manual Review setup is available on this computer yet.", "Er is nog geen geteste instelling om op deze computer handmatig meetings te beoordelen."],
   title_decision: ["Decision processing", "Beslissingen verwerken"],
   title_reranking: ["Passage ranking", "Passages rangschikken"],
   help_decision: ["Configure and test a service for structured choices.", "Stel een dienst voor gestructureerde keuzes in en test deze."],
@@ -44,18 +55,19 @@ const label = (key: CopyKey) => liveText(() => text(key));
 let experimentalOpen = false;
 
 export async function inferenceModelsView(ctx: Context): Promise<HTMLElement[]> {
-  const protocols = await api.inferenceProtocols().catch(() => []);
+  const [protocols, candidates] = await Promise.all([api.inferenceProtocols().catch(() => []), api.qualifiedFinishedSuggestionPresets().catch(() => [])]);
+  const presets = Array.isArray(candidates) ? candidates.filter(item => item && item.configured && item.identity_evidence === "provider_reported_version" && item.weights_independently_verified === false) : [];
   const supported = Array.isArray(protocols) ? protocols.filter((item) => Array.isArray(item.allowed_provider_kinds) && typeof item.managed === "boolean") : [];
   let renderRequested = false;
   const rerender = () => { if (!renderRequested) { renderRequested = true; queueMicrotask(() => ctx.rerender()); } };
-  const sections = await Promise.all((["decision", "reranking"] as const).map((capability) => inferenceSection(ctx, capability, supported, rerender)));
+  const sections = await Promise.all((["decision", "reranking"] as const).map((capability) => inferenceSection(ctx, capability, supported, rerender, capability === "decision" ? presets : [])));
   const root = h("details", { class: "experimental-connections", "data-inference-experimental": true, open: experimentalOpen },
-    h("summary", {}, label("experimental")), h("p", { class: "help" }, label("experimental_help")), sections);
+    h("summary", {}, label(presets.length ? "experimental_review" : "experimental")), h("p", { class: "help" }, label(presets.length ? "experimental_review_help" : "experimental_help")), sections);
   root.addEventListener("toggle", () => { if (root.isConnected) experimentalOpen = root.open; });
   return [root];
 }
 
-async function inferenceSection(ctx: Context, capability: InferenceCapability, protocols: InferenceProtocolInfo[], rerender: () => void): Promise<HTMLElement> {
+async function inferenceSection(ctx: Context, capability: InferenceCapability, protocols: InferenceProtocolInfo[], rerender: () => void, presets: FinishedSuggestionPreset[]): Promise<HTMLElement> {
   const availableProtocols = protocols.filter((item) => item[capability]);
   const eligible = ctx.info.settings.providers.filter((account) => inferenceProtocolsForProvider(protocols, account, capability).length);
   const saved = inferenceConfig(ctx.info, capability);
@@ -75,6 +87,8 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
   let disposed = false;
   let dirty = false;
   let saving = false;
+  let applyingPreset = false;
+  let selectedPreset = presets[0]?.qualification_id ?? "";
   let errorMessage: string | null = null;
   let fingerprint = inferenceFingerprint(ctx.info, capability);
   let accountState = JSON.stringify([ctx.info.cloud_account_epoch, ctx.info.cloud_signed_in, ctx.info.settings.providers]);
@@ -135,6 +149,33 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
   for (const [name, control] of [["model", model], ["expected_model", expected], ["upstream", upstream], ["max_input_bytes", bytes], ["timeout_secs", timeout]] as const) control.dataset.inferenceField = name;
   bytes.min = "1"; bytes.max = "65536"; bytes.step = "1";
   timeout.min = "1"; timeout.max = "90"; timeout.step = "1";
+  const tested = select(presets.map(preset => [preset.qualification_id, `${preset.actual_provider} · ${preset.actual_model}`]), selectedPreset,
+    value => { selectedPreset = value; draw(); }, "menu");
+  const testedHelp = h("p", { class: "help" });
+  const testedDetails = h("details", { "data-tested-suggestion-details": true }, h("summary", {}, label("tested_details")), h("p", { class: "help" }, label("tested_identity")),
+    h("p", { class: "help" }, presets.map(preset => `${preset.actual_provider} · ${preset.actual_model}`).join("\n")));
+  const testedApply = h("button", { class: "btn", "data-tested-suggestion-apply": true, onclick: async () => {
+    if (saving || applyingPreset || state.running) return;
+    const id = draft.provider_id, requested = selectedPreset, previousDraft = JSON.stringify(draft);
+    const shown = presets.find(item => item.qualification_id === requested);
+    applyingPreset = true; errorMessage = null; draw();
+    try {
+      const fresh = await api.qualifiedFinishedSuggestionPresets();
+      if (disposed || draft.provider_id !== id || selectedPreset !== requested || JSON.stringify(draft) !== previousDraft) return;
+      const preset = fresh.find(item => item.qualification_id === requested), account = ctx.info.settings.providers.find(item => item.id === id);
+      const next = preset && shown && JSON.stringify(preset) === JSON.stringify(shown) && account ? testedSuggestionDraft(preset, account) : null;
+      if (!next || !providerProtocols(id).some(item => item.protocol === next.protocol)) throw new Error(text("tested_changed"));
+      Object.assign(draft, next);
+      model.value = draft.model; expected.value = draft.expected_model ?? ""; upstream.value = draft.upstream ?? "";
+      bytes.value = String(draft.max_input_bytes); timeout.value = String(draft.timeout_secs); protocol.value = draft.protocol;
+      updateProtocolOptions(); changed();
+    } catch (error) { if (!disposed) errorMessage = errorText(error); }
+    finally { applyingPreset = false; if (!disposed) draw(); }
+  } }, label("use_tested"));
+  const testedAdd = h("button", { class: "text-button", onclick: () => ctx.navigate("providers") }, label("tested_add_router"));
+  const testedSetup = capability === "decision" ? h("div", { "data-tested-suggestion-setup": true },
+    presets.length ? field(label("tested_setup"), tested) : h("h3", {}, label("tested_setup")), testedHelp,
+    h("div", { class: "row" }, testedApply, testedAdd), presets.length ? testedDetails : null) : null;
   const save = h("button", { class: "btn", onclick: async () => {
     if (saving) return;
     if (!draft.provider_id || !draft.model.trim() || !providerProtocols(draft.provider_id).some((item) => item.protocol === draft.protocol) || (draft.protocol.startsWith("open_router") && !draft.upstream?.trim())) { errorMessage = text("missing"); draw(); return; }
@@ -175,6 +216,12 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
     const result = state.get(inferenceFingerprint(ctx.info, capability));
     const account = ctx.info.settings.providers.find((item) => item.id === draft.provider_id);
     const managed = draft.protocol === "pennel_cloud" && account?.kind === "pennel_cloud";
+    const preset = presets.find(item => item.qualification_id === selectedPreset);
+    const compatible = !!preset && !!account && !!testedSuggestionDraft(preset, account) && providerProtocols(account.id).some(item => item.protocol === preset.configured.protocol);
+    tested.disabled = saving || state.running || applyingPreset || !presets.length;
+    testedApply.disabled = saving || state.running || applyingPreset || !compatible;
+    testedHelp.textContent = text(!presets.length ? "tested_unavailable" : compatible ? "tested_help" : "tested_need_router");
+    testedAdd.hidden = !presets.length || presets.some(preset => ctx.info.settings.providers.some(account => !!testedSuggestionDraft(preset, account)));
     const signedIn = ctx.info.cloud_signed_in === true;
     const keyMissing = !!current && protocols.find((item) => item.protocol === current.protocol)?.requires_key && !ctx.info.keys[current.provider_id];
     status.textContent = !protocols.length ? text("unavailable") : managed && !signedIn ? text("cloud_sign_in") : !current ? text("disabled") : keyMissing ? text("missing_key") : checkingAvailability ? text("checking") : availability?.available ? text("configured") : localizeBackendText(availabilityError ?? availability?.reason ?? text("check_failed"));
@@ -184,17 +231,17 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
     }
     destination.textContent = `${text("destination")}: ${managed ? "Pennel Cloud" : providerDestination(account)}${endpoint ? ` · ${endpoint}` : ""}`;
     const matchesSaved = current && (["provider_id", "protocol", "model", "expected_model", "upstream", "max_input_bytes", "timeout_secs"] as const).every((key) => current[key] === draft[key]);
-    test.disabled = saving || dirty || state.running || !matchesSaved || !availability?.available || !!keyMissing || managed && !signedIn;
+    test.disabled = saving || applyingPreset || dirty || state.running || !matchesSaved || !availability?.available || !!keyMissing || managed && !signedIn;
     cancel.hidden = !state.running;
-    disable.disabled = saving || !current;
-    save.disabled = saving || state.running || !eligible.length || !availableProtocols.length;
-    provider.disabled = saving || !eligible.length || !protocols.length;
-    protocol.disabled = saving || !availableProtocols.length || managed;
-    for (const control of [model, expected, upstream, bytes, timeout]) control.disabled = saving || !eligible.length || !protocols.length;
+    disable.disabled = saving || applyingPreset || !current;
+    save.disabled = saving || applyingPreset || state.running || !eligible.length || !availableProtocols.length;
+    provider.disabled = saving || applyingPreset || !eligible.length || !protocols.length;
+    protocol.disabled = saving || applyingPreset || !availableProtocols.length || managed;
+    for (const control of [model, expected, upstream, bytes, timeout]) control.disabled = saving || applyingPreset || !eligible.length || !protocols.length;
     modelField.hidden = protocolField.hidden = expectedField.hidden = managed;
     model.disabled ||= managed; expected.disabled ||= managed;
     managedHelp.hidden = accountAction.hidden = !managed;
-    accountAction.disabled = saving || state.running;
+    accountAction.disabled = saving || applyingPreset || state.running;
     accountAction.textContent = text(signedIn ? "account" : "sign_in");
     retryAvailability.hidden = !current || !!availability?.available || checkingAvailability || !!keyMissing || managed && !signedIn;
     retryAvailability.disabled = saving || state.running;
@@ -216,10 +263,10 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
   }
   const advanced = h("details", {}, h("summary", {}, label("advanced")), expectedField, field(label("bytes"), bytes), field(label("timeout"), timeout));
   const body = eligible.length && availableProtocols.length
-    ? [field(label("provider"), provider), protocolField, modelField, upstreamField, managedHelp, advanced, destination, status,
+    ? [field(label("provider"), provider), testedSetup, protocolField, modelField, upstreamField, managedHelp, advanced, destination, status,
       h("div", { class: "row" }, accountAction, retryAvailability, h("button", { class: "text-button", onclick: () => ctx.navigate("providers") }, label("manage"))),
       h("div", { class: "row" }, save, disable), sampleHelp, h("div", { class: "row" }, test, cancel), notice, identity]
-    : [status, protocols.length && !eligible.length ? h("p", { class: "help" }, label(capability === "reranking" ? "need_rerank_provider" : "need_provider")) : null,
+    : [testedSetup, status, protocols.length && !eligible.length ? h("p", { class: "help" }, label(capability === "reranking" ? "need_rerank_provider" : "need_provider")) : null,
       protocols.length && !eligible.length ? h("button", { class: "btn", onclick: () => ctx.navigate("providers") }, label("add")) : null,
       saved ? h("div", { class: "row" }, disable) : null, notice];
   const root = section(label(capability === "decision" ? "title_decision" : "title_reranking"), label(capability === "decision" ? "help_decision" : "help_reranking"), body);

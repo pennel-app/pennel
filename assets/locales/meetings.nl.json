@@ -98,6 +98,7 @@
   "meetings.audio_unavailable": "Audio afspelen is niet beschikbaar.",
   "meetings.edit_recording_notes": "Bewerk je notities in het opnamevenster tot de opname is afgerond.",
   "meetings.default_title": "Meeting",
+  "insights.manual_only": "Suggesties zoeken is beschikbaar. Automatische analyse is nog niet goedgekeurd voor deze instelling.",
   "meetings.stop_audio": "Stop audio",
   "meetings.empty_summary": "Nog geen samenvatting.",
   "meetings.notes": "Notities",

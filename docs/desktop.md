@@ -190,11 +190,10 @@ Meeting answers can open the exact transcript, summary or personal-note passage 
 
 Cleaned-up dictation uses conservative ordered-content safeguards before accepting generated text. Changed values, negation, question intent, language or unsupported wording retain the original dictation through the existing History and delivery workflow. Dictionary spelling permits clear case/accent/spacing correspondence rather than guessed names. See [cleanup fidelity and offline evidence](cleanup-fidelity.md) for the supported normalization limits.
 
-Dictation settings expose **Verify cleanup meaning**, independently from the optional Decision processing connection. It starts off and remains unavailable until the exact pipeline and content-language policy are qualified. No production model is qualified in this version; a connection sample does not enable verification. The settings explain saved enablement and the configured destination, while active sessions retain their original destination. Requested but unavailable verification keeps raw text, with no retry or alternate provider.
+Dictation settings expose **Verify cleanup meaning**, independently from the optional Decision processing connection. It starts off and remains unavailable until the exact pipeline and content-language policy are qualified. No cleanup-verification pipeline is qualified in this version; a connection sample does not enable verification. The settings explain saved enablement and the configured destination, while active sessions retain their original destination. Requested but unavailable verification keeps raw text, with no retry or alternate provider.
 
 **Settings → Advanced → Models and experimental connections** keeps **Decision processing**
-and **Passage ranking** inside the initially collapsed **Experimental connections — setup and testing only** disclosure. These connections do not
-currently drive ordinary dictation, meeting processing or search. A missing compatible
+and **Passage ranking** inside an initially collapsed **Experimental connections** disclosure. Ordinary dictation, summaries, meeting answers and search retain their existing models. Manual finished-meeting Review requires an adopted qualification for the exact connection, content language and resource context. A missing compatible
 provider shows an explanation and **Add connection**, rather than a blank dropdown. Both
 connections start disabled, including on existing profiles. Both can use the existing Pennel Cloud
 account with its normal sign-in and a managed model; no API key, server URL or model ID is
@@ -204,6 +203,12 @@ explicit test for the current account and settings. The connections also reuse e
 OpenRouter or Custom server accounts and their OS-stored keys. Custom accounts can have an optional
 key; a keyless local service remains supported. Removing an account disables its optional
 connections without selecting a replacement.
+
+Review's **Connection settings** action opens Models. The adopted C7 route is limited to manual Dutch Review in its measured resource context. A matching **Tested Review setup** shows the exact provider-reported model version and destination. **Use tested setup** fills a draft for an explicitly selected compatible OpenRouter account; **Save configuration** applies it. The existing account and OS-stored key are reused. Without a matching adopted record, the preset action stays disabled with an explanation. Returned serving revision and remote weights are never invented; provider-reported version evidence does not independently verify the weights. See [the functional Review qualification and delivery evidence](evidence/review-provider-version-96-2026-11-12.md).
+
+A qualified manual request remains available when automatic foreground-impact qualification is missing. Automatic analysis additionally requires that separate evidence and consent. Find rechecks the displayed connection fingerprint before credentials or inference; consent saves only its own policy fields. Failed metadata reads keep Find disabled until a successful refresh. Opening Review reads stored results and availability without starting inference, and previously saved suggestions remain reviewable when a connection becomes unavailable.
+
+The hosted Review pipeline checks both the event state and whether that kind is explicitly supported by the central transcript passage. It emits a card only when both checks permit it. Unclear support remains unassessed, rather than a confirmed negative. Fitted calibration is diagnostic evidence; it does not provide a runtime threshold or calibrated UI confidence.
 
 Decision processing supports OpenRouter Decisions/System One, direct TypeSafe,
 Perplexity/Mercury and the official loopback Decider endpoint. Passage ranking also supports TEI.

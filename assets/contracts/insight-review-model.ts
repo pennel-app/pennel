@@ -6,7 +6,7 @@ import { InsightDraft, appendInsightMarkdown, insightReceipt, insightText, insig
 export interface InsightReviewService {
   read(id: string): Promise<InsightSnapshot>;
   availability(id: string, policy: InsightLanguagePolicy): Promise<InsightAvailability>;
-  start(id: string, policy: InsightLanguagePolicy): Promise<InsightJob>;
+  start(id: string, policy: InsightLanguagePolicy, expectedConfigurationFingerprint: string): Promise<InsightJob>;
   job(jobId: string): Promise<InsightJob>;
   cancel(jobId: string): Promise<InsightJob>;
   claim(id: string, request: InsightClaimRequest): Promise<InsightSnapshot>;
@@ -31,6 +31,10 @@ export interface InsightReviewViewState {
   version: number; snapshot: InsightSnapshot | null; availability: InsightAvailability | null;
   policy: InsightLanguagePolicy; job: InsightJob | null; busy: ReadonlySet<string>; error: unknown;
   edits: ReadonlyMap<string, InsightDraft>;
+}
+function configurationFingerprint(availability: InsightAvailability | null): string | null {
+  const pin = availability?.configuration_fingerprint;
+  return typeof pin === "string" && /^[a-f0-9]{64}$/.test(pin) ? pin : null;
 }
 
 export class InsightReviewModel {
@@ -75,7 +79,7 @@ export class InsightReviewModel {
   get dirty() { return [...this.state.edits.values()].some(edit => edit.dirty); }
   get analysisBusy() { return this.state.job?.physical_running || this.state.job?.state === "queued" || this.state.job?.state === "running" || this.state.busy.has("analysis"); }
   get canAnalyze() { return this.state.availability?.available === true && this.state.policy !== "unknown" && insightsWritable(this.state.snapshot)
-    && !this.analysisBusy && !this.state.edits.size && !this.state.busy.has("write"); }
+    && !this.analysisBusy && !this.state.edits.size && !this.state.busy.has("write") && !this.state.busy.has(`availability:${this.availabilityEpoch}`); }
   items() {
     const items = [...(this.state.snapshot?.items ?? [])];
     for (const id of this.state.edits.keys()) if (!items.some(item => item.id === id) && this.itemBackups.has(id)) items.push(this.itemBackups.get(id)!);
@@ -88,16 +92,19 @@ export class InsightReviewModel {
     if (this.readAgain) { this.readAgain = false; await this.load(); }
   }
   async choosePolicy(policy: InsightLanguagePolicy) {
-    this.changed({ policy }); const epoch = ++this.availabilityEpoch;
+    this.changed({ policy, availability: null }); const epoch = ++this.availabilityEpoch;
     await this.action(`availability:${epoch}`, async () => {
       const availability = await this.service.availability(this.id, policy);
-      if (epoch === this.availabilityEpoch && policy === this.state.policy) this.changed({ availability });
+      if (epoch === this.availabilityEpoch && policy === this.state.policy) this.changed({ availability: availability.available && !configurationFingerprint(availability)
+        ? { ...availability, available: false, reason_code: "configuration_changed" } : availability });
     });
   }
-  async analyze() {
+  async analyze(expectedConfigurationFingerprint = configurationFingerprint(this.state.availability)) {
     if (!this.canAnalyze) return false;
+    const id = this.id, policy = this.state.policy, pin = expectedConfigurationFingerprint;
     return !!await this.action("analysis", async () => {
-      const job = await this.service.start(this.id, this.state.policy);
+      if (!pin || pin !== configurationFingerprint(this.state.availability) || id !== this.id || policy !== this.state.policy) throw new InsightUiError("configuration_changed");
+      const job = await this.service.start(id, policy, pin);
       if (job.meeting_uid !== this.meetingUid) throw new InsightUiError("wrong_meeting");
       this.changed({ job }); return true;
     });

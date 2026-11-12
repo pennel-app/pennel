@@ -1,4 +1,65 @@
 {
   "schema_version": 1,
-  "adopted_records": []
+  "adopted_records": [
+    {
+      "schema_version": 1,
+      "qualification_id": "finished-nl-19bd8056cf84da327bad",
+      "context": {
+        "configured": {
+          "endpoint": "https://openrouter.ai/api/alpha/decisions",
+          "expected_model": "perplexity/pplx-decider-v1.2-20261016",
+          "max_input_bytes": 65536,
+          "model": "perplexity/pplx-decider-v1.2",
+          "protocol": "open_router_decisions",
+          "timeout_secs": 90,
+          "upstream": "perplexity"
+        },
+        "grouping": "independent-event-passages-kind-support-openrouter-batches8-other-singletons-v5",
+        "label_order_sha256": "40d583f5f74979c81918edd101341a9f01d9705bb4108eb977470dcb54fb9685",
+        "language_policy": "nl",
+        "preprocessing_sha256": "7c266eb2275fac3d1fd2fd2c480a893a6b2d064a6aa1d39fa7ebdca5a456cadc",
+        "prompt_sha256": "b665c86cf0d335b890659833ae4b2f8227d8643ed73d7fd16d73a9a7fc05becc",
+        "resource_profile_sha256": "34282af902e764ca69a4a166040463ad9d3fb96dd2b98859e51c5d619440fdbb",
+        "schema_sha256": "798f4c817b356fe3d65daf903ca6fd4b8a7b3d877d3d6217a2d3622770a7b6c0",
+        "task": "meeting_suggestions_v1",
+        "use_case": "manual_finished_suggestions",
+        "actual": {
+          "artifact_sha256": "",
+          "identity_evidence": "provider_reported_version",
+          "model": "perplexity/pplx-decider-v1.2-20261016",
+          "provider": "Perplexity",
+          "revision": ""
+        },
+        "calibration_sha256": "5fc2498c5dc0a035f61a19aabf618ed91b42fd1857ead626053454b9b21cd8b0"
+      },
+      "evidence": {
+        "mode": "recorded_inference",
+        "protocol_sha256": "0c22ad949eaa6507f11d55f2bbe7c63413142bb439872b92c69e1c07e0708ef5",
+        "corpus_sha256": "9d14274663cc494c3e85a83bce96e1c50a64d29c4dd533d73dfdefd8fa7e8d6e",
+        "split_sha256": "226ac306617f3aa53c386e5c0f008ee9f6a4d799e4be6789603d8cbc344b3ec1",
+        "report_sha256": "17442db01af722ae37b9609e75029b3c9f66dc5601235724aa4c38e8ae4b4da6",
+        "prefix_isolation": true,
+        "heldout_disjoint": true,
+        "source_judgments_complete": true,
+        "failures_counted": true,
+        "resource_measurements_complete": true,
+        "foreground_impact_accepted": false,
+        "background_resource_accepted": false
+      },
+      "metrics": {
+        "macro_f1": 0.9645220313764006,
+        "accepted_item_precision": 1.0,
+        "correct_owner_and_final_status": true,
+        "selective_precision": null,
+        "coverage": 1.0,
+        "warm_p95_ms": 3617.687176866457,
+        "peak_rss_bytes": 59752448,
+        "cpu_time_ms": 14564.650999999993,
+        "calibration_observations": 12,
+        "calibration_classes": 2,
+        "calibration_meeting_groups": 12,
+        "heldout_observations": 4416
+      }
+    }
+  ]
 }

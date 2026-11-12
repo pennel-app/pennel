@@ -1,0 +1,77 @@
+{
+  "schema_version": 2,
+  "experiment_id": "review-provider-version-nl-2026-11-11",
+  "stage": "calibration",
+  "code_source_commit": "4a78575b18f1d0120d9a5ab5ee0bae0b843d4cd3",
+  "freeze_sha256": "97e38aca314e8dc93a1515f65abb50fdf88ab649649f28f0187b377f30d74f64",
+  "production_freeze_sha256": "d47c634b796fb879978fdf11fa34863cabda5da1a8b74950543c2db2ae9a8c68",
+  "bridge_sha256": "0e8cfed0f78ac8dd220b0cfc09d4b0a8db7213c5e5432b509b073707a2640371",
+  "protocol_sha256": "0b46fe5bfeef4d33299f7f73a34e79f70d0c4be7b7074e59ad93e1a317e5f7e6",
+  "production_protocol_sha256": "0c4386cf561931aff6dbdd94477fb8f6472902a3eccc70f0e7ac41aad69f7227",
+  "python_source_sha256": {
+    "finished_qualification.py": "7c9fe06298bc99252d9c3acfe49e6f1313f396a652efbc60b158141d774c770f",
+    "finished.py": "96b301b8c6ed9ddf33cd200865ec03c6f47ff8327fd04ae5ba2498f7847719d2",
+    "finished_preflight.py": "4123008d3dee2fdd838914bf998353d9889232b142d70c3975bf6a05bfc4b9c8",
+    "calibration.py": "af2ba3806a3f46a89c7b00c68ff9ac1a75847958fe0fe4ec6681fe0bc468c515",
+    "metrics.py": "b4e5821c5f9a6163733a1f1c73c98f26391b6e960d2977185c3d51e4f0e1a9c9",
+    "finished_v2.py": "0dfc87bfbd97201f836f86abdcd130d1ff0a1c7d03fd6136a77ead2699649b6d",
+    "finished_experiment.py": "7c625c34f92985269f40acf2f1474687b5415d9c8a1ea86aadba5b4543fe7b05",
+    "finished_corpus_v2.py": "35fc3446c56945685e0b879818292a03c4a4517bef79ff98f735da792c2f0e1e",
+    "runners.py": "6562b7ad1167c7bc42b2d6099915b7ef66f3782083c736c1b0ee45839405e6af"
+  },
+  "production_source_sha256": {
+    "evaluation/finished.rs": "4eb6efc2bf278df17c698776ef6dbfe897542c454637ca4652fe3ece4c4704cd",
+    "inference.rs": "5b05c6e40e1e3277734711f5fb2ab96bb3bb3bc2409b37ddcc9f6ec75796ed40",
+    "meeting_insight_engine.rs": "fbcc026fae40b2b15fe1e7d3456159290419c4aecd2558ab460e8eadba03b1b1",
+    "meeting_insight_engine/evaluation.rs": "3f5109e31e025f0991cf0713aeef2d7dfe239261b6ecd46754009a82188089b3",
+    "meeting_insights.rs": "cc670d7584ca18c125f21c7298591d2063425caba8f474366beffcbd85c14719",
+    "meeting_qualification.rs": "0d8afdc62c0b2673dcf9a58d0bd62da26687d822c58c84e790719c761d69f5a9",
+    "meeting_utterances.rs": "3ad472ac3db0c4e3e2e9fa51c62b6865faed2418a32b460280ec2a837b4f9b14"
+  },
+  "authored_spec_file_sha256": "d2a63c9f10de81d67679ddac7cb193a6d4f31ac9cd6ace77856e27c594ca1cb2",
+  "corpus_sha256": "f26eef9a2624efbc3c896a0d1c07826585b437f570e6c97b659c665c22029df5",
+  "split_sha256": "6f8a4d89f2a288db276863144e8ca0916dabc8ab65c90211366096b8602a219a",
+  "physical_request_manifest_sha256": "ab943ec5b90e40ee0951b289e33bbd8e4117df1902445cd7fde268b179421332",
+  "scheduled_physical_requests": {
+    "development": 246,
+    "calibration": 180,
+    "heldout": 180
+  },
+  "calibration_design": {
+    "contexts": 144,
+    "minimum_observations": 12,
+    "minimum_classes": 2,
+    "minimum_families": 12
+  },
+  "configuration": {
+    "endpoint": "https://openrouter.ai/api/alpha/decisions",
+    "expected_model": "perplexity/pplx-decider-v1.2-20261016",
+    "max_input_bytes": 65536,
+    "model": "perplexity/pplx-decider-v1.2",
+    "protocol": "open_router_decisions",
+    "timeout_secs": 90,
+    "upstream": "perplexity"
+  },
+  "expected_actual": {
+    "artifact_sha256": "",
+    "identity_evidence": "provider_reported_version",
+    "model": "perplexity/pplx-decider-v1.2-20261016",
+    "provider": "Perplexity",
+    "revision": ""
+  },
+  "runtime_policy": "raw_closed_set_passage_decisions_v2",
+  "calibration_is_runtime_filter": false,
+  "remote_weights_independently_verified": false,
+  "pricing_evidence_sha256": "a13647323b0c5529d6cc0d580c13d62d7ae480ff6cadb31f12859890feead60f",
+  "budget": {
+    "cumulative_ceiling_usd": "2.00",
+    "known_billed_at_freeze_usd": "0.01281386",
+    "native_smoke_allowance_usd": "0.20",
+    "automatic_retries": false,
+    "fallbacks": false
+  },
+  "production_admission": false,
+  "actual_calibration_executed": false,
+  "actual_heldout_executed": false,
+  "actual_resource_panel_executed": false
+}

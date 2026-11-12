@@ -1,0 +1,115 @@
+{
+  "schema_version": 2,
+  "experiment_id": "review-provider-version-nl-2026-11-11-attempt-b",
+  "stage": "calibration",
+  "code_source_commit": "4972e4ec439fb20c3fa3614d3aab5c93915485fb",
+  "core_source_commit": "4a78575b18f1d0120d9a5ab5ee0bae0b843d4cd3",
+  "freeze_sha256": "8b89407b66e66ac4aa029b0d88aa6646c36e800495cd80c23ee147d691dd9b63",
+  "production_freeze_sha256": "bbb5ca5094eae96ce457eaca1654924c88721a6da9afcb448671e2ee1f31a291",
+  "bridge_sha256": "0e8cfed0f78ac8dd220b0cfc09d4b0a8db7213c5e5432b509b073707a2640371",
+  "protocol_sha256": "0b46fe5bfeef4d33299f7f73a34e79f70d0c4be7b7074e59ad93e1a317e5f7e6",
+  "production_protocol_sha256": "0c4386cf561931aff6dbdd94477fb8f6472902a3eccc70f0e7ac41aad69f7227",
+  "python_source_sha256": {
+    "finished_qualification.py": "f3d2c42f3864f379435e5d0975f3686a381aafe30df9cd7bfef78e677e930911",
+    "finished.py": "96b301b8c6ed9ddf33cd200865ec03c6f47ff8327fd04ae5ba2498f7847719d2",
+    "finished_preflight.py": "4123008d3dee2fdd838914bf998353d9889232b142d70c3975bf6a05bfc4b9c8",
+    "calibration.py": "af2ba3806a3f46a89c7b00c68ff9ac1a75847958fe0fe4ec6681fe0bc468c515",
+    "metrics.py": "b4e5821c5f9a6163733a1f1c73c98f26391b6e960d2977185c3d51e4f0e1a9c9",
+    "finished_v2.py": "0dfc87bfbd97201f836f86abdcd130d1ff0a1c7d03fd6136a77ead2699649b6d",
+    "finished_experiment.py": "a5aec8d7c75a21c132a5a1a60505d67d42bda0bf2cd4dfa149041349bc852a06",
+    "finished_corpus_v2.py": "89a5c94fed44bb03990a1e5a6c9facd7c089648cd0f93403f32daf0dc0558dac",
+    "runners.py": "fcb573407a0be4f4e841617d710428d821586735e59961fc4d566d66deedecab"
+  },
+  "production_source_sha256": {
+    "evaluation/finished.rs": "4eb6efc2bf278df17c698776ef6dbfe897542c454637ca4652fe3ece4c4704cd",
+    "inference.rs": "5b05c6e40e1e3277734711f5fb2ab96bb3bb3bc2409b37ddcc9f6ec75796ed40",
+    "meeting_insight_engine.rs": "fbcc026fae40b2b15fe1e7d3456159290419c4aecd2558ab460e8eadba03b1b1",
+    "meeting_insight_engine/evaluation.rs": "3f5109e31e025f0991cf0713aeef2d7dfe239261b6ecd46754009a82188089b3",
+    "meeting_insights.rs": "cc670d7584ca18c125f21c7298591d2063425caba8f474366beffcbd85c14719",
+    "meeting_qualification.rs": "0d8afdc62c0b2673dcf9a58d0bd62da26687d822c58c84e790719c761d69f5a9",
+    "meeting_utterances.rs": "3ad472ac3db0c4e3e2e9fa51c62b6865faed2418a32b460280ec2a837b4f9b14"
+  },
+  "authored_spec_file_sha256": "994dbf8e26fd215dfa7d983466054c2e842468eb9d0c33c6937b50b7151a2054",
+  "corpus_sha256": "d05000d5320893829db616fe8818723916ea5d102a4cfa8176548aa3e831c013",
+  "split_sha256": "677cb5ab7514a690efef0e0f8cf9f8801e43783e001f565628acf5cbe4c16209",
+  "physical_request_manifest_sha256": "b7d2dbe576a482660da607338e1e904869445fb27ad38946dd5445747cf49992",
+  "scheduled_physical_requests": {
+    "development": 246,
+    "calibration": 180,
+    "heldout": 180
+  },
+  "calibration_design": {
+    "contexts": 144,
+    "minimum_observations": 12,
+    "minimum_classes": 2,
+    "minimum_families": 12
+  },
+  "configuration": {
+    "endpoint": "https://openrouter.ai/api/alpha/decisions",
+    "expected_model": "perplexity/pplx-decider-v1.2-20261016",
+    "max_input_bytes": 65536,
+    "model": "perplexity/pplx-decider-v1.2",
+    "protocol": "open_router_decisions",
+    "timeout_secs": 90,
+    "upstream": "perplexity"
+  },
+  "expected_actual": {
+    "artifact_sha256": "",
+    "identity_evidence": "provider_reported_version",
+    "model": "perplexity/pplx-decider-v1.2-20261016",
+    "provider": "Perplexity",
+    "revision": ""
+  },
+  "runtime_policy": "raw_closed_set_passage_decisions_v2",
+  "runtime_calibration_applied": false,
+  "remote_weights_independently_verified": false,
+  "attempt_a": {
+    "outcome": "incomplete_cannot_qualify",
+    "original_lock": "review-provider-version-nl-2026-11-11-base.json",
+    "new_calibration_material": true,
+    "verbatim_calibration_overlap": false,
+    "heldout_unchanged_unseen": true,
+    "scores_not_used_for_tuning": true,
+    "outputs_not_relabelled_or_reused": true
+  },
+  "budget": {
+    "cumulative_ceiling_usd": "2.00",
+    "known_billed_usd": "0.02062200",
+    "conservative_upper_bound_usd": "0.00244460",
+    "total_exposure_usd": "0.02306660",
+    "raw_bill_125": "unreported; entire original reserve permanently accounted",
+    "native_smoke_allowance_usd": "0.20",
+    "automatic_retries": false,
+    "fallbacks": false
+  },
+  "production_admission": false,
+  "actual_attempt_b_calibration_executed": false,
+  "actual_heldout_executed": false,
+  "actual_resource_panel_executed": false,
+  "freeze_artifact": "build/review-functional-96/attempt-b-auth-pipe-base-freeze.json",
+  "physical_request_manifest_artifact": "build/review-functional-96/attempt-b-auth-pipe-request-manifest.json",
+  "supersedes_attempt_b_base": {
+    "lock": "review-provider-version-nl-2026-11-11-attempt-b-base.json",
+    "lock_commit": "bbef0982fcba9c5d71e26dfd5587985b15abe08e",
+    "freeze_sha256": "029522520c15154b944a76ae6e65947b973df298b3a3cbace5afae6b85ec3787",
+    "reason": "credential_delivery_only; prior B dispatches failed before model requests",
+    "prior_freeze_and_no_send_artifacts_preserved": true,
+    "unchanged_corpus_gold_protocol_production_exports_requests_and_gates": true,
+    "prior_b_model_requests": 0
+  },
+  "credential_delivery": {
+    "mode": "anonymous_pipe_from_os_parent",
+    "source": "one explicit bounded parent OS credential-store retrieval retained in RAM",
+    "code_source_commit": "4972e4ec439fb20c3fa3614d3aab5c93915485fb",
+    "source_sha256": {
+      "evaluations/decision-models/credential_session.py": "98c30fcc8d4abaf84a08c1102d84900b023238b69dfa7b81e453f4c539fcc7c9",
+      "evaluations/decision-models/finished_experiment.py": "a5aec8d7c75a21c132a5a1a60505d67d42bda0bf2cd4dfa149041349bc852a06"
+    },
+    "allowed_secret_locations": [
+      "process memory",
+      "inherited anonymous pipe"
+    ],
+    "automatic_phase_transition": false,
+    "frozen_actor_validation_and_budget_gates_unchanged": true
+  }
+}

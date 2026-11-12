@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import copy
 import ipaddress
 import json
 import math
@@ -31,7 +32,7 @@ def _decimal(value, code="invalid_cost"):
 
 
 class SpendLedger:
-    """Reserve before sending; uncertain charges halt subsequent paid work."""
+    """Reserve before sending; preserve known bills and conservative bounds separately."""
 
     def __init__(self, limit_usd="2.00", checkpoint=None):
         self.limit = _decimal(limit_usd)
@@ -39,56 +40,126 @@ class SpendLedger:
             raise EvaluationError("budget_exceeds_authorized_usd_2")
         self.spent = Decimal(0)
         self.pending = {}
+        self.pending_metadata = {}
+        self.conservative_upper_bounds = {}
         self.unresolved = False
+        self._hard_unresolved = False
+        self._unknown_tokens = set()
         self.attempts = []
         self._next = 0
         self._lock = threading.Lock()
         self.checkpoint = checkpoint
 
-    def reserve(self, amount):
+    @property
+    def conservative_spend(self):
+        return sum((_decimal(row['upper_bound_usd']) for row in self.conservative_upper_bounds.values()), Decimal(0))
+
+    @property
+    def total_exposure(self):
+        return self.spent + self.conservative_spend + sum(self.pending.values(), Decimal(0))
+
+    def reserve(self, amount, metadata=None):
         amount = _decimal(amount)
         with self._lock:
             if self.unresolved:
                 raise EvaluationError("unresolved_charge")
-            if amount <= 0 or self.spent + sum(self.pending.values()) + amount > self.limit:
+            if amount <= 0 or self.total_exposure + amount > self.limit:
                 raise EvaluationError("budget_exhausted")
             self._next += 1
             token = str(self._next)
             self.pending[token] = amount
+            if metadata is not None:
+                if not isinstance(metadata, dict): raise EvaluationError('invalid_reservation_metadata')
+                self.pending_metadata[token] = copy.deepcopy(metadata)
             if self.checkpoint:
                 self.checkpoint(self.snapshot())
             return token
 
     def settle(self, token, cost, metadata=None):
         with self._lock:
-            reserved = self.pending.pop(token)
+            reserved = self.pending[token]
             actual = None if cost is None else _decimal(cost)
+            previous = next((row for row in self.attempts if row.get('reservation_id') == token), None)
+            if previous is not None and previous.get('billed_cost_usd') is not None:
+                raise EvaluationError('reservation_already_settled')
+            merged = copy.deepcopy(self.pending_metadata.get(token, {}))
+            merged.update(metadata or {})
             if actual is None:
-                self.pending[token] = reserved
+                self._unknown_tokens.add(token)
                 self.unresolved = True
             else:
+                self.pending.pop(token)
+                self.pending_metadata.pop(token, None)
+                self._unknown_tokens.discard(token)
                 self.spent += actual
-                if actual > reserved or self.spent > self.limit:
-                    self.unresolved = True
-            self.attempts.append({
-                "reservation_id": token,
-                "reserved_usd": str(reserved),
-                "billed_cost_usd": None if actual is None else str(actual),
-                "metadata": metadata or {},
-            })
+                if actual > reserved or self.total_exposure > self.limit:
+                    self._hard_unresolved = True
+                self.unresolved = self._hard_unresolved or bool(self._unknown_tokens)
+            row = {"reservation_id": token, "reserved_usd": str(reserved),
+                "billed_cost_usd": None if actual is None else str(actual), "metadata": merged}
+            if previous is None: self.attempts.append(row)
+            else: self.attempts[self.attempts.index(previous)] = row
             if self.checkpoint:
                 self.checkpoint(self.snapshot())
 
+    def resolve_upper_bound(self, token, metadata, evidence):
+        """Explicitly account the FULL reserve, never invent an actual response bill.
+
+        The bucket is permanent: no automatic refund/discount follows aggregate
+        counter observations. Exactly one durable snapshot moves the exposure.
+        """
+        if not isinstance(metadata, dict) or not isinstance(evidence, dict) or not evidence:
+            raise EvaluationError('explicit_upper_bound_evidence_required')
+        with self._lock:
+            existing = self.conservative_upper_bounds.get(token)
+            if existing is not None:
+                if any(existing['metadata'].get(key) != value for key, value in metadata.items()) or existing['evidence'] != evidence:
+                    raise EvaluationError('conservative_resolution_already_recorded')
+                return self.snapshot()
+            if token not in self.pending:
+                raise EvaluationError('unknown_pending_reservation')
+            original_metadata = self.pending_metadata.get(token, {})
+            previous = next((row for row in self.attempts if row.get('reservation_id') == token), None)
+            if previous is not None:
+                if previous.get('billed_cost_usd') is not None: raise EvaluationError('reservation_already_settled')
+                original_metadata = {**original_metadata, **previous.get('metadata', {})}
+            for key in original_metadata.keys() & metadata.keys():
+                if original_metadata[key] != metadata[key]: raise EvaluationError('reservation_identity_changed')
+            merged = copy.deepcopy(metadata);merged.update(copy.deepcopy(original_metadata))
+            old = (copy.deepcopy(self.pending), copy.deepcopy(self.pending_metadata), copy.deepcopy(self.conservative_upper_bounds),
+                   copy.deepcopy(self.attempts), self.unresolved, self._hard_unresolved, set(self._unknown_tokens))
+            if self.unresolved and not self._unknown_tokens:
+                self._hard_unresolved = True
+            amount = self.pending.pop(token)
+            self.pending_metadata.pop(token, None)
+            self._unknown_tokens.discard(token)
+            self.conservative_upper_bounds[token] = {'upper_bound_usd': str(amount), 'original_reserved_usd': str(amount),
+                'metadata': merged, 'evidence': copy.deepcopy(evidence), 'raw_billed_cost_unreported': True}
+            row = {'reservation_id': token, 'reserved_usd': str(amount), 'billed_cost_usd': None,
+                'budget_upper_bound_usd': str(amount), 'resolution': 'full_reservation_upper_bound', 'metadata': merged}
+            if previous is None: self.attempts.append(row)
+            else: self.attempts[self.attempts.index(previous)] = row
+            # Every other pending token remains unresolved after an interruption.
+            self._unknown_tokens.update(self.pending)
+            self.unresolved = self._hard_unresolved or bool(self._unknown_tokens) or self.total_exposure > self.limit
+            try:
+                if self.checkpoint: self.checkpoint(self.snapshot())
+            except Exception:
+                (self.pending, self.pending_metadata, self.conservative_upper_bounds, self.attempts,
+                 self.unresolved, self._hard_unresolved, self._unknown_tokens) = old
+                raise
+            return self.snapshot()
+
     def snapshot(self):
-        return {
-            "limit_usd": str(self.limit),
-            "known_billed_usd": str(self.spent),
-            "reserved_usd": str(sum(self.pending.values())),
+        return {"limit_usd": str(self.limit), "known_billed_usd": str(self.spent),
+            "conservative_upper_bound_usd": str(self.conservative_spend),
+            "total_exposure_usd": str(self.total_exposure), "reserved_usd": str(sum(self.pending.values(), Decimal(0))),
             "pending_reservations": {key: str(value) for key, value in self.pending.items()},
-            "unresolved_charge": self.unresolved,
-            "attempt_count": len(self.attempts),
-            "attempts": list(self.attempts),
-        }
+            "pending_metadata": copy.deepcopy(self.pending_metadata),
+            "conservative_upper_bounds": copy.deepcopy(self.conservative_upper_bounds),
+            "unresolved_charge": self.unresolved, "hard_unresolved_charge": self._hard_unresolved,
+            "unknown_reservation_tokens": sorted(self._unknown_tokens),
+            "attempt_count": len(self.attempts), "attempts": copy.deepcopy(self.attempts)}
 
     def to_dict(self):
         return self.snapshot()
@@ -105,13 +176,53 @@ class SpendLedger:
         ledger.pending = {key: _decimal(value) for key, value in pending.items()}
         if not ledger.pending and _decimal(state.get("reserved_usd", "0")):
             ledger.pending = {"interrupted": _decimal(state["reserved_usd"])}
+        ledger.pending_metadata = copy.deepcopy(state.get('pending_metadata', {}))
+        if not isinstance(ledger.pending_metadata, dict) or set(ledger.pending_metadata) - set(ledger.pending):
+            raise EvaluationError('invalid_persisted_ledger')
         attempts = state.get("attempts", [])
         if not isinstance(attempts, list) or any(not isinstance(value, dict) for value in attempts):
             raise EvaluationError("invalid_persisted_ledger")
-        ledger.attempts = list(attempts)
-        # Any reservation left on disk may already have reached the provider.
-        ledger.unresolved = bool(state.get("unresolved_charge")) or bool(ledger.pending) or ledger.spent > ledger.limit
-        identifiers = list(ledger.pending) + [value.get("reservation_id", "0") for value in attempts]
+        ledger.attempts = copy.deepcopy(attempts)
+        bounds = state.get('conservative_upper_bounds', {})
+        if not isinstance(bounds, dict): raise EvaluationError('invalid_conservative_coverage')
+        for token, row in bounds.items():
+            if not isinstance(token, str) or not isinstance(row, dict) or token in ledger.pending:
+                raise EvaluationError('invalid_conservative_coverage')
+            amount = _decimal(row.get('upper_bound_usd'))
+            original = _decimal(row.get('original_reserved_usd'))
+            matches = [item for item in attempts if item.get('reservation_id') == token]
+            if (amount <= 0 or amount != original or len(matches) != 1 or not isinstance(row.get('metadata'), dict)
+                    or not isinstance(row.get('evidence'), dict) or not row['evidence'] or row.get('raw_billed_cost_unreported') is not True):
+                raise EvaluationError('invalid_conservative_coverage')
+            attempt = matches[0]
+            if (attempt.get('billed_cost_usd') is not None or attempt.get('resolution') != 'full_reservation_upper_bound'
+                    or _decimal(attempt.get('budget_upper_bound_usd')) != amount
+                    or _decimal(attempt.get('reserved_usd')) != original or attempt.get('metadata') != row['metadata']):
+                raise EvaluationError('invalid_conservative_coverage')
+        if any(row.get('resolution') == 'full_reservation_upper_bound' and row.get('reservation_id') not in bounds for row in attempts):
+            raise EvaluationError('dropped_conservative_coverage')
+        ledger.conservative_upper_bounds = copy.deepcopy(bounds)
+        declared = _decimal(state.get('conservative_upper_bound_usd', '0'))
+        if declared != ledger.conservative_spend:
+            raise EvaluationError('invalid_conservative_coverage')
+        if 'total_exposure_usd' in state and _decimal(state['total_exposure_usd']) != ledger.total_exposure:
+            raise EvaluationError('invalid_total_exposure')
+        # Historical stop flags with no explicit cause stay hard stops; new unknown
+        # tokens can be explicitly bounded without clearing unrelated failures.
+        has_causes = 'hard_unresolved_charge' in state and 'unknown_reservation_tokens' in state
+        unknown_tokens = state.get('unknown_reservation_tokens', [])
+        if (not isinstance(unknown_tokens, list) or any(not isinstance(token, str) for token in unknown_tokens)
+                or set(unknown_tokens) - set(ledger.pending)):
+            raise EvaluationError('invalid_unknown_reservation_coverage')
+        ledger._hard_unresolved = bool(state.get('hard_unresolved_charge')) if has_causes else bool(state.get('unresolved_charge'))
+        if has_causes and state.get('unresolved_charge') and not unknown_tokens and not ledger.pending:
+            ledger._hard_unresolved = True
+        ledger._hard_unresolved |= ledger.total_exposure > ledger.limit
+        ledger._hard_unresolved |= any(row.get('billed_cost_usd') is not None
+            and _decimal(row['billed_cost_usd']) > _decimal(row.get('reserved_usd', '0')) for row in attempts)
+        ledger._unknown_tokens = set(ledger.pending)
+        ledger.unresolved = ledger._hard_unresolved or bool(ledger._unknown_tokens)
+        identifiers = list(ledger.pending) + list(bounds) + [value.get("reservation_id", "0") for value in attempts]
         ledger._next = max((int(value) for value in identifiers if str(value).isdigit()), default=0)
         return ledger
 

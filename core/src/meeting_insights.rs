@@ -1869,6 +1869,64 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn provider_versioned_identity_without_revision_survives_storage_and_export() {
+        let (directory, store, id, initial) = fixture();
+        let mut rows = initial.utterances;
+        rows[0].segment.text = "Jan stuurt vrijdag het verslag naar de klant.".into();
+        let source = store
+            .write_transcript_snapshot(&id, Some(initial.revision), &rows)
+            .unwrap();
+        let mut proposal = candidate(&source);
+        proposal.processing.identity = InferenceIdentity {
+            protocol: InferenceProtocol::OpenRouterDecisions,
+            endpoint: "https://openrouter.ai/api/alpha/decisions".into(),
+            requested_model: "perplexity/pplx-decider-v1.2".into(),
+            requested_upstream: Some("perplexity".into()),
+            actual_model: Some("perplexity/pplx-decider-v1.2-20261016".into()),
+            actual_revision: None,
+            actual_provider: Some("Perplexity".into()),
+            request_id: Some("owned-storage-request".into()),
+        };
+        proposal.processing.qualification_id = "owned-versioned-identity-storage-fixture".into();
+        proposal.processing.language_policy = "nl".into();
+        proposal.processing.task = "meeting_suggestions_v1".into();
+        let observed = proposal.processing.identity.clone();
+        let merged = store
+            .merge_insight_candidates(&id, 0, &[proposal], &source, &InferenceCancellation::new())
+            .unwrap();
+        let item = &merged.items[0];
+        let accepted = store
+            .update_insight_review(
+                &id,
+                merged.revision,
+                &item.id,
+                item.revision,
+                &InsightReviewUpdate {
+                    review_state: Some(InsightReviewState::Accepted),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        drop(store);
+        let reopened = MeetingStore::new(directory.path());
+        let saved = reopened.read_insights(&id).unwrap();
+        assert_eq!(saved.items.len(), 1);
+        assert_eq!(saved.items[0].processing.identity, observed);
+        assert_eq!(saved.items[0].processing.identity.actual_revision, None);
+        assert_eq!(saved.items[0].source_state, InsightSourceState::Current);
+        assert_eq!(saved.items[0].review_state, InsightReviewState::Accepted);
+        assert_eq!(saved.items[0].sources, accepted.items[0].sources);
+        let persisted = serde_json::to_value(&saved).unwrap();
+        assert!(persisted["items"][0]["processing"]["identity"]["actual_revision"].is_null());
+        let exported = reopened.export_insights_markdown(&id).unwrap();
+        assert!(exported.starts_with(&source.utterances[0].segment.text));
+        assert!(exported.contains("Processing destination: `openrouter.ai`"));
+        assert!(exported.contains("Source status: current"));
+        assert!(exported.contains(&format!("> [00:01] {}", source.utterances[0].segment.text)));
+        assert!(!exported.contains("Model revision:") && !exported.contains("model_revision"));
+    }
+
+    #[test]
     fn reviewed_edits_and_dismissed_duplicates_survive_reopen_and_regeneration() {
         let (_directory, store, id, source) = fixture();
         let first = store

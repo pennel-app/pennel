@@ -31,6 +31,7 @@ export function insightReasonKey(code: string | undefined): TranslationKey {
   return known.has(code ?? "") ? `insights.reason_${code}` as TranslationKey : "insights.reason_unavailable";
 }
 export function insightErrorKey(error: unknown): TranslationKey {
+  if (error instanceof InsightUiError && error.code === "configuration_changed") return "insights.reason_configuration_changed";
   return error instanceof InsightUiError && ["notes_changed", "notes_not_saved", "edit_conflict", "wrong_meeting"].includes(error.code)
     ? `insights.error_${error.code}` as TranslationKey : "insights.operation_failed";
 }
@@ -53,7 +54,7 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   const find = controlButton({ class: "btn primary insight-find", onclick: () => { void consent?.findOnce(); } }, l("insights.find"));
   const cancel = controlButton({ class: "btn insight-cancel", hidden: true, onclick: () => { void model.cancel(); } }, l("insights.cancel_analysis"));
   const refresh = controlButton({ class: "text-button", onclick: () => { void Promise.all([model.load(), model.choosePolicy(model.getSnapshot().policy)]); } }, l("insights.refresh"));
-  const setup = controlButton({ class: "text-button insight-connection-settings", hidden: true, onclick: () => ctx.navigate("providers") }, l("insights.connection_settings"));
+  const setup = controlButton({ class: "text-button insight-connection-settings", hidden: true, onclick: () => ctx.navigate("models") }, l("insights.connection_settings"));
   const exportItems = controlButton({ class: "btn insight-export", onclick: async () => { const value = await model.export(); if (value !== undefined) { await api.copyText(value); notice.textContent = t("insights.copied"); } } }, l("insights.copy_accepted"));
   const destination = h("p", { class: "help insight-destination" });
   const availability = h("p", { class: "help insight-availability", role: "status" });
@@ -75,7 +76,7 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
   root.append(scrolling, h("footer", { class: "insight-review-footer" }, exportItems));
   consent = meetingSuggestionConsent(ctx, { id: () => host.id, uid: host.meetingUid, snapshot: () => model.getSnapshot().snapshot, language: () => model.getSnapshot().policy,
     manualAvailability: () => model.getSnapshot().availability,
-    analysisBusy: () => !!model.analysisBusy, canAnalyze: () => !!model.canAnalyze, chooseLanguage: async language => { await model.choosePolicy(language); }, start: () => model.analyze(),
+    analysisBusy: () => !!model.analysisBusy, canAnalyze: () => !!model.canAnalyze, chooseLanguage: async language => { await model.choosePolicy(language); }, start: fingerprint => model.analyze(fingerprint),
     dismiss: () => host.dismissSuggestionPrompt(), canDismiss: () => host.canDismissPrompt(), blockedReason: () => host.promptBlockedReason(),
     reason: suggestionReason, changed: render, focusTarget: root, languageControlVisible: () => analysisDetails.open });
   analysisDetails.addEventListener("toggle", () => consent?.refresh());
@@ -249,7 +250,7 @@ function createReview(initialContext: Context, initialHost: InsightReviewHost): 
     text(destination, t("insights.destination", { destination: destinationInfo.host ? destinationInfo.on_device ? t("insights.this_device", { host: destinationInfo.host }) : destinationInfo.host : t("insights.none"), model: state.availability?.model ?? t("insights.none") }));
     destination.hidden = !destinationInfo.host || !state.availability?.model || consent?.mode === "consent";
     text(availability, t(state.edits.size ? "insights.finish_edit" : state.availability?.available ? "insights.qualified" : insightReasonKey(state.availability?.reason_code)));
-    availability.hidden = !state.edits.size && (!!consent?.hasStatus || !!state.job || !snapshot || !insightsWritable(snapshot));
+    availability.hidden = !state.edits.size && (consent?.mode === "consent" || !!consent?.hasStatus || !!state.job || !snapshot || !insightsWritable(snapshot));
     const completedAnalysis = snapshot?.automatic_attempt?.outcome === "completed" || state.job?.state === "completed";
     const currentUnavailable = state.availability?.available === false && !model.analysisBusy;
     coverage.hidden = state.availability?.complete_extraction === true || !snapshot?.items.length && (!completedAnalysis || currentUnavailable);

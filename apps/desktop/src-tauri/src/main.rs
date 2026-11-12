@@ -1205,6 +1205,8 @@ fn main() {
             commands::test_provider_task,
             commands::test_provider_task_choice,
             inference::inference_protocols,
+            inference::qualified_finished_suggestion_presets,
+            inference::set_meeting_suggestion_policy_checked,
             inference::inference_availability,
             inference::cleanup_verification_availability,
             inference::inference_decide,

@@ -120,10 +120,10 @@ fn exported(input: &ExportRequest) -> Result<Value, &'static str> {
     let p = prepared(input)?;
     let mut value = p.export().map_err(|_| "finished_contract_invalid")?;
     let object = value.as_object_mut().ok_or("finished_contract_invalid")?;
-    object.insert("schema_version".into(), json!(1));
+    object.insert("schema_version".into(), json!(3));
     object.insert(
         "protocol_id".into(),
-        json!("production-finished-meeting-v1"),
+        json!("production-finished-meeting-v3"),
     );
     object.insert(
         "fixture".into(),
@@ -152,7 +152,7 @@ pub(super) fn export(input: Value) -> Result<Value, &'static str> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Response {
-    window_index: usize,
+    batch_index: usize,
     http_status: u16,
     body: String,
 }
@@ -179,7 +179,7 @@ pub(super) fn replay(input: Value) -> Result<Value, &'static str> {
         return Err("finished_export_changed");
     }
     let p = prepared(&request)?;
-    let count = input.export["windows"]
+    let count = input.export["batches"]
         .as_array()
         .ok_or("finished_replay_invalid")?
         .len();
@@ -188,30 +188,44 @@ pub(super) fn replay(input: Value) -> Result<Value, &'static str> {
             .responses
             .iter()
             .enumerate()
-            .any(|(index, response)| index != response.window_index)
+            .any(|(index, response)| index != response.batch_index)
     {
         return Err("finished_response_order_changed");
     }
+    let mut physical = Vec::new();
     let mut rows = Vec::new();
     for response in &input.responses {
-        let row = if !(200..300).contains(&response.http_status) {
-            json!({"window_index":response.window_index,"status":"provider_failed"})
+        let batch = if !(200..300).contains(&response.http_status) {
+            json!({"batch_index":response.batch_index,"status":"provider_failed","windows":[]})
         } else {
             p.replay(
-                response.window_index,
+                response.batch_index,
                 response.body.as_bytes(),
                 request.expected_actual.as_ref(),
             )
         };
-        rows.push(row);
+        if let Some(windows) = batch["windows"].as_array() {
+            rows.extend(windows.iter().cloned());
+        }
+        physical.push(batch);
     }
-    let status = rows
+    let mut status = physical
         .iter()
-        .find_map(|row| row["status"].as_str().filter(|status| *status != "ok"))
+        .find_map(|batch| batch["status"].as_str().filter(|status| *status != "ok"))
         .unwrap_or("ok");
+    if status == "ok"
+        && input.responses.len() == count
+        && rows
+            .iter()
+            .all(|row| row["assessed_kinds"].as_array().is_none_or(Vec::is_empty))
+    {
+        status = "insufficient_evidence";
+    }
     Ok(
-        json!({"schema_version":1,"protocol_id":"production-finished-meeting-v1", "status":status,
-        "complete":input.responses.len()==count,"windows":rows,"production_admission":false,
+        json!({"schema_version":3,"protocol_id":"production-finished-meeting-v3","status":status,
+        "runtime_policy":input.export["runtime_policy"],
+        "complete":input.responses.len()==count,"windows":rows,"batches":physical,
+        "received_batches":input.responses.len(),"production_admission":false,
         "qualification":false,"freeze_sha256":input.export["freeze_sha256"]}),
     )
 }
@@ -280,5 +294,110 @@ mod tests {
         );
         value["configuration"]["max_input_bytes"] = 100.into();
         assert_eq!(export(value), Err("finished_contract_invalid"));
+    }
+
+    #[test]
+    fn complete_transport_cannot_turn_wholly_unclear_analysis_into_a_success() {
+        for protocol in ["local_decider", "open_router_decisions"] {
+            let mut request = input();
+            request["configuration"]["protocol"] = protocol.into();
+            request["configuration"]["expected_model"] = "fixture-model".into();
+            if protocol == "open_router_decisions" {
+                request["configuration"]["endpoint"] =
+                    "https://openrouter.ai/api/alpha/decisions".into();
+                request["configuration"]["upstream"] = "fixture-provider".into();
+            }
+            request["expected_actual"] = json!({"model":"fixture-model","provider":"fixture-provider",
+                "revision":"fixture-revision","artifact_sha256":"a".repeat(64)});
+            let exported = export(request).unwrap();
+            assert_eq!(exported["schema_version"], 3);
+            assert_eq!(exported["protocol_id"], "production-finished-meeting-v3");
+            for assessed in [false, true] {
+                let answers = exported["batches"][0]["request"]["questions"].as_array().unwrap().iter().map(|question| {
+                    let id=question["id"].as_str().unwrap();
+                    let support=id.ends_with("_support");
+                    let chosen=if support {if assessed {"absent"}else{"unclear"}}else{"none"};
+                    (id.to_owned(),json!({"type":"choice","choice":chosen,
+                        "abstained":!support&&!assessed&&protocol=="local_decider",
+                        "probabilities":question["options"].as_array().unwrap().iter().map(|option|{
+                            let key=option["id"].as_str().unwrap();(key.to_owned(),json!(if key==chosen {1.0}else{0.0}))
+                        }).collect::<serde_json::Map<_,_>>()}))
+                }).collect::<serde_json::Map<_,_>>();
+                let body=json!({"model":"fixture-model","model_revision":"fixture-revision","provider":"fixture-provider","answers":answers}).to_string();
+                let replay = replay(
+                    json!({"op":"finished_meeting_replay","export":exported,"responses":[{
+                    "batch_index":0,"http_status":200,"body":body}]}),
+                )
+                .unwrap();
+                assert_eq!(replay["complete"], true);
+                assert_eq!(
+                    replay["status"],
+                    if assessed {
+                        "ok"
+                    } else {
+                        "insufficient_evidence"
+                    }
+                );
+                assert_eq!(
+                    replay["windows"][0]["assessed_kinds"]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    if assessed { 4 } else { 0 }
+                );
+                assert!(
+                    replay["windows"][0]["candidates"]
+                        .as_array()
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn incompatible_positive_kind_states_cannot_establish_assessment_or_empty_success() {
+        let mut request = input();
+        request["configuration"] = json!({"protocol":"open_router_decisions",
+            "endpoint":"https://openrouter.ai/api/alpha/decisions","upstream":"fixture-provider",
+            "model":"fixture-model","expected_model":"fixture-model","max_input_bytes":16000,"timeout_secs":30});
+        request["expected_actual"] = json!({"model":"fixture-model","provider":"fixture-provider",
+            "revision":"fixture-revision","artifact_sha256":"a".repeat(64)});
+        let exported = export(request).unwrap();
+        let answers=exported["batches"][0]["request"]["questions"].as_array().unwrap().iter().map(|question|{
+            let id=question["id"].as_str().unwrap();
+            let chosen=if id.ends_with("_support"){"supported"}else if id=="open_question"{"confirmed"}else{"unresolved"};
+            (id.to_owned(),json!({"type":"choice","choice":chosen,"probabilities":
+                question["options"].as_array().unwrap().iter().map(|option|{
+                    let key=option["id"].as_str().unwrap();(key.to_owned(),json!(if key==chosen{1.0}else{0.0}))
+                }).collect::<serde_json::Map<_,_>>()}))
+        }).collect::<serde_json::Map<_,_>>();
+        let body=json!({"model":"fixture-model","model_revision":"fixture-revision","provider":"fixture-provider","answers":answers}).to_string();
+        let replay = replay(
+            json!({"op":"finished_meeting_replay","export":exported,"responses":[{
+            "batch_index":0,"http_status":200,"body":body}]}),
+        )
+        .unwrap();
+        assert_eq!(replay["status"], "insufficient_evidence");
+        assert_eq!(replay["complete"], true);
+        assert!(
+            replay["windows"][0]["assessed_kinds"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            replay["windows"][0]["candidates"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            replay["windows"][0]["result"]["answers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|answer| { answer["id"] == "decision" && answer["choice"] == "unresolved" })
+        );
     }
 }

@@ -177,6 +177,15 @@ export interface InferenceConfig {
   max_input_bytes: number;
   timeout_secs: number;
 }
+export interface FinishedSuggestionPreset {
+  qualification_id: string;
+  language_policy: "nl";
+  configured: Omit<InferenceConfig, "provider_id"> & { endpoint: string };
+  identity_evidence: "provider_reported_version";
+  weights_independently_verified: false;
+  actual_model: string;
+  actual_provider: string;
+}
 export interface InferenceProtocolInfo {
   protocol: InferenceProtocol;
   name: string;
@@ -948,7 +957,9 @@ export const api = {
   insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
   automaticInsightsAvailability: (id: string, languagePolicy?: InsightLanguagePolicy) => invoke<InsightAvailability>("automatic_insights_availability", { id, languagePolicy }),
   insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),
-  beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy }),
+  setMeetingSuggestionPolicyChecked: (languagePolicy: InsightLanguagePolicy, expectedConfigurationFingerprint: string, policy: "manual" | "automatic", fallbackLanguage?: string) =>
+    invoke<AppInfo>("set_meeting_suggestion_policy_checked", { languagePolicy, expectedConfigurationFingerprint, policy, fallbackLanguage: fallbackLanguage ?? null }),
+  beginInsightsAnalysis: (id: string, languagePolicy: InsightLanguagePolicy, expectedConfigurationFingerprint: string) => invoke<InsightJob>("begin_insights_analysis", { id, languagePolicy, expectedConfigurationFingerprint }),
   insightsJob: (jobId: string) => invoke<InsightJob>("insights_job", { jobId }),
   cancelInsightsAnalysis: (jobId: string) => invoke<InsightJob>("cancel_insights_analysis", { jobId }),
   reviewInsight: (id: string, request: InsightReviewRequest) => invoke<InsightSnapshot>("review_insight", { id, request }),
@@ -1036,6 +1047,7 @@ export const api = {
   testProviderTaskChoice: (slot: "dictation_stt" | "meeting_stt" | "llm", choice: ModelChoice) =>
     invoke<ProviderTaskTestResult>("test_provider_task_choice", { slot, choice }),
   inferenceProtocols: () => invoke<InferenceProtocolInfo[]>("inference_protocols"),
+  qualifiedFinishedSuggestionPresets: () => invoke<FinishedSuggestionPreset[]>("qualified_finished_suggestion_presets"),
   inferenceAvailability: (capability: InferenceCapability) => invoke<InferenceAvailability>("inference_availability", { capability }),
   cleanupVerificationAvailability: () => invoke<CleanupVerificationAvailability>("cleanup_verification_availability"),
   decide: (request: DecisionRequest, requestId: string) => invoke<DecisionResult>("inference_decide", { request, requestId }),

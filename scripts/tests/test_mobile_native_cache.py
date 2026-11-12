@@ -36,6 +36,7 @@ class NativeCacheTests(unittest.TestCase):
             "scripts/build-keyboard-core-ios.sh": "fixture typing prep\n",
             "scripts/with-toolchain.sh": "fixture toolchain\n",
             "scripts/mobile-native-cache.py": "fixture cache\n",
+            "assets/qualifications/meeting-assistance.json": '{"schema_version":1,"adopted_records":[]}\n',
             ".cargo/config.toml": "[build]\n",
             "apps/mobile/app/index.tsx": "fixture UI\n",
         }.items():
@@ -66,6 +67,8 @@ class NativeCacheTests(unittest.TestCase):
         (self.artifacts / "manifest.json").write_text(json.dumps({
             "schema": 1, "revision": "a" * 40, "features": [], "targets": ["aarch64-apple-ios"],
             "bindings_sha256": hashlib.sha256(bindings.read_bytes()).hexdigest(),
+            "qualification_registry_sha256": cache.digest(self.root / "assets/qualifications/meeting-assistance.json"),
+            "qualification_registry_adopted_records": 0,
         }))
         self.cache_root = self.root.parent / "derived-data/pennel-native"
         self.inspect = lambda file: ["arm64"]
@@ -121,6 +124,33 @@ class NativeCacheTests(unittest.TestCase):
                             cache.fingerprint(self.root, self.toolchain, {})["key"])
         self.assertNotEqual(cache.fingerprint(self.root, self.toolchain, {"RUSTFLAGS": "-C opt-level=2"})["key"],
                             cache.fingerprint(self.root, self.toolchain, {})["key"])
+
+    def test_registry_change_misses_old_cache_and_cannot_store_stale_libraries(self):
+        self.store()
+        original = (self.artifacts / "PennelCore/pennel_core.swift").read_bytes()
+        registry = self.root / "assets/qualifications/meeting-assistance.json"
+        registry.write_text('{"schema_version":1,"adopted_records":[{"fixture":"adopted"}]}\n')
+        updated = cache.fingerprint(self.root, self.toolchain, {})
+        self.assertNotEqual(updated["key"], self.context["key"])
+        self.assertEqual(updated["context"]["inputs"][registry.relative_to(self.root).as_posix()], cache.digest(registry))
+        self.assertFalse(cache.restore(self.root, self.cache_root, updated, self.inspect)["hit"])
+        self.assertEqual((self.artifacts / "PennelCore/pennel_core.swift").read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "registry"):
+            cache.store(self.root, self.cache_root, updated, "b" * 40, self.inspect)
+
+    def test_missing_registry_cannot_produce_a_native_cache_key(self):
+        (self.root / "assets/qualifications/meeting-assistance.json").unlink()
+        with self.assertRaisesRegex(ValueError, "input is missing"):
+            cache.fingerprint(self.root, self.toolchain, {})
+
+    def test_registry_manifest_count_requires_a_nonnegative_integer(self):
+        file = self.artifacts / "manifest.json"
+        original = json.loads(file.read_text())
+        for count in (-1, True, "0", None):
+            with self.subTest(count=count):
+                file.write_text(json.dumps({**original, "qualification_registry_adopted_records": count}))
+                with self.assertRaisesRegex(ValueError, "registry"):
+                    self.store()
 
     def test_intermediates_are_excluded_and_native_symlinks_are_refused(self):
         target = self.root / "core/target/temporary"
