@@ -281,11 +281,13 @@ pub struct LiveDictationSession {
 impl LiveDictationSession {
     /// Rust hosts resolve only the credentials captured by this recording, even after settings change.
     pub fn credential_providers(&self, command: bool) -> Vec<crate::ProviderAccount> {
-        let mut ids = vec![self.settings.dictation_stt.provider_id.as_str()];
-        if command || self.settings.mode == DictationMode::Clean {
-            ids.push(self.settings.llm.provider_id.as_str());
+        // An explicit in-session model switch replaces the recording's speech provider.
+        let settings = self.recognition_settings(&self.recognition.lock().unwrap());
+        let mut ids = vec![settings.dictation_stt.provider_id.as_str()];
+        if command || settings.mode == DictationMode::Clean {
+            ids.push(settings.llm.provider_id.as_str());
         }
-        self.settings
+        settings
             .providers
             .iter()
             .filter(|provider| ids.contains(&provider.id.as_str()))
@@ -326,7 +328,7 @@ impl LiveDictationSession {
             return outcome.clone();
         }
         self.stop_preview();
-        if let Some(worker) = self.worker.lock().unwrap().take() {
+        if let Some(worker) = self.recognition.lock().unwrap().worker.take() {
             let _ = worker.join();
         }
         self.ensure_active()?;
@@ -945,6 +947,35 @@ mod tests {
         assert_eq!(entries[0].status, crate::HistoryStatus::Failed);
         assert!(entries[0].has_audio);
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn credential_selection_follows_an_explicit_session_model_switch() {
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        settings.providers.push(ProviderAccount {
+            id: "switched".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Switched".into(),
+            base_url: String::new(),
+        });
+        let next = ModelChoice {
+            provider_id: "switched".into(),
+            model: "dictation".into(),
+        };
+        settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
+        engine.update_settings(settings).unwrap();
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        session.select_speech_model(next, request().keys).unwrap();
+        assert!(
+            session
+                .credential_providers(false)
+                .iter()
+                .any(|provider| provider.id == "switched")
+        );
+        session.cancel();
     }
 
     #[test]

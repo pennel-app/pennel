@@ -176,7 +176,8 @@ impl Shared {
 
     pub fn configured_dictation_models(&self) -> Vec<pennel_core::ConfiguredDictationModel> {
         self.refresh_system_speech_availability();
-        self.engine.configured_dictation_models(self.accessible_keys())
+        self.engine
+            .configured_dictation_models(self.accessible_keys())
     }
 
     pub fn set_meeting_dictating(&self, dictating: bool) {

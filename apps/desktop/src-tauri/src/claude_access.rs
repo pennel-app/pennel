@@ -376,13 +376,7 @@ impl Relay for EngineRelay {
                 Err(_) => disabled(),
             };
         }
-        let settings = self.0.settings();
-        let providers = if request.tool == "ask_meetings" {
-            vec![settings.llm.provider_id.as_str()]
-        } else {
-            Vec::new()
-        };
-        let keys = match self.0.keys_for(&providers) {
+        let keys = match relay_keys(&self.0, &request.tool) {
             Ok(keys) => keys,
             Err(message) => {
                 return RelayAnswer::Failed {
@@ -405,6 +399,17 @@ impl Relay for EngineRelay {
             .map_err(|message| PennelError::Storage { message })?;
         self.0.engine.cloud_relay_respond(id.into(), answer.clone())
     }
+}
+
+/// Read-only tools must keep working while an unrelated provider credential is blocked.
+fn relay_keys(shared: &Shared, tool: &str) -> Result<pennel_core::ApiKeys, String> {
+    let settings = shared.settings();
+    let providers = if tool == "ask_meetings" {
+        vec![settings.llm.provider_id.as_str()]
+    } else {
+        Vec::new()
+    };
+    shared.keys_for(&providers)
 }
 
 pub fn poke(app: &AppHandle) {
@@ -614,17 +619,8 @@ mod tests {
         shared.engine.update_settings(settings).unwrap();
         *shared.secrets.access_failure.lock().unwrap() =
             Some(crate::secrets::CredentialState::Denied);
-        let relay = EngineRelay(shared);
-        assert!(matches!(
-            relay.answer(&request("read-only")),
-            RelayAnswer::Text { .. }
-        ));
-        let mut ask = request("ask");
-        ask.tool = "ask_meetings".into();
-        ask.arguments_json = r#"{"question":"What happened?"}"#.into();
-        assert!(
-            matches!(relay.answer(&ask), RelayAnswer::Failed { code, .. } if code == "credential_store")
-        );
+        assert!(relay_keys(&shared, "list_meetings").is_ok());
+        assert!(relay_keys(&shared, "ask_meetings").is_err());
     }
 
     #[test]

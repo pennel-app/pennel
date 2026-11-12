@@ -2740,11 +2740,12 @@ impl PennelEngine {
             self.history
                 .lock()
                 .unwrap()
-                .insert_failed(
+                .insert_failed_with_provenance(
                     request.app_bundle_id.as_deref(),
                     &wav,
                     &error.to_string(),
                     now_ms(),
+                    false,
                 )
                 .map(|_| ())
         })
