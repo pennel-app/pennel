@@ -45,10 +45,12 @@ def command(value, args, descriptor):
     if phase in ('development', 'calibration', 'heldout', 'resources'):
         required = {'phase', 'output', 'freeze', 'freeze_lock', 'freeze_commit'}
         if phase == 'development': required.add('fixture_id')
-        if set(value) != required or phase == 'development' and not isinstance(value['fixture_id'], str):
+        if (not required.issubset(value) or set(value) - required - {'bridge'}
+                or phase == 'development' and not isinstance(value['fixture_id'], str)
+                or not isinstance(value.get('bridge', args.bridge), str)):
             raise ValueError('explicit_frozen_phase_required')
         arguments = [sys.executable, str(ROOT / 'evaluations/decision-models/finished_experiment.py'), phase,
-            '--freeze', value['freeze'], '--bridge', args.bridge, '--output', output,
+            '--freeze', value['freeze'], '--bridge', value.get('bridge', args.bridge), '--output', output,
             '--pricing', args.pricing, '--ledger', args.ledger,
             '--freeze-lock', value['freeze_lock'], '--freeze-commit', value['freeze_commit'],
             '--credential-fd', str(descriptor), '--execute']

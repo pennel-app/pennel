@@ -43,6 +43,8 @@ class CredentialSessionTests(unittest.TestCase):
             self.assertEqual(command[command.index('--credential-fd')+1], '9')
             self.assertIn('--freeze-commit', command)
             self.assertEqual(Path(command[1]), session.ROOT/'evaluations/decision-models/finished_experiment.py')
+            switched = session.command(value|{'bridge':'new-immutable-bridge'}, args, 9)
+            self.assertEqual(switched[switched.index('--bridge')+1], 'new-immutable-bridge')
             probe = session.command(value|{'phase':'development','fixture_id':'owned-development-panel'}, args, 9)
             self.assertEqual(probe[probe.index('--fixture-id')+1], 'owned-development-panel')
             for invalid in (value|{'phase':'development'}, value|{'phase':'development','fixture_id':['not a single explicit probe']}, value|{'extra':'unexpected'},
