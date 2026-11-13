@@ -638,3 +638,22 @@ Typecheck, 17 plugin, seven widget, 160 UI, 116 MobileKit and 217 Mac platform t
 The generated manifest matches core SHA `27570b9a919e118fb0e1ffdc3c3770dc9748ba26c86fbd3ee78e1cd05a103b34` and registry SHA `cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f`, with one adopted record. Bindings remain byte-identical to the retained bytes at SHA `daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21`. Exact adopted registry bytes were verified in both libraries and both final app executables; Cargo tracks the registry as an input. Prior products were retained, the owned simulator returned to Shutdown, and unrelated simulator states and tracked mobile source stayed unchanged.
 
 This proves shared-core compatibility. The record remains bound to its tested manual Dutch desktop resource context; it does not qualify mobile Review. Physical iPhone, signed upgrades, keyboard cold start, Cloud/store, human and Android acceptance remain separate.
+
+## Synthetic provider sample compatibility — 13 November 2026
+
+The bundled provider-check sample now uses documented generated speech rather than the previous fixture with unresolved provenance. See the [fixture provenance](../core/tests/fixtures/hello.provenance.json) and [generation instructions](../core/tests/fixtures/README.md). The PCM16 mono 16 kHz WAV has SHA-256 `323177b0668fc0e4a296b54c48a4912f9cbf41de282e08903f508d52406b1925`; provider APIs and native bindings have no interface change.
+
+Code revision `000d1a29f8a38af60992e9c2c329fba03b98d3ea` passed mobile typechecking, 17 plugin, seven widget, 166 UI and 124 MobileKit tests; clean/repeated non-clean generation and six actual Pods ownership checks; unsigned ARM64 simulator/device Release builds; and 144 runtime plus 36 keyboard hosted tests. Both libraries and both Release executables were checked for the new WAV bytes. Native verification used Xcode 27.2 / iOS SDK 27.2 and a task-owned iOS 27.0 simulator, which ended Shutdown. The native manifest's Rust/TOML/lock digest is recorded separately from the WAV hash.
+
+Portable command templates follow. Use the configured Rust toolchain and a valid installed Xcode selected through task-scoped `DEVELOPER_DIR`. Native commands ran through the local storage guard where available. Machine-specific result locations and the owned simulator selector are generalized here; original commands, failed attempts and retained products remain in private maintainer evidence.
+
+```sh
+export CI=1 PENNEL_VARIANT=preview PENNEL_TESTFLIGHT=0 PENNEL_IOS_ARCHIVE_ONLY=0 PENNEL_XCODE_CACHE_MODE=off
+make mobile-test
+make mobile-prebuild
+bash scripts/ci-xcodebuild.sh build -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/mobile/build/ProviderFixtureQA ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
+bash scripts/ci-xcodebuild.sh build -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/mobile/build/ProviderFixtureQA ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
+bash scripts/ci-xcodebuild.sh test -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Debug -destination 'platform=iOS Simulator,id=<task-owned-simulator-UUID>' -derivedDataPath apps/mobile/build/ProviderFixtureTests -resultBundlePath build/provider-fixture-259/native-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+```
+
+These results establish build compatibility and synthetic-sample verification. Physical iPhone, signed upgrades, keyboard cold start, real provider/acoustic quality, Cloud and store acceptance remain separate gates. The offline speech check required the word “test”; it does not establish exact recognition of the Pennel name.
