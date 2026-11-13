@@ -293,10 +293,9 @@ pub async fn generate_meeting_summary(
         commands::checked_meeting_dir(&shared.engine, &id)?;
         commands::require_inactive_meeting(&shared, &id)?;
         let template = template_id.unwrap_or_else(|| shared.settings().default_template);
+        let keys = shared.keys_for_task(pennel_core::ProviderTask::Llm)?;
         let progress = crate::meeting_postprocess::SummaryProgress::start(&app, &shared, &id);
-        let result = shared
-            .engine
-            .generate_meeting_summary(id, template, shared.keys());
+        let result = shared.engine.generate_meeting_summary(id, template, keys);
         if let Some(progress) = progress {
             progress.complete(&result);
         }
@@ -332,9 +331,10 @@ pub async fn generate_shareable_meeting_summary(
         commands::checked_meeting_dir(&shared.engine, &id)?;
         commands::require_inactive_meeting(&shared, &id)?;
         let template = template_id.unwrap_or_else(|| shared.settings().default_template);
+        let keys = shared.keys_for_task(pennel_core::ProviderTask::Llm)?;
         shared
             .engine
-            .generate_shareable_meeting_summary(id, template, shared.keys())
+            .generate_shareable_meeting_summary(id, template, keys)
             .map_err(error)
     })
     .await?;

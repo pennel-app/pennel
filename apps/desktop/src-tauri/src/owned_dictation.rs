@@ -637,7 +637,7 @@ pub fn readiness(shared: &Shared, target: &str) -> pennel_core::SetupReadiness {
         keyed_providers: settings
             .providers
             .iter()
-            .filter(|provider| shared.secrets.get(&provider.id).is_some())
+            .filter(|provider| shared.secrets.has(&provider.id).unwrap_or(false))
             .map(|provider| provider.id.clone())
             .collect(),
     };

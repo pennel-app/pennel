@@ -322,6 +322,11 @@ export interface ShortcutRow {
   capability: { available: boolean; reason: string | null };
   changed: boolean;
 }
+export interface CredentialStoreStatus {
+  status: "ready" | "migration_required" | "locked" | "denied" | "unavailable";
+  pending: number;
+}
+
 export interface AppInfo {
   shortcuts?: ShortcutRow[];
   pill_position_supported?: boolean;
@@ -346,6 +351,7 @@ export interface AppInfo {
   diarizer_model_id: string;
   preview: boolean;
   migration_warning: string | null;
+  credential_store: CredentialStoreStatus;
 }
 
 export interface RemoteModel {
@@ -954,6 +960,8 @@ export const api = {
   setWritingProfileSharing: (enabled: boolean) => invoke<WritingProfileConnection>("set_writing_profile_sharing", { enabled }),
   onWritingProfileChanged: (handler: () => void): Promise<() => void> =>
     listen<null>("writing-profile-changed", handler),
+  credentialStoreStatus: () => invoke<CredentialStoreStatus>("credential_store_status"),
+  migrateSavedCredentials: () => invoke<AppInfo>("migrate_saved_credentials"),
   insightsSnapshot: (id: string) => invoke<InsightSnapshot>("insights_snapshot", { id }),
   automaticInsightsAvailability: (id: string, languagePolicy?: InsightLanguagePolicy) => invoke<InsightAvailability>("automatic_insights_availability", { id, languagePolicy }),
   insightsAvailability: (id: string, languagePolicy: InsightLanguagePolicy) => invoke<InsightAvailability>("insights_availability", { id, languagePolicy }),

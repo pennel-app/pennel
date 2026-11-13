@@ -215,7 +215,11 @@ pub async fn inference_decide(
     run(request_id, move |cancellation| {
         shared
             .engine
-            .decide(request, cancellation, shared.keys())
+            .decide(
+                request,
+                cancellation,
+                shared.keys_for_inference(InferenceCapability::Decision)?,
+            )
             .map_err(error)
     })
     .await
@@ -231,7 +235,11 @@ pub async fn inference_rerank(
     run(request_id, move |cancellation| {
         shared
             .engine
-            .rerank(request, cancellation, shared.keys())
+            .rerank(
+                request,
+                cancellation,
+                shared.keys_for_inference(InferenceCapability::Reranking)?,
+            )
             .map_err(error)
     })
     .await
@@ -247,7 +255,11 @@ pub async fn verify_inference(
     run(request_id, move |cancellation| {
         shared
             .engine
-            .verify_inference(capability, cancellation, shared.keys())
+            .verify_inference(
+                capability,
+                cancellation,
+                shared.keys_for_inference(capability)?,
+            )
             .map_err(error)
     })
     .await

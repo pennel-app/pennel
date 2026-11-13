@@ -279,6 +279,68 @@ pub struct LiveDictationSession {
 }
 
 impl LiveDictationSession {
+    /// Rust hosts resolve only the credentials captured by this recording, even after settings change.
+    pub fn credential_providers(&self, command: bool) -> Vec<crate::ProviderAccount> {
+        // An explicit in-session model switch replaces the recording's speech provider.
+        let settings = self.recognition_settings(&self.recognition.lock().unwrap());
+        let mut ids = vec![settings.dictation_stt.provider_id.as_str()];
+        if command || settings.mode == DictationMode::Clean {
+            ids.push(settings.llm.provider_id.as_str());
+        }
+        settings
+            .providers
+            .iter()
+            .filter(|provider| ids.contains(&provider.id.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    /// An unavailable optional verifier must not prevent speech recognition or command capture.
+    pub fn optional_credential_providers(&self) -> Vec<crate::ProviderAccount> {
+        if self.settings.mode != DictationMode::Clean || !self.settings.cleanup_verification_enabled
+        {
+            return Vec::new();
+        }
+        self.settings
+            .decision
+            .as_ref()
+            .into_iter()
+            .filter_map(|config| {
+                self.settings
+                    .providers
+                    .iter()
+                    .find(|provider| provider.id == config.provider_id)
+                    .cloned()
+            })
+            .collect()
+    }
+
+    /// Retain an authorized recording locally when the host cannot obtain credentials. No provider runs.
+    /// This Rust-only method leaves the mobile foreign interface unchanged.
+    pub fn fail_with_audio(
+        &self,
+        request: DictationRequest,
+        error: PennelError,
+    ) -> Result<DictationResult, PennelError> {
+        let _finishing = self.finishing.lock().unwrap();
+        self.ensure_active()?;
+        if let Some(outcome) = self.outcome.lock().unwrap().as_ref() {
+            return outcome.clone();
+        }
+        self.stop_preview();
+        if let Some(worker) = self.recognition.lock().unwrap().worker.take() {
+            let _ = worker.join();
+        }
+        self.ensure_active()?;
+        let outcome = self
+            .engine
+            .retain_failed_dictation(&request, &error, self)
+            .and(Err(error));
+        *self.outcome.lock().unwrap() = Some(outcome.clone());
+        self.release_priority();
+        outcome
+    }
+
     pub(crate) fn new(
         engine: Arc<PennelEngine>,
         observer: Arc<dyn DictationPreviewObserver>,
@@ -860,6 +922,93 @@ mod tests {
         publisher.join().unwrap();
         switch.join().unwrap().unwrap();
         assert_eq!(session.speech_model(), next);
+    }
+
+    #[test]
+    fn credential_failure_retains_audio_without_processing_and_is_idempotent() {
+        let (_directory, engine, calls) = engine();
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        let error = PennelError::Storage {
+            message: "Update saved access in Settings before using this connection.".into(),
+        };
+        assert_eq!(
+            session.fail_with_audio(request(), error.clone()),
+            Err(error.clone())
+        );
+        assert_eq!(
+            session.fail_with_audio(request(), error.clone()),
+            Err(error.clone())
+        );
+        assert_eq!(session.finish(request()), Err(error));
+        let entries = engine.history(10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].status, crate::HistoryStatus::Failed);
+        assert!(entries[0].has_audio);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn credential_selection_follows_an_explicit_session_model_switch() {
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        settings.providers.push(ProviderAccount {
+            id: "switched".into(),
+            kind: ProviderKind::AppleSpeech,
+            name: "Switched".into(),
+            base_url: String::new(),
+        });
+        let next = ModelChoice {
+            provider_id: "switched".into(),
+            model: "dictation".into(),
+        };
+        settings.dictation_models = vec![settings.dictation_stt.clone(), next.clone()];
+        engine.update_settings(settings).unwrap();
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        session.select_speech_model(next, request().keys).unwrap();
+        assert!(
+            session
+                .credential_providers(false)
+                .iter()
+                .any(|provider| provider.id == "switched")
+        );
+        session.cancel();
+    }
+
+    #[test]
+    fn cancelled_credential_failure_never_retains_audio() {
+        let (_directory, engine, _) = engine();
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        session.cancel();
+        assert_eq!(
+            session.fail_with_audio(request(), PennelError::NotSignedIn),
+            Err(PennelError::Cancelled)
+        );
+        assert!(engine.history(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn credential_selection_uses_recording_snapshot() {
+        let (_directory, engine, _) = engine();
+        let frozen = engine.settings().dictation_stt.provider_id;
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        let mut changed = engine.settings();
+        changed.dictation_stt.provider_id = "new-provider".into();
+        engine.update_settings(changed).unwrap();
+        let providers = session.credential_providers(false);
+        assert!(providers.iter().any(|provider| provider.id == frozen));
+        assert!(
+            !providers
+                .iter()
+                .any(|provider| provider.id == "new-provider")
+        );
         session.cancel();
     }
 
@@ -937,6 +1086,42 @@ mod tests {
         assert_eq!(session.preview_generation(), generation);
         assert_eq!(session.finish(request()).unwrap().text, "Een echt dictaat.");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn verification_credentials_are_optional_and_never_required_for_commands() {
+        let (_directory, engine, _) = engine();
+        let mut settings = engine.settings();
+        settings.mode = DictationMode::Clean;
+        settings.cleanup_verification_enabled = true;
+        settings.providers.push(crate::ProviderAccount {
+            id: "verification-only".into(),
+            kind: ProviderKind::OpenRouter,
+            name: "Verification".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+        });
+        settings.decision = Some(serde_json::from_value(serde_json::json!({
+            "provider_id":"verification-only", "protocol":"open_router_decisions", "model":"fixture",
+        })).unwrap());
+        engine.update_settings(settings).unwrap();
+        let session = engine
+            .clone()
+            .begin_dictation_session(Arc::new(Observer::default()), false);
+        for command in [false, true] {
+            assert!(
+                !session
+                    .credential_providers(command)
+                    .iter()
+                    .any(|provider| provider.id == "verification-only")
+            );
+        }
+        assert!(
+            session
+                .optional_credential_providers()
+                .iter()
+                .any(|provider| provider.id == "verification-only")
+        );
+        session.cancel();
     }
 
     #[test]

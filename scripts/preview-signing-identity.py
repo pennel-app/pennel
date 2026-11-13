@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import importlib.util
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 import tempfile
+
+PERSONAL_TEAM = "B538Q2K76C"
 
 
 @dataclass(frozen=True)
@@ -36,23 +39,37 @@ def parse_identities(output):
     return identities
 
 
-def select_identity(identities, cached_sha=None, apple_override=None, pennel_override=None):
+def select_identity(identities, cached_sha=None, apple_override=None, pennel_override=None, *, allow_adhoc=False):
+    personal = [identity for identity in identities
+                if identity.name.startswith("Developer ID Application:")
+                and identity.name.endswith(f"({PERSONAL_TEAM})")]
     explicit = apple_override or pennel_override
     if explicit:
-        matches = [item for item in identities if explicit.upper() == item.sha1 or explicit == item.name]
-        return Selection(explicit, matches[0].sha1 if len(matches) == 1 else None)
+        if explicit == "-" and allow_adhoc:
+            return Selection("-", None)
+        eligible = personal + [item for item in identities if item.name.startswith("Apple Development:")]
+        matches = [item for item in eligible if explicit.upper() == item.sha1 or explicit == item.name]
+        if len(matches) != 1:
+            raise ValueError("Preview signing requires an existing personal-team certificate; other teams and unknown identities are refused")
+        return Selection(matches[0].sha1, matches[0].sha1)
     if cached_sha:
-        for identity in identities:
+        for identity in personal:
             if identity.sha1 == cached_sha.upper():
                 return Selection(identity.sha1, identity.sha1)
-    for name in ("Pennel Local Dev", "Musli Local Dev"):
-        for identity in identities:
-            if identity.name == name:
-                return Selection(identity.sha1, identity.sha1)
-    for identity in identities:
-        if identity.name.startswith("Apple Development:"):
-            return Selection(identity.sha1, identity.sha1)
-    return Selection("-", None)
+    if personal:
+        return Selection(personal[0].sha1, personal[0].sha1)
+    if allow_adhoc:
+        return Selection("-", None)
+    raise ValueError("No personal-team preview certificate is available; isolated CI must explicitly opt into ad-hoc signing")
+
+
+def validate_selection(selection):
+    if selection.identity == "-":
+        return
+    spec = importlib.util.spec_from_file_location("pennel_mac_signing", Path(__file__).with_name("mac_signing.py"))
+    signing = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(signing)
+    signing.validate_certificate(signing.certificate_for_identity(selection.sha1), preview=True)
 
 
 def cache_identity(path, sha1):
@@ -71,7 +88,10 @@ def cache_identity(path, sha1):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", type=Path, default=Path(__file__).resolve().parents[1] / "build/preview-signing-identity.sha1")
+    parser.add_argument("--allow-adhoc-ci", action="store_true", help="Allow an unavailable credential store in explicitly isolated CI")
     args = parser.parse_args(argv)
+    if args.allow_adhoc_ci and os.environ.get("CI") != "true":
+        parser.error("Ad-hoc preview signing is available only in isolated CI")
     try:
         result = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"], capture_output=True, text=True, check=False)
         identities = parse_identities(result.stdout) if result.returncode == 0 else []
@@ -81,14 +101,18 @@ def main(argv=None):
         cached_sha = args.cache.read_text().strip()
     except OSError:
         cached_sha = None
-    selection = select_identity(
-        identities, cached_sha, os.environ.get("APPLE_SIGNING_IDENTITY"), os.environ.get("PENNEL_SIGN_IDENTITY")
-    )
+    try:
+        selection = select_identity(
+            identities, cached_sha, os.environ.get("APPLE_SIGNING_IDENTITY"), os.environ.get("PENNEL_SIGN_IDENTITY"),
+            allow_adhoc=args.allow_adhoc_ci,
+        )
+        validate_selection(selection)
+    except ValueError as error:
+        parser.exit(1, f"Preview signing failed: {error}\n")
     if selection.sha1:
         cache_identity(args.cache, selection.sha1)
     if selection.identity == "-":
-        print("warning: preview uses ad-hoc signing; macOS permissions may need approval again after a rebuild. "
-              "Set APPLE_SIGNING_IDENTITY or PENNEL_SIGN_IDENTITY to an existing certificate to retain them.", file=sys.stderr)
+        print("warning: isolated CI preview uses ad-hoc signing; its Data Protection Keychain is unavailable.", file=sys.stderr)
     print(selection.identity)
     return 0
 

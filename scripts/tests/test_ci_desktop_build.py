@@ -201,6 +201,7 @@ class DesktopBuildTests(unittest.TestCase):
             'missing-mac': (foreign, False),
             'ambiguous-mac': (['one/' + current, 'two/' + current] + foreign, False),
             'stale-mac': (['Pennel_1.2.2_aarch64.dmg'] + foreign, False),
+            'unnotarized-mac': (['one/' + current] + foreign, False),
         }
         for name, (files, succeeds) in scenarios.items():
             with self.subTest(scenario=name), tempfile.TemporaryDirectory() as directory:
@@ -220,6 +221,19 @@ class DesktopBuildTests(unittest.TestCase):
                     target = root / 'dist' / filename
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(('synthetic ' + filename).encode())
+                (root / 'scripts').mkdir()
+                (root / 'scripts/desktop-auto-release.py').write_bytes(
+                    (ROOT / 'scripts/desktop-auto-release.py').read_bytes())
+                if name != 'unnotarized-mac':
+                    (root / 'dist/mac-notarization.json').write_text(json.dumps({
+                        'version': '1.2.3', 'dmg_file': current,
+                        'dmg_sha256': hashlib.sha256(('synthetic one/' + current).encode()).hexdigest(),
+                        'bundle_identifier': 'dev.pennel.Pennel', 'team_identifier': 'B538Q2K76C',
+                        'developer_id': True, 'notarization': 'accepted', 'app_ticket': 'passed',
+                        'dmg_ticket': 'passed', 'gatekeeper': 'passed', 'quarantine_assessment': 'passed',
+                        'application_identifier': 'B538Q2K76C.dev.pennel.Pennel',
+                        'keychain_access_group': 'B538Q2K76C.dev.pennel.Pennel',
+                        'profile_sha256': 'b' * 64, 'profile_expires': '2099-01-01T00:00:00+00:00'}))
                 receipt = root / 'gh-arguments.json'
                 env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
                            VERSION='1.2.3', GITHUB_SHA='a' * 40, GH_TOKEN='synthetic',
