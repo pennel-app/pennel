@@ -32,7 +32,7 @@ final class KeyboardLetterGridView: UIView {
     private var shifted = false
     private var shiftLocked = false
     private var keyboardLayer = KeyboardLayer.letters
-    private var keyHeight = Brand.Spacing.s10 + Brand.Spacing.s1
+    private var keyHeight = KeyStyle.keyHeight
     private var swipeEnabled = false
     private var copy = KeyboardCopy(language: .english)
     private var alternatives: (String) -> [String] = { _ in [] }
@@ -60,11 +60,12 @@ final class KeyboardLetterGridView: UIView {
         super.init(frame: frame)
         isMultipleTouchEnabled = true
         backgroundColor = .clear
-        accentPanel.layer.cornerRadius = Brand.Radius.keycap
-        accentPanel.backgroundColor = UIColor(Brand.subtle.color)
-        accentPanel.layer.shadowColor = UIColor(Brand.keyShadow.color).cgColor
-        accentPanel.layer.shadowOffset = CGSize(width: 0, height: 1)
-        accentPanel.layer.shadowOpacity = 1
+        accentPanel.layer.cornerRadius = KeyStyle.keyRadius
+        accentPanel.backgroundColor = UIColor(KeyStyle.letterKey.color)
+        accentPanel.layer.shadowColor = UIColor.black.cgColor
+        accentPanel.layer.shadowOffset = CGSize(width: 0, height: 2)
+        accentPanel.layer.shadowRadius = 6
+        accentPanel.layer.shadowOpacity = 0.25
         accentPanel.isHidden = true
         addSubview(accentPanel)
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: KeyboardLetterGridView, _: UITraitCollection) in
@@ -96,13 +97,15 @@ final class KeyboardLetterGridView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let gap = Brand.Spacing.s1
+        let gap = KeyStyle.horizontalGap
+        // Like the system keyboard, shorter rows keep the top row's key width and are centred.
+        let unit = bounds.width / CGFloat(max(rows.first?.count ?? 1, 1))
         for row in 0..<min(3, rows.count) {
             let indices = keys.indices.filter { keys[$0].row == row }
-            let inset = row == 1 ? Brand.Spacing.s3 : 0
-            let available = max(0, bounds.width - inset * 2)
             let letters = rows[row].count
-            let side = min(keyHeight, available / 4)
+            let inset = row == 1 ? max(0, (bounds.width - unit * CGFloat(letters)) / 2) : 0
+            let available = max(0, bounds.width - inset * 2)
+            let side = min(unit * 1.35, available / 4)
             let width = row == 2 ? max(0, (available - side * 2 - gap * 2) / CGFloat(max(letters, 1))) : available / CGFloat(max(letters, 1))
             for index in indices {
                 let column = keys[index].column
@@ -111,7 +114,7 @@ final class KeyboardLetterGridView: UIView {
                 if row == 2, column == -1 { x = inset; cellWidth = side }
                 else if row == 2, column == letters { x = bounds.width - inset - side; cellWidth = side }
                 else { x = inset + (row == 2 ? side + gap : 0) + CGFloat(column) * width; cellWidth = width }
-                let hit = CGRect(x: x, y: CGFloat(row) * (keyHeight + gap), width: cellWidth, height: keyHeight)
+                let hit = CGRect(x: x, y: CGFloat(row) * (keyHeight + KeyStyle.rowGap), width: cellWidth, height: keyHeight)
                 keys[index].frame = hit
                 keys[index].button.frame = hit.insetBy(dx: gap / 2, dy: 0)
             }
@@ -249,11 +252,8 @@ final class KeyboardLetterGridView: UIView {
         let button = AccessibleKeyboardButton(type: .custom)
         let index = keys.count
         button.activate = { [weak self] in self?.activate(index) }
-        button.layer.cornerRadius = Brand.Radius.keycap
-        button.layer.shadowColor = UIColor(Brand.keyShadow.color).cgColor
-        button.layer.shadowOpacity = 1
-        button.layer.shadowRadius = 0
-        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.layer.cornerRadius = KeyStyle.keyRadius
+        KeyStyle.styleKeyShadow(button.layer)
         addSubview(button)
         keys.append(Key(kind: kind, row: row, column: column, button: button))
     }
@@ -261,17 +261,16 @@ final class KeyboardLetterGridView: UIView {
         for key in keys {
             let button = key.button
             button.setTitle(nil, for: .normal); button.setImage(nil, for: .normal)
-            button.setTitleColor(UIColor(Brand.foreground.color), for: .normal)
-            button.tintColor = UIColor(Brand.foreground.color)
-            let font = UIFont(name: "Figtree-Medium", size: Brand.FontSize.title) ?? .systemFont(ofSize: Brand.FontSize.title, weight: .medium)
-            button.titleLabel?.font = UIFontMetrics(forTextStyle: .title3).scaledFont(for: font, maximumPointSize: Brand.FontSize.title * 1.5)
+            button.setTitleColor(UIColor(KeyStyle.label.color), for: .normal)
+            button.tintColor = UIColor(KeyStyle.label.color)
+            let font = KeyStyle.uiFont(KeyStyle.letterSize)
+            button.titleLabel?.font = UIFontMetrics(forTextStyle: .title3).scaledFont(for: font, maximumPointSize: KeyStyle.letterSize * 1.5)
             button.titleLabel?.adjustsFontForContentSizeCategory = true
             button.titleLabel?.adjustsFontSizeToFitWidth = true
             button.titleLabel?.minimumScaleFactor = 0.7
             button.accessibilityTraits = [.keyboardKey]
             button.accessibilityCustomActions = nil
-            let base = key.kind == .shift || key.kind == .layer || key.kind == .delete ? Brand.subtle : Brand.field
-            button.backgroundColor = UIColor(base.color)
+            button.backgroundColor = UIColor(background(for: key.kind, pressed: false).color)
             switch key.kind {
             case .character(let value):
                 button.setTitle(displayed(value), for: .normal)
@@ -283,6 +282,7 @@ final class KeyboardLetterGridView: UIView {
                 button.setImage(UIImage(systemName: shiftLocked ? "capslock.fill" : shifted ? "shift.fill" : "shift"), for: .normal)
                 button.accessibilityLabel = copy.text(shiftLocked ? .capsLock : .shift)
             case .layer:
+                button.titleLabel?.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: KeyStyle.uiFont(KeyStyle.functionSize), maximumPointSize: KeyStyle.functionSize * 1.5)
                 button.setTitle(copy.text(keyboardLayer == .numbers ? .symbols : .numbers), for: .normal)
                 button.accessibilityLabel = copy.text(keyboardLayer == .numbers ? .showSymbols : .showNumbers)
             case .delete:
@@ -340,8 +340,7 @@ final class KeyboardLetterGridView: UIView {
         let changed = active.symmetricDifference(highlightedKeys)
         for index in changed where keys.indices.contains(index) {
             let key = keys[index]
-            let base = key.kind == .shift || key.kind == .layer || key.kind == .delete ? Brand.subtle : Brand.field
-            key.button.backgroundColor = UIColor(active.contains(index) ? Brand.selection.color : base.color)
+            key.button.backgroundColor = UIColor(background(for: key.kind, pressed: active.contains(index)).color)
         }
         highlightedKeys = active
     }
@@ -372,10 +371,10 @@ final class KeyboardLetterGridView: UIView {
         for (index, value) in accentValues.enumerated() {
             let button = AccessibleKeyboardButton(type: .custom)
             button.setTitle(value, for: .normal)
-            button.setTitleColor(UIColor(Brand.foreground.color), for: .normal)
-            button.titleLabel?.font = UIFont(name: "Figtree-Medium", size: Brand.FontSize.title)
+            button.setTitleColor(UIColor(KeyStyle.label.color), for: .normal)
+            button.titleLabel?.font = KeyStyle.uiFont(KeyStyle.letterSize)
             button.frame = CGRect(x: CGFloat(index) * width / CGFloat(accentValues.count), y: 0, width: width / CGFloat(accentValues.count), height: keyHeight)
-            button.layer.cornerRadius = Brand.Radius.keycap
+            button.layer.cornerRadius = KeyStyle.keyRadius
             button.accessibilityLabel = value; button.accessibilityTraits = [.keyboardKey]
             button.activate = { [weak self] in self?.hideAccents(); self?.insert(value) }
             accentPanel.addSubview(button); accentButtons.append(button)
@@ -391,7 +390,21 @@ final class KeyboardLetterGridView: UIView {
         if next != accentSelection { accentSelection = next; updateAccentAppearance(); feedback(.selection) }
     }
     private func updateAccentAppearance() {
-        for (index, button) in accentButtons.enumerated() { button.backgroundColor = UIColor(index == accentSelection ? Brand.selection.color : Brand.subtle.color) }
+        for (index, button) in accentButtons.enumerated() {
+            let selected = index == accentSelection
+            button.backgroundColor = selected ? UIColor(KeyStyle.accent.color) : .clear
+            button.setTitleColor(UIColor(selected ? KeyStyle.accentText.color : KeyStyle.label.color), for: .normal)
+        }
+    }
+    /// System keys swap shades while pressed; an engaged shift reads as a letter key.
+    private func background(for kind: Kind, pressed: Bool) -> Brand.Token {
+        let function: Bool
+        switch kind {
+        case .character: function = false
+        case .shift: function = !shifted && !shiftLocked
+        case .layer, .delete: function = true
+        }
+        return function != pressed ? KeyStyle.functionKey : KeyStyle.letterKey
     }
     private func hideAccents() {
         accentOwner = nil; accentValues = []; accentSelection = 0

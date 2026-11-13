@@ -152,6 +152,7 @@ final class KeyboardViewController: UIInputViewController {
             client: HandoffClient(store: store),
             context: { [weak self] in self?.insertionContext }, copy: copy,
             onFeedback: { [weak self] in self?.playFeedback($0) },
+            launchDefaults: .standard,
             onResult: { [weak self] in self?.insert($0, typingFeedback: false) })
         self.model = model
         let layout = KeyboardLayout.stored(in: defaults)
@@ -165,6 +166,10 @@ final class KeyboardViewController: UIInputViewController {
             openSettings: { [weak self] in
                 guard let self else { return }
                 AppOpener.openSettings(from: extensionContext)
+            },
+            openPennel: { [weak self] url, completion in
+                guard let self else { return completion(false) }
+                AppOpener.openContainingApp(url, from: self, completion: completion)
             },
             insert: { [weak self] in self?.insert($0) },
             delete: { [weak self] in self?.delete() },

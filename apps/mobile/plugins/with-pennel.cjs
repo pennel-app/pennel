@@ -272,7 +272,7 @@ function configureProject(config, options) {
   for (const file of swiftFiles(appIntents)) addFileToPhase(project, app[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   const keyboardFiles = [...swiftFiles(path.join(workspace, 'native/ios/Keyboard/Sources')), ...swiftFiles(path.join(workspace, 'native/ios/Keyboard/Model'))];
   for (const file of keyboardFiles) addFileToPhase(project, keyboard[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
-  const testedKeyboardSources = ['KeyboardTypingModel.swift', 'KeyboardLetterGrid.swift', 'KeyboardSystemKeys.swift']
+  const testedKeyboardSources = ['KeyboardTypingModel.swift', 'KeyboardLetterGrid.swift', 'KeyboardSystemKeys.swift', 'KeyStyle.swift']
     .map((name) => path.join(workspace, 'native/ios/Keyboard/Sources', name)).filter((file) => fs.existsSync(file));
   for (const file of [...swiftFiles(path.join(workspace, 'native/ios/Keyboard/Model')), ...testedKeyboardSources, ...swiftFiles(path.join(workspace, 'native/ios/KeyboardTests'))]) addFileToPhase(project, test[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
   for (const file of swiftFiles(path.join(workspace, 'native/ios/Tests'))) addFileToPhase(project, runtimeTest[0], relative(file), 'PBXSourcesBuildPhase', 'sourcecode.swift');
