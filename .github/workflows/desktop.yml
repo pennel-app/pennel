@@ -135,6 +135,9 @@ jobs:
       CMAKE_ARGS: ${{ vars.CMAKE_ARGS }}
       # linuxdeploy is itself an AppImage; self-hosted boxes may lack FUSE.
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      # Keep cache repair and Cargo on the same owned intermediate root even if
+      # the runner has a global build-dir setting. Final target-dir is unchanged.
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
     defaults:
       run:
         working-directory: apps/desktop
@@ -197,7 +200,14 @@ jobs:
       - name: Rerun sherpa-onnx's build script after a cache restore
         shell: bash
         working-directory: .
-        run: bash scripts/ci-sherpa-cache.sh apps/desktop/src-tauri/target
+        env:
+          PENNEL_CACHE_BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          py=python3
+          command -v python3 >/dev/null || py=python
+          "$py" -B -m unittest discover -s scripts/tests -p test_ci_sherpa_cache.py
+          bash scripts/ci-sherpa-cache.sh apps/desktop/src-tauri/target
+          bash scripts/ci-sherpa-cache.sh --profile release --target "$PENNEL_CACHE_BUILD_TARGET" apps/desktop/src-tauri/target
       - uses: actions/setup-node@v5
         with:
           node-version: 22
