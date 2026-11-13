@@ -6,9 +6,11 @@ import UIKit
 /// Content stays clear so iOS draws its own keyboard backdrop; key colors are tuned over that backdrop.
 /// Only the dictation button keeps Pennel's ink and soft-wave colors.
 enum KeyStyle {
-    static let letterKey = Brand.Token(light: 0xFFFFFF, dark: 0xFFFFFF, darkAlpha: 0.30)
-    static let functionKey = Brand.Token(light: 0xACB1B9, dark: 0xFFFFFF, darkAlpha: 0.12)
-    static let keyShadow = Brand.Token(light: 0x000000, dark: 0x000000, lightAlpha: 0.30, darkAlpha: 0.35)
+    /// iOS 26 draws every key in one shade; only a press changes it.
+    static let letterKey = Brand.Token(light: 0xFFFFFF, dark: 0xFFFFFF, darkAlpha: 0.24)
+    static let functionKey = letterKey
+    static let pressedKey = Brand.Token(light: 0xC9CCD3, dark: 0xFFFFFF, darkAlpha: 0.42)
+    static let keyShadow = Brand.Token(light: 0x000000, dark: 0x000000, lightAlpha: 0.14, darkAlpha: 0)
     static let label = Brand.Token(light: 0x000000, dark: 0xFFFFFF)
     static let secondaryLabel = Brand.Token(light: 0x3C3C43, dark: 0xEBEBF5, lightAlpha: 0.60, darkAlpha: 0.60)
     static let tertiaryLabel = Brand.Token(light: 0x3C3C43, dark: 0xEBEBF5, lightAlpha: 0.30, darkAlpha: 0.30)
@@ -16,14 +18,14 @@ enum KeyStyle {
     static let accentText = Brand.Token(light: 0xFFFFFF, dark: 0xFFFFFF)
     static let separator = Brand.Token(light: 0x3C3C43, dark: 0xEBEBF5, lightAlpha: 0.18, darkAlpha: 0.18)
 
-    static let keyRadius: CGFloat = 8
+    static let keyRadius: CGFloat = 10
     static let keyHeight: CGFloat = 42
     static let compactKeyHeight: CGFloat = 32
     static let horizontalGap: CGFloat = 6
     static let rowGap: CGFloat = 11
     static let sideMargin: CGFloat = 3
-    static let letterSize: CGFloat = 22.5
-    static let functionSize: CGFloat = 16
+    static let letterSize: CGFloat = 25
+    static let functionSize: CGFloat = 17
     static let barSize: CGFloat = 15
 
     static func uiFont(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {

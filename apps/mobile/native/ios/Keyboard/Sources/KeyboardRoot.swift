@@ -5,7 +5,6 @@ struct KeyboardRoot: View {
     let model: KeyboardModel
     let typing: KeyboardTypingModel
     let layout: KeyboardLayout
-    let showsGlobe: Bool
     let inputModeTarget: KeyboardInputModeTarget
     let openSettings: () -> Void
     var openPennel: (URL, @escaping (Bool) -> Void) -> Void = { _, done in done(false) }
@@ -31,6 +30,7 @@ struct KeyboardRoot: View {
     var recordTouch: (KeyboardSwipeGesture) -> Void = { _ in }
     @State private var showsHelp = false
     @State private var launchFailed = false
+    @State private var rowWidth: CGFloat = 0
     @State private var showsTools = false
     @State private var toolTab = KeyboardToolTab.emoji
     @State private var toolQuery = ""
@@ -44,7 +44,7 @@ struct KeyboardRoot: View {
     @ScaledMetric(relativeTo: .body) private var scaledKeyHeight = KeyStyle.keyHeight
     /// Minimum touch target for bar controls.
     private let controlWidth = Brand.Spacing.s10 + Brand.Spacing.s1
-    private let barHeight = Brand.Spacing.s10 + Brand.Spacing.s1
+    private let barHeight: CGFloat = 46
     private var keyHeight: CGFloat {
         if verticalSizeClass == .compact { return max(KeyStyle.compactKeyHeight, min(scaledKeyHeight, KeyStyle.keyHeight)) }
         return max(KeyStyle.keyHeight, min(scaledKeyHeight, KeyStyle.keyHeight * 1.5))
@@ -73,7 +73,8 @@ struct KeyboardRoot: View {
             if showsTools {
                 KeyboardToolsPanel(typing: typing, tab: $toolTab, query: $toolQuery, insert: insertToolText,
                     requestWriting: requestWriting, applyWriting: applyWriting, restoreWriting: restoreWriting,
-                    cancelWriting: cancelWriting, saveSnippet: saveSnippet, deleteSnippet: deleteSnippet, feedback: feedback)
+                    cancelWriting: cancelWriting, saveSnippet: saveSnippet, deleteSnippet: deleteSnippet,
+                    toggleSuggestions: toggleSuggestions, feedback: feedback)
                     .frame(height: keyHeight * (toolTab == .writing ? 5 : 3) + KeyStyle.rowGap * 2)
             }
             if !showsTools || toolTab != .writing {
@@ -103,8 +104,12 @@ struct KeyboardRoot: View {
     /// The system prediction bar: tools on the left, suggestions or live dictation status in the middle,
     /// and Pennel's dictation button on the right.
     private var toolbar: some View {
+        GlassEffectContainer { toolbarContent }
+    }
+
+    private var toolbarContent: some View {
         HStack(spacing: Brand.Spacing.s1) {
-            barIcon(showsTools ? "keyboard" : "face.smiling", active: showsTools,
+            barIcon(showsTools ? "keyboard" : "line.3.horizontal", active: showsTools,
                 label: typing.copy.language == .dutch ? (showsTools ? "Toon toetsenbord" : "Emoji, tekstfragmenten en schrijven") : (showsTools ? "Show keyboard" : "Emoji, snippets and writing")) {
                 showsTools.toggle(); toolQuery = ""
                 if !showsTools { cancelWriting() }
@@ -120,17 +125,12 @@ struct KeyboardRoot: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: barHeight)
-            if model.pad != .listening, model.pad != .processing {
-                barIcon(typing.suggestionsEnabled ? "text.bubble.fill" : "text.bubble", active: typing.suggestionsEnabled,
-                    label: typing.copy.text(typing.suggestionsEnabled ? .suggestions : .suggestionsOff),
-                    hint: typing.copy.text(.suggestionsPrivacy), action: toggleSuggestions)
-            }
-            PennelDictationButton(model: model, label: typing.copy.text(.startPennel), height: barHeight - Brand.Spacing.s2,
+            PennelDictationButton(model: model, label: typing.copy.text(.startPennel), height: barHeight - 6,
                 actionValue: actionValue, hint: model.pad == .sessionOff ? typing.copy.text(.startPennelHint) : "",
                 tap: microphoneTapped,
                 holdBegan: { showsTools = false; cancelWriting(); model.holdBegan() }, holdEnded: model.holdEnded,
                 prepareFeedback: prepareFeedback)
-                .padding(.trailing, Brand.Spacing.s1)
+                .padding(.trailing, KeyStyle.sideMargin)
         }
         .frame(height: barHeight)
     }
@@ -140,7 +140,9 @@ struct KeyboardRoot: View {
             Button { model.cancel() } label: {
                 Image(systemName: "xmark")
                     .font(.keyboard(KeyStyle.barSize, weight: .semibold))
-                    .foregroundStyle(KeyStyle.secondaryLabel.color)
+                    .foregroundStyle(KeyStyle.label.color)
+                    .frame(width: barHeight - 6, height: barHeight - 6)
+                    .glassEffect(.regular.interactive(), in: Circle())
                     .frame(width: controlWidth, height: barHeight)
                     .contentShape(Rectangle())
             }
@@ -158,8 +160,10 @@ struct KeyboardRoot: View {
     private func barIcon(_ systemName: String, active: Bool, label: String, hint: String = "", action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.keyboard(KeyStyle.barSize + 3))
-                .foregroundStyle(active ? KeyStyle.accent.color : KeyStyle.secondaryLabel.color)
+                .font(.keyboard(KeyStyle.barSize + 3, weight: .semibold))
+                .foregroundStyle(active ? KeyStyle.accent.color : KeyStyle.label.color)
+                .frame(width: barHeight - 6, height: barHeight - 6)
+                .glassEffect(.regular.interactive(), in: Circle())
                 .frame(width: controlWidth, height: barHeight)
                 .contentShape(Rectangle())
         }
@@ -302,33 +306,38 @@ struct KeyboardRoot: View {
                 }, cancel: {
                     showsTools = toolsBeforeSlide; setActiveLayer(layerBeforeSlide)
                 }, insert: insertText, prepareFeedback: prepareFeedback)
-                .frame(width: functionWidth, height: keyHeight)
-            if showsGlobe {
+                .frame(width: typing.showsGlobe ? keyUnit * 1.2 : sideWidth, height: keyHeight)
+            if typing.showsGlobe {
                 KeyboardGlobeKey(target: inputModeTarget, label: typing.copy.text(.nextKeyboard))
-                    .frame(width: functionWidth, height: keyHeight)
+                    .frame(width: sideWidth - keyUnit * 1.2 - KeyStyle.horizontalGap, height: keyHeight)
             }
             if typing.showsURL {
-                key(text: "/", width: functionWidth) { insertText("/") }
+                key(text: "/", width: keyUnit, letter: true) { insertText("/") }
             }
-            KeyboardSpaceKey(label: typing.copy.text(.space), language: typing.copy.language, action: insertSpace,
+            KeyboardSpaceKey(label: typing.copy.text(.space), title: "Pennel", language: typing.copy.language, action: insertSpace,
                 moveCursor: { if !searchesTools { moveCursor($0) } }, prepareFeedback: prepareFeedback, feedback: feedback,
                 allowsCursorMovement: !searchesTools)
                 .frame(maxWidth: .infinity, minHeight: keyHeight)
             if typing.showsAt {
-                key(text: "@", width: functionWidth, letter: true) { insertText("@") }
-                key(text: ".", width: functionWidth, letter: true) { insertText(".") }
+                key(text: "@", width: keyUnit, letter: true) { insertText("@") }
+                key(text: ".", width: keyUnit, letter: true) { insertText(".") }
             } else if typing.showsURL {
-                key(text: ".", width: functionWidth, letter: true) { insertText(".") }
-                key(text: ".com", width: functionWidth * 1.3, letter: true) { insertText(".com") }
+                key(text: ".", width: keyUnit, letter: true) { insertText(".") }
+                key(text: ".com", width: keyUnit * 1.6, letter: true) { insertText(".com") }
             }
             let returnKey = searchesTools ? KeyboardCopy.Key.returnKey : typing.returnKey
-            key(text: typing.copy.text(returnKey), width: functionWidth * 2,
-                enabled: searchesTools || typing.returnEnabled, prominent: Self.prominentReturnKeys.contains(returnKey)) { insertText("\n") }
+            let prominent = Self.prominentReturnKeys.contains(returnKey)
+            key(text: prominent ? typing.copy.text(returnKey) : nil, systemImage: prominent ? nil : "return.left", width: sideWidth,
+                label: typing.copy.text(returnKey), enabled: searchesTools || typing.returnEnabled, prominent: prominent) { insertText("\n") }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
     }
 
     private static let prominentReturnKeys: Set<KeyboardCopy.Key> = [.go, .search, .send, .join, .route, .done, .continueKey]
-    private var functionWidth: CGFloat { keyHeight + Brand.Spacing.s1 }
+    /// One letter key plus its gap, matching the ten-key top row.
+    private var keyUnit: CGFloat { max(0, (rowWidth + KeyStyle.horizontalGap) / 10 - KeyStyle.horizontalGap) }
+    /// The system keyboard's wide mode and return keys each take about a quarter of the row.
+    private var sideWidth: CGFloat { max(keyHeight, rowWidth * 0.235) }
 
     private func key(text: String? = nil, systemImage: String? = nil, width: CGFloat? = nil, label: String? = nil, enabled: Bool = true,
                      letter: Bool = false, prominent: Bool = false, action: @escaping () -> Void) -> some View {
@@ -338,7 +347,7 @@ struct KeyboardRoot: View {
                 if let text {
                     Text(text).font(.keyboard(letter ? KeyStyle.letterSize - 2 : KeyStyle.functionSize)).lineLimit(1).minimumScaleFactor(0.7)
                 } else if let systemImage {
-                    Image(systemName: systemImage)
+                    Image(systemName: systemImage).font(.keyboard(KeyStyle.functionSize + 3))
                 }
             }
             .foregroundStyle(highlighted ? KeyStyle.accentText.color : enabled ? KeyStyle.label.color : KeyStyle.tertiaryLabel.color)

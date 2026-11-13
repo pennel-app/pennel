@@ -27,6 +27,7 @@ struct KeyboardToolsPanel: View {
     let cancelWriting: () -> Void
     let saveSnippet: (String, String) -> Void
     let deleteSnippet: (KeyboardSnippet) -> Void
+    var toggleSuggestions: () -> Void = {}
     let feedback: (FeedbackEvent) -> Void
     @State private var recentEmoji = KeyboardToolPreferences.recentEmoji(in: UserDefaults.standard)
     @State private var creatingSnippet = false
@@ -44,10 +45,20 @@ struct KeyboardToolsPanel: View {
             if creatingSnippet {
                 snippetEditor
             } else {
-                Picker(isDutch ? "Toetsenbordhulpmiddelen" : "Keyboard tools", selection: $tab) {
-                    ForEach(KeyboardToolTab.allCases) { value in Text(value.title(language)).tag(value) }
+                HStack(spacing: Brand.Spacing.s1) {
+                    Picker(isDutch ? "Toetsenbordhulpmiddelen" : "Keyboard tools", selection: $tab) {
+                        ForEach(KeyboardToolTab.allCases) { value in Text(value.title(language)).tag(value) }
+                    }
+                    .pickerStyle(.segmented)
+                    Button(action: toggleSuggestions) {
+                        Image(systemName: typing.suggestionsEnabled ? "text.bubble.fill" : "text.bubble")
+                            .foregroundStyle(typing.suggestionsEnabled ? KeyStyle.accent.color : KeyStyle.secondaryLabel.color)
+                            .frame(minWidth: controlHeight, minHeight: controlHeight)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(typing.copy.text(typing.suggestionsEnabled ? .suggestions : .suggestionsOff))
+                    .accessibilityHint(typing.copy.text(.suggestionsPrivacy))
                 }
-                .pickerStyle(.segmented)
                 .onChange(of: tab) { previous, _ in query = ""; if previous == .writing { cancelWriting() } }
                 if tab != .writing { searchBar }
                 switch tab {

@@ -13,6 +13,7 @@ struct KeyboardPreparationButtonStyle: ButtonStyle {
 
 struct KeyboardSpaceKey: UIViewRepresentable {
     let label: String
+    var title: String? = nil
     let language: KeyboardInterfaceLanguage
     let action: () -> Void
     let moveCursor: (Int) -> Void
@@ -22,8 +23,8 @@ struct KeyboardSpaceKey: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ScrubbingSpaceButton { ScrubbingSpaceButton(type: .custom) }
     func updateUIView(_ button: ScrubbingSpaceButton, context: Context) {
-        button.label = label
-        if !button.isScrubbing { button.setTitle(label, for: .normal) }
+        button.label = title ?? label
+        if !button.isScrubbing { button.setTitle(button.label, for: .normal) }
         button.action = action; button.moveCursor = moveCursor
         button.prepareFeedback = prepareFeedback; button.feedback = feedback
         button.allowsCursorMovement = allowsCursorMovement

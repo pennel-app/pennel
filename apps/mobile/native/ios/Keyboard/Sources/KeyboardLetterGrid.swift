@@ -396,15 +396,8 @@ final class KeyboardLetterGridView: UIView {
             button.setTitleColor(UIColor(selected ? KeyStyle.accentText.color : KeyStyle.label.color), for: .normal)
         }
     }
-    /// System keys swap shades while pressed; an engaged shift reads as a letter key.
     private func background(for kind: Kind, pressed: Bool) -> Brand.Token {
-        let function: Bool
-        switch kind {
-        case .character: function = false
-        case .shift: function = !shifted && !shiftLocked
-        case .layer, .delete: function = true
-        }
-        return function != pressed ? KeyStyle.functionKey : KeyStyle.letterKey
+        pressed ? KeyStyle.pressedKey : KeyStyle.letterKey
     }
     private func hideAccents() {
         accentOwner = nil; accentValues = []; accentSelection = 0

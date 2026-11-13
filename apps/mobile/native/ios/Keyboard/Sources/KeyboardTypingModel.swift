@@ -73,6 +73,8 @@ final class KeyboardTypingModel {
     var allowsPeriod = true
     var showsAt = false
     var showsURL = false
+    /// Face ID iPhones show the system globe below the keyboard; others need the keyboard's own switch key.
+    var showsGlobe = true
     var selectedText: String?
     var correctionOriginal: String?
     var writingPreview: String?
