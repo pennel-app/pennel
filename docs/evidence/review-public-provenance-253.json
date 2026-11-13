@@ -1,0 +1,17 @@
+{
+  "scope": "Privacy-safe public projection; no runtime/corpus/scoring/locked-input change",
+  "projection_created_after_inference": true,
+  "original_ready_commit": "2e582a03f2d20ae12d4630c3931176950b6e7759",
+  "published_ready_projection_commit": "1e8629ad8fdd4b97a7e7373139c0a3eada585acb",
+  "ready_lock_bytes_identical": true,
+  "ready_lock_file_sha256": "9b832692a625692865161d8741d9d172a31f2558c4100d20c3c78552eccfce6d",
+  "original_source_commit": "b99a7b83597ac8b6f9d7d93c75aefc3261f5dca8",
+  "published_source_projection_commit": "7205296f300153d68203649379bf883faff392e0",
+  "only_changed_metadata_path": "evaluations/decision-models/locks/review-pennel-cloud-nl-v1-2026-11-13-failed.json",
+  "redacted_field": "normal_monthly_quota_before_after",
+  "reason": "Remove a private normal-account counter from unpublished metadata; no value is published.",
+  "original_commit_object_utf8": "tree 36cf6dfe3515b6bf944da4f92529ce84442876ae\nparent b99a7b83597ac8b6f9d7d93c75aefc3261f5dca8\nauthor Lander Parren <lander.parren.lp@gmail.com> 1794609845 +0100\ncommitter Lander Parren <lander.parren.lp@gmail.com> 1794609845 +0100\n\ntest(review): freeze fresh calibrated-support qualification\n\nBind the unchanged real calibration provenance, exact current gate asset and a blind72-fixture held-out set before any new provider inference.\n\nConstraint: No new calibration calls or seen-held quality credit; every existing quality/source/resource gate retained\nTested: Full offline input equivalence, historical fit, typed replay and provenance validation\nScope-risk: narrow\nConfidence: high\n",
+  "commit_object_sha1_verified": true,
+  "original_pre_inference_commit_audited_before_projection": true,
+  "raw_model_evidence_and_original_commits_retained_locally": true
+}
