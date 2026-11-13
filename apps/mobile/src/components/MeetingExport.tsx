@@ -4,6 +4,7 @@ import type { MeetingExport as ExportDocument } from '../domain';
 import { useQuery, useReducedMotion, useRuntime } from '../runtime';
 import { taskReadiness } from '../task-readiness';
 import { SummaryDestination } from './SummaryAutomation';
+import { Markdown } from './Markdown';
 import { Actions, Body, Button, Loading, NativeChoice, Notice, Page, Section, Toggle, useRecordingSheetReturn } from './ui';
 
 export function MeetingExport({ id, visible, onClose }: { id: string; visible: boolean; onClose: () => void }) {
@@ -12,6 +13,7 @@ export function MeetingExport({ id, visible, onClose }: { id: string; visible: b
   const [scope, setScope] = useState<'shareable' | 'personal'>('shareable');
   const [includeTranscript, setIncludeTranscript] = useState(false);
   const [notice, setNotice] = useState(false);
+  const [view, setView] = useState<'formatted' | 'markdown'>('formatted');
   const recordingReturn = useRecordingSheetReturn(onClose);
   const preview = useQuery<ExportDocument>('meetings.export.preview', { id, scope, include_transcript: includeTranscript }, visible);
   const generate = async () => {
@@ -32,7 +34,7 @@ export function MeetingExport({ id, visible, onClose }: { id: string; visible: b
     {scope === 'shareable' && <Section description={t('mobile.simple.preview_generate_help')}><SummaryDestination inputs={false} /><Button title={t('mobile.simple.preview_generate')} subtle busy={busy.has('shareable-summary')} disabled={!taskReadiness(snapshot, 'llm').ready} onPress={() => void generate()} /></Section>}
     {preview.loading && <Loading />}
     {preview.error && <Section><Notice error>{preview.error}</Notice><Button title={t('common.retry')} subtle onPress={() => void preview.refresh()} /></Section>}
-    {preview.value && !preview.loading && !preview.error && <Section description={t('mobile.simple.preview_exact')}><Body selectable>{preview.value.markdown}</Body></Section>}
+    {preview.value && !preview.loading && !preview.error && <Section description={t('mobile.simple.preview_exact')}><NativeChoice label={t('meetings.export_preview_format')} segmented value={view} options={[{ value: 'formatted', label: t('meetings.export_view_formatted') }, { value: 'markdown', label: t('meetings.export_view_markdown') }]} onChange={setView} />{view === 'formatted' ? <Markdown text={preview.value.markdown} /> : <Body selectable>{preview.value.markdown}</Body>}</Section>}
     <Actions><Button title={t('common.copy')} disabled={!preview.value || preview.loading || Boolean(preview.error) || busy.has('shareable-summary')} busy={busy.has('meeting-export')} onPress={() => void prepared('copy')} /><Button title={t('meetings.copy_formatted')} subtle disabled={!preview.value || preview.loading || Boolean(preview.error) || busy.has('shareable-summary')} onPress={() => void prepared('formatted')} /><Button title={t('meetings.share_action')} subtle disabled={!preview.value || preview.loading || Boolean(preview.error) || busy.has('shareable-summary')} onPress={() => void prepared('share')} /></Actions>
     {notice && <Notice>{t('meetings.copied')}</Notice>}
   </Page></Modal>;

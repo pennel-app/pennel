@@ -10,6 +10,7 @@ import { ownedFailureText, ownedNativeFailureText } from '../errors';
 import { ActionMenu, Actions, Body, Button, Empty, Field, Loading, NativeChoice, Notice, Page, Row, Section, confirm } from './ui';
 import { TextDialog } from './TextDialog';
 import { SummaryDestination } from './SummaryAutomation';
+import { Markdown } from './Markdown';
 
 let requestSequence = 0;
 export function AskPanel({ meetingId, meetingUid, targetConversationId, targetMessageId, beforeAsk, onInteraction }: {
@@ -156,7 +157,7 @@ export function AskPanel({ meetingId, meetingUid, targetConversationId, targetMe
     {!state.loading && !seeking && current && messages.length === 0 && <Empty title={t(meetingId ? 'conversations.empty' : 'meetings.ask_placeholder_all')} description={t('conversations.empty_help')} />}
     {!focused && current?.next_messages_cursor && <Button title={t('conversations.older')} subtle onPress={() => void model.loadOlder()} />}
     {messages.map(message => <Section key={message.id} title={message.role === 'user' ? t('meetings.your_question') : undefined}>
-      {message.text ? <Body selectable>{message.text}</Body> : null}
+      {message.role !== 'user' && message.status === 'completed' && (message.answer?.text ?? message.text) ? <Markdown text={message.answer?.text ?? message.text} /> : message.text ? <Body selectable>{message.text}</Body> : null}
       {message.status !== 'completed' && <Notice error={message.status === 'failed'}>{t(`conversations.status_${message.status}`)}</Notice>}
       {message.error && <Notice error>{ownedFailureText(language, message.error)}</Notice>}
       {message.evidence?.meeting_uid && <Body muted>{t('meetings.workspace_cutoff', { time: clock(message.evidence.included_through_ms / 1000) })}</Body>}

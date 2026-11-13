@@ -16,7 +16,8 @@ final class Harness {
 
     init() { now = start }
 
-    func model(fullAccess: Bool = true, pending: PendingHandoff = PendingHandoff(), lifetime: UUID = UUID()) -> KeyboardModel {
+    func model(fullAccess: Bool = true, pending: PendingHandoff = PendingHandoff(), lifetime: UUID = UUID(),
+               launchDefaults: UserDefaults? = nil) -> KeyboardModel {
         KeyboardModel(
             hasFullAccess: fullAccess,
             client: HandoffClient(store: store, pending: pending),
@@ -24,6 +25,7 @@ final class Harness {
             context: { [unowned self] in
                 visible ? KeyboardInsertionContext(document: document, lifetime: lifetime, generation: generation) : nil
             },
+            launchDefaults: launchDefaults,
             onResult: { [unowned self] in inserted.append($0) })
     }
 

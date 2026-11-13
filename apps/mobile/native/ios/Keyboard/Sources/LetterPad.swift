@@ -29,18 +29,18 @@ struct LetterPad: View {
     var allowSwipe = true
     var recordTouch: (KeyboardSwipeGesture) -> Void = { _ in }
     var stateOverride: Binding<KeyboardTypingState>? = nil
-    @ScaledMetric(relativeTo: .body) private var scaledKeyHeight = Brand.Spacing.s10 + Brand.Spacing.s1
+    @ScaledMetric(relativeTo: .body) private var scaledKeyHeight = KeyStyle.keyHeight
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     private var keyHeight: CGFloat {
-        if verticalSizeClass == .compact { return max(Brand.Spacing.s8, min(scaledKeyHeight, Brand.Spacing.s10)) }
-        return max(Brand.Spacing.s10 + Brand.Spacing.s1, min(scaledKeyHeight, Brand.Spacing.s10 + Brand.Spacing.s8))
+        if verticalSizeClass == .compact { return max(KeyStyle.compactKeyHeight, min(scaledKeyHeight, KeyStyle.keyHeight)) }
+        return max(KeyStyle.keyHeight, min(scaledKeyHeight, KeyStyle.keyHeight * 1.5))
     }
     var body: some View {
         KeyboardLetterGrid(layout: layout, typing: typing, keyHeight: keyHeight, insert: insert,
             delete: delete, deleteWord: deleteWord, swipe: swipe, feedback: feedback,
             prepareFeedback: prepareFeedback, inputTarget: inputTarget, allowSwipe: allowSwipe,
             recordTouch: recordTouch, stateOverride: stateOverride)
-            .frame(height: keyHeight * 3 + Brand.Spacing.s1 * 2)
+            .frame(height: keyHeight * 3 + KeyStyle.rowGap * 2)
     }
 }
 

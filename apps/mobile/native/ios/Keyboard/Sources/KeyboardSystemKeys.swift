@@ -20,9 +20,10 @@ struct KeyboardGlobeKey: UIViewRepresentable {
 
     func updateUIView(_ button: UIButton, context: Context) {
         button.accessibilityLabel = label
-        button.tintColor = UIColor(Brand.foreground.color)
-        button.backgroundColor = UIColor(Brand.subtle.color)
-        button.layer.cornerRadius = Brand.Radius.keycap
+        button.tintColor = UIColor(KeyStyle.label.color)
+        button.backgroundColor = UIColor(KeyStyle.functionKey.color)
+        button.layer.cornerRadius = KeyStyle.keyRadius
+        KeyStyle.styleKeyShadow(button.layer)
     }
 }
 
@@ -41,9 +42,10 @@ struct KeyboardDeleteKey: UIViewRepresentable {
         button.prepareFeedback = prepareFeedback
         button.deleteWord = deleteWord
         button.accessibilityLabel = label
-        button.tintColor = UIColor(Brand.foreground.color)
-        button.backgroundColor = UIColor(Brand.subtle.color)
-        button.layer.cornerRadius = Brand.Radius.keycap
+        button.tintColor = UIColor(KeyStyle.label.color)
+        button.backgroundColor = UIColor(KeyStyle.functionKey.color)
+        button.layer.cornerRadius = KeyStyle.keyRadius
+        KeyStyle.styleKeyShadow(button.layer)
     }
 
     static func dismantleUIView(_ button: RepeatingDeleteButton, coordinator: ()) { button.stopRepeating() }
@@ -130,15 +132,12 @@ struct KeyboardCharacterKey: UIViewRepresentable {
         button.showAlternatives = showAlternatives
         button.prepareFeedback = prepareFeedback
         button.setTitle(text, for: .normal)
-        button.setTitleColor(UIColor(Brand.foreground.color), for: .normal)
-        button.backgroundColor = UIColor(Brand.field.color)
-        button.layer.cornerRadius = Brand.Radius.keycap
-        button.layer.shadowColor = UIColor(Brand.keyShadow.color).cgColor
-        button.layer.shadowOpacity = 1
-        button.layer.shadowRadius = 0
-        button.layer.shadowOffset = CGSize(width: 0, height: 1)
-        let font = UIFont(name: "Figtree-Medium", size: Brand.FontSize.title) ?? .systemFont(ofSize: Brand.FontSize.title, weight: .medium)
-        button.titleLabel?.font = UIFontMetrics(forTextStyle: .title3).scaledFont(for: font, maximumPointSize: Brand.FontSize.title * 1.5)
+        button.setTitleColor(UIColor(KeyStyle.label.color), for: .normal)
+        button.backgroundColor = UIColor(KeyStyle.letterKey.color)
+        button.layer.cornerRadius = KeyStyle.keyRadius
+        KeyStyle.styleKeyShadow(button.layer)
+        let font = KeyStyle.uiFont(KeyStyle.letterSize)
+        button.titleLabel?.font = UIFontMetrics(forTextStyle: .title3).scaledFont(for: font, maximumPointSize: KeyStyle.letterSize * 1.5)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.7

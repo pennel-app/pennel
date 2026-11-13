@@ -2,9 +2,20 @@
 
 Initial evidence: 27 October 2026; signed process-routing investigation: 31 October 2026. Tracking: [keyboard improvement #39](https://github.com/pennel-app/pennel/issues/39), [Expo migration #42](https://github.com/pennel-app/pennel/issues/42), [device acceptance #18](https://github.com/pennel-app/pennel/issues/18), [signing/review #20](https://github.com/pennel-app/pennel/issues/20). The expanded typing candidate and acceptance receipt are in [keyboard experience](mobile-keyboard-experience.md) and [mobile implementation](mobile.md#keyboard-experience-candidate--31-october-2026).
 
-## Current conclusion
+## Product decision — 13 November 2026
 
-The requested complete keyboard-only flow, including a cold or expired containing-app session, is **not verified**. An active microphone session can still receive the keyboard's start/stop/cancel commands. The implementation displays the inactive-session requirement honestly and never launches the containing app through the responder chain. This interim capability does not complete #39, and no decision to release with an alternative has been made.
+The user chose a Wispr Flow-style interaction and accepted the related App Review guideline 4.4.1 risk ([design](superpowers/specs/2026-11-13-keyboard-native-flow-session-design.md)). This replaces the earlier rule that the keyboard never opens the containing app:
+
+- Without a ready session, the keyboard's **Start Pennel** button opens `<scheme>://sessie/start` (SwiftUI `openURL`, then the keyboard's window scene or application responder). iOS accepts this only with Full Access, which dictation already requires. If iOS refuses, the keyboard asks the user to open Pennel manually.
+- Pennel starts its existing bounded session in the foreground and shows a full-screen page asking the user to return with the system ◀ back button or a swipe along the bottom edge.
+- Within 60 seconds of that request, the keyboard starts hands-free listening as soon as the session reads ready and the keyboard has a live insertion context.
+- Automatic return to the host app is **not** implemented. It depended on undocumented host identification that stopped working in iOS 26.4; Apple DTS confirmed there is no public replacement ([Apple Developer Forums 826851](https://developer.apple.com/forums/thread/826851)). Wispr Flow shows a swipe-back screen for the same reason.
+
+Signed-device evidence for this flow, including the actual open behavior on iOS 26 and 27 and App Review acceptance, remains outstanding.
+
+## Earlier conclusion — 31 October 2026
+
+The requested complete keyboard-only flow, including a cold or expired containing-app session, is **not verified**. An active microphone session can still receive the keyboard's start/stop/cancel commands. At that time the implementation displayed the inactive-session requirement and never launched the containing app; the 13 November decision above supersedes that rule. This interim capability does not complete #39, and no decision to release with an alternative has been made.
 
 The signed Preview process probe now has physical evidence on an iPhone 16 Pro / iOS 27.0.1 over USB. Invoking its public SwiftUI intent button ran the harmless action in the keyboard extension, including from Settings with the containing app terminated. That route did not establish a containing-app recording path. No microphone, user force-quit, keyboard resource or App Review acceptance follows from the probe.
 
