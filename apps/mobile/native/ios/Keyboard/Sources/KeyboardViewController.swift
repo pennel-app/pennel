@@ -109,7 +109,17 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let showsGlobe = !Self.systemShowsSwitchKey(on: view.window?.windowScene)
+        if typing?.showsGlobe != showsGlobe { typing?.showsGlobe = showsGlobe }
         updateHeight()
+    }
+
+    /// iOS 27 can raise an Objective-C exception from `needsInputModeSwitchKey` during host reconnection, so this
+    /// infers the system switch bar from the screen: every supported tall-screen iPhone shows the globe below the keys.
+    private static func systemShowsSwitchKey(on scene: UIWindowScene?) -> Bool {
+        guard let scene, scene.traitCollection.userInterfaceIdiom == .phone else { return false }
+        let size = scene.screen.nativeBounds.size
+        return max(size.width, size.height) / max(min(size.width, size.height), 1) > 2
     }
 
     private func install() {
@@ -133,6 +143,8 @@ final class KeyboardViewController: UIInputViewController {
         let typing = KeyboardTypingModel(copy: copy, suggestionsEnabled: suggestionsPreference(in: defaults),
                                          defaults: defaults, learningDefaults: hasFullAccess ? defaults : UserDefaults.standard,
                                          writableDefaults: hasFullAccess ? defaults : UserDefaults.standard)
+        // Like Wispr Flow, the keyboard opens on numbers and punctuation next to Start; ABC reveals the letters.
+        typing.state.layer = .numbers
         self.typing = typing
         feedbackController = KeyboardFeedbackController(view: view, preferences: { [weak self] in
             KeyboardFeedbackPreferences(in: self?.preferenceDefaults ?? UserDefaults.standard)
@@ -152,19 +164,23 @@ final class KeyboardViewController: UIInputViewController {
             client: HandoffClient(store: store),
             context: { [weak self] in self?.insertionContext }, copy: copy,
             onFeedback: { [weak self] in self?.playFeedback($0) },
+            launchDefaults: .standard,
             onResult: { [weak self] in self?.insert($0, typingFeedback: false) })
         self.model = model
         let layout = KeyboardLayout.stored(in: defaults)
         layout.store(in: UserDefaults.standard)
         if hasFullAccess { KeyboardFullAccess.markSeen(in: KeyboardLayout.groupDefaults) }
-        // iOS 27 can raise an Objective-C exception querying the switch-key requirement during host reconnection.
-        // Keep the public globe control available without reading that transitional document interface.
+        typing.showsGlobe = !Self.systemShowsSwitchKey(on: view.window?.windowScene)
         let root = KeyboardRoot(
-            model: model, typing: typing, layout: layout, showsGlobe: true,
+            model: model, typing: typing, layout: layout,
             inputModeTarget: inputModeTarget,
             openSettings: { [weak self] in
                 guard let self else { return }
                 AppOpener.openSettings(from: extensionContext)
+            },
+            openPennel: { [weak self] url, completion in
+                guard let self else { return completion(false) }
+                AppOpener.openContainingApp(url, from: self, completion: completion)
             },
             insert: { [weak self] in self?.insert($0) },
             delete: { [weak self] in self?.delete() },

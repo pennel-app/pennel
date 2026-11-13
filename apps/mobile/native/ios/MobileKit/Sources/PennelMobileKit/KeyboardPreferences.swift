@@ -97,6 +97,7 @@ public struct KeyboardCopy: Sendable {
         case space, returnKey, go, search, send, next, done, join, route, continueKey
         case shift, capsLock, delete, numbers, symbols, letters, showNumbers, showSymbols, showLetters, nextKeyboard, cancel, microphone
         case suggestions, suggestionsOff, suggestionsPrivacy, insertSuggestion
+        case startPennel, startPennelHint, openPennelFallback
     }
 
     public let language: KeyboardInterfaceLanguage
@@ -168,6 +169,12 @@ public struct KeyboardCopy: Sendable {
         case (.dutch, .insertLast): "Laatste dictaat invoegen"
         case (.english, .sessionOff): "Session off"
         case (.dutch, .sessionOff): "Sessie uit"
+        case (.english, .startPennel): "Start"
+        case (.dutch, .startPennel): "Start"
+        case (.english, .startPennelHint): "Pennel opens briefly and gets the microphone ready. Swipe back to keep writing."
+        case (.dutch, .startPennelHint): "Pennel opent even en zet de microfoon klaar. Swipe terug om verder te schrijven."
+        case (.english, .openPennelFallback): "Open Pennel and tap Start session, then return here."
+        case (.dutch, .openPennelFallback): "Open Pennel, tik op Start sessie en kom daarna hier terug."
         case (.english, .manualStart): "Open Pennel → Dictation → Start session, then return here."
         case (.dutch, .manualStart): "Open Pennel → Dicteren → Start sessie en kom daarna hier terug."
         case (.english, .stopDictation): "Stop dictation"

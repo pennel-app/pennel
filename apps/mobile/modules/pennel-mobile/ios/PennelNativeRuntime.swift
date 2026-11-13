@@ -122,13 +122,13 @@ public final class PennelNativeRuntime {
         publish()
     }
 
-    public func startSession() async throws {
+    public func startSession(navigate: Bool = true) async throws {
         _ = try bootstrap()
         guard await DictationSession.shared.start() else {
             throw PennelBridgeError(DictationSession.shared.startErrorCode ?? "session_unavailable", DictationSession.shared.startError ?? "The dictation session could not start.")
         }
         AppRouter.shared.showsSessionReturn = true
-        requestNavigation("dictation")
+        if navigate { requestNavigation("dictation") }
         publish()
     }
 
@@ -159,7 +159,10 @@ public final class PennelNativeRuntime {
             return true
         }
         guard DictationSession.isStartLink(url) else { return false }
-        Task { try? await startSession() }
+        // Expo Router shows the swipe-back page for this link; navigating to Dictation would cover it.
+        Task {
+            do { try await startSession(navigate: false) } catch { publish() }
+        }
         return true
     }
 

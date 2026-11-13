@@ -87,7 +87,7 @@ struct KeyboardInteractionTests {
         harness.grid.moveContact(touch, to: CGPoint(x: 120, y: 20))
         harness.grid.endContact(touch, at: CGPoint(x: 120, y: 20))
         #expect(harness.inserted == ["è"])
-        #expect(harness.grid.bounds.height == 140)
+        #expect(harness.grid.bounds.height == 44 * 3 + KeyStyle.rowGap * 2)
         harness.grid.cancelInteractions()
     }
 
@@ -106,8 +106,11 @@ struct KeyboardInteractionTests {
                     #expect(keys.allSatisfy { (0...1).contains($0.x) && (0...1).contains($0.y) })
                     let secondRowLetter = layout.rows[1][0]
                     let actual = try #require(keys.first { $0.key == secondRowLetter })
-                    let expectedX = Double((12 + (width - 24) / CGFloat(layout.rows[1].count) / 2) / width)
-                    let expectedY = Double((height + 4 + height / 2) / (height * 3 + 8))
+                    // Like the system keyboard, the second row keeps the top row's key width and is centred.
+                    let unit = width / CGFloat(layout.rows[0].count)
+                    let inset = (width - unit * CGFloat(layout.rows[1].count)) / 2
+                    let expectedX = Double((inset + unit / 2) / width)
+                    let expectedY = Double((height + KeyStyle.rowGap + height / 2) / (height * 3 + KeyStyle.rowGap * 2))
                     #expect(abs(actual.x - expectedX) < 0.000_001)
                     #expect(abs(actual.y - expectedY) < 0.000_001)
                     harness.grid.cancelInteractions()
@@ -128,7 +131,7 @@ private final class InteractionHarness {
     var deleted = 0
 
     init(layout: KeyboardLayout = .qwerty, swipeEnabled: Bool = false, width: CGFloat = 300, keyHeight: CGFloat = 44) {
-        grid = KeyboardLetterGridView(frame: CGRect(x: 0, y: 0, width: width, height: keyHeight * 3 + 8))
+        grid = KeyboardLetterGridView(frame: CGRect(x: 0, y: 0, width: width, height: keyHeight * 3 + KeyStyle.rowGap * 2))
         let state = KeyboardTypingState()
         grid.configure(rows: state.rows(layout: layout), shifted: false, shiftLocked: false,
             layer: .letters, keyHeight: keyHeight, swipeEnabled: swipeEnabled, copy: KeyboardCopy(language: .english),

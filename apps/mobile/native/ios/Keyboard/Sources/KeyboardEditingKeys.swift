@@ -13,6 +13,7 @@ struct KeyboardPreparationButtonStyle: ButtonStyle {
 
 struct KeyboardSpaceKey: UIViewRepresentable {
     let label: String
+    var title: String? = nil
     let language: KeyboardInterfaceLanguage
     let action: () -> Void
     let moveCursor: (Int) -> Void
@@ -22,8 +23,8 @@ struct KeyboardSpaceKey: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ScrubbingSpaceButton { ScrubbingSpaceButton(type: .custom) }
     func updateUIView(_ button: ScrubbingSpaceButton, context: Context) {
-        button.label = label
-        if !button.isScrubbing { button.setTitle(label, for: .normal) }
+        button.label = title ?? label
+        if !button.isScrubbing { button.setTitle(button.label, for: .normal) }
         button.action = action; button.moveCursor = moveCursor
         button.prepareFeedback = prepareFeedback; button.feedback = feedback
         button.allowsCursorMovement = allowsCursorMovement
@@ -34,7 +35,7 @@ struct KeyboardSpaceKey: UIViewRepresentable {
             UIAccessibilityCustomAction(name: language == .dutch ? "Cursor naar links" : "Move cursor left") { [weak button] _ in button?.moveCursor?(-1); return button != nil },
             UIAccessibilityCustomAction(name: language == .dutch ? "Cursor naar rechts" : "Move cursor right") { [weak button] _ in button?.moveCursor?(1); return button != nil },
         ] : []
-        styleKeyboardEditingButton(button)
+        styleKeyboardEditingButton(button, letter: true)
     }
     static func dismantleUIView(_ view: ScrubbingSpaceButton, coordinator: ()) { view.cancelInteraction() }
 }
@@ -148,12 +149,13 @@ final class SlidingSymbolButton: UIButton {
 }
 
 @MainActor
-private func styleKeyboardEditingButton(_ button: UIButton) {
-    button.setTitleColor(UIColor(Brand.foreground.color), for: .normal)
-    button.backgroundColor = UIColor(Brand.subtle.color)
-    button.layer.cornerRadius = Brand.Radius.keycap
-    let font = UIFont(name: "Figtree-Medium", size: Brand.FontSize.body) ?? .systemFont(ofSize: Brand.FontSize.body, weight: .medium)
-    button.titleLabel?.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
+private func styleKeyboardEditingButton(_ button: UIButton, letter: Bool = false) {
+    button.setTitleColor(UIColor(KeyStyle.label.color), for: .normal)
+    button.backgroundColor = UIColor((letter ? KeyStyle.letterKey : KeyStyle.functionKey).color)
+    button.layer.cornerRadius = KeyStyle.keyRadius
+    KeyStyle.styleKeyShadow(button.layer)
+    let font = KeyStyle.uiFont(KeyStyle.functionSize)
+    button.titleLabel?.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: font, maximumPointSize: KeyStyle.functionSize * 1.5)
     button.titleLabel?.adjustsFontForContentSizeCategory = true
     button.titleLabel?.adjustsFontSizeToFitWidth = true
     button.titleLabel?.minimumScaleFactor = 0.7

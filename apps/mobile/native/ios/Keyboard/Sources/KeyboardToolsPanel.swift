@@ -27,6 +27,7 @@ struct KeyboardToolsPanel: View {
     let cancelWriting: () -> Void
     let saveSnippet: (String, String) -> Void
     let deleteSnippet: (KeyboardSnippet) -> Void
+    var toggleSuggestions: () -> Void = {}
     let feedback: (FeedbackEvent) -> Void
     @State private var recentEmoji = KeyboardToolPreferences.recentEmoji(in: UserDefaults.standard)
     @State private var creatingSnippet = false
@@ -44,10 +45,20 @@ struct KeyboardToolsPanel: View {
             if creatingSnippet {
                 snippetEditor
             } else {
-                Picker(isDutch ? "Toetsenbordhulpmiddelen" : "Keyboard tools", selection: $tab) {
-                    ForEach(KeyboardToolTab.allCases) { value in Text(value.title(language)).tag(value) }
+                HStack(spacing: Brand.Spacing.s1) {
+                    Picker(isDutch ? "Toetsenbordhulpmiddelen" : "Keyboard tools", selection: $tab) {
+                        ForEach(KeyboardToolTab.allCases) { value in Text(value.title(language)).tag(value) }
+                    }
+                    .pickerStyle(.segmented)
+                    Button(action: toggleSuggestions) {
+                        Image(systemName: typing.suggestionsEnabled ? "text.bubble.fill" : "text.bubble")
+                            .foregroundStyle(typing.suggestionsEnabled ? KeyStyle.accent.color : KeyStyle.secondaryLabel.color)
+                            .frame(minWidth: controlHeight, minHeight: controlHeight)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(typing.copy.text(typing.suggestionsEnabled ? .suggestions : .suggestionsOff))
+                    .accessibilityHint(typing.copy.text(.suggestionsPrivacy))
                 }
-                .pickerStyle(.segmented)
                 .onChange(of: tab) { previous, _ in query = ""; if previous == .writing { cancelWriting() } }
                 if tab != .writing { searchBar }
                 switch tab {
@@ -57,15 +68,15 @@ struct KeyboardToolsPanel: View {
                 }
             }
         }
-        .font(.figtree(Brand.FontSize.content))
-        .foregroundStyle(Brand.foreground.color)
+        .font(.keyboard(Brand.FontSize.content))
+        .foregroundStyle(KeyStyle.label.color)
     }
 
     private var searchBar: some View {
         HStack(spacing: Brand.Spacing.s2) {
             Image(systemName: "magnifyingglass").accessibilityHidden(true)
             Text(query.isEmpty ? (isDutch ? "Typ om te zoeken…" : "Type to search…") : query)
-                .foregroundStyle(query.isEmpty ? Brand.muted.color : Brand.foreground.color)
+                .foregroundStyle(query.isEmpty ? KeyStyle.secondaryLabel.color : KeyStyle.label.color)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel(isDutch ? "Zoekopdracht" : "Search query")
@@ -83,7 +94,7 @@ struct KeyboardToolsPanel: View {
         }
         .padding(.horizontal, Brand.Spacing.s2)
         .frame(minHeight: controlHeight)
-        .background(Brand.subtle.color, in: RoundedRectangle(cornerRadius: Brand.Radius.control))
+        .background(KeyStyle.functionKey.color, in: RoundedRectangle(cornerRadius: Brand.Radius.control))
     }
 
     private var emojiResults: some View {
@@ -124,8 +135,8 @@ struct KeyboardToolsPanel: View {
                         HStack(spacing: Brand.Spacing.s1) {
                             Button { insert(snippet.text) } label: {
                                 VStack(alignment: .leading, spacing: Brand.Spacing.s1) {
-                                    Text(snippet.title).font(.figtree(Brand.FontSize.content, weight: .semibold)).lineLimit(1)
-                                    Text(snippet.text).foregroundStyle(Brand.muted.color).lineLimit(1)
+                                    Text(snippet.title).font(.keyboard(Brand.FontSize.content, weight: .semibold)).lineLimit(1)
+                                    Text(snippet.text).foregroundStyle(KeyStyle.secondaryLabel.color).lineLimit(1)
                                 }
                                 .frame(maxWidth: .infinity, minHeight: controlHeight, alignment: .leading)
                                 .contentShape(Rectangle())
@@ -176,14 +187,14 @@ struct KeyboardToolsPanel: View {
     private func editorField(_ title: String, value: String, active: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: Brand.Spacing.s2) {
-                Text(title).font(.figtree(Brand.FontSize.content, weight: .semibold))
-                    .foregroundStyle(active ? Brand.accent.color : Brand.muted.color)
+                Text(title).font(.keyboard(Brand.FontSize.content, weight: .semibold))
+                    .foregroundStyle(active ? KeyStyle.accent.color : KeyStyle.secondaryLabel.color)
                 Text(value.isEmpty ? (isDutch ? "Typ hieronder…" : "Type below…") : value)
                     .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, Brand.Spacing.s2)
             .frame(minHeight: controlHeight)
-            .background(Brand.subtle.color, in: RoundedRectangle(cornerRadius: Brand.Radius.control))
+            .background(KeyStyle.functionKey.color, in: RoundedRectangle(cornerRadius: Brand.Radius.control))
         }
         .accessibilityLabel(title)
         .accessibilityValue(value)
@@ -222,7 +233,7 @@ struct KeyboardToolsPanel: View {
                 }
             } else {
                 Text(typing.selectedText.map { String($0.prefix(160)) } ?? (isDutch ? "Selecteer tekst in je app om die te bewerken." : "Select text in your app to edit it."))
-                    .foregroundStyle(Brand.muted.color).lineLimit(2)
+                    .foregroundStyle(KeyStyle.secondaryLabel.color).lineLimit(2)
                 if typing.writingIsProcessing {
                     HStack {
                         ProgressView()
@@ -241,7 +252,7 @@ struct KeyboardToolsPanel: View {
                 }
             }
             if let status = typing.writingStatus {
-                Text(status).font(.figtree(Brand.FontSize.body)).foregroundStyle(Brand.muted.color).lineLimit(2)
+                Text(status).font(.keyboard(Brand.FontSize.body)).foregroundStyle(KeyStyle.secondaryLabel.color).lineLimit(2)
             }
         }
         .padding(.horizontal, Brand.Spacing.s2)
@@ -254,6 +265,6 @@ struct KeyboardToolsPanel: View {
     }
 
     private func empty(_ text: String) -> some View {
-        Text(text).foregroundStyle(Brand.muted.color).frame(maxWidth: .infinity, minHeight: controlHeight)
+        Text(text).foregroundStyle(KeyStyle.secondaryLabel.color).frame(maxWidth: .infinity, minHeight: controlHeight)
     }
 }
