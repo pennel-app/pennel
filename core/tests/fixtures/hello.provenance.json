@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "fixture": "hello.wav",
+  "created_date": "2026-11-13",
+  "origin": "synthetic-formant-speech",
+  "text": "Hello. This is a Pennel speech test.",
+  "generator": {
+    "name": "eSpeak NG",
+    "version": "1.52.0",
+    "voice": "en-us",
+    "voice_name": "English (America)",
+    "voice_file": "gmw/en-US",
+    "voice_file_sha256": "41534c2a22df5dd4f1052ff9e1a33a3ea7bff5a26b5c02bdad5ba8ddb7524704",
+    "method": "standard formant synthesis; no MBROLA or recorded voice",
+    "words_per_minute": 150,
+    "source": "https://github.com/espeak-ng/espeak-ng/tree/1.52.0",
+    "license": "GPL-3.0-or-later",
+    "license_source": "https://github.com/espeak-ng/espeak-ng/blob/1.52.0/COPYING",
+    "license_sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  "conversion": {
+    "name": "FFmpeg",
+    "version": "9.0.2",
+    "metadata_removed": true,
+    "bitexact_flags": true
+  },
+  "commands": [
+    [
+      "mkdir",
+      "-p",
+      "build/provider-fixture-259"
+    ],
+    [
+      "espeak-ng",
+      "-v",
+      "en-us",
+      "-s",
+      "150",
+      "-w",
+      "build/provider-fixture-259/hello-espeak.wav",
+      "Hello. This is a Pennel speech test."
+    ],
+    [
+      "ffmpeg",
+      "-nostdin",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      "build/provider-fixture-259/hello-espeak.wav",
+      "-map_metadata",
+      "-1",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-c:a",
+      "pcm_s16le",
+      "-fflags",
+      "+bitexact",
+      "-flags:a",
+      "+bitexact",
+      "core/tests/fixtures/hello.wav"
+    ]
+  ],
+  "format": {
+    "container": "WAV",
+    "encoding": "PCM signed 16-bit little-endian",
+    "channels": 1,
+    "sample_rate_hz": 16000,
+    "sample_width_bytes": 2,
+    "frames": 46917,
+    "duration_seconds": 2.9323125,
+    "size_bytes": 93878
+  },
+  "sha256": "323177b0668fc0e4a296b54c48a4912f9cbf41de282e08903f508d52406b1925",
+  "fixture_license": "Apache-2.0",
+  "content": "Original Pennel test sentence synthesized into a waveform; no microphone recording, human speech sample, external recorded voice or generator executable is included."
+}

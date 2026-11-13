@@ -880,6 +880,21 @@ mod tests {
         real_model_transcribes("whisper-small-q5_1.bin");
     }
 
+    /// Uses the generated fixture and an existing model, without downloading anything.
+    #[cfg(feature = "local-models")]
+    #[test]
+    #[ignore = "requires the already-installed Whisper Turbo model"]
+    fn real_existing_whisper_turbo_fixture_transcribes() {
+        let home = std::env::var("HOME").unwrap();
+        let model = PathBuf::from(home)
+            .join("Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf");
+        assert!(
+            model.is_file(),
+            "Install Whisper Turbo before this offline test; it never downloads a model"
+        );
+        real_model_transcribes("whisper-large-v3-turbo.gguf");
+    }
+
     #[cfg(not(feature = "local-models"))]
     #[test]
     fn local_transcribe_without_feature_is_dutch_error() {

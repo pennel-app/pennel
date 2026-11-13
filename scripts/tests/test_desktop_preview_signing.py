@@ -115,7 +115,7 @@ class PreviewSigningIdentityTests(unittest.TestCase):
             signing.main(["--allow-adhoc-ci"])
 
     def test_explicit_development_cn_is_validated_by_certificate_team_not_parentheses(self):
-        development = signing.Identity(LOCAL, "Apple Development: Lander Parren (C2PC5BFY7J)")
+        development = signing.Identity(LOCAL, "Apple Development: Example Developer (CNIDENT001)")
         selected = signing.select_identity([development], apple_override=LOCAL)
         self.assertEqual(selected.sha1, LOCAL)
         with self.assertRaises(ValueError):
