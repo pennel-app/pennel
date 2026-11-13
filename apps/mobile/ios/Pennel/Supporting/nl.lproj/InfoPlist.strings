@@ -1,0 +1,3 @@
+"NSMicrophoneUsageDescription" = "Pennel gebruikt je microfoon voor dictaten en meetingopnames die je zelf start.";
+"NSSpeechRecognitionUsageDescription" = "Pennel gebruikt Apple-spraakherkenning wanneer je de Apple-provider kiest.";
+"NSCameraUsageDescription" = "Pennel gebruikt je camera om een tijdelijke verbindingscode te scannen. Je kunt de code ook invullen.";
