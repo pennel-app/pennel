@@ -1,0 +1,100 @@
+{
+  "schema_version": 3,
+  "experiment_id": "review-pennel-cloud-nl-v1-2026-11-13-defaults",
+  "stage": "heldout_ready",
+  "code_source_commit": "664aec41b399de26376b1e8a0671a536249cb39e",
+  "freeze_sha256": "ebee7a9eceb6478390998984e84df25417c115abaf5c33fc767b71d1b98b63b7",
+  "production_freeze_sha256": "0ef76caf1b894eb03c21a07cf6a39e485af1b448696d04d2b84b7a3e0f3f9611",
+  "bridge_sha256": "d38bdb9005c69a5f49fa4c364d6218974f8fb4243ac3c3f92ae4cdc239255800",
+  "protocol_sha256": "4f4f7b35aedd064a2bd2198568a8c20ffca78635fd54ecf95867e16239a23c9e",
+  "production_protocol_sha256": "ebf3471fc643157d855bfa75dc1457113c18d184fdb05504b2ef868e2f500b98",
+  "python_source_sha256": {
+    "finished_qualification.py": "3ed7d93cb1ef278d7c982f09c112ad868061507194f858fc549bc77d7112d8d0",
+    "finished.py": "96b301b8c6ed9ddf33cd200865ec03c6f47ff8327fd04ae5ba2498f7847719d2",
+    "finished_preflight.py": "4123008d3dee2fdd838914bf998353d9889232b142d70c3975bf6a05bfc4b9c8",
+    "calibration.py": "af2ba3806a3f46a89c7b00c68ff9ac1a75847958fe0fe4ec6681fe0bc468c515",
+    "metrics.py": "b4e5821c5f9a6163733a1f1c73c98f26391b6e960d2977185c3d51e4f0e1a9c9",
+    "finished_v3.py": "a61d614b1fa64ce5e4bbf22bdaf2c9540fd7861e27355c325555a657efb62408",
+    "finished_experiment.py": "2c48278cd04bf1728698cc9c5d466758a289df483293be37ced6861c8fa50633",
+    "finished_corpus_v3.py": "cc9bcefb2e3e82b6643ff680ffab3422e7e2aab2aa18d3835f45bbf5d2ced3c0",
+    "runners.py": "fcb573407a0be4f4e841617d710428d821586735e59961fc4d566d66deedecab",
+    "fixtures/seen-b-semantic-regression-v3.json": "1ff3e5789b1e126fbb01f80a62c9213666b378e54e3afbcc8b31c8d04c5d43a5",
+    "finished_cloud_experiment.py": "01b5582a74d5b7980908dda130a4af66bcecb82220f0d4af289a843b0571ac8e",
+    "finished_corpus_managed_v1.py": "1fee63f8e163a42889b1e3aa94e2b81bc1ef7f6ea2904ed19c6c13a971f67499",
+    "protocol-finished-qualification-cloud-v1.json": "4f4f7b35aedd064a2bd2198568a8c20ffca78635fd54ecf95867e16239a23c9e",
+    "evaluation_io.py": "f27841557013d82883042a4d05dc7d672afc160aa461cfa1e49c2e40f577da18"
+  },
+  "authored_spec_sha256": "1761eedbd4ce46d0b6221ff2f42997a5e426db2d93d090360130a93813b95cf9",
+  "corpus_sha256": "577ecdabdbb6fcc25f2b47d9d798b2bb0a542b6fcd985121e534b3daee15e991",
+  "split_sha256": "2aad2e04a033674b25f27f90f3022fc9cc737872e0d90c40db78df12eb94c5cd",
+  "physical_request_manifest_sha256": "7b3428e2d15bcae49fc1e2c6a88f0e91fcead677b3beff08cb0af5458e999c50",
+  "configuration": {
+    "endpoint": "https://api.pennel.app/v1/decisions",
+    "expected_model": "perplexity/pplx-decider-v1.2-20261016",
+    "max_input_bytes": 65536,
+    "model": "pennel-review-v3",
+    "protocol": "pennel_cloud",
+    "timeout_secs": 90,
+    "upstream": null
+  },
+  "expected_actual": {
+    "artifact_sha256": "",
+    "identity_evidence": "provider_reported_version",
+    "model": "perplexity/pplx-decider-v1.2-20261016",
+    "provider": "Perplexity",
+    "revision": ""
+  },
+  "identity_expectation_is_not_serving_evidence": true,
+  "runtime_policy": "raw_supported_passage_decisions_v3",
+  "runtime_calibration_applied": false,
+  "remote_weights_independently_verified": false,
+  "export_summary": {
+    "fixtures": 290,
+    "physical_requests_by_split": {
+      "development": 246,
+      "calibration": 180,
+      "heldout": 181
+    },
+    "max_encoded_bytes": 65472
+  },
+  "calibration_design": {
+    "contexts": 288,
+    "minimum_observations": 11,
+    "minimum_classes": 2,
+    "minimum_families": 11
+  },
+  "budget": {
+    "limit_usd": "2.00",
+    "known_billed_usd": "0.27108938",
+    "total_exposure_usd": "0.28379574",
+    "unresolved_charge": false
+  },
+  "no_personal_meetings": true,
+  "automatic_retries": false,
+  "fallbacks": false,
+  "credential_delivery": "short-lived access-only lease from the existing isolated Capture owner through anonymous pipes; no refresh token",
+  "scope": "manual finished Dutch only; no automatic-analysis consent or foreground-impact approval",
+  "freeze_artifact": "build/review-cloud-local/cloud-qualification-v3-defaults/heldout-ready.json",
+  "production_admission": false,
+  "calibration_executed": true,
+  "heldout_executed": false,
+  "resources_executed": false,
+  "supersedes_unused_freeze": {
+    "freeze_sha256": "c1148186b05c995660fa1aa0fda1c9271fc823d851459eaf9418d0ec61852b3f",
+    "reason": "Explicit failed=false and voice=null now match strict Rust fixture serialization; every transcript, judgment, split and actual production export unchanged",
+    "provider_requests_on_superseded_freeze": 0
+  },
+  "strict_authored_spec_roundtrip_verified": true,
+  "base_freeze_sha256": "6a678edd97a67e2bae84734ffbffc72f4e938fdd2652c5059cf7d8193375ddd9",
+  "calibration_runs_sha256": "d63ea44267fc215c801967268e94d6debd7ed9b8ee5b977a6a41d039a1726c35",
+  "calibration_artifact_sha256": "d7c5d03f73edfafcbeb15c8602196025ffa19ec033298282670eea469d8b51ee",
+  "calibration_predictions_sha256": "c64d3a8203201ceb9c9306524ae8ba7c89bbc900c4c66492a887731c988309f7",
+  "calibration_execution": {
+    "jobs": 96,
+    "physical_requests": 180,
+    "all_observed_model": "perplexity/pplx-decider-v1.2-20261016",
+    "all_observed_provider": "Perplexity",
+    "normal_quota_changed": false,
+    "failed_requests": 0
+  }
+}
