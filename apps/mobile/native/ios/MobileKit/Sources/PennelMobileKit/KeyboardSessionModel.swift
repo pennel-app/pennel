@@ -15,6 +15,9 @@ public final class KeyboardSessionModel {
     /// Commands are fire and forget; if the app has not reflected a start by then, it never acted on it.
     public static let acknowledgementGrace: TimeInterval = 1.5
     public static let resultGrace: TimeInterval = 3
+    /// How long after opening Pennel a newly ready session may still start the requested dictation by itself.
+    public static let launchStartWindow: TimeInterval = 60
+    public static let launchRequestKey = "keyboard_launch_requested_at"
 
     public private(set) var pad: KeyboardPad
     public private(set) var lastResult: HandoffResult?
@@ -29,6 +32,9 @@ public final class KeyboardSessionModel {
     private let context: () -> KeyboardInsertionContext?
     private let onResult: (String) -> Void
     private let onFeedback: (FeedbackEvent) -> Void
+    /// The extension can be recreated while the user is in Pennel, so the request outlives this model.
+    private let launchDefaults: UserDefaults?
+    private var memoryLaunchRequest: Date?
     public let copy: KeyboardCopy
 
     private var gesture = Gesture.none
@@ -47,7 +53,8 @@ public final class KeyboardSessionModel {
         hasFullAccess: Bool, client: HandoffClient, now: @escaping () -> Date = Date.init,
         context: @escaping () -> KeyboardInsertionContext?,
         copy: KeyboardCopy = KeyboardCopy(language: .english),
-        onFeedback: @escaping (FeedbackEvent) -> Void = { _ in }, onResult: @escaping (String) -> Void
+        onFeedback: @escaping (FeedbackEvent) -> Void = { _ in }, launchDefaults: UserDefaults? = nil,
+        onResult: @escaping (String) -> Void
     ) {
         self.hasFullAccess = hasFullAccess
         self.client = client
@@ -56,6 +63,7 @@ public final class KeyboardSessionModel {
         self.copy = copy
         self.onResult = onResult
         self.onFeedback = onFeedback
+        self.launchDefaults = launchDefaults
         pad = hasFullAccess ? .sessionOff : .needsFullAccess
     }
 
@@ -132,8 +140,44 @@ public final class KeyboardSessionModel {
             } else {
                 reset()
                 pad = .ready
+                startRequestedLaunch(at: current)
             }
         }
+    }
+
+    public static func launchURL(scheme: String?) -> URL? {
+        let scheme = scheme ?? "pennel"
+        guard ["pennel", "pennel-preview"].contains(scheme) else { return nil }
+        return URL(string: "\(scheme)://sessie/start")
+    }
+
+    /// Remembers that the user asked Pennel to start a session, so the keyboard can begin listening on return.
+    @discardableResult
+    public func requestLaunch() -> Bool {
+        guard hasFullAccess, pad == .sessionOff else { return false }
+        launchRequestedAt = now()
+        return true
+    }
+
+    public func cancelLaunch() { launchRequestedAt = nil }
+
+    private var launchRequestedAt: Date? {
+        get { launchDefaults.map { $0.object(forKey: Self.launchRequestKey) as? Date } ?? memoryLaunchRequest }
+        set {
+            if let launchDefaults {
+                if let newValue { launchDefaults.set(newValue, forKey: Self.launchRequestKey) }
+                else { launchDefaults.removeObject(forKey: Self.launchRequestKey) }
+            } else { memoryLaunchRequest = newValue }
+        }
+    }
+
+    private func startRequestedLaunch(at current: Date) {
+        guard let requested = launchRequestedAt else { return }
+        let age = current.timeIntervalSince(requested)
+        guard age >= 0, age < Self.launchStartWindow else { launchRequestedAt = nil; return }
+        guard context() != nil else { return }
+        launchRequestedAt = nil
+        begin(.handsFree)
     }
 
     public func tapPill() {
@@ -142,6 +186,7 @@ public final class KeyboardSessionModel {
         case .sessionOff:
             break
         case .ready:
+            cancelLaunch()
             begin(.handsFree)
         case .listening:
             if gesture != .hold { end() }
@@ -155,7 +200,7 @@ public final class KeyboardSessionModel {
     public func holdBegan() {
         guard hasFullAccess else { return }
         switch pad {
-        case .ready: begin(.hold)
+        case .ready: cancelLaunch(); begin(.hold)
         case .sessionOff: break
         default: break
         }
