@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "runtime_id": "pennel-decider-native-v1",
+  "abi": "pennel-managed-decider-cabi-v1",
+  "source": {
+    "repository": "https://github.com/ggml-org/llama.cpp.git",
+    "tag": "v0.9.0",
+    "revision": "cd959bae99ff4bed22bef2604f45241c09bbb8c8",
+    "ggml_tree": "aba4ed214b4b573b4d25afd454666f80c626cee1"
+  },
+  "protocol_reference": {
+    "url": "https://huggingface.co/perplexity-ai/pplx-decider-flash-v1.2/resolve/6d771ad7b5ecff5e93b8fc7b90d4c5ccc341954d/source/src/pplx_decider/protocol.py",
+    "sha256": "b29d7a50d7214bd42397f8d3ddd5b5706cb8da2b257e175bf89b5a8da455d6a0",
+    "license": "Apache-2.0"
+  },
+  "minimum_macos": "14.4",
+  "architecture": "arm64",
+  "cmake_options": {
+    "BUILD_SHARED_LIBS": "OFF",
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+    "GGML_BACKEND_DL": "OFF",
+    "GGML_BLAS": "OFF",
+    "GGML_BUILD_TESTS": "OFF",
+    "GGML_CCACHE": "OFF",
+    "GGML_METAL": "ON",
+    "GGML_METAL_EMBED_LIBRARY": "ON",
+    "GGML_METAL_MACOSX_VERSION_MIN": "14.4",
+    "GGML_NATIVE": "OFF",
+    "GGML_OPENMP": "OFF",
+    "LLAMA_BUILD_APP": "OFF",
+    "LLAMA_BUILD_COMMON": "OFF",
+    "LLAMA_BUILD_EXAMPLES": "OFF",
+    "LLAMA_BUILD_SERVER": "OFF",
+    "LLAMA_BUILD_TESTS": "OFF",
+    "LLAMA_BUILD_TOOLS": "OFF",
+    "LLAMA_BUILD_UI": "OFF",
+    "LLAMA_CURL": "OFF",
+    "LLAMA_OPENSSL": "OFF",
+    "LLAMA_USE_SYSTEM_GGML": "OFF"
+  }
+}

@@ -60,6 +60,55 @@ impl Drop for InferenceMutation {
 }
 
 impl PennelEngine {
+    /// Reads the signed-in service's configured Review contract without sending meeting content.
+    pub fn managed_meeting_review_profile_json(&self) -> Result<String, PennelError> {
+        let (profile, endpoint) = match self.managed_meeting_review_profile_at_endpoint() {
+            Ok((profile, endpoint)) => (profile, Some(endpoint)),
+            Err(PennelError::NotSignedIn) => (
+                inference::ManagedMeetingReviewProfile::unavailable("not_signed_in"),
+                None,
+            ),
+            Err(error) => return Err(error),
+        };
+        let mut value = serde_json::to_value(profile)
+            .map_err(|_| invalid("Pennel Cloud returned unsupported inference capabilities."))?;
+        value["endpoint"] = serde_json::json!(endpoint);
+        serde_json::to_string(&value)
+            .map_err(|_| invalid("Pennel Cloud returned unsupported inference capabilities."))
+    }
+
+    pub(crate) fn managed_meeting_review_profile(
+        &self,
+    ) -> Result<inference::ManagedMeetingReviewProfile, PennelError> {
+        self.managed_meeting_review_profile_at_endpoint()
+            .map(|(profile, _)| profile)
+    }
+
+    fn managed_meeting_review_profile_at_endpoint(
+        &self,
+    ) -> Result<(inference::ManagedMeetingReviewProfile, String), PennelError> {
+        let session = self.cloud_session()?;
+        if !session.signed_in() {
+            return Err(PennelError::NotSignedIn);
+        }
+        let managed = inference::ManagedInference {
+            generation: session.generation(),
+            session,
+        };
+        let base = managed.session.base_url().trim_end_matches('/');
+        let endpoint = format!("{}/v1/decisions", base.strip_suffix("/v1").unwrap_or(base));
+        let cancellation = InferenceCancellation::new();
+        self.register_inference(&cancellation);
+        let _registration = InferenceRegistration {
+            engine: self,
+            cancellation: &cancellation,
+        };
+        let profile =
+            inference::managed_meeting_review_profile(managed.clone(), cancellation.clone())?;
+        self.managed_inference_unchanged(Some(&managed))?;
+        Ok((profile, endpoint))
+    }
+
     pub fn inference_epoch(&self) -> u64 {
         self.inference_state().lock().unwrap().generation
     }
@@ -137,11 +186,19 @@ impl PennelEngine {
                 "Choose a supported provider account for this inference protocol.",
             ));
         }
+        if inference::managed_local_review(&config) != (account.kind == ProviderKind::Local) {
+            return Err(invalid(
+                "Choose a supported provider account for this inference protocol.",
+            ));
+        }
         inference::validate_config(&config, &self.inference_base_url(&account), capability)?;
         Ok((config, account))
     }
 
     fn inference_base_url(&self, account: &ProviderAccount) -> String {
+        if account.kind == ProviderKind::Local {
+            return crate::local_decider::ENDPOINT.into();
+        }
         if account.kind != ProviderKind::PennelCloud {
             return account.base_url.clone();
         }
@@ -699,6 +756,114 @@ mod tests {
         unused.assert();
     }
 
+    fn cloud_review_descriptor() -> serde_json::Value {
+        serde_json::json!({"schema_version":1,"decision":{"available":false},"meeting_review":{
+            "available":true,"reason_code":"available","profile":"supported_passages_v3",
+            "model":"pennel-review-v3","configured_model":"perplexity/pplx-decider-v1.2",
+            "expected_model":"perplexity/pplx-decider-v1.2-20261016","upstream":"perplexity",
+            "limits":{"max_input_bytes":65536,"max_questions":64,"max_batch_windows":8,"request_timeout_secs":35}
+        }})
+    }
+
+    #[test]
+    fn managed_review_discovery_uses_the_signed_in_origin_without_saving_or_sending_content() {
+        use crate::cloud::SecretStore;
+        let mut server = mockito::Server::new();
+        let mut trap = mockito::Server::new();
+        let (_dir, engine, secrets) = cloud_configured(&server);
+        let mut settings = engine.settings();
+        settings
+            .providers
+            .iter_mut()
+            .find(|p| p.id == "managed-fixture")
+            .unwrap()
+            .base_url = trap.url();
+        engine.update_settings(settings.clone()).unwrap();
+        let no_content = server.mock("POST", "/v1/decisions").expect(0).create();
+        let no_wrong_origin = trap.mock("GET", mockito::Matcher::Any).expect(0).create();
+        secrets.set(crate::cloud::REFRESH_ACCOUNT.into(), None);
+        let signed_out: serde_json::Value =
+            serde_json::from_str(&engine.managed_meeting_review_profile_json().unwrap()).unwrap();
+        assert_eq!(signed_out["reason_code"], "not_signed_in");
+        assert_eq!(signed_out["available"], false);
+        assert!(signed_out["endpoint"].is_null());
+        assert!(signed_out["expected_model"].is_null());
+        secrets.set(
+            crate::cloud::REFRESH_ACCOUNT.into(),
+            Some("fixture-refresh".into()),
+        );
+        let refresh = cloud_refresh(&mut server);
+        let caps = server
+            .mock("GET", "/v1/inference/capabilities")
+            .match_header("authorization", "Bearer fixture-access")
+            .with_body(cloud_review_descriptor().to_string())
+            .create();
+        let profile: serde_json::Value =
+            serde_json::from_str(&engine.managed_meeting_review_profile_json().unwrap()).unwrap();
+        assert_eq!(profile["available"], true);
+        assert_eq!(
+            profile["endpoint"],
+            format!("{}/v1/decisions", server.url())
+        );
+        assert_eq!(
+            profile["expected_model"],
+            "perplexity/pplx-decider-v1.2-20261016"
+        );
+        assert!(profile.get("actual_model").is_none());
+        assert_eq!(engine.settings(), settings);
+        refresh.assert();
+        caps.assert();
+        no_content.assert();
+        no_wrong_origin.assert();
+    }
+
+    #[test]
+    fn managed_review_availability_does_not_accept_generic_cloud_or_a_changed_profile_pin() {
+        let mut server = mockito::Server::new();
+        let (_dir, engine, _) = cloud_configured(&server);
+        let mut settings = engine.settings();
+        let config = settings.decision.as_mut().unwrap();
+        config.model = "pennel-review-v3".into();
+        config.expected_model = Some("perplexity/pplx-decider-v1.2-20261016".into());
+        config.max_input_bytes = 65536;
+        config.timeout_secs = 90;
+        engine.update_settings(settings).unwrap();
+        let refresh = cloud_refresh(&mut server);
+        let no_content = server.mock("POST", "/v1/decisions").expect(0).create();
+        for change in 0..4 {
+            let mut body = cloud_review_descriptor();
+            match change {
+                1 => {
+                    body.as_object_mut().unwrap().remove("meeting_review");
+                    body["decision"]["available"] = serde_json::json!(true);
+                }
+                2 => {
+                    body["meeting_review"]["expected_model"] =
+                        serde_json::json!("perplexity/pplx-decider-v1.2-20261017")
+                }
+                3 => {
+                    body["meeting_review"]["available"] = serde_json::json!(false);
+                    body["meeting_review"]["reason_code"] = serde_json::json!("disabled");
+                }
+                _ => (),
+            }
+            let caps = server
+                .mock("GET", "/v1/inference/capabilities")
+                .with_body(body.to_string())
+                .create();
+            assert_eq!(
+                engine
+                    .inference_availability(InferenceCapability::Decision)
+                    .available,
+                change == 0
+            );
+            caps.assert();
+            caps.remove();
+        }
+        refresh.assert();
+        no_content.assert();
+    }
+
     #[test]
     fn managed_protocol_and_account_kind_cannot_be_mixed() {
         let mut server = mockito::Server::new();
@@ -732,6 +897,68 @@ mod tests {
                 .is_err()
         );
         refresh.assert();
+    }
+
+    #[test]
+    fn managed_local_selection_cannot_use_a_custom_server_or_provider_key() {
+        let mut trap = mockito::Server::new();
+        let no_http = trap.mock("POST", mockito::Matcher::Any).expect(0).create();
+        let dir = tempfile::tempdir().unwrap();
+        let engine = PennelEngine::new_preview(dir.path().to_string_lossy().into_owned()).unwrap();
+        let mut settings = engine.settings();
+        let account = settings
+            .providers
+            .iter_mut()
+            .find(|provider| provider.kind == ProviderKind::Local)
+            .unwrap();
+        account.base_url = trap.url();
+        let account_id = account.id.clone();
+        let config = InferenceConfig {
+            provider_id: account_id.clone(),
+            protocol: InferenceProtocol::LocalDecider,
+            model: crate::local_decider::MODEL_ID.into(),
+            expected_model: Some(crate::local_decider::MODEL_FINGERPRINT.into()),
+            upstream: None,
+            max_input_bytes: 65536,
+            timeout_secs: 90,
+        };
+        settings.decision = Some(config.clone());
+        engine.update_settings(settings.clone()).unwrap();
+        assert_eq!(
+            engine.meeting_analysis_configuration().unwrap().1.endpoint,
+            crate::local_decider::ENDPOINT
+        );
+        let result = engine.decide(
+            crate::meeting_insight_engine::verification_request(&config),
+            InferenceCancellation::for_priority(crate::InferencePriority::ForegroundQuestion),
+            ApiKeys {
+                by_provider: HashMap::from([(
+                    account_id.clone(),
+                    "must-not-reach-a-server".into(),
+                )]),
+            },
+        );
+        assert!(!matches!(
+            result,
+            Err(PennelError::Http { .. })
+                | Err(PennelError::Network { .. })
+                | Err(PennelError::MissingApiKey { .. })
+        ));
+        assert!(result.is_err());
+        settings
+            .providers
+            .iter_mut()
+            .find(|provider| provider.id == account_id)
+            .unwrap()
+            .kind = ProviderKind::Custom;
+        engine.update_settings(settings).unwrap();
+        assert!(
+            engine
+                .inference_selection(InferenceCapability::Decision)
+                .is_err()
+        );
+        assert!(engine.meeting_analysis_configuration().is_err());
+        no_http.assert();
     }
 
     #[test]
@@ -884,7 +1111,15 @@ impl PennelEngine {
                     capability,
                 )
                 .ok();
-                if account.kind == ProviderKind::PennelCloud {
+                if inference::managed_local_review(&config) {
+                    match self.managed_local_decider_inference_readiness() {
+                        Ok(()) => {
+                            result.available = true;
+                            result.reason="Configured. Test with the synthetic sample to verify this connection.".into();
+                        }
+                        Err(error) => result.reason = error.to_string(),
+                    }
+                } else if account.kind == ProviderKind::PennelCloud {
                     let cancellation = InferenceCancellation::new();
                     self.register_inference(&cancellation);
                     let _registration = InferenceRegistration {
@@ -961,7 +1196,30 @@ impl PennelEngine {
         }
         inference::validate_decision_request(&config, &request)?;
         let managed = self.managed_inference(&account)?;
-        let result = if let Some(managed) = managed.as_ref() {
+        let result = if inference::managed_local_review(&config) {
+            #[cfg(feature = "evaluation")]
+            let attempt = crate::evaluation::local_review::transport_start(&account.id, &request);
+            let result = inference::run_local_scheduled(
+                cancellation.clone(),
+                config.timeout_secs,
+                |deadline| {
+                    self.decide_managed_local_decider(
+                        request,
+                        InferenceCancellation::scheduled(
+                            cancellation.clone(),
+                            cancellation.priority(),
+                            deadline,
+                        ),
+                        config.timeout_secs,
+                    )
+                },
+            );
+            #[cfg(feature = "evaluation")]
+            if let Some(attempt) = attempt {
+                attempt.completed(&result);
+            }
+            result?
+        } else if let Some(managed) = managed.as_ref() {
             inference::decide_managed(&config, managed.clone(), request, cancellation.clone())?
         } else {
             let key = self.credential(&account, &keys)?;
@@ -1052,9 +1310,17 @@ impl PennelEngine {
             return Err(PennelError::Cancelled);
         }
         let outcome = match capability {
-            InferenceCapability::Decision => self
-                .decide(
-                    DecisionRequest {
+            InferenceCapability::Decision => {
+                let review = self
+                    .inference_selection(capability)
+                    .ok()
+                    .and_then(|(config, _)| {
+                        (inference::managed_review(&config)
+                            || inference::managed_local_review(&config))
+                        .then_some(config)
+                    });
+                let request = review.as_ref().map_or_else(
+                    || DecisionRequest {
                         state: "Synthetic Pennel sample: the meeting starts at ten.".into(),
                         questions: vec![DecisionQuestion {
                             id: "sample".into(),
@@ -1064,16 +1330,30 @@ impl PennelEngine {
                             options: vec![],
                         }],
                     },
-                    cancellation,
-                    keys,
-                )
-                .map(|r| {
-                    let valid = r.answers.len() == 1
-                        && r.answers[0].id == "sample"
-                        && !r.answers[0].abstained
-                        && r.answers[0].value.is_some_and(|v| v > 0.5);
+                    crate::meeting_insight_engine::verification_request,
+                );
+                self.decide(request, cancellation, keys).map(|r| {
+                    let valid = if review.is_some() {
+                        r.answers.len() == 8
+                            && r.answers.iter().any(|answer| {
+                                answer.id == "action"
+                                    && answer.choice.as_deref() == Some("confirmed")
+                                    && !answer.abstained
+                            })
+                            && r.answers.iter().any(|answer| {
+                                answer.id == "action_support"
+                                    && answer.choice.as_deref() == Some("supported")
+                                    && !answer.abstained
+                            })
+                    } else {
+                        r.answers.len() == 1
+                            && r.answers[0].id == "sample"
+                            && !r.answers[0].abstained
+                            && r.answers[0].value.is_some_and(|v| v > 0.5)
+                    };
                     (valid, r.identity)
-                }),
+                })
+            }
             InferenceCapability::Reranking => self
                 .rerank(
                     RerankRequest {

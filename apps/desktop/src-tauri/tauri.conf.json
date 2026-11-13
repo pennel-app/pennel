@@ -7,6 +7,7 @@
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
+    "beforeBundleCommand": "node ../../scripts/stage-decider-runtime.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -41,6 +42,7 @@
     "resources": {
       "resources/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings",
       "resources/nl.lproj/InfoPlist.strings": "nl.lproj/InfoPlist.strings",
+      "resources/decider-runtime": "decider-runtime",
       "../src/desktop-ui/LICENSE": "licenses/Forma.txt",
       "../src/desktop-ui/fonts/OFL.txt": "licenses/Inter-OFL.txt"
     },

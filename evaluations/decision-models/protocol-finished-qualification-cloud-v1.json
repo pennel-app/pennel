@@ -1,0 +1,41 @@
+{
+  "schema_version": 3,
+  "protocol_id": "production-finished-qualification-cloud-v1",
+  "use_case": "manual_finished_suggestions",
+  "languages": [
+    "nl"
+  ],
+  "production_contract": "Actual Rust Engine, access-only device Session, managed Review transport, state/support decoder and exact source replay; authenticated same-origin Cloud capability and expected-model pin.",
+  "runtime_policy": "raw_supported_passage_decisions_v3",
+  "calibration_role": "Diagnostic only. Calibrate every state and support context on the calibration split; runtime uses explicit support/state choices without a fitted threshold.",
+  "identity_evidence": "provider_reported_version; exact returned dated model, actual provider, requested upstream and official endpoint are pinned. No independently verified remote artifact or serving revision is claimed.",
+  "acceptance": {
+    "component_macro_f1_min": 0.9,
+    "complete_item_macro_f1_min": 0.9,
+    "accepted_item_precision_min": 0.95,
+    "unsupported_or_duplicate_items_max": 0,
+    "minimum_calibration_observations": 10,
+    "minimum_calibration_classes": 2,
+    "minimum_calibration_families": 2,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "hosted_warm_complete_job_p95": "within the frozen configured whole-job deadline, never over 90 seconds",
+    "support_macro_f1_min": 0.9,
+    "calibrated_support_macro_f1_min": 0.9
+  },
+  "bounds": {
+    "whole_job_timeout_secs_max": 90,
+    "hosted_total_usd_max": "2.00",
+    "budget_is_cumulative": true,
+    "automatic_retries": false,
+    "fallbacks": false,
+    "new_model_runtime_downloads": false
+  },
+  "items": "Independently authored SOURCE0 state and kind-support judgments. Complete-item metrics include original four state components only, exact literal quotes and every frozen central/adjacent source anchor. Unsupported owner/due/prior extraction remains null. Easy support rows cannot inflate item F1.",
+  "calibration": "Only calibration distributions fit artifacts. Actual authored physical template, slot, batch size, question, label order, provider/model and grouping bind each context. Require actual export coverage across every intended split before inference; commit fitted lock before heldout.",
+  "resource_scope": "Five fresh isolated Python coordinators and thirty retained-coordinator complete jobs, each owning a fresh real Rust Engine CLI for the complete original job. All physical batches share that Engine and one 90-second deadline. RSS is maximum individual-process lifetime high-water mark over the isolated coordinator and waited Rust child; remote server/GUI/aggregate process-tree RSS unmeasured.",
+  "adoption": "Emit a candidate only after unchanged exact-source, original-job, state/item/precision/resource gates and separate raw/calibrated support quality gates pass. Never write the registry or reuse failed A/B quality credit.",
+  "support_abstention": "Unclear or model-abstained support is a null prediction counted as a missed class/coverage loss, not a third event class. Retain its raw distribution for calibration. State unknown remains a real state.",
+  "transport": "pennel-review-v3 / supported_passages_v3; client UUID and expected_model pin; canonical upstream Perplexity alias and fixed no-fallback/ZDR policy. Captures parsed service JSON before decision decoding, not raw HTTP bytes or observed upstream wire.",
+  "authentication": "Short-lived device access token only via anonymous inherited pipe. No refresh token, OS credential lookup, account/device creation or refresh traffic. Stop on 401 or expiry; freeze each phase inside its usable TTL."
+}

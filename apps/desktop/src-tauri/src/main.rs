@@ -905,6 +905,24 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         PennelEngine::new(dir.to_string_lossy().into_owned())?
     };
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        // This validates bundled runtime metadata only; model weights load on explicit analysis.
+        let runtime = handle.path().resource_dir().ok().and_then(|resources| {
+            std::env::current_exe().ok().and_then(|executable| {
+                pennel_core::BundledLocalDeciderRuntime::new(
+                    resources.join("decider-runtime"),
+                    executable,
+                )
+                .ok()
+            })
+        });
+        if let Some(runtime) = runtime {
+            engine.set_managed_local_decider_runtime(runtime);
+        } else {
+            LOG.info("The bundled local Decider runtime is unavailable.");
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         engine.set_system_transcriber(Arc::new(AppleTranscriber));
@@ -1109,6 +1127,9 @@ impl pennel_core::TimedSystemTranscriber for AppleTranscriber {
 }
 
 fn main() {
+    if let Some(code) = pennel_core::managed_local_decider_worker_main(std::env::args().collect()) {
+        std::process::exit(code);
+    }
     tauri::Builder::default()
         .manage(ExitState::default())
         .manage(workspace::Navigation::default())
@@ -1176,6 +1197,8 @@ fn main() {
             capture::capture_snapshot,
             #[cfg(target_os = "macos")]
             capture::capture_runtime_status,
+            #[cfg(all(target_os = "macos", feature = "capture-evaluation"))]
+            capture::access_lease::capture_cloud_access_lease,
             commands::app_info,
             commands::credential_store_status,
             commands::migrate_saved_credentials,
@@ -1209,6 +1232,12 @@ fn main() {
             commands::test_provider_task_choice,
             inference::inference_protocols,
             inference::qualified_finished_suggestion_presets,
+            inference::managed_meeting_review_profile,
+            inference::managed_local_decider_status,
+            inference::download_managed_local_decider,
+            inference::cancel_managed_local_decider_download,
+            inference::remove_managed_local_decider,
+            inference::set_meeting_review_configuration,
             inference::set_meeting_suggestion_policy_checked,
             inference::inference_availability,
             inference::cleanup_verification_availability,

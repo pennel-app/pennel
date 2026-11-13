@@ -1,7 +1,8 @@
 import { api, type FinishedSuggestionPreset, type InferenceAvailability, type InferenceCapability, type InferenceConfig, type InferenceProtocolInfo } from "../api";
 import { errorText, field, h, section, select } from "../dom";
 import { bindLocalization, getInterfaceLanguage, liveText, localizeBackendText } from "../i18n.ts";
-import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState, testedSuggestionDraft } from "../inference-state.ts";
+import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState, normalizedInferenceDraft, testedSuggestionDraft } from "../inference-state.ts";
+import { cloudReviewDraft } from "../review-processing-state.ts";
 import type { Context } from "../main";
 import { providerDestination } from "../processing-state";
 
@@ -12,8 +13,8 @@ const copy = {
   experimental_review_help: ["A qualified Decision setup can be used for manual Dutch Review. Other connections remain available for setup and sample testing.", "Een goedgekeurde beslissingsverbinding kan worden gebruikt om handmatig Nederlandse meetings te beoordelen. Andere verbindingen blijven beschikbaar om in te stellen en met een voorbeeld te testen."],
   tested_setup: ["Tested Review setup", "Geteste instelling voor Beoordelen"],
   use_tested: ["Use tested setup", "Geteste instelling gebruiken"],
-  tested_help: ["Fill the tested model and limits, then save. Your selected connection and its API key are reused.", "Vul het geteste model en de limieten in en bewaar daarna. Je gekozen verbinding en de bijbehorende API-sleutel worden hergebruikt."],
-  tested_need_router: ["Choose an existing OpenRouter connection to use this setup.", "Kies een bestaande OpenRouter-verbinding om deze instelling te gebruiken."],
+  tested_help: ["Fill the tested model and limits, then save. Your selected account is reused.", "Vul het geteste model en de limieten in en bewaar daarna. Je gekozen account wordt hergebruikt."],
+  tested_need_router: ["Choose an account that matches this setup.", "Kies een account dat bij deze instelling past."],
   tested_add_router: ["Add OpenRouter connection", "OpenRouter-verbinding toevoegen"],
   tested_details: ["Verification details", "Verificatiegegevens"],
   tested_identity: ["Manual Dutch Review. The provider reports this exact model version; its weights are not independently verified. Automatic analysis needs separate qualification.", "Handmatig beoordelen van Nederlandse meetings. De provider meldt deze exacte modelversie; de modelgewichten zijn niet onafhankelijk gecontroleerd. Automatische analyse vereist een aparte goedkeuring."],
@@ -163,7 +164,13 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
       const fresh = await api.qualifiedFinishedSuggestionPresets();
       if (disposed || draft.provider_id !== id || selectedPreset !== requested || JSON.stringify(draft) !== previousDraft) return;
       const preset = fresh.find(item => item.qualification_id === requested), account = ctx.info.settings.providers.find(item => item.id === id);
-      const next = preset && shown && JSON.stringify(preset) === JSON.stringify(shown) && account ? testedSuggestionDraft(preset, account) : null;
+      let next = preset && shown && JSON.stringify(preset) === JSON.stringify(shown) && account ? testedSuggestionDraft(preset, account) : null;
+      if (next?.protocol === "pennel_cloud") {
+        const epoch = ctx.info.cloud_account_epoch;
+        const profile = await api.managedMeetingReviewProfile();
+        if (disposed || ctx.info.cloud_account_epoch !== epoch || draft.provider_id !== id || JSON.stringify(draft) !== previousDraft) return;
+        next = cloudReviewDraft(profile, preset ? [preset] : [], account);
+      }
       if (!next || !providerProtocols(id).some(item => item.protocol === next.protocol)) throw new Error(text("tested_changed"));
       Object.assign(draft, next);
       model.value = draft.model; expected.value = draft.expected_model ?? ""; upstream.value = draft.upstream ?? "";
@@ -183,7 +190,7 @@ async function inferenceSection(ctx: Context, capability: InferenceCapability, p
     errorMessage = null; saving = true; draw();
     try {
       cancelRun();
-      const config = { ...draft, model: draft.model.trim(), ...(draft.protocol === "pennel_cloud" ? { model: "pennel-auto", expected_model: null, upstream: null } : {}) };
+      const config = normalizedInferenceDraft(draft);
       await ctx.save((settings) => { settings[capability] = config; });
       if (!disposed) { dirty = false; rerender(); }
     } catch (error) { if (!disposed) errorMessage = errorText(error); }

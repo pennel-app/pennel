@@ -174,6 +174,14 @@ fn text(value: &str, maximum: usize) -> bool {
 const OPENROUTER_DECISIONS: &str = "https://openrouter.ai/api/alpha/decisions";
 const PERPLEXITY_DECIDER: &str = "perplexity/pplx-decider-v1.2";
 
+fn managed_local_configuration(configured: &MeetingConfiguredInference) -> bool {
+    configured.protocol == InferenceProtocol::LocalDecider
+        && configured.endpoint == crate::local_decider::ENDPOINT
+        && configured.model == crate::local_decider::MODEL_ID
+        && configured.expected_model.as_deref() == Some(crate::local_decider::MODEL_FINGERPRINT)
+        && configured.upstream.is_none()
+}
+
 fn provider_versioned_model(model: &str) -> bool {
     let Some(date) = model
         .strip_prefix(PERPLEXITY_DECIDER)
@@ -205,17 +213,38 @@ impl MeetingActualInference {
     }
 
     fn matches_provider_configuration(&self, configured: &MeetingConfiguredInference) -> bool {
-        configured.protocol == InferenceProtocol::OpenRouterDecisions
+        let direct = configured.protocol == InferenceProtocol::OpenRouterDecisions
             && configured.endpoint == OPENROUTER_DECISIONS
             && (configured.model == PERPLEXITY_DECIDER || configured.model == self.model)
             && configured.expected_model.as_deref() == Some(self.model.as_str())
-            && configured.upstream.as_deref() == Some("perplexity")
+            && configured.upstream.as_deref() == Some("perplexity");
+        let managed = configured.protocol == InferenceProtocol::PennelCloud
+            && matches!(
+                configured.endpoint.as_str(),
+                "https://api.pennel.app/v1/decisions"
+                    | "https://api-staging.pennel.app/v1/decisions"
+            )
+            && configured.model == crate::inference::MANAGED_REVIEW_MODEL
+            && configured.expected_model.as_deref() == Some(self.model.as_str())
+            && configured.upstream.is_none();
+        direct || managed
     }
 
     fn valid_for_request(&self, request: &MeetingQualificationRequest) -> bool {
         self.valid_pin()
             && match self.identity_evidence {
-                MeetingIdentityEvidence::ServingRevisionAndArtifact => true,
+                MeetingIdentityEvidence::ServingRevisionAndArtifact => {
+                    if managed_local_configuration(&request.configured) {
+                        request.use_case == MeetingAnalysisUseCase::ManualFinishedSuggestions
+                            && request.language_policy == "nl"
+                            && self.model == crate::local_decider::MODEL_FINGERPRINT
+                            && self.artifact_sha256 == crate::local_decider::MODEL_SHA256
+                            && self.provider == crate::local_decider::PROVIDER
+                            && hash(&self.revision)
+                    } else {
+                        true
+                    }
+                }
                 MeetingIdentityEvidence::ProviderReportedVersion => {
                     request.use_case == MeetingAnalysisUseCase::ManualFinishedSuggestions
                         && request.language_policy == "nl"
@@ -426,8 +455,10 @@ impl MeetingQualificationRegistry {
         self.records
             .iter()
             .filter_map(|record| {
-                if record.context.actual.identity_evidence
-                    != MeetingIdentityEvidence::ProviderReportedVersion
+                let local = managed_local_configuration(&record.context.request.configured)
+                    && record.context.actual.identity_evidence == MeetingIdentityEvidence::ServingRevisionAndArtifact;
+                if (!local && record.context.actual.identity_evidence
+                    != MeetingIdentityEvidence::ProviderReportedVersion)
                     || record.context.request.use_case
                         != MeetingAnalysisUseCase::ManualFinishedSuggestions
                     || record.context.request.language_policy != "nl"
@@ -451,7 +482,10 @@ impl MeetingQualificationRegistry {
                     "identity_evidence": record.context.actual.identity_evidence,
                     "actual_model": record.context.actual.model,
                     "actual_provider": record.context.actual.provider,
-                    "weights_independently_verified": false
+                    "provider_kind": if local { "local" } else if record.context.request.configured.protocol == InferenceProtocol::PennelCloud {
+                        "pennel_cloud"
+                    } else { "open_router" },
+                    "weights_independently_verified": local
                 }))
             })
             .collect()
@@ -566,11 +600,18 @@ impl PennelEngine {
         if !info.allowed_provider_kinds.contains(&account.kind) {
             return Err(MeetingQualificationError::InvalidConfiguration);
         }
+        if crate::inference::managed_local_review(&config)
+            != (account.kind == crate::ProviderKind::Local)
+        {
+            return Err(MeetingQualificationError::InvalidConfiguration);
+        }
         let base = if account.kind == crate::ProviderKind::PennelCloud {
             self.current_cloud_session().map_or_else(
                 || self.cloud_base_url(),
                 |session| session.base_url().into(),
             )
+        } else if account.kind == crate::ProviderKind::Local {
+            crate::local_decider::ENDPOINT.into()
         } else {
             account.base_url.clone()
         };
@@ -664,6 +705,64 @@ impl PennelEngine {
                 status.qualification_id = Some(qualification.record.qualification_id);
             }
             Err(error) => status.reason_code = error.reason_code().into(),
+        }
+        drop(_capture);
+        if status.available
+            && current.protocol == InferenceProtocol::PennelCloud
+            && current.model == crate::inference::MANAGED_REVIEW_MODEL
+        {
+            let epoch = self.inference_epoch();
+            let account_epoch = self.cloud_account_epoch();
+            let profile = self.managed_meeting_review_profile();
+            let _capture = self.inference_capture_gate();
+            if self.inference_epoch() != epoch
+                || self
+                    .current_cloud_session()
+                    .map_or(0, |session| session.generation())
+                    != account_epoch
+                || !self
+                    .meeting_analysis_configuration()
+                    .is_ok_and(|(provider, configured)| {
+                        Some(&provider) == status.provider_id.as_ref() && configured == current
+                    })
+            {
+                status.available = false;
+                status.reason_code = "configuration_changed".into();
+            } else {
+                match profile {
+                    Ok(profile)
+                        if profile.available
+                            && profile.expected_model == current.expected_model => {}
+                    Ok(profile) => {
+                        status.available = false;
+                        status.reason_code = if profile.available {
+                            "cloud_profile_changed".into()
+                        } else {
+                            format!("cloud_{}", profile.reason_code)
+                        };
+                    }
+                    Err(crate::PennelError::NotSignedIn) => {
+                        status.available = false;
+                        status.reason_code = "not_signed_in".into();
+                    }
+                    Err(_) => {
+                        status.available = false;
+                        status.reason_code = "cloud_unavailable".into();
+                    }
+                }
+            }
+        }
+        if status.available
+            && managed_local_configuration(&current)
+            && let Err(error) = self.managed_local_decider_inference_readiness()
+        {
+            status.available = false;
+            status.reason_code = if error == crate::PennelError::ModelNotDownloaded {
+                "local_not_downloaded"
+            } else {
+                "local_runtime_unavailable"
+            }
+            .into();
         }
         Ok(status)
     }
@@ -859,6 +958,101 @@ mod tests {
             serde_json::to_value(admitted.record()).unwrap()["context"]["actual"]["identity_evidence"],
             "provider_reported_version"
         );
+    }
+
+    #[test]
+    fn managed_review_requires_its_own_official_route_record_and_exact_response_identity() {
+        let mut value = provider_record_value();
+        value["context"]["configured"]["protocol"] = "pennel_cloud".into();
+        value["context"]["configured"]["endpoint"] = "https://api.pennel.app/v1/decisions".into();
+        value["context"]["configured"]["model"] = "pennel-review-v3".into();
+        value["context"]["configured"]["upstream"] = serde_json::Value::Null;
+        let record: MeetingQualificationRecord = serde_json::from_value(value).unwrap();
+        let request = record.context.request.clone();
+        let admitted = registry(record.clone()).admit(&request).unwrap();
+        let mut observed = provider_identity();
+        observed.protocol = InferenceProtocol::PennelCloud;
+        observed.endpoint = request.configured.endpoint.clone();
+        observed.requested_model = "pennel-review-v3".into();
+        observed.requested_upstream = None;
+        assert!(admitted.validate_identity(&observed).is_ok());
+        assert!(
+            MeetingQualificationRegistry::bundled()
+                .admit(&request)
+                .is_err()
+        );
+        for change in 0..5 {
+            let mut invalid = record.clone();
+            match change {
+                0 => {
+                    invalid.context.request.configured.endpoint =
+                        "https://other.example/v1/decisions".into()
+                }
+                1 => invalid.context.request.configured.model = "pennel-auto".into(),
+                2 => invalid.context.request.configured.upstream = Some("perplexity".into()),
+                3 => {
+                    invalid.context.request.use_case = MeetingAnalysisUseCase::ManualLiveSuggestions
+                }
+                _ => invalid.context.request.language_policy = "en".into(),
+            }
+            let request = invalid.context.request.clone();
+            assert!(
+                registry(invalid).admit(&request).is_err(),
+                "change {change}"
+            );
+        }
+        observed.actual_provider = None;
+        assert!(admitted.validate_identity(&observed).is_err());
+    }
+
+    #[test]
+    fn managed_local_record_requires_real_artifact_runtime_and_local_provider_metadata() {
+        let mut record = record();
+        record.context.request = crate::meeting_insight_engine::qualification_request(
+            MeetingConfiguredInference {
+                protocol: InferenceProtocol::LocalDecider,
+                endpoint: crate::local_decider::ENDPOINT.into(),
+                model: crate::local_decider::MODEL_ID.into(),
+                expected_model: Some(crate::local_decider::MODEL_FINGERPRINT.into()),
+                upstream: None,
+                max_input_bytes: 65536,
+                timeout_secs: 90,
+            },
+            "nl",
+        );
+        record.context.actual = MeetingActualInference {
+            model: crate::local_decider::MODEL_FINGERPRINT.into(),
+            revision: sha('f'),
+            provider: crate::local_decider::PROVIDER.into(),
+            artifact_sha256: crate::local_decider::MODEL_SHA256.into(),
+            identity_evidence: MeetingIdentityEvidence::ServingRevisionAndArtifact,
+        };
+        let request = record.context.request.clone();
+        assert!(registry(record.clone()).admit(&request).is_ok());
+        let presets = registry(record.clone()).finished_provider_presets();
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0]["provider_kind"], "local");
+        assert_eq!(presets[0]["weights_independently_verified"], true);
+        assert!(
+            MeetingQualificationRegistry::bundled()
+                .admit(&request)
+                .is_err()
+        );
+        for change in 0..5 {
+            let mut invalid = record.clone();
+            match change {
+                0 => invalid.context.actual.artifact_sha256 = sha('0'),
+                1 => invalid.context.actual.revision = "configured-runtime-alias".into(),
+                2 => invalid.context.actual.provider = "configured-provider-name".into(),
+                3 => invalid.context.request.language_policy = "en".into(),
+                _ => {
+                    invalid.context.actual.identity_evidence =
+                        MeetingIdentityEvidence::ProviderReportedVersion
+                }
+            }
+            let request = invalid.context.request.clone();
+            assert!(registry(invalid).admit(&request).is_err());
+        }
     }
 
     #[test]

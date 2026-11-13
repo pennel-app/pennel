@@ -34,7 +34,9 @@ impl Prepared {
             max_input_bytes: configured.max_input_bytes,
             timeout_secs: configured.timeout_secs,
         };
-        if config.protocol == InferenceProtocol::PennelCloud {
+        if config.protocol == InferenceProtocol::PennelCloud
+            && !crate::inference::managed_review(&config)
+        {
             return Err(invalid(
                 "Managed inference needs a separate authenticated evaluation contract.",
             ));
@@ -70,12 +72,31 @@ impl Prepared {
         let batches = self.batches.iter().enumerate().map(|(index, batch)| {
             let wire_body = String::from_utf8(crate::inference::decision_body(&self.config, &batch.request)?)
                 .map_err(|_| invalid("The request is not UTF-8."))?;
-            Ok(json!({"index":index,"window_indices":batch.window_indices,"answer_map":batch.answer_map,
+            let mut value = json!({"index":index,"window_indices":batch.window_indices,"answer_map":batch.answer_map,
                 "request":batch.request,"wire_body_sha256":crate::meeting_utterances::digest(wire_body.as_bytes()),
-                "wire_body":wire_body}))
+                "wire_body":wire_body});
+            if crate::inference::managed_review(&self.config) {
+                let mut upstream: Value = serde_json::from_str(value["wire_body"].as_str().expect("encoded UTF-8"))
+                    .map_err(|_| invalid("The request is not UTF-8."))?;
+                let object = upstream.as_object_mut().expect("wire request object");
+                object.remove("expected_model");
+                object.insert("model".into(), json!("perplexity/pplx-decider-v1.2"));
+                object.insert("provider".into(), json!({"only":["perplexity"],"allow_fallbacks":false,
+                    "data_collection":"deny","zdr":true}));
+                value["managed_transport"] = json!({
+                    "profile":"supported_passages_v3","session_origin":self.configured.endpoint.strip_suffix("/v1/decisions"),
+                    "runtime_request_id":"unique UUID per physical decision; preserved across authentication refresh",
+                    "canonical_upstream_contract":upstream,
+                    "upstream_contract_is_observed_wire":false,
+                    "request_timeout_secs":crate::inference::MANAGED_REVIEW_TIMEOUT_SECS,
+                    "whole_job_timeout_secs":self.config.timeout_secs,
+                    "response_profile_required":"supported_passages_v3"
+                });
+            }
+            Ok(value)
         }).collect::<Result<Vec<_>, PennelError>>()?;
         Ok(json!({
-            "runtime_policy":if self.config.protocol == InferenceProtocol::OpenRouterDecisions {
+            "runtime_policy":if crate::inference::supported_passage_profile(self.config.protocol, &self.config.model) {
                 "raw_supported_passage_decisions_v3"
             } else { "raw_closed_set_passage_decisions_v2" },
             "qualification_request":qualification_request(self.configured.clone(),&self.language),
@@ -88,23 +109,84 @@ impl Prepared {
         }))
     }
 
+    pub(crate) fn batch_request(&self, index: usize) -> Option<DecisionRequest> {
+        self.batches.get(index).map(|batch| batch.request.clone())
+    }
+
+    pub(crate) fn batch_count(&self) -> usize {
+        self.batches.len()
+    }
+
     pub(crate) fn replay(
         &self,
         index: usize,
         raw: &[u8],
         expected: Option<&MeetingActualInference>,
     ) -> Value {
+        self.replay_with_request_id(index, raw, expected, None)
+    }
+
+    pub(crate) fn replay_with_request_id(
+        &self,
+        index: usize,
+        raw: &[u8],
+        expected: Option<&MeetingActualInference>,
+        request_id: Option<&str>,
+    ) -> Value {
         let Some(batch) = self.batches.get(index) else {
             return json!({"status":"unknown_batch","batch_index":index,"windows":[]});
         };
-        let result = match crate::inference::evaluation_decision_response(
-            &self.config,
-            self.configured.endpoint.clone(),
-            &batch.request,
-            raw,
-        ) {
+        let parsed = if crate::inference::managed_review(&self.config) {
+            let Some(request_id) = request_id else {
+                return json!({"status":"request_identity_unpinned","batch_index":index,"windows":[]});
+            };
+            crate::inference::evaluation_managed_decision_response(
+                &self.config,
+                self.configured.endpoint.clone(),
+                &batch.request,
+                raw,
+                request_id,
+            )
+        } else {
+            crate::inference::evaluation_decision_response(
+                &self.config,
+                self.configured.endpoint.clone(),
+                &batch.request,
+                raw,
+            )
+        };
+        let result = match parsed {
             Ok(result) => result,
             Err(_) => return json!({"status":"invalid_response","batch_index":index,"windows":[]}),
+        };
+        self.project_result(index, result, expected)
+    }
+
+    pub(crate) fn replay_production_result(
+        &self,
+        index: usize,
+        result: DecisionResult,
+        expected: Option<&MeetingActualInference>,
+    ) -> Value {
+        let Some(batch) = self.batches.get(index) else {
+            return json!({"status":"unknown_batch","batch_index":index,"windows":[]});
+        };
+        if !crate::inference::managed_local_review(&self.config)
+            || crate::local_decider::validate_answers(&batch.request, &result).is_err()
+        {
+            return json!({"status":"invalid_response","batch_index":index,"windows":[]});
+        }
+        self.project_result(index, result, expected)
+    }
+
+    fn project_result(
+        &self,
+        index: usize,
+        result: DecisionResult,
+        expected: Option<&MeetingActualInference>,
+    ) -> Value {
+        let Some(batch) = self.batches.get(index) else {
+            return json!({"status":"unknown_batch","batch_index":index,"windows":[]});
         };
         if !observed_identity_complete(expected, &result.identity) {
             return json!({"status":"identity_unavailable","batch_index":index,"observed_identity":result.identity,"windows":[]});

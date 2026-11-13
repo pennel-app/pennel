@@ -63,6 +63,7 @@ pub enum ModelKind {
     Diarizer,
     /// One of the two files of the speaker pipeline; the app offers them as one download.
     Speakers,
+    Decision,
 }
 
 pub const DIARIZER_ID: &str = "diar_streaming_sortformer_4spk-v2.1";
@@ -174,6 +175,7 @@ fn entries() -> Vec<ModelEntry> {
     entries.extend(legacy_entries());
     entries.push(diarizer_entry());
     entries.extend(speaker_entries());
+    entries.push(crate::local_decider::model_entry());
     entries
 }
 
@@ -189,6 +191,7 @@ pub struct ModelStore {
     dir: PathBuf,
     catalog: Vec<ModelEntry>,
     chunk_bytes: u64,
+    pub(crate) managed_decider: crate::local_decider::ManagedLocalDecider,
 }
 
 impl ModelStore {
@@ -201,6 +204,7 @@ impl ModelStore {
             dir: data_dir.join("models"),
             catalog,
             chunk_bytes: CHUNK_BYTES,
+            managed_decider: crate::local_decider::ManagedLocalDecider::new(data_dir),
         }
     }
 
@@ -290,7 +294,11 @@ impl ModelStore {
         cancel: &AtomicBool,
     ) -> Result<(), PennelError> {
         let entry = self.entry(id).ok_or(PennelError::NotFound)?.clone();
-        if self.path(id).is_some() {
+        if let Some(path) = self.path(id) {
+            if entry.kind == ModelKind::Decision {
+                self.managed_decider
+                    .verify_acquired_artifact(&path, &entry, cancel)?;
+            }
             return Ok(());
         }
         std::fs::create_dir_all(&self.dir).map_err(PennelError::storage)?;
@@ -361,6 +369,10 @@ impl ModelStore {
             });
         }
         std::fs::rename(&part, self.final_path(id)).map_err(PennelError::storage)?;
+        if entry.kind == ModelKind::Decision {
+            self.managed_decider
+                .verify_acquired_artifact(&self.final_path(id), &entry, cancel)?;
+        }
         listener.on_progress(entry.size_bytes, entry.size_bytes);
         Ok(())
     }

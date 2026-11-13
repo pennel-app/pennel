@@ -823,5 +823,7 @@
   "backend.pill_preview_capture_active": "Finish the current dictation before showing the pill preview.",
   "backend.pill_preview_open_failed": "The pill preview could not be opened.",
   "backend.recording_shortcut_unavailable": "The recording shortcut is unavailable. Try resetting it in Settings.",
-  "backend.recording_shortcut_unavailable_named": "The {label} recording shortcut is unavailable. Choose another shortcut in Settings."
+  "backend.recording_shortcut_unavailable_named": "The {label} recording shortcut is unavailable. Choose another shortcut in Settings.",
+  "backend.review_setup_changed": "Review setup changed. Refresh and choose again.",
+  "backend.review_setup_unavailable": "This Review setup is not available. Refresh and choose again."
 }

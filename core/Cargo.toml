@@ -18,6 +18,10 @@ name = "pennel-eval"
 path = "src/bin/pennel-eval.rs"
 required-features = ["evaluation"]
 
+[[bin]]
+name = "pennel-decider"
+path = "src/bin/pennel-decider.rs"
+
 [dependencies]
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 base64 = "0.23.1"

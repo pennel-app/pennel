@@ -104,8 +104,8 @@ fn prepared(input: &ExportRequest) -> Result<Prepared, &'static str> {
     .map_err(|_| "finished_contract_invalid")
 }
 
-fn source_hashes() -> Value {
-    json!({
+fn source_hashes(configuration: &MeetingConfiguredInference) -> Value {
+    let mut value = json!({
         "meeting_insight_engine.rs":crate::meeting_utterances::digest(include_bytes!("../meeting_insight_engine.rs")),
         "meeting_insight_engine/evaluation.rs":crate::meeting_utterances::digest(include_bytes!("../meeting_insight_engine/evaluation.rs")),
         "inference.rs":crate::meeting_utterances::digest(include_bytes!("../inference.rs")),
@@ -113,7 +113,102 @@ fn source_hashes() -> Value {
         "meeting_utterances.rs":crate::meeting_utterances::digest(include_bytes!("../meeting_utterances.rs")),
         "meeting_insights.rs":crate::meeting_utterances::digest(include_bytes!("../meeting_insights.rs")),
         "evaluation/finished.rs":crate::meeting_utterances::digest(include_bytes!("finished.rs"))
-    })
+    });
+    let managed = configuration.protocol == crate::InferenceProtocol::PennelCloud;
+    let local = configuration.protocol == crate::InferenceProtocol::LocalDecider
+        && configuration.model == crate::local_decider::MODEL_ID;
+    if managed || local {
+        let object = value.as_object_mut().expect("source manifest");
+        for (name, bytes) in [
+            (
+                "evaluation.rs",
+                include_bytes!("../evaluation.rs").as_slice(),
+            ),
+            (
+                "inference_engine.rs",
+                include_bytes!("../inference_engine.rs").as_slice(),
+            ),
+            (
+                "bin/pennel-eval.rs",
+                include_bytes!("../bin/pennel-eval.rs").as_slice(),
+            ),
+        ] {
+            object.insert(name.into(), crate::meeting_utterances::digest(bytes).into());
+        }
+    }
+    if managed {
+        let object = value.as_object_mut().expect("source manifest");
+        for (name, bytes) in [
+            (
+                "cloud/account.rs",
+                include_bytes!("../cloud/account.rs").as_slice(),
+            ),
+            (
+                "evaluation/managed_review.rs",
+                include_bytes!("managed_review.rs").as_slice(),
+            ),
+        ] {
+            object.insert(name.into(), crate::meeting_utterances::digest(bytes).into());
+        }
+    }
+    if local {
+        let object = value.as_object_mut().expect("source manifest");
+        for (name, bytes) in [
+            ("engine.rs", include_bytes!("../engine.rs").as_slice()),
+            ("models.rs", include_bytes!("../models.rs").as_slice()),
+            (
+                "evaluation/local_review.rs",
+                include_bytes!("local_review.rs").as_slice(),
+            ),
+            (
+                "local_decider.rs",
+                include_bytes!("../local_decider.rs").as_slice(),
+            ),
+            (
+                "local_decider/native.rs",
+                include_bytes!("../local_decider/native.rs").as_slice(),
+            ),
+            (
+                "local_decider/native/mac.rs",
+                include_bytes!("../local_decider/native/mac.rs").as_slice(),
+            ),
+            (
+                "local_decider/protocol.rs",
+                include_bytes!("../local_decider/protocol.rs").as_slice(),
+            ),
+            (
+                "local_decider/scopes.rs",
+                include_bytes!("../local_decider/scopes.rs").as_slice(),
+            ),
+            (
+                "native/decider/owned_decider.cpp",
+                include_bytes!("../../native/decider/owned_decider.cpp").as_slice(),
+            ),
+            (
+                "native/decider/CMakeLists.txt",
+                include_bytes!("../../native/decider/CMakeLists.txt").as_slice(),
+            ),
+            (
+                "native/decider/exports.txt",
+                include_bytes!("../../native/decider/exports.txt").as_slice(),
+            ),
+            (
+                "native/decider/runtime-lock.json",
+                include_bytes!("../../native/decider/runtime-lock.json").as_slice(),
+            ),
+            (
+                "bin/pennel-decider.rs",
+                include_bytes!("../bin/pennel-decider.rs").as_slice(),
+            ),
+            (
+                "scripts/prepare-decider-runtime.py",
+                include_bytes!("../../../scripts/prepare-decider-runtime.py").as_slice(),
+            ),
+        ] {
+            object.insert(name.into(), crate::meeting_utterances::digest(bytes).into());
+        }
+    }
+    value
 }
 
 fn exported(input: &ExportRequest) -> Result<Value, &'static str> {
@@ -137,7 +232,7 @@ fn exported(input: &ExportRequest) -> Result<Value, &'static str> {
         "expected_actual".into(),
         serde_json::to_value(&input.expected_actual).map_err(|_| "finished_contract_invalid")?,
     );
-    object.insert("source_sha256".into(), source_hashes());
+    object.insert("source_sha256".into(), source_hashes(&input.configuration));
     let digest = crate::evidence_revision(&value.to_string());
     value["freeze_sha256"] = digest.into();
     Ok(value)
@@ -149,12 +244,28 @@ pub(super) fn export(input: Value) -> Result<Value, &'static str> {
     exported(&input)
 }
 
+pub(super) fn verified_prepared(value: &Value) -> Result<Prepared, &'static str> {
+    let request: ExportRequest = serde_json::from_value(json!({"op":"finished_meeting_export",
+        "fixture":value["fixture"],"configuration":value["configuration"],
+        "expected_actual":value["expected_actual"]}))
+    .map_err(|_| "finished_replay_invalid")?;
+    if exported(&request)? != *value {
+        return Err("finished_export_changed");
+    }
+    prepared(&request)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Response {
     batch_index: usize,
-    http_status: u16,
+    http_status: Option<u16>,
+    #[serde(default)]
     body: String,
+    #[serde(default)]
+    request_id: Option<String>,
+    #[serde(default)]
+    production_result: Option<crate::DecisionResult>,
 }
 
 #[derive(Deserialize)]
@@ -195,14 +306,38 @@ pub(super) fn replay(input: Value) -> Result<Value, &'static str> {
     let mut physical = Vec::new();
     let mut rows = Vec::new();
     for response in &input.responses {
-        let batch = if !(200..300).contains(&response.http_status) {
-            json!({"batch_index":response.batch_index,"status":"provider_failed","windows":[]})
-        } else {
-            p.replay(
+        let batch = if let Some(result) = &response.production_result {
+            if response.http_status.is_some()
+                || !response.body.is_empty()
+                || response.request_id.is_some()
+            {
+                return Err("finished_replay_invalid");
+            }
+            p.replay_production_result(
                 response.batch_index,
-                response.body.as_bytes(),
+                result.clone(),
                 request.expected_actual.as_ref(),
             )
+        } else if !response
+            .http_status
+            .is_some_and(|status| (200..300).contains(&status))
+        {
+            json!({"batch_index":response.batch_index,"status":"provider_failed","windows":[]})
+        } else {
+            if request.configuration.protocol == crate::InferenceProtocol::PennelCloud {
+                p.replay_with_request_id(
+                    response.batch_index,
+                    response.body.as_bytes(),
+                    request.expected_actual.as_ref(),
+                    response.request_id.as_deref(),
+                )
+            } else {
+                p.replay(
+                    response.batch_index,
+                    response.body.as_bytes(),
+                    request.expected_actual.as_ref(),
+                )
+            }
         };
         if let Some(windows) = batch["windows"].as_array() {
             rows.extend(windows.iter().cloned());
@@ -259,6 +394,102 @@ mod tests {
                 Err("finished_export_changed")
             );
         }
+    }
+
+    #[test]
+    fn managed_local_replays_the_typed_production_result_with_the_shared_validator_and_sources() {
+        let mut request = input();
+        request["configuration"] = json!({"protocol":"local_decider",
+            "endpoint":crate::local_decider::ENDPOINT,"model":crate::local_decider::MODEL_ID,
+            "expected_model":crate::local_decider::MODEL_FINGERPRINT,"upstream":null,
+            "max_input_bytes":65536,"timeout_secs":90});
+        request["fixture"]["language"] = "nl".into();
+        request["expected_actual"] = json!({"model":crate::local_decider::MODEL_FINGERPRINT,
+            "provider":crate::local_decider::PROVIDER,"revision":"a".repeat(64),
+            "artifact_sha256":crate::local_decider::MODEL_SHA256,
+            "identity_evidence":"serving_revision_and_artifact"});
+        let exported = export(request).unwrap();
+        for name in [
+            "evaluation/local_review.rs",
+            "local_decider.rs",
+            "local_decider/native/mac.rs",
+            "local_decider/protocol.rs",
+            "local_decider/scopes.rs",
+            "native/decider/owned_decider.cpp",
+            "native/decider/runtime-lock.json",
+            "bin/pennel-decider.rs",
+        ] {
+            assert!(
+                exported["source_sha256"][name]
+                    .as_str()
+                    .is_some_and(|value| value.len() == 64)
+            );
+        }
+        let native_request: crate::DecisionRequest =
+            serde_json::from_value(exported["batches"][0]["request"].clone()).unwrap();
+        let result = crate::DecisionResult {
+            identity: crate::InferenceIdentity {
+                protocol: crate::InferenceProtocol::LocalDecider,
+                endpoint: crate::local_decider::ENDPOINT.into(),
+                requested_model: crate::local_decider::MODEL_ID.into(),
+                requested_upstream: None,
+                actual_model: Some(crate::local_decider::MODEL_FINGERPRINT.into()),
+                actual_revision: Some("a".repeat(64)),
+                actual_provider: Some(crate::local_decider::PROVIDER.into()),
+                request_id: Some(uuid::Uuid::now_v7().to_string()),
+            },
+            answers: native_request
+                .questions
+                .iter()
+                .map(|question| {
+                    let choice = if question.id.ends_with("_support") {
+                        "absent"
+                    } else {
+                        "none"
+                    };
+                    crate::DecisionAnswer {
+                        id: question.id.clone(),
+                        kind: crate::DecisionQuestionKind::Choice,
+                        choice: Some(choice.into()),
+                        value: None,
+                        confidence: Some(1.0),
+                        spans: vec![],
+                        not_stated: vec![],
+                        abstained: false,
+                        probabilities: question
+                            .options
+                            .iter()
+                            .map(|option| crate::DecisionProbability {
+                                option_id: option.id.clone(),
+                                probability: if option.id == choice { 1.0 } else { 0.0 },
+                            })
+                            .collect(),
+                    }
+                })
+                .collect(),
+            usage: crate::InferenceUsage {
+                input_tokens: Some(100),
+                output_tokens: Some(0),
+                billed_cost_usd: Some(0.0),
+            },
+        };
+        let replayed = replay(json!({"op":"finished_meeting_replay","export":exported,
+            "responses":[{"batch_index":0,"production_result":result}]}))
+        .unwrap();
+        assert_eq!(replayed["complete"], true);
+        assert_eq!(replayed["batches"][0]["status"], "ok");
+        assert_eq!(replayed["windows"].as_array().unwrap().len(), 1);
+        let mut invalid = result.clone();
+        invalid.answers[0].probabilities.pop();
+        let invalid = replay(json!({"op":"finished_meeting_replay","export":exported,
+            "responses":[{"batch_index":0,"production_result":invalid}]}))
+        .unwrap();
+        assert_eq!(invalid["status"], "invalid_response");
+        assert!(
+            replay(json!({"op":"finished_meeting_replay","export":exported,
+            "responses":[{"batch_index":0,"http_status":200,"production_result":result}]}))
+            .is_err()
+        );
     }
 
     #[test]

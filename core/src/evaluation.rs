@@ -20,6 +20,10 @@ use crate::summary::{BLOCK_CHARS, MAP_REDUCE_ABOVE, blocks, chunk_messages, summ
 use crate::templates::TemplateStore;
 
 mod finished;
+pub(crate) mod local_review;
+pub(crate) mod managed_review;
+pub use local_review::LocalReviewClient;
+pub use managed_review::CloudReviewClient;
 
 pub const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 

@@ -14,6 +14,9 @@ const DATA_VARIABLE: &str = "PENNEL_CAPTURE_DATA_DIR";
 const IDENTIFIER: &str = "dev.pennel.Pennel.capture.preview";
 const LIVE_CALLS_VARIABLE: &str = "PENNEL_CAPTURE_LIVE_CALLS";
 
+#[cfg(feature = "capture-evaluation")]
+pub(crate) mod access_lease;
+
 #[link(name = "objc")]
 unsafe extern "C" {
     fn sel_registerName(name: *const c_char) -> *mut c_void;

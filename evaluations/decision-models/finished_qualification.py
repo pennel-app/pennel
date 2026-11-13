@@ -26,6 +26,12 @@ RUNTIME_POLICY = 'raw_closed_set_passage_decisions_v2'
 V3_SOURCES = SOURCES + ('finished_v3.py', 'finished_experiment.py', 'finished_corpus_v3.py', 'runners.py',
     'fixtures/seen-b-semantic-regression-v3.json')
 PROTOCOL_V3 = PROTOCOL.with_name('protocol-finished-qualification-v3.json')
+PROTOCOL_CLOUD = PROTOCOL.with_name('protocol-finished-qualification-cloud-v1.json')
+PROTOCOL_LOCAL = PROTOCOL.with_name('protocol-finished-qualification-local-v1.json')
+CLOUD_SOURCES = V3_SOURCES + ('finished_cloud_experiment.py', 'finished_corpus_managed_v1.py',
+    'protocol-finished-qualification-cloud-v1.json', 'evaluation_io.py')
+LOCAL_SOURCES = V3_SOURCES + ('finished_local_experiment.py', 'finished_corpus_managed_v1.py',
+    'protocol-finished-qualification-local-v1.json', 'evaluation_io.py')
 RUNTIME_POLICY_V3 = 'raw_supported_passage_decisions_v3'
 
 
@@ -41,8 +47,8 @@ def _base(frozen):
     return _seal(value)
 
 
-def _source_hashes(v2=False, *, v3=False):
-    names = V3_SOURCES if v3 else V2_SOURCES if v2 else SOURCES
+def _source_hashes(v2=False, *, v3=False, cloud=False, local=False):
+    names = LOCAL_SOURCES if local else CLOUD_SOURCES if cloud else V3_SOURCES if v3 else V2_SOURCES if v2 else SOURCES
     return {name: finished.file_hash(Path(__file__).parent/name) for name in names}
 
 
@@ -51,7 +57,15 @@ def _v2(frozen):
 
 
 def _v3(frozen):
-    return frozen.get('schema_version') == 3 and frozen.get('protocol_id') == 'production-finished-qualification-v3'
+    return frozen.get('schema_version') == 3 and frozen.get('protocol_id') in ('production-finished-qualification-v3', 'production-finished-qualification-cloud-v1', 'production-finished-qualification-local-v1')
+
+
+def _local(frozen):
+    return frozen.get('protocol_id') == 'production-finished-qualification-local-v1'
+
+
+def _cloud(frozen):
+    return frozen.get('protocol_id') == 'production-finished-qualification-cloud-v1'
 
 
 def _batched(frozen):
@@ -63,7 +77,7 @@ def _runtime_policy(frozen):
 
 
 def _protocol(frozen):
-    return PROTOCOL_V3 if _v3(frozen) else PROTOCOL_V2 if _v2(frozen) else PROTOCOL
+    return PROTOCOL_LOCAL if _local(frozen) else PROTOCOL_CLOUD if _cloud(frozen) else PROTOCOL_V3 if _v3(frozen) else PROTOCOL_V2 if _v2(frozen) else PROTOCOL
 
 
 def _contract(frozen):
@@ -76,13 +90,27 @@ def physical_requests(exported):
 
 def _valid_actual(configuration, actual):
     if not isinstance(actual, dict): return False
+    if configuration.get('model') == 'pennel-decider-flash-v1.2-q8_0' or configuration.get('endpoint') == 'pennel-local://decider/decisions':
+        artifact='ffb27ade8976765b0e6943a0b7f5f3fd0f7042d45ad90256a76d608bcd3942c2'
+        return (configuration.get('protocol')=='local_decider' and configuration.get('model')=='pennel-decider-flash-v1.2-q8_0'
+            and configuration.get('endpoint')=='pennel-local://decider/decisions' and configuration.get('upstream') is None
+            and configuration.get('expected_model')=='sha256:'+artifact and actual.get('model')=='sha256:'+artifact
+            and actual.get('artifact_sha256')==artifact and actual.get('provider')=='Pennel local Decider'
+            and actual.get('identity_evidence','serving_revision_and_artifact')=='serving_revision_and_artifact'
+            and isinstance(actual.get('revision'),str) and len(actual['revision'])==64
+            and all(char in '0123456789abcdef' for char in actual['revision']))
+
     if actual.get('identity_evidence') == 'provider_reported_version':
         model = 'perplexity/pplx-decider-v1.2-20261016'
-        return (configuration.get('protocol') == 'open_router_decisions'
+        direct = (configuration.get('protocol') == 'open_router_decisions'
             and configuration.get('endpoint') == 'https://openrouter.ai/api/alpha/decisions'
             and configuration.get('model') in ('perplexity/pplx-decider-v1.2', model)
-            and configuration.get('expected_model') == model and configuration.get('upstream') == 'perplexity'
-            and actual.get('model') == model and actual.get('provider') == 'Perplexity'
+            and configuration.get('expected_model') == model and configuration.get('upstream') == 'perplexity')
+        cloud = (configuration.get('protocol') == 'pennel_cloud'
+            and configuration.get('endpoint') in ('https://api.pennel.app/v1/decisions', 'https://api-staging.pennel.app/v1/decisions')
+            and configuration.get('model') == 'pennel-review-v3' and configuration.get('expected_model') == model
+            and configuration.get('upstream') is None)
+        return ((direct or cloud) and actual.get('model') == model and actual.get('provider') == 'Perplexity'
             and actual.get('revision') in ('', None) and actual.get('artifact_sha256') in ('', None))
     if actual.get('identity_evidence', 'serving_revision_and_artifact') != 'serving_revision_and_artifact':
         return False
@@ -134,7 +162,9 @@ def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, g
         raise ValueError('verified_actual_identity_required')
     v2 = expected_actual.get('identity_evidence') == 'provider_reported_version'
     version = schema_version if schema_version is not None else 2 if v2 else 1
-    if version not in (1,2,3) or version in (2,3) and not v2:
+    cloud = configuration.get('protocol') == 'pennel_cloud'
+    local = configuration.get('endpoint') == 'pennel-local://decider/decisions'
+    if version not in (1,2,3) or version in (2,3) and not (v2 or local and version==3) or (cloud or local) and version != 3:
         raise ValueError('unsupported_qualification_contract')
     if any(item.get('language') != 'nl' for item in fixtures):
         raise ValueError('initial_qualification_is_dutch_only')
@@ -147,9 +177,9 @@ def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, g
     splits = {item['fixture']['split'] for item in production['exports']}
     if splits != {'development', 'calibration', 'heldout'}:
         raise ValueError('all_disjoint_splits_required')
-    value = {'schema_version': version, 'protocol_id': f'production-finished-qualification-v{version}',
-        'protocol_sha256': finished.file_hash({1:PROTOCOL,2:PROTOCOL_V2,3:PROTOCOL_V3}[version]),
-        'source_sha256': _source_hashes(version==2,v3=version==3),
+    value = {'schema_version': version, 'protocol_id': 'production-finished-qualification-local-v1' if local else 'production-finished-qualification-cloud-v1' if cloud else f'production-finished-qualification-v{version}',
+        'protocol_sha256': finished.file_hash(PROTOCOL_LOCAL if local else PROTOCOL_CLOUD if cloud else {1:PROTOCOL,2:PROTOCOL_V2,3:PROTOCOL_V3}[version]),
+        'source_sha256': _source_hashes(version==2,v3=version==3,cloud=cloud,local=local),
         'production': production, 'gold_items': gold, 'stage': 'calibration', 'production_admission': False}
     if version in (2,3):
         value.update(runtime_policy=RUNTIME_POLICY_V3 if version==3 else RUNTIME_POLICY,
@@ -164,13 +194,19 @@ def _deadline(deadline, clock):
 
 def verify_freeze(frozen, bridge, *, deadline=None, clock=time.monotonic):
     _deadline(deadline, clock)
-    if ((frozen.get('schema_version'), frozen.get('protocol_id')) not in ((1, 'production-finished-qualification-v1'), (2, 'production-finished-qualification-v2'), (3, 'production-finished-qualification-v3'))
-            or frozen.get('protocol_sha256') != finished.file_hash(_protocol(frozen)) or frozen.get('source_sha256') != _source_hashes(_v2(frozen),v3=_v3(frozen))
+    if ((frozen.get('schema_version'), frozen.get('protocol_id')) not in ((1, 'production-finished-qualification-v1'), (2, 'production-finished-qualification-v2'), (3, 'production-finished-qualification-v3'), (3, 'production-finished-qualification-cloud-v1'), (3, 'production-finished-qualification-local-v1'))
+            or frozen.get('protocol_sha256') != finished.file_hash(_protocol(frozen)) or frozen.get('source_sha256') != _source_hashes(_v2(frozen),v3=_v3(frozen),cloud=_cloud(frozen),local=_local(frozen))
             or frozen.get('freeze_sha256') != finished.digest({key: item for key, item in frozen.items() if key != 'freeze_sha256'})
             or frozen.get('production_admission') is not False or frozen.get('stage') not in ('calibration', 'heldout_ready')):
         raise ValueError('qualification_freeze_changed')
     if _batched(frozen) and frozen.get('runtime_policy') != _runtime_policy(frozen):
         raise ValueError('runtime_selection_policy_changed')
+    cloud_exports = [x for x in frozen['production']['exports'] if x['configuration'].get('protocol') == 'pennel_cloud']
+    if bool(cloud_exports) != _cloud(frozen) or cloud_exports and (len(cloud_exports) != len(frozen['production']['exports']) or any(not _valid_actual(x['configuration'], x['expected_actual']) for x in cloud_exports)):
+        raise ValueError('cloud_transport_context_changed')
+    local_exports = [x for x in frozen['production']['exports'] if x['configuration'].get('endpoint') == 'pennel-local://decider/decisions']
+    if bool(local_exports) != _local(frozen) or local_exports and (len(local_exports) != len(frozen['production']['exports']) or any(not _valid_actual(x['configuration'], x['expected_actual']) for x in local_exports)):
+        raise ValueError('local_transport_context_changed')
     _contract(frozen).verify_freeze(frozen['production'], bridge, deadline=deadline, clock=clock)
     if frozen['stage'] == 'heldout_ready':
         base = _base(frozen)

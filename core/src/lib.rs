@@ -31,6 +31,7 @@ mod keyboard_writing;
 mod live_dictation;
 mod live_speakers;
 mod llm;
+mod local_decider;
 mod local_engine;
 mod localization;
 mod meeting_app_evidence;
@@ -116,6 +117,11 @@ pub use live_dictation::{
 pub use live_speakers::{
     LiveSpeakerMemory, LiveSpeakerMetrics, LiveSpeakerObserver, LiveSpeakerState,
     LiveSpeakerStatus, LiveSpeakerUpdate, LiveSpeakerWorker,
+};
+pub use local_decider::{
+    BundledLocalDeciderRuntime, ManagedLocalDeciderProtocol, ManagedLocalDeciderRuntime,
+    ManagedLocalDeciderRuntimeStatus, VerifiedLocalDeciderArtifact,
+    managed_local_decider_worker_main,
 };
 pub use localization::{
     InterfaceLanguage, InterfaceLanguagePreference, localize_ui_text, resolve_interface_language,
