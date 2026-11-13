@@ -1023,9 +1023,11 @@ mod tests {
         observed.requested_model = "pennel-review-v3".into();
         observed.requested_upstream = None;
         assert!(admitted.validate_identity(&observed).is_ok());
+        let mut unmeasured = request.clone();
+        unmeasured.resource_profile_sha256 = sha('d');
         assert!(
             MeetingQualificationRegistry::bundled()
-                .admit(&request)
+                .admit(&unmeasured)
                 .is_err()
         );
         for change in 0..7 {
@@ -1288,8 +1290,12 @@ mod tests {
     fn production_registry_admits_only_the_reviewed_manual_dutch_context() {
         let registry = MeetingQualificationRegistry::bundled();
         assert!(registry.valid);
-        assert_eq!(registry.records.len(), 1);
-        let record = &registry.records[0];
+        assert_eq!(registry.records.len(), 2);
+        let record = registry
+            .records
+            .iter()
+            .find(|record| record.qualification_id == "finished-nl-19bd8056cf84da327bad")
+            .unwrap();
         assert_eq!(record.qualification_id, "finished-nl-19bd8056cf84da327bad");
         assert!(record.valid());
         assert_eq!(
@@ -1331,6 +1337,124 @@ mod tests {
         assert_eq!(
             registry.admit(&request()).unwrap_err(),
             MeetingQualificationError::Unqualified
+        );
+    }
+
+    #[test]
+    fn production_cloud_record_admits_only_its_exact_calibrated_manual_dutch_context() {
+        use crate::meeting_insight_engine::support_calibration;
+        let registry = MeetingQualificationRegistry::bundled();
+        assert!(registry.valid);
+        let record = registry
+            .records
+            .iter()
+            .find(|record| record.qualification_id == "finished-nl-bbf47b3e584713bc29e0")
+            .unwrap();
+        assert!(record.valid());
+        assert_eq!(
+            record.context.request.use_case,
+            MeetingAnalysisUseCase::ManualFinishedSuggestions
+        );
+        assert_eq!(record.context.request.language_policy, "nl");
+        assert_eq!(
+            record.context.request.configured.protocol,
+            InferenceProtocol::PennelCloud
+        );
+        assert_eq!(
+            record.context.request.configured.endpoint,
+            "https://api.pennel.app/v1/decisions"
+        );
+        assert_eq!(record.context.request.configured.model, "pennel-review-v3");
+        assert_eq!(
+            record.context.request.configured.expected_model.as_deref(),
+            Some("perplexity/pplx-decider-v1.2-20261016")
+        );
+        assert_eq!(record.context.request.configured.upstream, None);
+        assert_eq!(
+            record.context.calibration_sha256,
+            support_calibration::ASSET_SHA256
+        );
+        let gate = support_calibration::SupportCalibration::bundled().unwrap();
+        assert_eq!(
+            support_calibration::POLICY,
+            "calibrated_support_raw_state_v1"
+        );
+        assert_eq!(
+            record.context.request.schema_sha256,
+            "3a1a258a1d336751226ec1dadf37e363e4d9b14ce4d21ec64b701313518d2e0e"
+        );
+        assert_eq!(
+            record.context.request.preprocessing_sha256,
+            "111f13c44ccf7f0083b235583f6cf795e12dabb77e07d9f6d05702ee1d21b17b"
+        );
+        gate.validate_request(&record.context.request).unwrap();
+        gate.validate_pin(&record.context.actual).unwrap();
+        assert_eq!(
+            record.context.actual.identity_evidence,
+            MeetingIdentityEvidence::ProviderReportedVersion
+        );
+        assert!(record.context.actual.revision.is_empty());
+        assert!(record.context.actual.artifact_sha256.is_empty());
+        assert!(!record.evidence.foreground_impact_accepted);
+        assert!(!record.evidence.background_resource_accepted);
+        let mut current = crate::meeting_insight_engine::qualification_request(
+            record.context.request.configured.clone(),
+            "nl",
+        );
+        let measured = record.context.request.clone();
+        let this_cohort = current.resource_profile_sha256 == measured.resource_profile_sha256;
+        assert_eq!(
+            registry
+                .admit(&current)
+                .ok()
+                .map(|admission| admission.record().qualification_id.clone()),
+            this_cohort.then(|| record.qualification_id.clone())
+        );
+        current.resource_profile_sha256 = measured.resource_profile_sha256.clone();
+        assert_eq!(current, measured);
+        assert_eq!(
+            registry.admit(&current).unwrap().record().qualification_id,
+            record.qualification_id
+        );
+        for use_case in [
+            MeetingAnalysisUseCase::ManualLiveSuggestions,
+            MeetingAnalysisUseCase::SourceAssessment,
+            MeetingAnalysisUseCase::BackgroundLiveSuggestions,
+        ] {
+            let mut changed = current.clone();
+            changed.use_case = use_case;
+            assert!(registry.admit(&changed).is_err());
+        }
+        for language in ["en", "mixed"] {
+            let mut changed = current.clone();
+            changed.language_policy = language.into();
+            assert!(registry.admit(&changed).is_err());
+        }
+        for change in 0..7 {
+            let mut changed = current.clone();
+            match change {
+                0 => {
+                    changed.configured.endpoint =
+                        "https://api-staging.pennel.app/v1/decisions".into()
+                }
+                1 => changed.configured.model = "pennel-auto".into(),
+                2 => {
+                    changed.configured.expected_model =
+                        Some("perplexity/pplx-decider-v1.2-20990101".into())
+                }
+                3 => changed.configured.upstream = Some("perplexity".into()),
+                4 => changed.resource_profile_sha256 = sha('d'),
+                5 => changed.schema_sha256 = sha('d'),
+                _ => changed.preprocessing_sha256 = sha('d'),
+            }
+            assert!(registry.admit(&changed).is_err(), "change {change}");
+        }
+        assert!(
+            registry
+                .records
+                .iter()
+                .all(|record| record.context.request.configured.protocol
+                    != InferenceProtocol::LocalDecider)
         );
     }
 

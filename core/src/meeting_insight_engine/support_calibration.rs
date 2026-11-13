@@ -654,8 +654,10 @@ mod tests {
             }
             assert!(gate.validate_actual(&changed).is_err());
         }
+        let mut unmeasured = request;
+        unmeasured.resource_profile_sha256 = "d".repeat(64);
         assert!(matches!(
-            crate::MeetingQualificationRegistry::bundled().admit(&request),
+            crate::MeetingQualificationRegistry::bundled().admit(&unmeasured),
             Err(crate::MeetingQualificationError::Unqualified)
         ));
     }
