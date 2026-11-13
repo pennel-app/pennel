@@ -24,8 +24,9 @@ This replaces the earlier #39 constraint that the keyboard never opens the conta
 
 ## Design
 
-- **Look (keyboard only):** a keyboard-local native palette (white/gray keys in light, translucent gray in dark), the system keyboard backdrop behind clear content, SF system font, native key radius, shadow and gaps. The rest of the mobile app keeps its Figtree identity; the dictation button keeps Pennel's ink and soft-wave colors.
-- **Top bar:** tools and suggestions on the left, suggestions or live status in the middle, the Pennel button on the right: a round microphone when ready, stop when listening, progress when processing, and a "Start Pennel" capsule when the session is off.
+- **Look (keyboard only):** a keyboard-local native palette (white/gray keys in light, translucent gray in dark), the system keyboard backdrop behind clear content, SF system font, native key radius, shadow and gaps. The rest of the mobile app keeps its Figtree identity; the dictation button uses a high-contrast tinted glass capsule (white on dark, near-black on light).
+- **Layout (follow-up, 13 November):** like Wispr Flow, the keyboard opens on numbers and punctuation; ABC reveals the letters. Keys are uniform and rounded, the space bar reads "Pennel" and return shows ↵. The globe key appears only where iOS shows no switch bar.
+- **Top bar:** a Liquid Glass ≡ button on the left (emoji, snippets, AI writing, suggestions toggle), suggestions or live status in the middle, and a tinted Liquid Glass "Start" capsule with a waveform on the right. It shrinks to a waveform when ready, animates while listening and shows progress while processing.
 - **Session off:** the button opens `<scheme>://sessie/start` (SwiftUI `openURL`, then the scene responder as fallback). It records a pending start. If opening fails, it shows "Open Pennel and tap Start session."
 - **App:** the link starts the session in native code and Expo Router shows a full-screen "Swipe back" page with the remaining session time and a stop option.
 - **Return:** while the pending start is younger than 60 seconds and the keyboard has a live insertion context, the keyboard starts hands-free listening as soon as the session reads ready. The pending start is cleared after use, on expiry, or on any explicit dictation action.
