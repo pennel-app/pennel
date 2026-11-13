@@ -290,7 +290,7 @@ export interface Settings {
   consent_enabled: boolean;
   auto_detect: boolean;
   diarization: boolean;
-  meeting_app_speakers: boolean;
+  meeting_app_participants: boolean;
   meeting_app_name_policy?: "suggest" | "automatic";
   speaker_recognition: SpeakerRecognitionMode;
   claude_access?: boolean;

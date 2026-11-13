@@ -261,8 +261,9 @@ pub struct Settings {
     pub auto_detect: bool,
     #[serde(default)]
     pub diarization: bool,
-    /// Reads participant names and the active speaker from a supported meeting app (off by default).
-    #[serde(default)]
+    /// Reads participant names and the active speaker from a supported meeting app.
+    /// Stored under a new key so profiles saved while this was off by default start enabled.
+    #[serde(rename = "meeting_app_participants", default = "enabled")]
     pub meeting_app_speakers: bool,
     #[serde(default)]
     pub meeting_app_name_policy: MeetingAppNamePolicy,
@@ -362,7 +363,7 @@ pub fn default_settings() -> Settings {
         consent_enabled: false,
         auto_detect: true,
         diarization: false,
-        meeting_app_speakers: false,
+        meeting_app_speakers: true,
         meeting_app_name_policy: MeetingAppNamePolicy::Suggest,
         speaker_recognition: SpeakerRecognitionMode::Local,
         cloud_sync: false,
@@ -981,13 +982,28 @@ mod tests {
     }
 
     #[test]
+    fn teams_participant_names_start_on_after_upgrade_and_an_explicit_off_choice_survives() {
+        assert!(default_settings().meeting_app_speakers);
+        let mut value = serde_json::to_value(default_settings()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("meeting_app_participants");
+        object.insert("meeting_app_speakers".into(), false.into());
+        let mut upgraded: Settings = serde_json::from_value(value).unwrap();
+        assert!(upgraded.meeting_app_speakers);
+        upgraded.meeting_app_speakers = false;
+        let reloaded: Settings =
+            serde_json::from_str(&serde_json::to_string(&upgraded).unwrap()).unwrap();
+        assert!(!reloaded.meeting_app_speakers);
+    }
+
+    #[test]
     fn upgrading_meeting_app_evidence_never_authorizes_automatic_names() {
         let mut value = serde_json::to_value(default_settings()).unwrap();
         value
             .as_object_mut()
             .unwrap()
             .remove("meeting_app_name_policy");
-        value["meeting_app_speakers"] = true.into();
+        value["meeting_app_participants"] = true.into();
         let settings: Settings = serde_json::from_value(value).unwrap();
         assert_eq!(
             settings.meeting_app_name_policy,
