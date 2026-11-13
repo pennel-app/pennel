@@ -1,0 +1,74 @@
+{
+  "scope": "Matched owned mocked desktop fixtures; readiness is simulated and establishes no model/service acceptance",
+  "fixture_sha256": "be7c237a745e6af3d7def7c7791194d45f9d2bbb339e540760e7a9282cb13c95",
+  "images": [
+    {
+      "phase": "before",
+      "locale": "en",
+      "appearance": "light",
+      "file": "before-en-light-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    },
+    {
+      "phase": "after",
+      "locale": "en",
+      "appearance": "light",
+      "file": "after-en-light-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    },
+    {
+      "phase": "before",
+      "locale": "en",
+      "appearance": "dark",
+      "file": "before-en-dark-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    },
+    {
+      "phase": "after",
+      "locale": "en",
+      "appearance": "dark",
+      "file": "after-en-dark-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    },
+    {
+      "phase": "before",
+      "locale": "nl",
+      "appearance": "light",
+      "file": "before-nl-light-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    },
+    {
+      "phase": "after",
+      "locale": "nl",
+      "appearance": "light",
+      "file": "after-nl-light-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    },
+    {
+      "phase": "before",
+      "locale": "nl",
+      "appearance": "dark",
+      "file": "before-nl-dark-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    },
+    {
+      "phase": "after",
+      "locale": "nl",
+      "appearance": "dark",
+      "file": "after-nl-dark-review-processing.png",
+      "fixture_case_sha256": "03ddd3b8bd7463f6a123651639349e692db3717374f40a244e79d0b19ff109e5"
+    }
+  ],
+  "source_baseline": "932df9f5827149e460b6393cae1e5d49aa13a8c4",
+  "after_ui_source_commit": "0a425ccdfc8e68fb2ba3a9941d135e3aa6146a57",
+  "files": {
+    "before-en-light-review-processing.png": "8a3a582382daf374d16a138e06ced52c94d56f6324b854c428fd41b68ef15997",
+    "after-en-light-review-processing.png": "686b5ad8d0dc740688eae369505cc96417b4331e8a4ea4112ec20066e29f3b7a",
+    "before-en-dark-review-processing.png": "af2a27309c8bcfbe39b59995625fdcffd04343a8d75efaf653aa2620f7b16dec",
+    "after-en-dark-review-processing.png": "7381fe46df600b6a226b8cfb9d5fdfe2262a39141f9cae63fac61597fcc27948",
+    "before-nl-light-review-processing.png": "2f8b54a33b0ce04c2200b44ab3279a26c235d3a140684152b29b138281c62a32",
+    "after-nl-light-review-processing.png": "00a55b115096f922378249537bfe865327b4a069c5a64c7fe81b1b1518dfc6d1",
+    "before-nl-dark-review-processing.png": "0495122b14aeb118e7f3f6db14053d88da9d007f5fe7d322a8373e48af8a4aea",
+    "after-nl-dark-review-processing.png": "fca8b436a242b9567a61ecf1e080a335ae1d9b62ab816644783c40a7fa74e879"
+  }
+}
