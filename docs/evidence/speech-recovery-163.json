@@ -85,8 +85,8 @@
       "simulator": "iPhone 18 Pro / iOS 27.0"
     }
   ],
-  "large_build_wrapper": "/Users/landerparren/.local/bin/worktree-storage run --",
-  "portable_toolchain_prefix": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/scripts/with-toolchain.sh",
+  "large_build_wrapper": "<home>/.local/bin/worktree-storage run --",
+  "portable_toolchain_prefix": "<home>/Developer/SideProjects/pennel-app/pennel/scripts/with-toolchain.sh",
   "products": {
     "simulator": {
       "bundle_identifier": "app.pennel.ios.preview",

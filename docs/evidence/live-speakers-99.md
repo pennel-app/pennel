@@ -1,5 +1,7 @@
 # Live speaker attribution — 3 November 2026
 
+> The linked JSON receipt is a sanitized public derivative: machine-identifying command paths are redacted; measurements, revisions, hashes and acceptance limits are unchanged.
+
 Implementation for [#99](https://github.com/pennel-app/pennel/issues/99), under [#94](https://github.com/pennel-app/pennel/issues/94), stacked on [#22 / PR #128](https://github.com/pennel-app/pennel/pull/128). The code candidate is `5d63a37` (`9bd5a0f` implements attribution; `5d63a37` adapts the inherited evaluation fixture). The personally signed desktop binary comes from `f987a57`; its only source difference from this candidate is the evaluation-only fixture repair. No ordinary desktop runtime source differs.
 
 ## Delivered contract
@@ -42,7 +44,7 @@ Executable SHA-256: `16da5071688eb0bcc19ad4d0c9a91d547580670ade91fa42724adf6d191
 
 ![Owned native Dutch/dark minimum workspace](live-speakers-99/native-minimum-nl-dark.png)
 
-Exact commands, logs, native assertions and check scope are in [the machine-readable receipt](live-speakers-99.json). Native builds use `/Users/landerparren/.local/bin/worktree-storage run --`; iOS configurations run sequentially. Existing build products, symbols, baseline app and QA artifacts remain retained. No cache guard was bypassed and no model, provider, credential or production setting was changed.
+Commands (with machine-identifying components redacted), logs, native assertions and check scope are in [the machine-readable receipt](live-speakers-99.json). Native builds use `"$HOME/.local/bin/worktree-storage" run --`; iOS configurations run sequentially. Existing build products, symbols, baseline app and QA artifacts remain retained. No cache guard was bypassed and no model, provider, credential or production setting was changed.
 
 ## Remaining acceptance
 

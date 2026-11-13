@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (core edition as-is), ureq 3, serde_json, base64 (already added by Pennel Cloud v1 core Task 1), uniffi 0.32, mockito; Tauri 2; TypeScript (Vite, `h()` helper, node test runner); Swift (EventKit) in `apps/macos-platform` and `apps/macos`.
 
-**Repo:** `/Users/ignace.mella/.t3/projects/musli`, branch `feat/m365-calendar` from `main`. **Precondition:** `SecretStore` (`core/src/cloud/mod.rs`, Pennel Cloud v1 core Task 1, commit `d52e219` on `feat/pennel-cloud-v1`) and `PennelEngine::set_secret_store` are on `main`. If not, cherry-pick that commit first and say so in the PR.
+**Repo:** `<app-checkout>`, branch `feat/m365-calendar` from `main`. **Precondition:** `SecretStore` (`core/src/cloud/mod.rs`, Pennel Cloud v1 core Task 1, commit `d52e219` on `feat/pennel-cloud-v1`) and `PennelEngine::set_secret_store` are on `main`. If not, cherry-pick that commit first and say so in the PR.
 
 **Spec:** `docs/superpowers/specs/2026-10-25-phase3g-m365-calendar-design.md`.
 

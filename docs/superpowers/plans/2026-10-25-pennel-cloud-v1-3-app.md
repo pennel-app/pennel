@@ -8,9 +8,9 @@
 
 **Tech Stack:** Tauri 2, Rust, TypeScript (Vite, no framework), node test runner; SwiftUI for the disabled native tab.
 
-**Repo:** `/Users/ignace.mella/.t3/projects/musli`, branch `feat/pennel-cloud-v1`, after plan 2 is merged into the branch.
+**Repo:** `<app-checkout>`, branch `feat/pennel-cloud-v1`, after plan 2 is merged into the branch.
 
-**Spec:** `docs/superpowers/specs/2026-10-25-meeting-sync-design.md` (§3.1, §3.3 UI parts, §3.5, §3.6 app parts). Core API: plan 2 Interfaces blocks (`docs/superpowers/plans/2026-10-25-pennel-cloud-v1-2-core.md`).
+**Historical context:** The Cloud design is retained in private maintainer records. This public app plan keeps its client-side core interfaces below; current behavior is documented in [desktop architecture](../../desktop.md) and [device connection](../../device-connection.md).
 
 ## Global Constraints
 

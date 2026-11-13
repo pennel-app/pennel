@@ -29,7 +29,7 @@ Regression coverage includes rapid/short/overlapping turns; exact text conservat
 
 Independent review repaired enrolled-self persistence, exhausted voice allocation, cross-track overlap collisions, rerun revision loss, ambiguous legacy source inference and unbounded superseded parts. Source labels also remain honest in questions, summaries and EN/NL exports.
 
-Commands use `scripts/with-toolchain.sh`; native builds use `/Users/landerparren/.local/bin/worktree-storage run --`. Full logs remain under ignored `build/issue22*` and `build/utterance-*`. Mobile dependencies were materialized from the same installed versions using APFS clones so autolinking resolves this checkout's own native module; the lockfile was unchanged. iOS configurations run sequentially because React Native's Pod framework selection is shared.
+Commands use `scripts/with-toolchain.sh`; native builds use `"$HOME/.local/bin/worktree-storage" run --`. Full logs remain under ignored `build/issue22*` and `build/utterance-*`. Mobile dependencies were materialized from the same installed versions using APFS clones so autolinking resolves this checkout's own native module; the lockfile was unchanged. iOS configurations run sequentially because React Native's Pod framework selection is shared.
 
 ## Owned interface evidence
 

@@ -31,7 +31,7 @@ Mentions use ordinary readable Markdown and exact byte/revision anchors. A prepa
 | `npm --prefix apps/mobile run build:ios` | Unsigned ARM64 simulator Release build passed |
 | `PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios` | Unsigned ARM64 iPhoneOS Release build passed |
 
-Rust commands use `scripts/with-toolchain.sh`, with the existing personal compiler-storage guard and packed-symbol policy. Large native commands use `/Users/landerparren/.local/bin/worktree-storage run --`; native configurations run sequentially. Hosted tests use the documented ad-hoc signing; Release candidates are unsigned. No production install or work signing identity is involved.
+Rust commands use `scripts/with-toolchain.sh`, with the existing personal compiler-storage guard and packed-symbol policy. Large native commands use `"$HOME/.local/bin/worktree-storage" run --`; native configurations run sequentially. Hosted tests use the documented ad-hoc signing; Release candidates are unsigned. No production install or work signing identity is involved.
 
 The final browser receipt is `build/verification/people-102/accepted-ui-reviewed-ack/ui-receipt.json`. All 104 inputs remained unchanged during capture and exactly match the committed product candidate; aggregate SHA-256 is `d2b82412683ead146f247139ba0d70016a27a23bc0249916baf2fb68d9f3d840`. The matrix covers both editors, duplicate/calendar identities, selected-contact confirmation, stale results/composition, real Chromium Tab/Enter/Escape and delayed writes through dismissal, hide, navigation, Stop and a replacement session. No runtime errors, unknown IPC, language mismatch, unexpected banners or horizontal overflow were observed.
 

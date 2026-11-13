@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3 stdlib (unittest), GitHub Actions, `gh` CLI, gitleaks; Next 16 + vitest in `pennel-cloud/apps/web`.
 
-**Repos:** `/Users/ignace.mella/.t3/projects/musli` (Tasks 1–3, 5), branch `feat/desktop-publish` from `main`. `/Users/ignace.mella/.t3/projects/pennel-cloud` (Task 4), branch `feat/download-platforms` from `main`.
+**Repos:** `<app-checkout>` (Tasks 1–3, 5), branch `feat/desktop-publish` from `main`. `<cloud-checkout>` (Task 4), branch `feat/download-platforms` from `main`.
 
 **Spec:** `docs/superpowers/specs/2026-10-25-distribution-design.md`.
 

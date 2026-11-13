@@ -45,7 +45,7 @@
       "result": "shared tokens and61 packaging tests pass"
     },
     {
-      "command": "node /Users/landerparren/.agents/skills/impeccable/scripts/detect.mjs --json apps/desktop/src/views/setup.ts",
+      "command": "node <home>/.agents/skills/impeccable/scripts/detect.mjs --json apps/desktop/src/views/setup.ts",
       "result": "no deterministic findings"
     },
     {

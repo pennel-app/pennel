@@ -1,6 +1,6 @@
 # Fase 4 — Pennel op de iPhone (ontwerp)
 
-Stand: 2026-10-25. Bouwt op het hoofdontwerp (`2026-10-23-musli-design.md` §10) en op Pennel Cloud v1 (`2026-10-25-meeting-sync-design.md`, branch `feat/pennel-cloud-v1`).
+Stand: 2026-10-25. Bouwt op het hoofdontwerp (`2026-10-23-musli-design.md` §10). Het historische Cloud-serverontwerp staat in private beheerdersdocumentatie; actuele publieke appcontracten staan in [mobile implementation](../../mobile.md) en [device connection](../../device-connection.md).
 
 ## 1. Wat en waarom
 

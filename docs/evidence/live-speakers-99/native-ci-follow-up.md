@@ -28,14 +28,14 @@ The full-suite cache case completed in 5.370 seconds; the isolated case complete
 From the repository root, with the existing matching #99 Rust libraries/bindings and generated workspace:
 
 ```sh
-/Users/landerparren/.local/bin/worktree-storage run -- bash scripts/ci-xcodebuild.sh test \
+"$HOME/.local/bin/worktree-storage" run -- bash scripts/ci-xcodebuild.sh test \
   -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Debug \
   -destination 'platform=iOS Simulator,id=7B0CD7FD-879B-49FF-BCD0-DA64090BD209' \
   -derivedDataPath apps/mobile/build/TestDerivedData \
   -resultBundlePath build/notetaker-2026-11-03/ci/native-fixture-targeted.xcresult \
   '-only-testing:PennelRuntimeTests/PennelRuntimeTests/transcriptProjectionCacheCoalescesSessionsAndRetainsTheActualEvidenceRevision()' \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
-/Users/landerparren/.local/bin/worktree-storage run -- make mobile-native-test \
+"$HOME/.local/bin/worktree-storage" run -- make mobile-native-test \
   IOS_DESTINATION='platform=iOS Simulator,id=7B0CD7FD-879B-49FF-BCD0-DA64090BD209'
 scripts/with-toolchain.sh cargo fmt --manifest-path core/Cargo.toml -- --check
 scripts/with-toolchain.sh cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check

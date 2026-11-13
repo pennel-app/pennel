@@ -45,11 +45,11 @@
     "independent_source_review": "no findings; controller late-result guards inspected statically"
   },
   "commands": [
-    "/Users/landerparren/.local/bin/worktree-storage run -- env PENNEL_VARIANT=preview make mobile-test",
-    "/Users/landerparren/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview make mobile-prebuild",
-    "/Users/landerparren/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview npm --prefix apps/mobile run build:ios",
-    "/Users/landerparren/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios",
-    "/Users/landerparren/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=D01BA00B-81A5-4AEA-BEA8-1551BB6D14CB'",
+    "<home>/.local/bin/worktree-storage run -- env PENNEL_VARIANT=preview make mobile-test",
+    "<home>/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview make mobile-prebuild",
+    "<home>/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview npm --prefix apps/mobile run build:ios",
+    "<home>/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios",
+    "<home>/.local/bin/worktree-storage run -- env CI=1 PENNEL_VARIANT=preview make mobile-native-test IOS_DESTINATION='platform=iOS Simulator,id=D01BA00B-81A5-4AEA-BEA8-1551BB6D14CB'",
     "python3 build/mobile/ux-2026-10-30/sign-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-startup-2026-10-31",
     "python3 build/mobile/ux-2026-10-30/package-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-startup-2026-10-31",
     "xcrun devicectl device install app --device <physical-iPhone-UDID> build/mobile/ux-2026-10-30/keyboard-startup-2026-10-31/PackagedPreview/Payload/Pennel.app"
@@ -61,7 +61,7 @@
     "bytes": 19318471,
     "keyboard_uuid": "CF0AD166-AE6D-386E-8461-1CD4FD46203F",
     "team": "B538Q2K76C",
-    "signing_authority": "Apple Development: Lander Parren (C2PC5BFY7J)",
+    "signing_authority": "Apple Development: <developer> (<certificate CN identifier>)",
     "app_group": "group.app.pennel.preview",
     "bundle_ids": [
       "app.pennel.ios.preview",

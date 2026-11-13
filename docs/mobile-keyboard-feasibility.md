@@ -1,5 +1,7 @@
 # iPhone keyboard: implementation and feasibility evidence
 
+> Machine-identifying components in the linked historical keyboard receipts are redacted; commands with owner-path placeholders represent the recorded commands rather than verbatim executable instructions.
+
 Initial evidence: 27 October 2026; signed process-routing investigation: 31 October 2026. Tracking: [keyboard improvement #39](https://github.com/pennel-app/pennel/issues/39), [Expo migration #42](https://github.com/pennel-app/pennel/issues/42), [device acceptance #18](https://github.com/pennel-app/pennel/issues/18), [signing/review #20](https://github.com/pennel-app/pennel/issues/20). The expanded typing candidate and acceptance receipt are in [keyboard experience](mobile-keyboard-experience.md) and [mobile implementation](mobile.md#keyboard-experience-candidate--31-october-2026).
 
 ## Product decision — 13 November 2026
@@ -122,7 +124,7 @@ bash scripts/ci-xcodebuild.sh build -workspace apps/mobile/ios/Pennel.xcworkspac
   ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
 ```
 
-Run large native commands through `/Users/landerparren/.local/bin/worktree-storage run --`. Production rejects the diagnostic flag. Before a signed test, verify personal Preview signing, app/keyboard/widget entitlements and device eligibility; install in place. Restore a normal flag-off generation, build and signed installation afterward. The [final receipt](evidence/keyboard-experience-2026-10-31.json) records that restoration separately. Building or signing establishes neither microphone eligibility nor tactile/runtime acceptance.
+Run large native commands through `"$HOME/.local/bin/worktree-storage" run --`. Production rejects the diagnostic flag. Before a signed test, verify personal Preview signing, app/keyboard/widget entitlements and device eligibility; install in place. Restore a normal flag-off generation, build and signed installation afterward. The [final receipt](evidence/keyboard-experience-2026-10-31.json) records that restoration separately. Building or signing establishes neither microphone eligibility nor tactile/runtime acceptance.
 
 Observed toolchain: Xcode 27.0 (27A266a), iPhoneOS SDK 27.0, Swift 6.4; deployment target iOS 26.0. Full local commands, source/artifact matching and retained signing recipes are recorded in [mobile implementation](mobile.md#keyboard-experience-candidate--31-october-2026).
 

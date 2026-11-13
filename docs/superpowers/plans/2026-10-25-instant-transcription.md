@@ -19,8 +19,8 @@
 On top of that: Tauri 2 + TypeScript (desktop), Swift (macOS platform library), and Axum + tokio-tungstenite in `pennel-cloud` (Task 11 only).
 
 **Repos:**
-- Tasks 1–10 and 12: `/Users/ignace.mella/.t3/projects/musli`, branch `feat/instant-transcription`.
-- Task 11: `/Users/ignace.mella/.t3/projects/pennel-cloud-v1`, branch `feat/realtime-proxy`.
+- Tasks 1–10 and 12: `<app-checkout>`, branch `feat/instant-transcription`.
+- Task 11: private Cloud implementation record; the public client compatibility dependency remains below.
 - Task 12 also depends on plan `2026-10-25-pennel-cloud-v1-2-core.md` Task 3 (`ProviderKind::PennelCloud`) being merged.
 
 **Spec:** `docs/superpowers/specs/2026-10-25-instant-transcription-design.md`. The capability matrix is §4, UX §5, the server §6.
@@ -406,43 +406,9 @@ On top of that: Tauri 2 + TypeScript (desktop), Swift (macOS platform library), 
 - [ ] **Step 4:** Run all checks from the Global Constraints.
 - [ ] **Step 5:** Commit `feat: live transcription setting in both apps`.
 
-### Task 11: Pennel Cloud realtime proxy endpoint
+### Task 11: Cloud realtime compatibility
 
-**Repo:** pennel-cloud (`/Users/ignace.mella/.t3/projects/pennel-cloud-v1`)
-
-**Files:**
-- Create: `crates/pennel-server/src/proxy/realtime.rs`
-- Modify:
-  - `crates/pennel-server/src/proxy/mod.rs`: route `GET /v1/audio/transcriptions/realtime`.
-  - `crates/pennel-server/src/config.rs`: `UpstreamConfig.stt_realtime_url` (default `wss://api.mistral.ai/v1/audio/transcriptions/realtime`), `stt_realtime_model` (env `PENNEL_STT_REALTIME_MODEL`, default `voxtral-mini-transcribe-realtime-2602`), `realtime_max_seconds` (env, default 900).
-  - `crates/pennel-server/Cargo.toml`: axum feature `ws`, `tokio-tungstenite` with rustls.
-  - `crates/pennel-server/src/account.rs`: `realtime: true` in `GET /v1/account`.
-
-**Interfaces:**
-- Consumes: `admit(state, caller, Meter::Audio)`, `limiter.acquire_audio()`, `record_or_log`, `detached`, `OVERLOADED_MESSAGE`, `QUOTA_MESSAGE` (existing).
-- Produces:
-  - A WebSocket protocol equal to Mistral's subset:
-    - Client: `session.update` (only `language`, `context_bias`; any other field → `error` code `request`), `input_audio.append`, `input_audio.end`.
-    - Server: `session.created`, `transcription.text.delta`, `transcription.done`, `error { error: { code, message } }`.
-  - The server opens the upstream with its own key and the forced session settings (`pcm_s16le`/16000/480 ms, no diarize), and relays only the three event types above.
-  - Metering: decoded audio bytes / 32000, rounded up, recorded once at close (also on client drop).
-  - Close conditions: after `realtime_max_seconds` of audio, after 30 s without audio, on quota exhaustion (rechecked every 60 s of audio), or on upstream error. Each sends an `error` with the existing Dutch message, then closes.
-  - Logs: account, seconds, bytes, close reason. Never events or text.
-
-- [ ] **Step 1: Write failing tests** (tokio test server + a fake upstream WebSocket on `127.0.0.1:0`):
-  - `rejects_without_token`.
-  - `relays_delta_and_done`.
-  - `forces_session_settings_upstream`.
-  - `rejects_unknown_session_fields`.
-  - `meters_seconds_on_client_drop`.
-  - `quota_exhausted_closes_with_dutch_message`.
-  - `max_duration_closes`.
-  - `idle_timeout_closes`.
-  - `logs_hold_no_text` (capture `tracing` output; sentinel).
-- [ ] **Step 2:** Run `cargo test -p pennel-server realtime`. Expected: FAIL.
-- [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Run `cargo test -p pennel-server && cargo clippy -p pennel-server --tests -- -D warnings`. Expected: PASS.
-- [ ] **Step 5:** Commit `feat(server): realtime transcription proxy over WebSocket`.
+The historical server implementation task is retained in private maintainer records. In this plan, the public client tasks below depend on a compatible Cloud realtime interface; this archive does not establish deployment or acceptance.
 
 ### Task 12: Pennel Cloud as a live provider in the core
 
