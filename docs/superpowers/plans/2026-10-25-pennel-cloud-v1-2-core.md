@@ -8,9 +8,9 @@
 
 **Tech Stack:** Rust (core edition as-is), ureq 3, rusqlite, uniffi 0.32; new crates `chacha20poly1305` (XChaCha20-Poly1305), `argon2`, `hmac` (the release built on the same `digest` as `sha2 = 0.11`), `rand` or `getrandom`, `base64`.
 
-**Repo:** `/Users/ignace.mella/.t3/projects/musli`, branch `feat/pennel-cloud-v1`.
+**Repo:** `<app-checkout>`, branch `feat/pennel-cloud-v1`.
 
-**Spec:** `docs/superpowers/specs/2026-10-25-meeting-sync-design.md` (§3.1–3.3, §3.5 core, §3.6 app side, §7). Wire contract: plan 1, Tasks 2–6 (`docs/superpowers/plans/2026-10-25-pennel-cloud-v1-1-server.md`).
+**Historical context:** The server design and implementation plan are retained in private maintainer records. For current public app integration and compatibility requirements, read [desktop architecture](../../desktop.md) and [device connection](../../device-connection.md).
 
 ## Global Constraints
 

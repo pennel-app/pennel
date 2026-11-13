@@ -22,7 +22,7 @@ Preview text never enters finalized segments, persisted meeting files, question 
 | `make mobile-native-test` | Hosted iOS simulator tests passed |
 | Mobile `npm run build:ios`, then `PENNEL_IOS_DESTINATION=generic/platform=iOS npm run build:ios` | Both unsigned ARM64 Release builds passed |
 
-Rust commands used `scripts/with-toolchain.sh`. Native commands ran through `/Users/landerparren/.local/bin/worktree-storage run --`. Exact logs remain under ignored `build/notetaker-2026-11-03/`; the machine-readable receipt contains measurements and acceptance limits. No model downloads, paid inference or production credential/provider changes occurred.
+Rust commands used `scripts/with-toolchain.sh`. Native commands ran through `"$HOME/.local/bin/worktree-storage" run --`. Exact logs remain under ignored `build/notetaker-2026-11-03/`; the machine-readable receipt contains measurements and acceptance limits. No model downloads, paid inference or production credential/provider changes occurred.
 
 ## Owned interface and timing evidence
 

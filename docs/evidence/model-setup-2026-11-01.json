@@ -37,7 +37,7 @@
       "result": "pass"
     },
     {
-      "command": "/Users/landerparren/.local/bin/worktree-storage run -- swift test --package-path apps/macos-platform",
+      "command": "<home>/.local/bin/worktree-storage run -- swift test --package-path apps/macos-platform",
       "result": "pass: 123 tests"
     },
     {
@@ -53,7 +53,7 @@
       "result": "pass: 61 tests"
     },
     {
-      "command": "node /Users/landerparren/.agents/skills/impeccable/scripts/detect.mjs --json apps/desktop/src/views/setup.ts apps/desktop/src/views/model-picker.ts apps/desktop/src/views/models.ts apps/desktop/src/views/inference.ts apps/desktop/src/views/providers.ts apps/desktop/src/styles.css",
+      "command": "node <home>/.agents/skills/impeccable/scripts/detect.mjs --json apps/desktop/src/views/setup.ts apps/desktop/src/views/model-picker.ts apps/desktop/src/views/models.ts apps/desktop/src/views/inference.ts apps/desktop/src/views/providers.ts apps/desktop/src/styles.css",
       "result": "pass: no deterministic findings"
     },
     {

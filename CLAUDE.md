@@ -56,23 +56,18 @@ Mobile changes also require the mobile workspace's type, unit, generation and na
 
 ## Conventions
 
-- Conventional Commits; small, focused commits.
-- Comments only for non-obvious intent, constraints or workarounds.
+- Follow the public [contributor guide](CONTRIBUTING.md) for this repository’s coding and commit requirements.
 - Tests first for logic (Rust unit tests in `core/`, Rust/TS tests in `apps/desktop`).
 
-## Agent skills
+## Agent guidance
 
-### Issue tracker
+This repository uses GitHub Issues in `pennel-app/pennel`. Its public [roadmap agent workflow](docs/desktop-roadmap.md#agent-workflow), [contributor guide](CONTRIBUTING.md), product rules and build requirements remain usable without access to private maintainer records. Before exploration, read root `GLOSSARY.md` and relevant `docs/adr/` entries when present.
 
-GitHub Issues in `pennel-app/pennel`, following Pennel's roadmap workflow.
-See `docs/agents/issue-tracker.md`.
+The Pennel team's shared maintainer guides live in private `pennel-app/pennel-home`. Resolve an explicit `PENNEL_HOME` first; otherwise walk the real ancestors of this checkout for the Home root when using nested worktrees, then try the canonical sibling `pennel-home` checkout. Verify Home's `AGENTS.md` and repository identity. From the resolved Home, read:
 
-### Triage labels
+- `docs/agents/issue-tracker.md` before meaningful implementation or documentation work; always target this repository explicitly.
+- `docs/agents/triage-labels.md` when triaging an issue.
+- `docs/agents/domain.md` for glossary/ADR conventions; its paths resolve in this repository.
+- `docs/agents/hoppscotch.md` for API-workspace metadata maintenance and the owning API repository's setup.
 
-Use the five default triage labels.
-See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context: root `GLOSSARY.md` and `docs/adr/`, created when needed.
-See `docs/agents/domain.md`.
+The shared files are also available in the private [Home repository](https://github.com/pennel-app/pennel-home/tree/main/docs/agents). Public contributors without Home access follow the local public requirements above; private Home access is not a build prerequisite.

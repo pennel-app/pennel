@@ -119,7 +119,7 @@
     "python3 build/mobile/ux-2026-10-30/package-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-experience-crisp-2026-10-31",
     "xcrun devicectl device install app --device <physical-iPhone-UDID> build/mobile/ux-2026-10-30/keyboard-experience-crisp-2026-10-31/PackagedPreview/Payload/Pennel.app"
   ],
-  "command_environment": "Large native/non-Rust builds use /Users/landerparren/.local/bin/worktree-storage run --. Rust uses its existing managed compiler-intermediate guard. Device identifiers and private signing/profile data remain in ignored local receipts.",
+  "command_environment": "Large native/non-Rust builds use <home>/.local/bin/worktree-storage run --. Rust uses its existing managed compiler-intermediate guard. Device identifiers and private signing/profile data remain in ignored local receipts.",
   "diagnostic_artifact": {
     "source_revision": "3bb2ad32d7e6d752e60883783511f2effb05b89b",
     "directory": "build/mobile/ux-2026-10-30/keyboard-probe-v2-2026-10-31",
@@ -142,7 +142,7 @@
     "keyboard_binary_bytes": 3141376,
     "keyboard_binary_sha256": "e44cf6dcdefb835b7a8f7ae937e573d8f148808f00eecb892f0bfddf9c313c68",
     "team": "B538Q2K76C",
-    "signing_authority": "Apple Development: Lander Parren (C2PC5BFY7J)",
+    "signing_authority": "Apple Development: <developer> (<certificate CN identifier>)",
     "app_group": "group.app.pennel.preview",
     "bundle_ids": [
       "app.pennel.ios.preview",
@@ -472,7 +472,7 @@
     "keyboard_binary_bytes": 3115904,
     "keyboard_binary_sha256": "ac5cb4803f01b12eb59d56b9f0392c43a6961675b8a9394aba1a294620892009",
     "team": "B538Q2K76C",
-    "signing_authority": "Apple Development: Lander Parren (C2PC5BFY7J)",
+    "signing_authority": "Apple Development: <developer> (<certificate CN identifier>)",
     "app_group": "group.app.pennel.preview",
     "bundle_ids": [
       "app.pennel.ios.preview",

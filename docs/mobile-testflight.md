@@ -6,7 +6,7 @@ Distribution belongs to [#20](https://github.com/pennel-app/pennel/issues/20); p
 
 | Setting | Value |
 | --- | --- |
-| Apple team | Lander Parren / B538Q2K76C |
+| Apple team | Personal signing team / B538Q2K76C |
 | App Store Connect team context | 4dc89f53-aed3-450a-9094-b1251bf1dbe3 |
 | App Store Connect app | Pennel Preview / 6829248409 |
 | App | app.pennel.ios.preview |

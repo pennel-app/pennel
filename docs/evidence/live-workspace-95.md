@@ -50,13 +50,13 @@ Build and run commands used:
 
 ```sh
 # From apps/desktop; the identity is the verified personal certificate.
-/Users/landerparren/.local/bin/worktree-storage run -- \
+"$HOME/.local/bin/worktree-storage" run -- \
   env APPLE_SIGNING_IDENTITY=26AD2732047AB5E2F5CB1B239B71806C54EB3026 \
   ../../scripts/with-toolchain.sh npx tauri build --bundles app \
   --config src-tauri/tauri.capture.conf.json
 
 # From the repository root, with the owned window helper from the capture harness.
-/Users/landerparren/.local/bin/worktree-storage run -- \
+"$HOME/.local/bin/worktree-storage" run -- \
   python3 -B scripts/verify-live-workspace-native.py \
   --window-helper build/issue95/native-window-helper \
   --locale both --appearance both --output build/issue95/native-route-final

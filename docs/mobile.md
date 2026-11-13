@@ -1,5 +1,7 @@
 # Expo mobile implementation
 
+> Some linked historical QA receipts redact machine-identifying paths and certificate owner labels. Their source revisions, measurements, artifact hashes and acceptance limits remain unchanged; redacted command components are not claims of a newly executed command.
+
 Selected Preview releases use the [Xcode Cloud and internal TestFlight pipeline](mobile-testflight.md). Account configuration, archive validation and real TestFlight delivery are recorded separately there.
 
 Status: Expo is the mobile application UI. The legacy SwiftUI iPhone shell is retired under [cleanup #75](https://github.com/pennel-app/pennel/issues/75); its reusable native services and regression tests now belong to the mobile workspace. Signed-device, upgrade, keyboard, Cloud deployment and store acceptance remain open.
@@ -145,7 +147,7 @@ These changes preserve local data, preview/production identity and credential is
 
 ### Provisional speaker metadata — 3 November 2026
 
-The [#99 candidate receipt](evidence/live-speakers-99.md) records iPhone transcript rendering of provisional speaker estimates, preserving durable sources, manual names and readonly unsupported metadata. This adds review compatibility; live local speaker inference remains unavailable on iPhone. Verification uses `make mobile-test`, `make mobile-prebuild`, `make mobile-native-test`, then `npm --prefix apps/mobile run build:ios` and `PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios` sequentially. Large native commands run through `/Users/landerparren/.local/bin/worktree-storage run --`. Exact logs and counts are in the [JSON receipt](evidence/live-speakers-99.json).
+The [#99 candidate receipt](evidence/live-speakers-99.md) records iPhone transcript rendering of provisional speaker estimates, preserving durable sources, manual names and readonly unsupported metadata. This adds review compatibility; live local speaker inference remains unavailable on iPhone. Verification uses `make mobile-test`, `make mobile-prebuild`, `make mobile-native-test`, then `npm --prefix apps/mobile run build:ios` and `PENNEL_IOS_DESTINATION='generic/platform=iOS' npm --prefix apps/mobile run build:ios` sequentially. Large native commands run through `"$HOME/.local/bin/worktree-storage" run --`. Exact logs and counts are in the [JSON receipt](evidence/live-speakers-99.json).
 
 Simulator tests and unsigned builds do not establish signed-phone, physical keyboard/IME, acoustic quality, resource, Cloud deployment or store acceptance. Those gates retain their existing owners; preview/production identifiers and credentials stay isolated.
 
@@ -422,7 +424,7 @@ Tracked in [#81](https://github.com/pennel-app/pennel/issues/81), related to [#3
 
 The physical iPhone crash reports identified a Swift 6 actor-isolation trap in `KeyboardViewController.loadSuggestions()`, on `com.apple.TextInput.lexicon-request`, before the old main-queue dispatch could execute. The production callback now has an explicitly `@Sendable` boundary and enters `Task { @MainActor in ... }` before reading UIKit lexicon entries or applying suggestions. It retains the 2,048-entry cap and rejects results for dismissed, replaced or disabled typing models through weak captures and current-state guards. Four hosted regressions cover worker and main-actor callback delivery and assert actor isolation inside both UIKit getters and result application; they also verify mapping, empty results and the cap. Strict Swift 6 remains enabled.
 
-The existing generated project still referenced retired native source paths, so the candidate was regenerated from canonical Expo sources before building. From the repository root, the following commands passed; all ran with the `/Users/landerparren/.local/bin/worktree-storage run --` prefix:
+The existing generated project still referenced retired native source paths, so the candidate was regenerated from canonical Expo sources before building. From the repository root, the following commands passed; all ran with the `"$HOME/.local/bin/worktree-storage" run --` prefix:
 
 ```sh
 env PENNEL_VARIANT=preview make mobile-test
@@ -441,7 +443,7 @@ python3 build/mobile/ux-2026-10-30/sign-preview.py --output-dir build/mobile/ux-
 python3 build/mobile/ux-2026-10-30/package-preview.py --output-dir build/mobile/ux-2026-10-30/keyboard-startup-2026-10-31
 ```
 
-The IPA in that directory is 19,318,471 bytes, SHA-256 `a193774f27cf243b110fdec6cb636209039784448d5f4bd28724a2473e5b15b9`. Its keyboard UUID is `CF0AD166-AE6D-386E-8461-1CD4FD46203F`. App, keyboard and widget signatures use the personal **Lander Parren** team `B538Q2K76C`; existing Preview identifiers and `group.app.pennel.preview` are preserved. Nested/strict signature and extracted-package checks pass. The verified extracted `.app` was installed with `devicectl device install app`, without uninstalling or resetting data. All 46 Documents entries (31 regular files) retain their original sizes and modification times; this is metadata evidence rather than a complete content-hash comparison.
+The IPA in that directory is 19,318,471 bytes, SHA-256 `a193774f27cf243b110fdec6cb636209039784448d5f4bd28724a2473e5b15b9`. Its keyboard UUID is `CF0AD166-AE6D-386E-8461-1CD4FD46203F`. App, keyboard and widget signatures use the personal signing team `B538Q2K76C`; existing Preview identifiers and `group.app.pennel.preview` are preserved. Nested/strict signature and extracted-package checks pass. The verified extracted `.app` was installed with `devicectl device install app`, without uninstalling or resetting data. All 46 Documents entries (31 regular files) retain their original sizes and modification times; this is metadata evidence rather than a complete content-hash comparison.
 
 On the connected **iPhone 16 Pro / iOS 27.0.1**, actual Pennel key taps and deletion succeeded in the app's search field and Spotlight. Every combination below passed:
 
@@ -464,7 +466,7 @@ The keyboard now uses native Dutch/English spelling candidates and a bounded Rus
 
 Keyboard-owned feedback generators prepare before likely commitment and release with the visible keyboard. Settings expose Off/Gentle/Crisp, immediate samples, unsaved practice and anonymously labelled temporary profile comparisons. The candidate preserves recording suppression; software checks and phone key taps do not determine the best tactile profile. Apple speech receives bounded personal vocabulary and installed-assets-only provisional text, while the chosen provider's final result remains authoritative. Explicit writing actions freeze their chosen provider configuration, preview changes and guard application/restoration against changed document context. They do not add selection content to History or give credentials to the extension.
 
-The following local commands ran from the repository root; large native/non-Rust builds used `/Users/landerparren/.local/bin/worktree-storage run --`, and Rust used its existing managed compiler-intermediate guard:
+The following local commands ran from the repository root; large native/non-Rust builds used `"$HOME/.local/bin/worktree-storage" run --`, and Rust used its existing managed compiler-intermediate guard:
 
 ```sh
 make core && make test
@@ -496,7 +498,7 @@ python3 scripts/keyboard-benchmark.py validate
 | Prior native products | Unsigned ARM64 Release simulator/device builds and the isolated signed diagnostic build pass with Xcode 27.0 / SDK 27.0 |
 | Final normal candidate `7fad205` | 36 keyboard + 111 hosted app/service tests and both ARM64 Release builds pass; personal signing, extracted-package verification, in-place installation and final device checks pass |
 
-The final personally signed Preview at [`7fad205`](https://github.com/pennel-app/pennel/commit/7fad205d102c76194d58e69415d99e0e1230341f) is retained under ignored `build/mobile/ux-2026-10-30/keyboard-experience-crisp-2026-10-31/`. The IPA is **20,200,962 bytes**, SHA-256 `0db1a2663808697bfe7cbfd48f8fd6bc7b8603daa0b1c2cdc4126eeaf67abf69`; keyboard UUID `F9D47A8C-C1B8-318E-AF6A-426C6205051C`. App, keyboard and widget use the personal **Lander Parren** team `B538Q2K76C`, retaining Preview IDs and `group.app.pennel.preview`. Nested/deep/strict signatures, independent package extraction and matched core-source/binding hashes pass. The normal generated graph has no diagnostic flag, and the installed keyboard has no probe button. The controller fix and subsequent shared feedback calibration reuse the already-verified generated source graph; native preparation, hosted tests and both Release builds were repeated for the final candidate.
+The final personally signed Preview at [`7fad205`](https://github.com/pennel-app/pennel/commit/7fad205d102c76194d58e69415d99e0e1230341f) is retained under ignored `build/mobile/ux-2026-10-30/keyboard-experience-crisp-2026-10-31/`. The IPA is **20,200,962 bytes**, SHA-256 `0db1a2663808697bfe7cbfd48f8fd6bc7b8603daa0b1c2cdc4126eeaf67abf69`; keyboard UUID `F9D47A8C-C1B8-318E-AF6A-426C6205051C`. App, keyboard and widget use the personal signing team `B538Q2K76C`, retaining Preview IDs and `group.app.pennel.preview`. Nested/deep/strict signatures, independent package extraction and matched core-source/binding hashes pass. The normal generated graph has no diagnostic flag, and the installed keyboard has no probe button. The controller fix and subsequent shared feedback calibration reuse the already-verified generated source graph; native preparation, hosted tests and both Release builds were repeated for the final candidate.
 
 The verified extracted app was installed in place, without uninstalling or resetting data. All **45 Documents entries** retain baseline sizes and modification times after the final device tests; this is metadata evidence, not full content hashing. Layout, interface language, suggestions, action feedback and learning/swipe preferences are preserved. Typing feedback is deliberately left on Crisp after the user comparison; no temporary trial remains. Earlier artifacts, symbols, build trees, reports and QA remain retained. Signing and packaging used:
 
@@ -584,7 +586,7 @@ The [receipt and screenshots](evidence/conversations-113.md) and [machine summar
 
 [Issue #163](https://github.com/pennel-app/pennel/issues/163), [PR #164](https://github.com/pennel-app/pennel/pull/164) and the [verification receipt](evidence/speech-recovery-163.json) record source commit `8b82d6d`. Explicit meeting retries stop at the first provider failure and report fixed owned guidance. A zero-progress failure leaves transcript revisions, metadata and notes unchanged; a recovered prefix commits before a later error and is skipped by the next explicit retry. Known upstream payment-required failures retain credit guidance in samples and the English/Dutch interface. No provider fallback, automatic replay, schema or binding change was introduced.
 
-Local checks passed: the core Release build, 1,071 core tests (7 existing ignored) plus 17 keyboard tests, formatting and strict Clippy; desktop production build, 330 frontend and 270 backend tests; 146 Mac platform tests; mobile typechecking, 17 plugin, 7 widget, 159 UI and 116 MobileKit tests. Clean and repeated non-clean Prebuild and all six actual pod/source checks passed. Sequential unsigned ARM64 Release simulator/device builds succeeded. Generated native tests passed on the separate iPhone 18 Pro/iOS 27 simulator: 144 runtime/service and 36 keyboard tests. Large native commands used the storage wrapper. The receipt records exact commands, source/binding digests and complete product manifest hashes. Generation started before the source commit was created; its core content digest was verified against that committed source.
+Local checks passed: the core Release build, 1,071 core tests (7 existing ignored) plus 17 keyboard tests, formatting and strict Clippy; desktop production build, 330 frontend and 270 backend tests; 146 Mac platform tests; mobile typechecking, 17 plugin, 7 widget, 159 UI and 116 MobileKit tests. Clean and repeated non-clean Prebuild and all six actual pod/source checks passed. Sequential unsigned ARM64 Release simulator/device builds succeeded. Generated native tests passed on the separate iPhone 18 Pro/iOS 27 simulator: 144 runtime/service and 36 keyboard tests. Large native commands used the storage wrapper. The receipt records commands with machine-identifying components redacted, source/binding digests and complete product manifest hashes. Generation started before the source commit was created; its core content digest was verified against that committed source.
 
 Separately, the owner explicitly selected Dutch Apple on-device speech recognition on the connected iPhone 16 Pro/iOS 27.0.1, using its existing installed Preview 0.1.0 build 8. The fixed sample passed and an explicit retained-audio retry processed all 49 chunks, leaving no failed chunks. Three chunks returned no recognized text. Original audio, notes and the meeting document remained byte-identical; only meeting speech selection and speech language changed. This demonstrates recovery with the installed build, not installation or signed-upgrade acceptance of PR #164, a word-accuracy benchmark, or Cloud billing restoration. Private recording content and backups remain local.
 
@@ -620,7 +622,7 @@ The final core digest `ecfc5fe81a0255f24c2d2a88cc920ef2c96859c19b4c1db72eb3281cd
 
 ## Review registry shared-core compatibility — 12 November 2026
 
-The [C7 Review change under #96](evidence/review-provider-version-96-2026-11-12.md) passed iPhone compatibility checks with its adopted manual Dutch record. At source `5d880a16a31bd643ae17f3cca459940f8554c738`, both lean iOS libraries and matching bindings were regenerated. Each command below ran through `/Users/landerparren/.local/bin/worktree-storage run --`, after checking storage status:
+The [C7 Review change under #96](evidence/review-provider-version-96-2026-11-12.md) passed iPhone compatibility checks with its adopted manual Dutch record. At source `5d880a16a31bd643ae17f3cca459940f8554c738`, both lean iOS libraries and matching bindings were regenerated. Each command below ran through `"$HOME/.local/bin/worktree-storage" run --`, after checking storage status:
 
 ```sh
 make mobile-test
@@ -636,3 +638,22 @@ Typecheck, 17 plugin, seven widget, 160 UI, 116 MobileKit and 217 Mac platform t
 The generated manifest matches core SHA `27570b9a919e118fb0e1ffdc3c3770dc9748ba26c86fbd3ee78e1cd05a103b34` and registry SHA `cfb832f83ee1e427de11fd69ac718d08dcb508cab105659017b8bf82e0f0601f`, with one adopted record. Bindings remain byte-identical to the retained bytes at SHA `daf6056fa775ffadf91cd83a3ae73f004925f7b750a672699b7b9f70cd58ef21`. Exact adopted registry bytes were verified in both libraries and both final app executables; Cargo tracks the registry as an input. Prior products were retained, the owned simulator returned to Shutdown, and unrelated simulator states and tracked mobile source stayed unchanged.
 
 This proves shared-core compatibility. The record remains bound to its tested manual Dutch desktop resource context; it does not qualify mobile Review. Physical iPhone, signed upgrades, keyboard cold start, Cloud/store, human and Android acceptance remain separate.
+
+## Synthetic provider sample compatibility — 13 November 2026
+
+The bundled provider-check sample now uses documented generated speech rather than the previous fixture with unresolved provenance. See the [fixture provenance](../core/tests/fixtures/hello.provenance.json) and [generation instructions](../core/tests/fixtures/README.md). The PCM16 mono 16 kHz WAV has SHA-256 `323177b0668fc0e4a296b54c48a4912f9cbf41de282e08903f508d52406b1925`; provider APIs and native bindings have no interface change.
+
+Code revision `000d1a29f8a38af60992e9c2c329fba03b98d3ea` passed mobile typechecking, 17 plugin, seven widget, 166 UI and 124 MobileKit tests; clean/repeated non-clean generation and six actual Pods ownership checks; unsigned ARM64 simulator/device Release builds; and 144 runtime plus 36 keyboard hosted tests. Both libraries and both Release executables were checked for the new WAV bytes. Native verification used Xcode 27.2 / iOS SDK 27.2 and a task-owned iOS 27.0 simulator, which ended Shutdown. The native manifest's Rust/TOML/lock digest is recorded separately from the WAV hash.
+
+Portable command templates follow. Use the configured Rust toolchain and a valid installed Xcode selected through task-scoped `DEVELOPER_DIR`. Native commands ran through the local storage guard where available. Machine-specific result locations and the owned simulator selector are generalized here; original commands, failed attempts and retained products remain in private maintainer evidence.
+
+```sh
+export CI=1 PENNEL_VARIANT=preview PENNEL_TESTFLIGHT=0 PENNEL_IOS_ARCHIVE_ONLY=0 PENNEL_XCODE_CACHE_MODE=off
+make mobile-test
+make mobile-prebuild
+bash scripts/ci-xcodebuild.sh build -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/mobile/build/ProviderFixtureQA ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
+bash scripts/ci-xcodebuild.sh build -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/mobile/build/ProviderFixtureQA ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
+bash scripts/ci-xcodebuild.sh test -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Debug -destination 'platform=iOS Simulator,id=<task-owned-simulator-UUID>' -derivedDataPath apps/mobile/build/ProviderFixtureTests -resultBundlePath build/provider-fixture-259/native-tests.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+```
+
+These results establish build compatibility and synthetic-sample verification. Physical iPhone, signed upgrades, keyboard cold start, real provider/acoustic quality, Cloud and store acceptance remain separate gates. The offline speech check required the word “test”; it does not establish exact recognition of the Pennel name.

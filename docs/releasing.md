@@ -31,10 +31,10 @@ Manual validation never publishes a release. Resuming routine Windows/Linux vali
 Local Mac commands use existing credentials; these tools never generate or replace a certificate or private key:
 
 ```sh
-export APPLE_SIGNING_IDENTITY='Developer ID Application: Lander Parren (B538Q2K76C)'
+export APPLE_SIGNING_IDENTITY='<personal Developer ID Application identity>'
 export PENNEL_MAC_PROVISIONING_PROFILE=/secure/path/Pennel.provisionprofile
 export PENNEL_NOTARY_KEYCHAIN_PROFILE=personal-notary
-/Users/landerparren/.local/bin/worktree-storage run -- scripts/with-toolchain.sh \
+"$HOME/.local/bin/worktree-storage" run -- scripts/with-toolchain.sh \
   python3 scripts/desktop-release.py <version> --homebrew
 ```
 

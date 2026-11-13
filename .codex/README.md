@@ -39,6 +39,6 @@ verify the selection of an existing chat. See the official
 ## Hoppscotch development tools
 
 This checkout includes project-scoped Codex and Claude Code configuration for
-the official Hoppscotch MCP. Follow the [workspace maintenance guide](../docs/agents/hoppscotch.md)
-for sign-in, allowed metadata tools, secret handling and the CLI fallback.
+the official Hoppscotch MCP. Follow the [shared workspace maintenance guide](https://github.com/pennel-app/pennel-home/blob/main/docs/agents/hoppscotch.md)
+for sign-in, allowed metadata tools, secret handling and the CLI fallback. Resolve the local Home checkout using `AGENTS.md` when working from a nested worktree; project configuration remains in its owning repository.
 Restart the host to discover the server; no global registration is needed.

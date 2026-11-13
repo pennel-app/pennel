@@ -29,14 +29,14 @@ Numbers (Apple M2 Pro unless noted, window shift 0.25, 4 threads):
 - Windows: `.cargo/config.toml` builds all native code for the static C runtime (sherpa ships /MT only; mixing failed with LNK2038 in CI).
 - Legacy macOS app: only a compile fix (`.voice` handled like practice).
 
-**pennel-cloud (`feat/speaker-recognition-cloud`)**
-- `POST /v1/audio/diarize`: bearer auth, `audio/wav` 16-bit mono 16 kHz, ≤ 630 s, ≤ 25 MB; monthly audio quota shared with transcription (seconds recorded on success), per-account limiter, global CPU pool (`PENNEL_DIARIZE_CONCURRENCY`, default 2) taken only after the upload, `spawn_blocking`, usage recorded even on disconnect. Response `{model, turns, speakers}`. Logs: account, seconds, speaker count, duration only. 503 `speakers_unavailable` without models.
-- Docker: models downloaded in a stage with `ADD --checksum`, `PENNEL_SPEAKER_MODELS=/opt/pennel/models`, `libstdc++6` in runtime, `g++` in builder. `deploy/docker-stack.yml` server memory 512M → 1G.
+**Cloud compatibility**
+- The public app requires a compatible deployed speaker-recognition service for Cloud mode; local mode remains independent.
+- Historical Cloud implementation and operating records are maintained separately.
 
 ## Branches, commits, CI
 
 - pennel `feat/speaker-recognition`: 17 commits from `4b7fe8f` to `7278e77` (base `342dea5`). GitHub `desktop` workflow (macOS, Windows, Linux core + app jobs): green on `7278e77` (run 40247689002); the handoff commit after it only adds this file. The `ci` workflow only runs on pull requests; its steps (theme check, speaker crate fmt/clippy/tests, `make core`, both Swift test suites, `make app`) pass locally on macOS.
-- pennel-cloud `feat/speaker-recognition-cloud`: 6 commits `7682380`..`6d8705f`; `ci` (dispatched on the branch): fmt, clippy, tests, web — green. Docker image built locally (arm64 only).
+- Cloud implementation and deployment records are maintained separately from this public app handoff.
 
 ## Model downloads
 
@@ -47,15 +47,14 @@ Numbers (Apple M2 Pro unless noted, window shift 0.25, 4 threads):
 
 The prebuilt sherpa-onnx libraries are downloaded by the `sherpa-onnx-sys` build script from GitHub releases at build time (cached in `target/sherpa-onnx-prebuilt`).
 
-## Server env / Docker
+## Cloud compatibility and operations
 
-- `PENNEL_SPEAKER_MODELS` (image default `/opt/pennel/models`), `PENNEL_DIARIZE_CONCURRENCY` (default 2; 0 fails at startup).
-- Memory: two concurrent 10-minute chunks peak ≈ 750 MB → limit raised to 1G. Check the host has headroom for a rolling deploy (old + new task), or set concurrency 1 (~365 MB).
+Cloud implementation settings and capacity records are maintained privately. Public app compatibility requirements remain below.
 
 ## Merge order
 
 1. Merge pennel `feat/speaker-recognition` first (the cloud depends on its `core/speakers` crate).
-2. Bump `pennel-speakers` in pennel-cloud from `rev = 44f390e…` (branch commit; may disappear after a squash merge) to the merged main commit, `cargo update -p pennel-speakers`, then merge and deploy pennel-cloud. The crate did not change after `4b7fe8f`, so behaviour is identical.
+2. Verify Cloud compatibility against the merged public speaker-recognition contract.
 3. Release the desktop app after the server is deployed (cloud mode answers 404 until then; local mode works independently).
 4. `feat/iphone` conflicts: `core/Cargo.toml` `[features]` (both add `default`; combine to `default = ["local-models", "speakers"]`) and `core/src/diarize.rs` (Sortformer `diarize` gated by `local-models`; the new `from_sortformer`/`apply` code is pure and stays ungated). The iPhone build should use `--no-default-features` (no sherpa) and cloud mode.
 
@@ -78,8 +77,8 @@ The prebuilt sherpa-onnx libraries are downloaded by the `sherpa-onnx-sys` build
 4. **Voices up to 12** (was 4) — more real speakers named; small compatibility risk above with old clients.
 5. **Sortformer kept as fallback, no longer offered for download** — old installs keep working; removing it later is a small change.
 6. **Known voice names override a name the user typed for that voice on rerun** — a corrected misrecognition comes back on rerun until the wrong known voice is forgotten.
-7. **Cloud diarization counts against the transcription audio quota and the daily cost-cap estimate** (spec: count like transcription) — a meeting transcribed and diarized via cloud uses ≈2× its length; the cost cap may trip early with heavy diarization.
+7. Cloud operating-cost policy is maintained in private historical records.
 8. **Onboarding completes after the voice step** (practice no longer marks it completed) — closing on the voice step shows the wizard again / marks skipped.
 9. **"Onthoud deze stem" is opt-in per name, default off** — fewer remembered voices, never a voiceprint the user did not ask for.
 10. **Enrollment through Pennel Cloud uploads the 25 s reading** when the user chose cloud mode — consistent with that choice, documented in the UI copy.
-11. **Server memory limit 1G** — needs host headroom; otherwise set concurrency 1.
+11. Cloud deployment-capacity decisions are maintained in private historical records.

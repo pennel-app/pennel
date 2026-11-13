@@ -17,9 +17,9 @@
       "-r",
       "150",
       "-o",
-      "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+      "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
       "-f",
-      "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+      "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
     ],
     "wav_sha256": "5ddf2aac6e31c0f7a8de76edf4d7a8d9b690882843b4d4fb654c83167d7326be",
     "duration_seconds": 3.989,
@@ -32,7 +32,7 @@
     "hello_fixture_reason": "Committed fixture has no explicit synthetic/consent provenance in its original commit; regenerated rather than assuming."
   },
   "model": {
-    "path": "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+    "path": "<home>/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
     "sha256": "b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183",
     "size_bytes": 886381760,
     "route": "explicit local file through transcribe-cpp 0.4.1; production-default Backend::Auto, compiled Metal+CPU",
@@ -117,12 +117,12 @@
       "argv": [
         "/usr/bin/time",
         "-l",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
         "baseline",
         "authoritative",
-        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+        "<home>/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
       ],
       "started_utc": "2026-11-03T15:15:56.769104+00:00",
       "wall_seconds": 9.087540916982107,
@@ -195,9 +195,9 @@
           "timed_spans": 0
         }
       ],
-      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.jsonl",
-      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.stderr",
-      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.samples.json",
+      "event_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.jsonl",
+      "time_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.stderr",
+      "resource_samples": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/01-baseline-authoritative.samples.json",
       "sample_count": 36,
       "sampled_process_tree_peak_rss_bytes": 175947776,
       "sampled_process_tree_peak_cpu_percent": 17.5,
@@ -220,12 +220,12 @@
       "argv": [
         "/usr/bin/time",
         "-l",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
         "candidate",
         "authoritative",
-        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+        "<home>/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
       ],
       "started_utc": "2026-11-03T15:16:05.857259+00:00",
       "wall_seconds": 4.22478733304888,
@@ -298,9 +298,9 @@
           "timed_spans": 2
         }
       ],
-      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.jsonl",
-      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.stderr",
-      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.samples.json",
+      "event_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.jsonl",
+      "time_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.stderr",
+      "resource_samples": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/02-candidate-authoritative.samples.json",
       "sample_count": 22,
       "sampled_process_tree_peak_rss_bytes": 178798592,
       "sampled_process_tree_peak_cpu_percent": 30.7,
@@ -323,12 +323,12 @@
       "argv": [
         "/usr/bin/time",
         "-l",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
         "candidate",
         "authoritative",
-        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+        "<home>/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
       ],
       "started_utc": "2026-11-03T15:16:10.082880+00:00",
       "wall_seconds": 4.107657334010582,
@@ -401,9 +401,9 @@
           "timed_spans": 2
         }
       ],
-      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.jsonl",
-      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.stderr",
-      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.samples.json",
+      "event_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.jsonl",
+      "time_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.stderr",
+      "resource_samples": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/03-candidate-authoritative.samples.json",
       "sample_count": 22,
       "sampled_process_tree_peak_rss_bytes": 176340992,
       "sampled_process_tree_peak_cpu_percent": 18.2,
@@ -426,12 +426,12 @@
       "argv": [
         "/usr/bin/time",
         "-l",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
         "baseline",
         "authoritative",
-        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+        "<home>/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
       ],
       "started_utc": "2026-11-03T15:16:14.191055+00:00",
       "wall_seconds": 4.077980583999306,
@@ -504,9 +504,9 @@
           "timed_spans": 0
         }
       ],
-      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.jsonl",
-      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.stderr",
-      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.samples.json",
+      "event_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.jsonl",
+      "time_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.stderr",
+      "resource_samples": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/04-baseline-authoritative.samples.json",
       "sample_count": 21,
       "sampled_process_tree_peak_rss_bytes": 176586752,
       "sampled_process_tree_peak_cpu_percent": 23.4,
@@ -529,12 +529,12 @@
       "argv": [
         "/usr/bin/time",
         "-l",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/target/release/owned-local-comparison",
         "candidate",
         "preview",
-        "/Users/landerparren/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
-        "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
+        "<home>/Library/Application Support/Pennel/models/whisper-large-v3-turbo.gguf",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/synthetic-en.wav",
+        "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/expected.txt"
       ],
       "started_utc": "2026-11-03T15:16:18.273831+00:00",
       "wall_seconds": 9.545146208954975,
@@ -667,9 +667,9 @@
           "timed_spans": 2
         }
       ],
-      "event_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.jsonl",
-      "time_log": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.stderr",
-      "resource_samples": "/Users/landerparren/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.samples.json",
+      "event_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.jsonl",
+      "time_log": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.stderr",
+      "resource_samples": "<home>/Developer/SideProjects/pennel-app/pennel/build/notetaker-2026-11-03/owned-comparison/05-candidate-preview.samples.json",
       "sample_count": 48,
       "sampled_process_tree_peak_rss_bytes": 179748864,
       "sampled_process_tree_peak_cpu_percent": 20.2,

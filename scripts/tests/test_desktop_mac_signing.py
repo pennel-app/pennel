@@ -51,7 +51,7 @@ class MacSigningPolicyTests(unittest.TestCase):
             signing.choose_identity(available + [("A" * 40, NAME)])
 
     def test_production_refuses_development_certificate_and_preview_stays_personal(self):
-        dev = (FINGERPRINT, "Apple Development: Lander Parren (C2PC5BFY7J)")
+        dev = (FINGERPRINT, "Apple Development: Example Developer (CNIDENT001)")
         with self.assertRaises(ValueError):
             signing.choose_identity([dev])
         self.assertEqual(signing.choose_identity([dev], FINGERPRINT, preview=True), dev)

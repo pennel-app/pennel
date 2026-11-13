@@ -1,5 +1,7 @@
 # Shared Pennel desktop app
 
+> The linked model-setup JSON receipts are sanitized public derivatives. Machine-identifying command paths are redacted; the original source revisions, check results and acceptance limits remain unchanged.
+
 Device connection availability, recovery boundaries and current verification: [device connection](device-connection.md).
 
 `apps/desktop/` hosts one Tauri 2 application for Mac, Windows and Linux. Its TypeScript/Vite interface links through Rust commands to one `PennelEngine`. The legacy SwiftUI Mac shell is retired under [cleanup #75](https://github.com/pennel-app/pennel/issues/75). The embedded macOS platform library remains the owner of Apple integrations; packaged-device and signed-upgrade acceptance remain separate.

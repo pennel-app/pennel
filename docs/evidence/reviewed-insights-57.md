@@ -1,5 +1,7 @@
 # Durable meeting review — #57
 
+> The linked JSON receipt is a sanitized public derivative: machine-identifying command paths are redacted; historical revisions, artifact hashes, measurements and acceptance limits are unchanged.
+
 The original verification below was prepared on 3 November 2026 for [#57](https://github.com/pennel-app/pennel/issues/57) and [#94](https://github.com/pennel-app/pennel/issues/94), stacked on [#131](https://github.com/pennel-app/pennel/pull/131) at `748e017`, for build candidate `6179331`. Those captures and measurements retain their historical scope. Later test-only maintenance is recorded below; [final joined merge verification](reviewed-insights-57/final-merge-verification.md) covers the subsequent receipt-body guard and physical recovery-audio production fixes with current matching native libraries.
 
 The single versioned `insights.json` store retains source-linked proposals, user edits, accepted/dismissed state, edit claims, source history and note-insertion receipts. Desktop and Expo/iPhone expose the same finished-meeting review, source navigation, reassociation and accepted Markdown export. Explicit analysis qualifies and freezes evidence/configuration before native key reads; cancellation retains physical accounting until work exits. The production qualification registry remains empty. Live suggestions and background updating remain unavailable under #97.
@@ -51,14 +53,14 @@ The frontend ran `npm test` and `npm run build` in `apps/desktop`. Mobile ran `n
 The final export-only Rust change rebuilt `make mobile-core`, reused the unchanged generated projects, and then ran:
 
 ```sh
-/Users/landerparren/.local/bin/worktree-storage run -- bash scripts/ci-xcodebuild.sh test \
+"$HOME/.local/bin/worktree-storage" run -- bash scripts/ci-xcodebuild.sh test \
   -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Debug \
   -destination 'platform=iOS Simulator,id=64C462E2-0904-4E38-98C0-F1F19690D2E4' \
   -derivedDataPath apps/mobile/build/Issue57TestDerivedData \
   -resultBundlePath build/issue57/native-export-tests.xcresult \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
-/Users/landerparren/.local/bin/worktree-storage run -- bash scripts/build-mobile-ios.sh
-PENNEL_IOS_DESTINATION='generic/platform=iOS' /Users/landerparren/.local/bin/worktree-storage run -- bash scripts/build-mobile-ios.sh
+"$HOME/.local/bin/worktree-storage" run -- bash scripts/build-mobile-ios.sh
+PENNEL_IOS_DESTINATION='generic/platform=iOS' "$HOME/.local/bin/worktree-storage" run -- bash scripts/build-mobile-ios.sh
 ```
 
 The isolated Preview app and extensions retain their separate data/credential identities. Device builds used `CODE_SIGNING_ALLOWED=NO`. The simulator test host was explicitly ad hoc with no team. No employer identity was used.
@@ -117,6 +119,6 @@ The stack now includes final #98 `b94119a65e3378c15546d1b1fc3ae656f563ba2d`; #99
 
 The prior hosted lean test could legitimately expire its shared deadline after auth but before content dispatch, while the fixture required a content POST. The reviewed repair observes both physical POSTs explicitly and withholds valid content until the original deadline. Its permanent fresh-session per-phase-reset negative control must receive valid JSON after that boundary but before its reset deadline. The controlled wrong-path run failed the oracle in 11.01 seconds. Production clocks, transport, deadlines and limits are unchanged; the [upstream record](meeting-scheduling-98/deadline-fixture-ci-follow-up.json) contains the controlled proof and independent review.
 
-Full joined validation on the rebased review checkout passed **975 default tests, 0 failures, 7 ignored** in 78.82 seconds and **958 lean tests, 0 failures, 5 ignored** in 77.06 seconds. Strict default/lean Clippy, core formatting and whitespace checks passed. Exact commands, source hashes and results are in the machine receipt's `deadline_fixture_ci_maintenance` field; logs remain under `build/issue57/deadline-fixture-maintenance/`.
+Full joined validation on the rebased review checkout passed **975 default tests, 0 failures, 7 ignored** in 78.82 seconds and **958 lean tests, 0 failures, 5 ignored** in 77.06 seconds. Strict default/lean Clippy, core formatting and whitespace checks passed. Commands (with machine-identifying components redacted), source hashes and results are in the machine receipt's `deadline_fixture_ci_maintenance` field; logs remain under `build/issue57/deadline-fixture-maintenance/`.
 
 The unchanged native application also has actual prior [hosted mobile CI success on `8ba325c`](https://github.com/pennel-app/pennel/actions/runs/41678611486): its regression-test logs show **135 runtime + 36 keyboard = 171 passed**, followed by `TEST SUCCEEDED`. That log is retained with a SHA-256 receipt. Native, bindings, frontend and Release builds were not repeated for a Rust test-file-only change. The prior package/screenshot evidence and all remaining quality, hardware and deployment gates are preserved.

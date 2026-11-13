@@ -862,7 +862,7 @@
     },
     "generation": "Xcode project references canonical native/ios/Tests source directly; no CNG copy, Prebuild, Rust/core/frontend or Release rebuild needed for this test-only repair.",
     "test_command": [
-      "/Users/landerparren/.local/bin/worktree-storage",
+      "<home>/.local/bin/worktree-storage",
       "run",
       "--",
       "bash",

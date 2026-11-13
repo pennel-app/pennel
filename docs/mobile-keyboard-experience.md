@@ -1,5 +1,7 @@
 # iPhone keyboard: bilingual typing, voice and feel
 
+> The linked historical QA JSON receipts are public derivatives: machine-identifying paths and certificate owner labels are redacted, while measurements, revisions, artifact hashes and acceptance limits are unchanged.
+
 Tracking: [keyboard #39](https://github.com/pennel-app/pennel/issues/39), [device acceptance #18](https://github.com/pennel-app/pennel/issues/18), [signing/review #20](https://github.com/pennel-app/pennel/issues/20). This work builds on the device-verified [launch-crash fix #81](https://github.com/pennel-app/pennel/issues/81). Implementation branch: `codex/iphone-keyboard-experience`.
 
 ## Product contract and qualification

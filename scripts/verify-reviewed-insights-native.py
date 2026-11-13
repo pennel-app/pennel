@@ -281,9 +281,12 @@ def compiled_helper(options, output):
     source = output / "owned-window.swift"
     helper = output / "owned-window"
     source.write_text(capture.WINDOW_CHECK)
+    arguments = ["swiftc", "-O", str(source), "-o", str(helper)]
+    guard = Path.home() / ".local/bin/worktree-storage"
+    if guard.is_file():
+        arguments = [str(guard), "run", "--", *arguments]
     with (output / "window-helper-build.log").open("w") as log:
-        subprocess.run(["/Users/landerparren/.local/bin/worktree-storage", "run", "--",
-                        "swiftc", "-O", str(source), "-o", str(helper)],
+        subprocess.run(arguments,
                        check=True, stdout=log, stderr=subprocess.STDOUT, timeout=240)
     return helper
 
