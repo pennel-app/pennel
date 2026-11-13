@@ -67,6 +67,16 @@ class ManagedCorpusTests(unittest.TestCase):
         self.assertEqual(corpus.STATES, previous.STATES)
         self.assertEqual(corpus.SUPPORT, previous.SUPPORT)
 
+    def test_fixture_rows_explicitly_match_rust_export_defaults(self):
+        # The Rust Fixture serializer emits these defaults, and authored_spec
+        # intentionally requires exact equality with that exported fixture.
+        fields = {'start_ms', 'end_ms', 'speaker', 'text', 'failed', 'voice'}
+        for fixture in self.spec['fixtures']:
+            for row in fixture['utterances']:
+                self.assertEqual(set(row), fields)
+                self.assertIs(row['failed'], False)
+                self.assertIsNone(row['voice'])
+
     def test_complete_item_gold_matches_sources_and_never_invents_extraction(self):
         for f in self.spec['fixtures']:
             expected = self.spec['expected_answers'][f['id']]

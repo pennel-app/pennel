@@ -164,7 +164,8 @@ def fixture(split, family, variant, length=None, suffix=''):
             text = text.replace(';', ',')
         labels = {kind: CASE_STATES[case].get(kind, 'none') for kind in KINDS}
         labels.update({kind + '_support': CASE_SUPPORT[case][kind] for kind in KINDS})
-        utterances.append({'start_ms': index * 5000, 'end_ms': index * 5000 + 4000, 'speaker': 'others', 'text': text})
+        utterances.append({'start_ms': index * 5000, 'end_ms': index * 5000 + 4000, 'speaker': 'others',
+                           'text': text, 'failed': False, 'voice': None})
         answers.append(labels)
         gold.extend({'window_index': index, 'kind': kind, 'commitment': labels[kind], 'text': text,
                      'owner': None, 'due': None}
