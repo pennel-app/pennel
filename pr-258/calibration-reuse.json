@@ -1,0 +1,15 @@
+{
+  "mode": "verified_recorded_calibration_reuse",
+  "source_manifest_sha256": "6a678edd97a67e2bae84734ffbffc72f4e938fdd2652c5059cf7d8193375ddd9",
+  "fitted_freeze_sha256": "ebee7a9eceb6478390998984e84df25417c115abaf5c33fc767b71d1b98b63b7",
+  "fitted_lock_commit": "0d4dcfa69c07b84769729e4dee97c42a83fe7436",
+  "fitted_lock_sha256": "ffb09545cbc373fedf571cae928f5d5d29ea2d1b7d98e85bebeb3699698590a0",
+  "artifact_sha256": "d7c5d03f73edfafcbeb15c8602196025ffa19ec033298282670eea469d8b51ee",
+  "calibration_runs_sha256": "d63ea44267fc215c801967268e94d6debd7ed9b8ee5b977a6a41d039a1726c35",
+  "run_manifest_hash": "6a678edd97a67e2bae84734ffbffc72f4e938fdd2652c5059cf7d8193375ddd9",
+  "model_input_equivalence_sha256": "1d816384bf96008ac8238e712516679ea2632c09e533e27bae750026d51158a4",
+  "original_recorded_jobs": 96,
+  "original_recorded_requests": 180,
+  "new_calibration_requests": 0,
+  "counts_as_new_inference": false
+}

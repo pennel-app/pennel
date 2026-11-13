@@ -1,0 +1,13 @@
+{
+  "scope": "Genuine synthetic manual Dutch Cloud qualification; failed raw/local evidence retained; no natural-ASR/human/automatic acceptance",
+  "files": {
+    "calibrated-support-final-report.json": "d9c6f08319569acfdda64b4a977af81a7cf5ef3b687d6e3b917e6b3a5c09303b",
+    "raw-cloud-failed-report.json": "08b245946a91a3b0e54226e3808efdc7ff7906982ea9ae709ff3d39cde53a265",
+    "source-provenance.json": "3c0e613652abf99bb63479df33748ccbb4e01321def74c23fc4eaa68bc34f779",
+    "calibration-reuse.json": "4964c2623c5d334381319abfa247c811b6fac67fcca66124ab7d7f8677a09952"
+  },
+  "cloud_qualification_id": "finished-nl-bbf47b3e584713bc29e0",
+  "automatic_analysis_accepted": false,
+  "local_candidate_qualified": false,
+  "cumulative_exposure_usd": "0.39214918"
+}
