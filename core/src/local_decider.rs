@@ -19,6 +19,7 @@ use crate::{
 mod protocol;
 pub use protocol::ManagedLocalDeciderProtocol;
 mod native;
+#[cfg(any(test, all(target_os = "macos", target_arch = "aarch64")))]
 mod scopes;
 pub use native::{BundledLocalDeciderRuntime, managed_local_decider_worker_main};
 

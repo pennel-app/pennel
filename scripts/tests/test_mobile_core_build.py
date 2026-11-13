@@ -21,14 +21,21 @@ with pathlib.Path(os.environ["PENNEL_BUILD_TEST_LOG"]).open("a") as log:
 def mutate_registry(phase):
     if os.environ.get("PENNEL_BUILD_TEST_REGISTRY_MUTATION") == phase:
         (root / "assets/qualifications/meeting-assistance.json").write_text('{"schema_version":1,"adopted_records":[{"fixture":"changed during build"}]}')
+    if os.environ.get("PENNEL_BUILD_TEST_SUPPORT_MUTATION") == phase:
+        (root / "assets/qualifications/meeting-support-cloud-v1.json").write_text('{"schema_version":1,"runtime_policy":"changed-during-build"}')
 if name == "cargo" and args[0] == "build":
     target = args[args.index("--target") + 1]
     keyboard = pathlib.Path(args[args.index("--manifest-path") + 1]).parent.name == "keyboard"
     output = (root / "core/keyboard/target" if keyboard else root / "core/target") / target / "release"
     output.mkdir(parents=True, exist_ok=True)
     stem = "libpennel_typing" if keyboard else "libpennel_core"
-    (output / (stem + ".a")).write_bytes(target.encode())
-    (output / (stem + ".dylib")).write_bytes(target.encode())
+    contents = target.encode()
+    if not keyboard:
+        contents += (root / "assets/qualifications/meeting-assistance.json").read_bytes()
+        if os.environ.get("PENNEL_BUILD_TEST_MISSING_SUPPORT_EMBEDDING") not in ("1", target):
+            contents += (root / "assets/qualifications/meeting-support-cloud-v1.json").read_bytes()
+    (output / (stem + ".a")).write_bytes(contents)
+    (output / (stem + ".dylib")).write_bytes(contents)
     mutate_registry(("keyboard-" if keyboard else "core-") + target)
 elif name == "cargo" and args[0] == "run":
     assert pathlib.Path(args[args.index("--library") + 1]).is_file()
@@ -52,6 +59,7 @@ elif name == "node":
     assert (root / "apps/mobile/artifacts/ios/manifest.json").is_file()
     assert not (root / "apps/ios").exists()
     assert not (root / "apps/macos").exists()
+    mutate_registry("native-sources")
 else:
     raise SystemExit("Unexpected native build command: " + name)
 '''
@@ -78,6 +86,8 @@ class MobileCoreBuildTests(unittest.TestCase):
         self.registry = self.root / "assets/qualifications/meeting-assistance.json"
         self.registry.parent.mkdir(parents=True)
         self.registry.write_text('{"schema_version":1,"adopted_records":[]}\n')
+        self.support = self.registry.with_name("meeting-support-cloud-v1.json")
+        self.support.write_text('{"schema_version":1,"runtime_policy":"fixture-v1"}\n')
         tools = self.root / "tools"
         tools.mkdir()
         for name in ("cargo", "xcodebuild", "git", "node"):
@@ -131,6 +141,8 @@ class MobileCoreBuildTests(unittest.TestCase):
         self.assertEqual(manifest["qualification_registry_sha256"],
                          hashlib.sha256(self.registry.read_bytes()).hexdigest())
         self.assertEqual(manifest["qualification_registry_adopted_records"], 0)
+        self.assertEqual(manifest["support_calibration_sha256"],
+                         hashlib.sha256(self.support.read_bytes()).hexdigest())
         commands = self.commands()
         self.assert_build_targets(commands, ["aarch64-apple-ios", "aarch64-apple-ios-sim"])
         generator = next(args for name, *args in commands if name == "cargo" and args[0] == "run")
@@ -172,13 +184,50 @@ class MobileCoreBuildTests(unittest.TestCase):
                 self.assertFalse((self.artifacts / "manifest.json").exists())
                 self.assertEqual(self.commands(), [])
 
+    def test_support_asset_provenance_changes_without_redefining_core_or_binding_hashes(self):
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        before = json.loads((self.artifacts / "manifest.json").read_text())
+        self.support.write_text('{"schema_version":1,"runtime_policy":"updated-fixture"}\n')
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        after = json.loads((self.artifacts / "manifest.json").read_text())
+        self.assertEqual(after["core_sha256"], before["core_sha256"])
+        self.assertEqual(after["bindings_sha256"], before["bindings_sha256"])
+        self.assertEqual(after["qualification_registry_sha256"], before["qualification_registry_sha256"])
+        self.assertNotEqual(after["support_calibration_sha256"], before["support_calibration_sha256"])
+        self.assertEqual(after["support_calibration_sha256"], hashlib.sha256(self.support.read_bytes()).hexdigest())
+
+    def test_missing_or_invalid_support_asset_fails_before_native_commands(self):
+        for body in (None, '[]', '{}', '{"schema_version":2,"runtime_policy":"fixture"}'):
+            with self.subTest(body=body):
+                if body is None:
+                    self.support.unlink()
+                else:
+                    self.support.write_text(body)
+                result = self.prepare()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.artifacts / "manifest.json").exists())
+                self.assertEqual(self.commands(), [])
+
+    def test_missing_support_bytes_in_compiled_library_fails_before_bindings(self):
+        for target in ('aarch64-apple-ios', 'aarch64-apple-ios-sim'):
+            with self.subTest(target=target):
+                self.env['PENNEL_BUILD_TEST_MISSING_SUPPORT_EMBEDDING'] = target
+                result = self.prepare()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('support calibration asset is missing from', result.stderr.lower())
+                self.assertIn(target + '/release/libpennel_core.a', result.stderr)
+                self.assertFalse((self.artifacts / "manifest.json").exists())
+                self.assertFalse(any(name == 'cargo' and args[0] == 'run' for name, *args in self.commands()))
+
     def test_registry_changes_during_preparation_never_label_old_outputs_with_new_registry(self):
         pinned = self.registry.read_bytes()
         pinned_hash = hashlib.sha256(pinned).hexdigest()
         result = self.prepare()
         self.assertEqual(result.returncode, 0, result.stderr)
         for phase in ('keyboard-aarch64-apple-ios', 'core-aarch64-apple-ios',
-                      'core-aarch64-apple-ios-sim', 'bindings', 'framework', 'manifest'):
+                      'core-aarch64-apple-ios-sim', 'bindings', 'framework', 'manifest', 'native-sources'):
             with self.subTest(phase=phase):
                 self.registry.write_bytes(pinned)
                 self.env['PENNEL_BUILD_TEST_REGISTRY_MUTATION'] = phase
@@ -192,6 +241,26 @@ class MobileCoreBuildTests(unittest.TestCase):
                     self.assertEqual(manifest['qualification_registry_adopted_records'], 0)
                     self.assertNotEqual(manifest['qualification_registry_sha256'],
                                         hashlib.sha256(self.registry.read_bytes()).hexdigest())
+
+    def test_support_changes_during_preparation_never_mislabel_existing_outputs(self):
+        pinned = self.support.read_bytes()
+        pinned_hash = hashlib.sha256(pinned).hexdigest()
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for phase in ('keyboard-aarch64-apple-ios', 'core-aarch64-apple-ios',
+                      'core-aarch64-apple-ios-sim', 'bindings', 'framework', 'manifest', 'native-sources'):
+            with self.subTest(phase=phase):
+                self.support.write_bytes(pinned)
+                self.env['PENNEL_BUILD_TEST_SUPPORT_MUTATION'] = phase
+                result = self.prepare()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('support calibration asset changed', result.stderr.lower())
+                manifest_file = self.artifacts / 'manifest.json'
+                if manifest_file.exists():
+                    manifest = json.loads(manifest_file.read_text())
+                    self.assertEqual(manifest['support_calibration_sha256'], pinned_hash)
+                    self.assertNotEqual(manifest['support_calibration_sha256'],
+                                        hashlib.sha256(self.support.read_bytes()).hexdigest())
 
     def test_archive_preparation_builds_only_device_libraries_and_matching_bindings(self):
         result = self.prepare("1")

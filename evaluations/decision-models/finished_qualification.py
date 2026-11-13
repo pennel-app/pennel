@@ -14,6 +14,8 @@ import calibration
 import finished
 import finished_v2
 import finished_v3
+import finished_support_v1
+import finished_calibration_reuse
 import metrics
 import runners
 
@@ -33,6 +35,9 @@ CLOUD_SOURCES = V3_SOURCES + ('finished_cloud_experiment.py', 'finished_corpus_m
 LOCAL_SOURCES = V3_SOURCES + ('finished_local_experiment.py', 'finished_corpus_managed_v1.py',
     'protocol-finished-qualification-local-v1.json', 'evaluation_io.py')
 RUNTIME_POLICY_V3 = 'raw_supported_passage_decisions_v3'
+SUPPORT_SOURCES = CLOUD_SOURCES + ('finished_support_v1.py', 'finished_calibration_reuse.py',
+    'finished_corpus_managed_v2.py', 'protocol-finished-production-support-v1.json',
+    'protocol-finished-qualification-cloud-support-v1.json')
 
 
 def _seal(value):
@@ -42,13 +47,13 @@ def _seal(value):
 
 def _base(frozen):
     value = {key: copy.deepcopy(item) for key, item in frozen.items()
-             if key not in ('calibration', 'calibration_runs', 'calibration_runs_sha256', 'base_freeze_sha256', 'freeze_sha256')}
+             if key not in ('calibration', 'calibration_runs', 'calibration_runs_sha256', 'base_freeze_sha256', 'freeze_sha256', 'calibration_reuse', 'calibration_replay_verification')}
     value['stage'] = 'calibration'
     return _seal(value)
 
 
-def _source_hashes(v2=False, *, v3=False, cloud=False, local=False):
-    names = LOCAL_SOURCES if local else CLOUD_SOURCES if cloud else V3_SOURCES if v3 else V2_SOURCES if v2 else SOURCES
+def _source_hashes(v2=False, *, v3=False, cloud=False, local=False, support=False):
+    names = SUPPORT_SOURCES if support else LOCAL_SOURCES if local else CLOUD_SOURCES if cloud else V3_SOURCES if v3 else V2_SOURCES if v2 else SOURCES
     return {name: finished.file_hash(Path(__file__).parent/name) for name in names}
 
 
@@ -57,7 +62,7 @@ def _v2(frozen):
 
 
 def _v3(frozen):
-    return frozen.get('schema_version') == 3 and frozen.get('protocol_id') in ('production-finished-qualification-v3', 'production-finished-qualification-cloud-v1', 'production-finished-qualification-local-v1')
+    return frozen.get('schema_version') == 3 and frozen.get('protocol_id') in ('production-finished-qualification-v3', 'production-finished-qualification-cloud-v1', 'production-finished-qualification-local-v1', 'production-finished-qualification-cloud-support-v1')
 
 
 def _local(frozen):
@@ -65,7 +70,11 @@ def _local(frozen):
 
 
 def _cloud(frozen):
-    return frozen.get('protocol_id') == 'production-finished-qualification-cloud-v1'
+    return frozen.get('protocol_id') in ('production-finished-qualification-cloud-v1', 'production-finished-qualification-cloud-support-v1')
+
+
+def _support(frozen):
+    return frozen.get('protocol_id') == 'production-finished-qualification-cloud-support-v1'
 
 
 def _batched(frozen):
@@ -73,15 +82,15 @@ def _batched(frozen):
 
 
 def _runtime_policy(frozen):
-    return RUNTIME_POLICY_V3 if _v3(frozen) else RUNTIME_POLICY
+    return finished_support_v1.RUNTIME_POLICY if _support(frozen) else RUNTIME_POLICY_V3 if _v3(frozen) else RUNTIME_POLICY
 
 
 def _protocol(frozen):
-    return PROTOCOL_LOCAL if _local(frozen) else PROTOCOL_CLOUD if _cloud(frozen) else PROTOCOL_V3 if _v3(frozen) else PROTOCOL_V2 if _v2(frozen) else PROTOCOL
+    return finished_support_v1.QUALIFICATION_PROTOCOL if _support(frozen) else PROTOCOL_LOCAL if _local(frozen) else PROTOCOL_CLOUD if _cloud(frozen) else PROTOCOL_V3 if _v3(frozen) else PROTOCOL_V2 if _v2(frozen) else PROTOCOL
 
 
 def _contract(frozen):
-    return finished_v3 if _v3(frozen) else finished_v2 if _v2(frozen) else finished
+    return finished_support_v1 if _support(frozen) else finished_v3 if _v3(frozen) else finished_v2 if _v2(frozen) else finished
 
 
 def physical_requests(exported):
@@ -157,18 +166,22 @@ def _gold(exported, rows):
     return result
 
 
-def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, gold_items, *, schema_version=None):
+def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, gold_items, *, schema_version=None, runtime_policy=None):
     if not _valid_actual(configuration, expected_actual):
         raise ValueError('verified_actual_identity_required')
     v2 = expected_actual.get('identity_evidence') == 'provider_reported_version'
     version = schema_version if schema_version is not None else 2 if v2 else 1
     cloud = configuration.get('protocol') == 'pennel_cloud'
     local = configuration.get('endpoint') == 'pennel-local://decider/decisions'
+    support = runtime_policy == finished_support_v1.RUNTIME_POLICY
+    expected_policy = finished_support_v1.RUNTIME_POLICY if support else RUNTIME_POLICY_V3 if version == 3 else RUNTIME_POLICY
+    if runtime_policy not in (None, expected_policy) or support and (not cloud or version != 3):
+        raise ValueError('unsupported_runtime_selection_policy')
     if version not in (1,2,3) or version in (2,3) and not (v2 or local and version==3) or (cloud or local) and version != 3:
         raise ValueError('unsupported_qualification_contract')
     if any(item.get('language') != 'nl' for item in fixtures):
         raise ValueError('initial_qualification_is_dutch_only')
-    contract = {1:finished,2:finished_v2,3:finished_v3}[version]
+    contract = finished_support_v1 if support else {1:finished,2:finished_v2,3:finished_v3}[version]
     production = contract.freeze(fixtures, configuration, bridge, expected_actual, expected_answers)
     ids = {item['fixture']['id'] for item in production['exports']}
     if not isinstance(gold_items, dict) or set(gold_items) != ids:
@@ -177,12 +190,18 @@ def freeze(fixtures, configuration, bridge, expected_actual, expected_answers, g
     splits = {item['fixture']['split'] for item in production['exports']}
     if splits != {'development', 'calibration', 'heldout'}:
         raise ValueError('all_disjoint_splits_required')
-    value = {'schema_version': version, 'protocol_id': 'production-finished-qualification-local-v1' if local else 'production-finished-qualification-cloud-v1' if cloud else f'production-finished-qualification-v{version}',
-        'protocol_sha256': finished.file_hash(PROTOCOL_LOCAL if local else PROTOCOL_CLOUD if cloud else {1:PROTOCOL,2:PROTOCOL_V2,3:PROTOCOL_V3}[version]),
-        'source_sha256': _source_hashes(version==2,v3=version==3,cloud=cloud,local=local),
+    if support:
+        import finished_corpus_managed_v2
+        canonical = finished_corpus_managed_v2.experiment()
+        if any(value != canonical[key] for key, value in
+               (('fixtures', fixtures), ('expected_answers', expected_answers), ('gold_items', gold_items))):
+            raise ValueError('canonical_fresh_support_corpus_required')
+    value = {'schema_version': version, 'protocol_id': 'production-finished-qualification-cloud-support-v1' if support else 'production-finished-qualification-local-v1' if local else 'production-finished-qualification-cloud-v1' if cloud else f'production-finished-qualification-v{version}',
+        'protocol_sha256': finished.file_hash(finished_support_v1.QUALIFICATION_PROTOCOL if support else PROTOCOL_LOCAL if local else PROTOCOL_CLOUD if cloud else {1:PROTOCOL,2:PROTOCOL_V2,3:PROTOCOL_V3}[version]),
+        'source_sha256': _source_hashes(version==2,v3=version==3,cloud=cloud,local=local,support=support),
         'production': production, 'gold_items': gold, 'stage': 'calibration', 'production_admission': False}
     if version in (2,3):
-        value.update(runtime_policy=RUNTIME_POLICY_V3 if version==3 else RUNTIME_POLICY,
+        value.update(runtime_policy=finished_support_v1.RUNTIME_POLICY if support else RUNTIME_POLICY_V3 if version==3 else RUNTIME_POLICY,
             resource_fixture_id=next(item['id'] for item in fixtures if item['split'] == 'development'))
     return _seal(value)
 
@@ -192,10 +211,22 @@ def _deadline(deadline, clock):
         raise finished.FinishedError('evaluation_budget_exceeded')
 
 
-def verify_freeze(frozen, bridge, *, deadline=None, clock=time.monotonic):
+def _verify_support_corpus(frozen):
+    import finished_corpus_managed_v2
+    canonical = finished_corpus_managed_v2.experiment()
+    exports = frozen['production']['exports']
+    if ([x['fixture'] for x in exports] != canonical['fixtures']
+            or frozen['production']['expected_answers'] != canonical['expected_answers']
+            or frozen.get('resource_fixture_id') != canonical['resource_fixture_id']
+            or frozen['gold_items'] != {x['fixture']['id']:_gold(x, canonical['gold_items'][x['fixture']['id']]) for x in exports}):
+        raise ValueError('canonical_fresh_support_corpus_required')
+
+
+def verify_freeze(frozen, bridge, *, deadline=None, clock=time.monotonic, _pending_reuse=False):
     _deadline(deadline, clock)
-    if ((frozen.get('schema_version'), frozen.get('protocol_id')) not in ((1, 'production-finished-qualification-v1'), (2, 'production-finished-qualification-v2'), (3, 'production-finished-qualification-v3'), (3, 'production-finished-qualification-cloud-v1'), (3, 'production-finished-qualification-local-v1'))
-            or frozen.get('protocol_sha256') != finished.file_hash(_protocol(frozen)) or frozen.get('source_sha256') != _source_hashes(_v2(frozen),v3=_v3(frozen),cloud=_cloud(frozen),local=_local(frozen))
+    reuse_evidence = None
+    if ((frozen.get('schema_version'), frozen.get('protocol_id')) not in ((1, 'production-finished-qualification-v1'), (2, 'production-finished-qualification-v2'), (3, 'production-finished-qualification-v3'), (3, 'production-finished-qualification-cloud-v1'), (3, 'production-finished-qualification-local-v1'), (3, 'production-finished-qualification-cloud-support-v1'))
+            or frozen.get('protocol_sha256') != finished.file_hash(_protocol(frozen)) or frozen.get('source_sha256') != _source_hashes(_v2(frozen),v3=_v3(frozen),cloud=_cloud(frozen),local=_local(frozen),support=_support(frozen))
             or frozen.get('freeze_sha256') != finished.digest({key: item for key, item in frozen.items() if key != 'freeze_sha256'})
             or frozen.get('production_admission') is not False or frozen.get('stage') not in ('calibration', 'heldout_ready')):
         raise ValueError('qualification_freeze_changed')
@@ -208,15 +239,29 @@ def verify_freeze(frozen, bridge, *, deadline=None, clock=time.monotonic):
     if bool(local_exports) != _local(frozen) or local_exports and (len(local_exports) != len(frozen['production']['exports']) or any(not _valid_actual(x['configuration'], x['expected_actual']) for x in local_exports)):
         raise ValueError('local_transport_context_changed')
     _contract(frozen).verify_freeze(frozen['production'], bridge, deadline=deadline, clock=clock)
+    if _support(frozen):
+        _verify_support_corpus(frozen)
     if frozen['stage'] == 'heldout_ready':
         base = _base(frozen)
         if base['freeze_sha256'] != frozen['base_freeze_sha256'] or finished.digest(frozen['calibration_runs']) != frozen['calibration_runs_sha256']:
             raise ValueError('unlinked_calibration')
-        rows, _, _ = _runs(base, frozen['calibration_runs'], bridge, 'calibration', deadline=deadline, clock=clock)
-        expected = calibration.fit_predictions(rows, run_manifest_hash=base['freeze_sha256'])
+        source = finished_calibration_reuse.verified_source(frozen) if _support(frozen) else None
+        if source:
+            original_bridge = finished_calibration_reuse.historical_bridge(source)
+            rows, _, _ = _runs(_base(source), source['calibration_runs'], original_bridge, 'calibration', deadline=deadline, clock=clock)
+            # This separate replay must match the originally recorded real Engine
+            # results. It does not refit thresholds using changed float parsing.
+            engine_rows, _, _ = _runs(frozen, frozen['calibration_runs'], bridge, 'calibration', deadline=deadline, clock=clock, original=source)
+            reuse_evidence = finished_calibration_reuse.serialization_delta(rows, engine_rows)
+        else:
+            rows, _, _ = _runs(base, frozen['calibration_runs'], bridge, 'calibration', deadline=deadline, clock=clock)
+        expected = calibration.fit_predictions(rows, run_manifest_hash=source['base_freeze_sha256'] if source else base['freeze_sha256'])
         _deadline(deadline, clock)
         if expected != frozen['calibration']:
             raise ValueError('calibration_artifact_changed')
+        if source and not _pending_reuse and frozen.get('calibration_replay_verification') != reuse_evidence:
+            raise ValueError('calibration_replay_verification_changed')
+    return reuse_evidence
 
 
 def requests(frozen, split, bridge):
@@ -225,6 +270,8 @@ def requests(frozen, split, bridge):
         raise ValueError('unknown_split')
     if split == 'heldout' and frozen['stage'] != 'heldout_ready':
         raise ValueError('calibration_before_heldout_required')
+    if split == 'calibration' and _support(frozen):
+        raise ValueError('calibration_reused_without_new_inference')
     return [{'fixture_id': exported['fixture']['id'],
              ('batch_index' if _batched(frozen) else 'window_index'): batch['index'],
              'freeze_sha256': frozen['freeze_sha256'], 'export_sha256': exported['freeze_sha256'],
@@ -238,18 +285,34 @@ def _number(value):
     return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
 
 
-def _run(frozen, exported, run, bridge, *, deadline=None, clock=time.monotonic):
+def _run(frozen, exported, run, bridge, *, deadline=None, clock=time.monotonic, original=None):
     _deadline(deadline, clock)
     responses = run.get('responses')
     hashes = [hashlib.sha256(batch['wire_body'].encode()).hexdigest() for batch in physical_requests(exported)]
-    if (run.get('freeze_sha256') != frozen['freeze_sha256'] or run.get('export_sha256') != exported['freeze_sha256']
+    if original is not None and exported['fixture'].get('split') != 'calibration':
+        raise ValueError('calibration_reuse_only')
+    binding, bound_export = original if original is not None else (frozen, exported)
+    if original is not None and finished_calibration_reuse.input_projection(exported) != finished_calibration_reuse.input_projection(bound_export):
+        raise ValueError('calibration_model_input_or_judgment_changed')
+    binding_hash = binding.get('base_freeze_sha256', binding['freeze_sha256']) if original is not None else binding['freeze_sha256']
+    if (run.get('freeze_sha256') != binding_hash or run.get('export_sha256') != bound_export['freeze_sha256']
             or run.get('evidence_class') not in ('recorded_inference', 'offline_fixture')
             or not isinstance(responses, list) or run.get('request_sha256s') != hashes[:len(responses)]):
         raise ValueError('unlinked_prediction_or_changed_request')
     for key, value in run.get('measurements', {}).items():
         if key in ('latency_ms', 'whole_job_elapsed_ms', 'cpu_time_ms', 'peak_rss_bytes', 'executed_requests', 'input_bytes') and not _number(value):
             raise ValueError('invalid_resource_measurement')
-    replay = finished._bridge_call(bridge, {'op': 'finished_meeting_replay', 'export': exported, 'responses': responses}, deadline=deadline, clock=clock)
+    replay_responses = finished_calibration_reuse.typed_responses(run, reused=original is not None) if _support(frozen) else responses
+    replay = finished._bridge_call(bridge, {'op': 'finished_meeting_replay', 'export': exported, 'responses': replay_responses}, deadline=deadline, clock=clock)
+    if _support(frozen):
+        finished_calibration_reuse.verify_engine_replay(exported, replay_responses, replay)
+        artifact = finished_calibration_reuse.asset()[2]
+        for window in replay.get('windows', []):
+            if window.get('status') == 'ok':
+                index = window.get('window_index')
+                if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(exported['windows']):
+                    raise ValueError('runtime_support_gate_evidence_changed')
+                finished_calibration_reuse.verify_gate_window(exported, exported['windows'][index], window, artifact)
     elapsed = run.get('measurements', {}).get('whole_job_elapsed_ms', run.get('measurements', {}).get('latency_ms'))
     if (replay.get('complete') is True and elapsed is not None
             and elapsed > exported['configuration']['timeout_secs'] * 1000):
@@ -272,17 +335,21 @@ def _execution_reconciled(run):
         return False
 
 
-def _runs(frozen, predictions, bridge, split, *, deadline=None, clock=time.monotonic):
+def _runs(frozen, predictions, bridge, split, *, deadline=None, clock=time.monotonic, original=None):
     _deadline(deadline, clock)
     exports = {item['fixture']['id']: item for item in frozen['production']['exports'] if item['fixture']['split'] == split}
     if not isinstance(predictions, list):
         raise ValueError('predictions_required')
+    if original is None and split == 'calibration' and _support(frozen) and frozen.get('calibration_reuse'):
+        original = finished_calibration_reuse.verified_source(frozen)
+    previous = {x['fixture']['id']:x for x in original['production']['exports']} if original is not None else {}
     observed = {}
     for run in predictions:
         identifier = run.get('fixture_id')
         if identifier not in exports or identifier in observed:
             raise ValueError('duplicate_unknown_or_wrong_split_prediction')
-        observed[identifier] = (run, _run(frozen, exports[identifier], run, bridge, deadline=deadline, clock=clock))
+        observed[identifier] = (run, _run(frozen, exports[identifier], run, bridge, deadline=deadline, clock=clock,
+            original=(original, previous[identifier]) if original is not None else None))
     rows, jobs = [], {}
     for identifier, exported in exports.items():
         run, replay = observed.get(identifier, ({}, {}))
@@ -313,7 +380,7 @@ def _runs(frozen, predictions, bridge, split, *, deadline=None, clock=time.monot
                     'label_order': [option['id'] for option in question['options']],
                     'grouping': exported['qualification_request']['grouping'],
                     'identity': {'transport': exported['configuration']['protocol'], **identity},
-                    'run_manifest_hash': frozen.get('base_freeze_sha256', frozen['freeze_sha256'])}
+                    'run_manifest_hash': original['base_freeze_sha256'] if original is not None else frozen.get('base_freeze_sha256', frozen['freeze_sha256'])}
                 if support and (not valid or value['prediction']=='unclear'):
                     value.update(prediction=None,accepted=False,support_abstained=True)
                 rows.append(value)
@@ -324,6 +391,8 @@ def calibrate(frozen, predictions, bridge):
     verify_freeze(frozen, bridge)
     if frozen['stage'] != 'calibration':
         raise ValueError('calibration_already_frozen')
+    if _support(frozen):
+        raise ValueError('explicit_original_calibration_reuse_required')
     allowed = {item['fixture']['id'] for item in frozen['production']['exports'] if item['fixture']['split'] == 'calibration'}
     if any(row.get('fixture_id') not in allowed for row in predictions):
         raise ValueError('calibration_only_predictions_required')
@@ -332,6 +401,21 @@ def calibrate(frozen, predictions, bridge):
     result.update(stage='heldout_ready', base_freeze_sha256=frozen['freeze_sha256'],
         calibration=calibration.fit_predictions(rows, run_manifest_hash=frozen['freeze_sha256']),
         calibration_runs=copy.deepcopy(predictions), calibration_runs_sha256=finished.digest(predictions))
+    return _seal(result)
+
+
+def reuse_calibration(frozen, bridge, source_artifact=finished_calibration_reuse.SOURCE):
+    verify_freeze(frozen, bridge)
+    if not _support(frozen) or frozen['stage'] != 'calibration':
+        raise ValueError('new_support_calibration_base_required')
+    source = finished_calibration_reuse.load_source(source_artifact)
+    result = copy.deepcopy(frozen)
+    result.update(stage='heldout_ready', base_freeze_sha256=frozen['freeze_sha256'],
+        calibration=copy.deepcopy(source['calibration']), calibration_runs=copy.deepcopy(source['calibration_runs']),
+        calibration_runs_sha256=finished.digest(source['calibration_runs']),
+        calibration_reuse=finished_calibration_reuse.proof(frozen, source, source_artifact))
+    result = _seal(result)
+    result['calibration_replay_verification'] = verify_freeze(result, bridge, _pending_reuse=True)
     return _seal(result)
 
 
@@ -442,11 +526,11 @@ def _resources(frozen, resources, bridge):
 
 
 def evaluate(frozen, predictions, bridge, resources=None):
-    verify_freeze(frozen, bridge)
+    reuse_evidence = verify_freeze(frozen, bridge)
     if frozen['stage'] != 'heldout_ready':
         raise ValueError('calibration_before_heldout_required')
     rows, jobs, scheduled = _runs(frozen, predictions, bridge, 'heldout')
-    _, calibration_jobs, calibration_scheduled = _runs(_base(frozen), frozen['calibration_runs'], bridge, 'calibration')
+    _, calibration_jobs, calibration_scheduled = _runs(frozen if _support(frozen) else _base(frozen), frozen['calibration_runs'], bridge, 'calibration')
     state_rows = [row for row in rows if row['component'] in KINDS] if _v3(frozen) else rows
     raw = metrics.classification_metrics(state_rows)
     calibrated = metrics.classification_metrics(_calibrated(state_rows, frozen['calibration']))
@@ -496,10 +580,18 @@ def evaluate(frozen, predictions, bridge, resources=None):
         report.update(runtime_support_check_applied=True,raw_support_metrics=support_raw,
             calibrated_support_metrics=support_calibrated,
             support_abstention_policy='unclear_or_model_abstained_count_as_misses_with_probabilities_retained')
+    if _support(frozen):
+        gate = finished_calibration_reuse.metadata(frozen['production']['exports'][0])
+        report.update(runtime_calibration_applied=True, runtime_calibrated_components=[kind+'_support' for kind in KINDS],
+            calibration_role='runtime_support_gate_raw_states_diagnostic',
+            calibration_reuse=copy.deepcopy(frozen['calibration_reuse']), support_calibration=gate,
+            calibration_replay_verification=reuse_evidence,
+            diagnostic_calibration_sha256=finished.digest(frozen['calibration']),
+            fresh_heldout_jobs=len(predictions), fresh_resource_samples=runtime['cold_samples']+runtime['warm_samples'])
     if not gates:
         exported = frozen['production']['exports'][0]
         context = {**exported['qualification_request'], 'actual': exported['expected_actual'],
-                   'calibration_sha256': finished.digest(frozen['calibration'])}
+                   'calibration_sha256': gate['asset_sha256'] if _support(frozen) else finished.digest(frozen['calibration'])}
         report['candidate_records'] = [{'schema_version': 1, 'qualification_id': 'finished-nl-' + frozen['freeze_sha256'][:20],
             'context': context,
             'evidence': {'mode': 'recorded_inference', 'protocol_sha256': frozen['protocol_sha256'],
@@ -520,19 +612,21 @@ def evaluate(frozen, predictions, bridge, resources=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('freeze', 'requests', 'calibrate', 'evaluate'))
+    parser.add_argument('operation', choices=('freeze', 'requests', 'calibrate', 'reuse-calibration', 'evaluate'))
     parser.add_argument('--bridge', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--input', required=True)
     parser.add_argument('--predictions')
     parser.add_argument('--resources')
     parser.add_argument('--split', choices=('development', 'calibration', 'heldout'))
+    parser.add_argument('--source-calibration', default=finished_calibration_reuse.SOURCE)
     args = parser.parse_args()
     bridge = finished.CoreBridge(args.bridge)
     value = json.loads(Path(args.input).read_text())
     if args.operation == 'freeze':
-        result = freeze(value['fixtures'], value['configuration'], bridge, value['expected_actual'], value['expected_answers'], value['gold_items'],schema_version=value.get('schema_version'))
+        result = freeze(value['fixtures'], value['configuration'], bridge, value['expected_actual'], value['expected_answers'], value['gold_items'],schema_version=value.get('schema_version'),runtime_policy=value.get('runtime_policy'))
     elif args.operation == 'requests': result = requests(value, args.split, bridge)
+    elif args.operation == 'reuse-calibration': result = reuse_calibration(value, bridge, args.source_calibration)
     else:
         predictions = json.loads(Path(args.predictions).read_text())
         result = calibrate(value, predictions, bridge) if args.operation == 'calibrate' else evaluate(value, predictions, bridge,

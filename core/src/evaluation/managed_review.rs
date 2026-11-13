@@ -376,22 +376,32 @@ impl CloudReviewClient {
         let attempts = self.attempts.lock().unwrap().clone();
         let result = match result {
             Ok(result) => {
-                let replay = attempts
-                    .last()
-                    .and_then(|attempt| {
-                        let request: Value =
-                            serde_json::from_str(attempt["wire_body"].as_str()?).ok()?;
-                        let response = serde_json::to_vec(&attempt["response"]).ok()?;
-                        Some(job.prepared.replay_with_request_id(
-                            index,
-                            &response,
-                            job.expected_actual.as_ref(),
-                            request["request_id"].as_str(),
-                        ))
-                    })
-                    .ok_or("cloud_response_capture_missing")?;
+                let replay = if job.prepared.uses_support_calibration() {
+                    attempts.last().and_then(|attempt| {
+                        let request:Value=serde_json::from_str(attempt["wire_body"].as_str()?).ok()?;
+                        Some(job.prepared.replay_observed_managed_result(index,result.clone(),&attempt["response"],job.expected_actual.as_ref(),request["request_id"].as_str()))
+                    }).unwrap_or_else(||json!({"status":"typed_response_capture_missing","batch_index":index,"windows":[]}))
+                } else {
+                    attempts
+                        .last()
+                        .and_then(|attempt| {
+                            let request: Value =
+                                serde_json::from_str(attempt["wire_body"].as_str()?).ok()?;
+                            let response = serde_json::to_vec(&attempt["response"]).ok()?;
+                            Some(job.prepared.replay_with_request_id(
+                                index,
+                                &response,
+                                job.expected_actual.as_ref(),
+                                request["request_id"].as_str(),
+                            ))
+                        })
+                        .ok_or("cloud_response_capture_missing")?
+                };
                 job.next_batch += 1;
                 job.terminal = job.next_batch == job.prepared.batch_count();
+                if job.prepared.uses_support_calibration() && replay["status"] != "ok" {
+                    job.terminal = true;
+                }
                 json!({"status":"ok","result":result,"replay":replay})
             }
             Err(error) => {

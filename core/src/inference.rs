@@ -1910,6 +1910,17 @@ pub(crate) fn evaluation_decision_response(
 }
 
 #[cfg(feature = "evaluation")]
+pub(crate) fn evaluation_managed_decision_value(
+    config: &InferenceConfig,
+    endpoint: String,
+    request: &DecisionRequest,
+    response: &Value,
+    request_id: &str,
+) -> Result<DecisionResult, PennelError> {
+    managed_decision_result(config, endpoint, request, response, request_id)
+}
+
+#[cfg(feature = "evaluation")]
 pub(crate) fn evaluation_managed_decision_response(
     config: &InferenceConfig,
     endpoint: String,
@@ -2033,7 +2044,7 @@ pub(crate) fn rerank(
 }
 
 // Reject duplicate object keys before typed validation can lose them in a map.
-fn parse_unique_json(text: &str) -> Result<Value, PennelError> {
+pub(crate) fn parse_unique_json(text: &str) -> Result<Value, PennelError> {
     struct Unique(Value);
     impl<'de> Deserialize<'de> for Unique {
         fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

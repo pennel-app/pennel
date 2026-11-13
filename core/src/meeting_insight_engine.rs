@@ -30,6 +30,7 @@ const LOCAL_BATCH_STATE_FORMAT: &str = "pennel-local-independent-window-batch-v1
 
 #[cfg(feature = "evaluation")]
 pub(crate) mod evaluation;
+pub(crate) mod support_calibration;
 
 #[derive(Clone)]
 struct SourceBlock {
@@ -186,7 +187,6 @@ fn batches(
     Ok(result)
 }
 
-#[cfg(any(test, feature = "evaluation"))]
 fn batch_prompt_context(batch: &InsightBatch, slot: usize) -> String {
     let mut context = serde_json::json!({"format":batch.prompt_format,"size":batch.window_indices.len(),
         "slot":slot,"questions":batch.request.questions});
@@ -1085,6 +1085,8 @@ pub(crate) fn qualification_request(
         }),
         schema_sha256: sha(if local_review {
             "source-quoted-insights-managed-local-v3:independent-kinds-and-support;action-decision-states-exclude-unresolved;question-none-unresolved-unknown-negated;changed-commitment-none-changed-retracted-unknown-negated;global-eight-state-ontology-unchanged;unclear-support-unassessed;independent-single-question-native-sequence;max8-sequences-per-decode-chunk;exact-source-quotes;unknown-owner-due;exact-answer-id-set"
+        } else if managed_review {
+            "source-quoted-insights-cloud-calibrated-support-v1:raw-state-choices-and-probabilities-unchanged;precommitted-temperature-and-threshold-support-abstention-only;raw-unclear-and-model-abstained-never-promoted;rejected-support-unassessed;exact-input-context-and-outer-route-identity;exact-source-quotes;unknown-owner-due;exact-answer-id-set"
         } else {
             "source-quoted-insights-v5:independent-kinds;openrouter-explicit-kind-support;unclear-kind-unassessed;per-event-state-spans;passage-fallback;typed-prior-source-with-atomic-unique-target;unknown-ambiguous-details;no-normalized-dates;namespaced-choice-batches;exact-answer-id-set"
         }),
@@ -1113,13 +1115,13 @@ pub(crate) fn qualification_request(
             GROUPING
         }
         .into(),
-        preprocessing_sha256: sha(if managed_review {
-            "finalized-exact-utf8-source0;one-prev-next;512-window-refusal;cloud-supported_passages_v3;cloud-canonical-json-key-order-v1;greedy-max8-choice-batches;cloud-uuid-and-expected-model-envelope-bound;dated-upstream-plus-fixed-perplexity-zdr-policy-bound;35-second-physical-90-second-whole-job;independent-kinds;source0-kind-support-required;unresolved-only-open-question;incompatible-positive-unassessed;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v1"
+        preprocessing_sha256: if managed_review {
+            sha(&format!("finalized-exact-utf8-source0;one-prev-next;512-window-refusal;cloud-supported_passages_v3;cloud-canonical-json-key-order-v1;greedy-max8-choice-batches;cloud-uuid-and-expected-model-envelope-bound;dated-upstream-plus-fixed-perplexity-zdr-policy-bound;35-second-physical-90-second-whole-job;independent-kinds;source0-kind-support-required;unresolved-only-open-question;incompatible-positive-unassessed;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v1;postprocessing:{};support-calibration-asset:{}",support_calibration::POLICY,support_calibration::ASSET_SHA256))
         } else if local_review {
-            "finalized-exact-utf8-source0;one-prev-next;512-window-refusal;pennel-managed-local-decider;pennel-local-independent-window-batch-v1;native-independent-single-question-v1;one-official-prompt-and-position-reset-per-question-sequence;native-max8-sequences-per-decode-chunk;flat-namespaced-original-questions-without-remote-window-prefix;compact-local-ontology-v2;per-kind-allowed-state-choices-global-ontology-unchanged;encoded-byte-bounded-greedy-max8-choice-batches;64k-byte-managed-local-protocol-budget;native-exact-32768-token-refusal;independent-kinds;source0-kind-support-required;unresolved-only-open-question;incompatible-positive-unassessed;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v2"
+            sha("finalized-exact-utf8-source0;one-prev-next;512-window-refusal;pennel-managed-local-decider;pennel-local-independent-window-batch-v1;native-independent-single-question-v1;one-official-prompt-and-position-reset-per-question-sequence;native-max8-sequences-per-decode-chunk;flat-namespaced-original-questions-without-remote-window-prefix;compact-local-ontology-v2;per-kind-allowed-state-choices-global-ontology-unchanged;encoded-byte-bounded-greedy-max8-choice-batches;64k-byte-managed-local-protocol-budget;native-exact-32768-token-refusal;independent-kinds;source0-kind-support-required;unresolved-only-open-question;incompatible-positive-unassessed;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v2")
         } else {
-            "finalized-exact-utf8-source0;one-prev-next;512-window-refusal;encoded-byte-bounded-greedy-max8-openrouter-choice-batches;other-protocol-singletons;independent-kinds;openrouter-source0-kind-support-required;openrouter-unresolved-only-open-question;incompatible-positive-unassessed;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v6"
-        }),
+            sha("finalized-exact-utf8-source0;one-prev-next;512-window-refusal;encoded-byte-bounded-greedy-max8-openrouter-choice-batches;other-protocol-singletons;independent-kinds;openrouter-source0-kind-support-required;openrouter-unresolved-only-open-question;incompatible-positive-unassessed;absent-negative-unclear-unassessed;24-state-span-fields;32-events-refusal;16-typed-prior-ref-refusal;no-notes-captions-speaker-identity;unicode-spans-v6")
+        },
         resource_profile_sha256: sha(&{
             let base = format!(
                 "{}:{}:{}:{}:physical2-optional1-absolute-deadline-v1",
@@ -1377,6 +1379,7 @@ struct FrozenInsightAnalysis {
     batches: Vec<InsightBatch>,
     request: MeetingQualificationRequest,
     qualification: QualifiedMeetingAnalysis,
+    support_gate: Option<&'static support_calibration::SupportCalibration>,
     provider_id: String,
     account_epoch: u64,
     observed_account_epoch: u64,
@@ -1571,7 +1574,11 @@ fn execute_analysis(
             .qualification
             .validate_identity(&result.identity)
             .map_err(|_| "identity_changed")?;
-        for (index, result) in split_batch_result(batch, &result).map_err(|_| "invalid_output")? {
+        for (slot, (index, result)) in split_batch_result(batch, &result)
+            .map_err(|_| "invalid_output")?
+            .into_iter()
+            .enumerate()
+        {
             if token.is_cancelled() {
                 return Err("cancelled");
             }
@@ -1580,15 +1587,28 @@ fn execute_analysis(
                 return Err("deadline_exceeded");
             }
             let window = &frozen.windows[index];
+            let gated = frozen
+                .support_gate
+                .map(|gate| {
+                    gate.apply(
+                        &window.request.questions,
+                        &batch_prompt_context(batch, slot),
+                        &result,
+                    )
+                })
+                .transpose()
+                .map_err(|_| "support_calibration_mismatch")?;
+            let effective = gated.as_ref().map_or(&result, |gated| &gated.result);
             let processing = InsightProcessing {
                 identity: result.identity.clone(),
                 qualification_id: frozen.qualification.record().qualification_id.clone(),
                 language_policy: frozen.request.language_policy.clone(),
                 task: TASK.into(),
             };
-            let decoded = decode_candidates(window, &result, &frozen.source, processing)
+            let decoded = decode_candidates(window, effective, &frozen.source, processing)
                 .map_err(|_| "invalid_output")?;
-            let kinds = assessed_kinds(window, &result, &decoded).map_err(|_| "invalid_output")?;
+            let kinds =
+                assessed_kinds(window, effective, &decoded).map_err(|_| "invalid_output")?;
             if !kinds.is_empty() {
                 assessments.push(InsightAssessmentScope {
                     utterance_id: window.blocks[0].source.utterance_id.clone(),
@@ -1886,6 +1906,26 @@ impl PennelEngine {
                 .ok_or_else(|| invalid("The selected analysis setup changed."))?;
             let windows = windows(&source, &config)?;
             let batches = batches(&windows, &config)?;
+            let support_gate = if support_calibration::required(&request.configured) {
+                let gate = support_calibration::SupportCalibration::bundled()
+                    .map_err(|_| invalid("support_calibration_unavailable"))?;
+                gate.validate_request(&request)
+                    .map_err(|_| invalid("support_calibration_mismatch"))?;
+                gate.validate_pin(&qualification.record().context.actual)
+                    .map_err(|_| invalid("support_calibration_mismatch"))?;
+                for batch in &batches {
+                    for (slot, index) in batch.window_indices.iter().enumerate() {
+                        gate.validate_window(
+                            &windows[*index].request.questions,
+                            &batch_prompt_context(batch, slot),
+                        )
+                        .map_err(|_| invalid("support_calibration_mismatch"))?;
+                    }
+                }
+                Some(gate)
+            } else {
+                None
+            };
             let account_epoch = if request.configured.protocol == InferenceProtocol::PennelCloud {
                 self.cloud_account_epoch()
             } else {
@@ -1903,6 +1943,7 @@ impl PennelEngine {
                 batches,
                 request,
                 qualification,
+                support_gate,
                 provider_id,
                 account_epoch,
                 observed_account_epoch,
@@ -3097,9 +3138,17 @@ mod tests {
             "nl",
         );
         assert_eq!(cloud.prompt_sha256, unchanged.prompt_sha256);
-        assert_eq!(cloud.schema_sha256, unchanged.schema_sha256);
+        assert_ne!(cloud.schema_sha256, unchanged.schema_sha256);
         assert_eq!(cloud.label_order_sha256, unchanged.label_order_sha256);
         assert_ne!(cloud.grouping, unchanged.grouping);
+        assert_eq!(
+            cloud.grouping,
+            "independent-event-passages-kind-support-cloud-review-v3-batches8-v1"
+        );
+        assert_eq!(
+            cloud.resource_profile_sha256,
+            unchanged.resource_profile_sha256
+        );
         assert_ne!(cloud.preprocessing_sha256, unchanged.preprocessing_sha256);
     }
 

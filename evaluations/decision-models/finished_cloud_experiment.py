@@ -19,6 +19,7 @@ import uuid
 import finished
 import finished_experiment as common
 import finished_qualification as qualification
+import finished_support_v1
 import finished_corpus_managed_v1 as managed_corpus
 from evaluation_io import jsonl_exchange, remaining, stop_owned_group, stop_owned_process
 
@@ -120,14 +121,20 @@ def route(exported):
     config=exported['configuration'];actual=exported['expected_actual']
     if (config.get('protocol')!='pennel_cloud' or config.get('model')!=MODEL
             or config.get('endpoint') not in tuple(origin+'/v1/decisions' for origin in ORIGINS)
-            or not qualification._valid_actual(config,actual) or exported.get('runtime_policy')!='raw_supported_passage_decisions_v3'):
+            or not qualification._valid_actual(config,actual)
+            or exported.get('runtime_policy') not in ('raw_supported_passage_decisions_v3', finished_support_v1.RUNTIME_POLICY)):
         raise ValueError('frozen_managed_review_route_required')
+    if exported.get('runtime_policy') == finished_support_v1.RUNTIME_POLICY:
+        qualification.finished_calibration_reuse.metadata(exported)
     return config
 
 
 def authored_spec(path,frozen):
     raw=Path(path).read_bytes();spec=json.loads(raw)
-    canonical=managed_corpus.experiment()
+    if qualification._support(frozen):
+        import finished_corpus_managed_v2
+        canonical=finished_corpus_managed_v2.experiment()
+    else:canonical=managed_corpus.experiment()
     if any(spec.get(key)!=canonical[key] for key in ('fixtures','expected_answers','gold_items')):
         raise ValueError('canonical_fresh_managed_corpus_required')
     if frozen.get('resource_fixture_id')!=canonical['resource_fixture_id']:
@@ -138,7 +145,7 @@ def authored_spec(path,frozen):
         raise ValueError('authored_cloud_corpus_changed')
     for exported in exports:
         fixture=exported['fixture'];identifier=fixture['id']
-        if not identifier.startswith(('nl-cloud-','nl-managed-v1-')) or by_id.get(identifier)!=fixture:
+        if not identifier.startswith(('nl-cloud-','nl-managed-v1-','nl-managed-v2-')) or by_id.get(identifier)!=fixture:
             raise ValueError('fresh_authored_cloud_fixture_required')
         if qualification._gold(exported,spec['gold_items'][identifier])!=frozen['gold_items'][identifier]:
             raise ValueError('authored_cloud_judgment_changed')
@@ -221,7 +228,12 @@ def run_job(exported,freeze_sha256,bridge,session,ledger,output,*,execute=False,
                     'request_sha256':attempt['wire_body_sha256'],'http_status':status})
                 token=None
                 run['request_sha256s'].append(template_sha);run['actual_request_sha256s'].append(attempt['wire_body_sha256'])
-                run['responses'].append({'batch_index':batch['index'],'http_status':status,'body':raw,'request_id':request_id})
+                recorded_response={'batch_index':batch['index'],'http_status':status,'body':raw,'request_id':request_id}
+                if exported.get('runtime_policy') == finished_support_v1.RUNTIME_POLICY:
+                    production_result=entry['outcome'].get('result')
+                    if not isinstance(production_result,dict):raise ValueError('recorded_engine_result_required')
+                    recorded_response['production_result']=production_result
+                run['responses'].append(recorded_response)
                 common.write_json(output,run)
                 if ledger.unresolved:reason='unresolved_charge';break
                 if entry['outcome'].get('status')!='ok':reason=entry['outcome'].get('status','cloud_request_failed');break
@@ -301,6 +313,8 @@ def main():
         common.write_json(output/'preflight.json',result);print(json.dumps({'preflight_complete':True,'provider_requests':0}));return
     frozen=json.loads(Path(args.freeze).read_text());qualification.verify_freeze(frozen,bridge)
     if not qualification._cloud(frozen):raise ValueError('cloud_qualification_freeze_required')
+    if args.phase=='calibration' and qualification._support(frozen):
+        raise ValueError('calibration_reused_without_new_inference')
     spec_sha=authored_spec(args.authored_spec,frozen)
     if args.phase!='development':
         common._verify_committed_lock(args.freeze_commit,args.freeze_lock,frozen)

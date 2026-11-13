@@ -13,6 +13,7 @@ pub(crate) struct Prepared {
     language: String,
     windows: Vec<InsightWindow>,
     batches: Vec<InsightBatch>,
+    support_gate: Option<&'static support_calibration::SupportCalibration>,
 }
 
 impl Prepared {
@@ -43,6 +44,39 @@ impl Prepared {
         }
         let windows = windows(&source, &config)?;
         let batches = batches(&windows, &config)?;
+        let support_gate = if support_calibration::required(&configured) {
+            // Owned loopback actor regression fixtures explicitly exercise the raw transport.
+            // No shipping or evaluation-CLI build contains this mock-only exception.
+            #[cfg(test)]
+            let mock_raw = configured
+                .endpoint
+                .strip_suffix("/v1/decisions")
+                .is_some_and(|origin| {
+                    crate::inference::validate_origin(origin).is_ok_and(|(_, local)| local)
+                });
+            #[cfg(not(test))]
+            let mock_raw = false;
+            if mock_raw {
+                None
+            } else {
+                let gate = support_calibration::SupportCalibration::bundled()
+                    .map_err(|_| invalid("support_calibration_unavailable"))?;
+                gate.validate_request(&request)
+                    .map_err(|_| invalid("support_calibration_mismatch"))?;
+                for batch in &batches {
+                    for (slot, index) in batch.window_indices.iter().enumerate() {
+                        gate.validate_window(
+                            &windows[*index].request.questions,
+                            &batch_prompt_context(batch, slot),
+                        )
+                        .map_err(|_| invalid("support_calibration_mismatch"))?;
+                    }
+                }
+                Some(gate)
+            }
+        } else {
+            None
+        };
         Ok(Self {
             source,
             configured,
@@ -50,6 +84,7 @@ impl Prepared {
             language,
             windows,
             batches,
+            support_gate,
         })
     }
 
@@ -95,8 +130,10 @@ impl Prepared {
             }
             Ok(value)
         }).collect::<Result<Vec<_>, PennelError>>()?;
-        Ok(json!({
-            "runtime_policy":if crate::inference::supported_passage_profile(self.config.protocol, &self.config.model) {
+        let mut value = json!({
+            "runtime_policy":if self.support_gate.is_some() {
+                support_calibration::POLICY
+            } else if crate::inference::supported_passage_profile(self.config.protocol, &self.config.model) {
                 "raw_supported_passage_decisions_v3"
             } else { "raw_closed_set_passage_decisions_v2" },
             "qualification_request":qualification_request(self.configured.clone(),&self.language),
@@ -106,7 +143,11 @@ impl Prepared {
             "batches":batches,
             "production_admission":false,
             "qualification":false
-        }))
+        });
+        if let Some(gate) = self.support_gate {
+            value["support_calibration"] = gate.metadata();
+        }
+        Ok(value)
     }
 
     pub(crate) fn batch_request(&self, index: usize) -> Option<DecisionRequest> {
@@ -115,6 +156,10 @@ impl Prepared {
 
     pub(crate) fn batch_count(&self) -> usize {
         self.batches.len()
+    }
+
+    pub(crate) fn uses_support_calibration(&self) -> bool {
+        self.support_gate.is_some()
     }
 
     pub(crate) fn replay(
@@ -171,12 +216,44 @@ impl Prepared {
         let Some(batch) = self.batches.get(index) else {
             return json!({"status":"unknown_batch","batch_index":index,"windows":[]});
         };
-        if !crate::inference::managed_local_review(&self.config)
+        if !(crate::inference::managed_local_review(&self.config) || self.support_gate.is_some())
             || crate::local_decider::validate_answers(&batch.request, &result).is_err()
         {
             return json!({"status":"invalid_response","batch_index":index,"windows":[]});
         }
         self.project_result(index, result, expected)
+    }
+
+    pub(crate) fn replay_observed_managed_result(
+        &self,
+        index: usize,
+        result: DecisionResult,
+        response: &Value,
+        expected: Option<&MeetingActualInference>,
+        request_id: Option<&str>,
+    ) -> Value {
+        let Some(batch) = self.batches.get(index) else {
+            return json!({"status":"unknown_batch","batch_index":index,"windows":[]});
+        };
+        let audited = request_id
+            .filter(|id| {
+                uuid::Uuid::parse_str(id)
+                    .is_ok_and(|value| !value.is_nil() && value.to_string() == *id)
+            })
+            .and_then(|request_id| {
+                crate::inference::evaluation_managed_decision_value(
+                    &self.config,
+                    self.configured.endpoint.clone(),
+                    &batch.request,
+                    response,
+                    request_id,
+                )
+                .ok()
+            });
+        if self.support_gate.is_none() || audited.as_ref() != Some(&result) {
+            return json!({"status":"typed_response_capture_mismatch","batch_index":index,"windows":[]});
+        }
+        self.replay_production_result(index, result, expected)
     }
 
     fn project_result(
@@ -197,24 +274,39 @@ impl Prepared {
         if compare_inference_identity(&self.configured, expected, &result.identity).is_err() {
             return json!({"status":"identity_changed","batch_index":index,"observed_identity":result.identity,"windows":[]});
         }
+        if self.support_gate.is_some_and(|gate| {
+            gate.validate_pin(expected).is_err() || gate.validate_actual(&result.identity).is_err()
+        }) {
+            return json!({"status":"support_calibration_mismatch","batch_index":index,"observed_identity":result.identity,"windows":[]});
+        }
         let logical = match split_batch_result(batch, &result) {
             Ok(logical) => logical,
             Err(_) => {
                 return json!({"status":"invalid_response","batch_index":index,"observed_identity":result.identity,"windows":[]});
             }
         };
-        let rows = logical.into_iter().map(|(window_index, logical)| {
+        let rows = logical.into_iter().enumerate().map(|(slot,(window_index, logical))| {
             let processing = InsightProcessing {
                 identity: logical.identity.clone(),
                 qualification_id: "evaluation-unqualified".into(),
                 language_policy: self.language.clone(),
                 task: TASK.into(),
             };
-            match decode_candidates(&self.windows[window_index], &logical, &self.source, processing) {
-                Ok(candidates) => match assessed_kinds(&self.windows[window_index], &logical, &candidates) {
-                    Ok(kinds) => json!({"status":"ok","window_index":window_index,
+            let window=&self.windows[window_index];
+            let gated=match self.support_gate.map(|gate|gate.apply(&window.request.questions,&batch_prompt_context(batch,slot),&logical)).transpose() {
+                Ok(gated)=>gated,
+                Err(_)=>return json!({"status":"support_calibration_mismatch","window_index":window_index,"observed_identity":logical.identity}),
+            };
+            let effective=gated.as_ref().map_or(&logical,|gated|&gated.result);
+            match decode_candidates(window, effective, &self.source, processing) {
+                Ok(candidates) => match assessed_kinds(window, effective, &candidates) {
+                    Ok(kinds) => {
+                        let mut value=json!({"status":"ok","window_index":window_index,
                         "observed_identity":logical.identity,"result":logical,"candidates":candidates,
-                        "assessed_kinds":kinds,"artifact_attestation":false,"identity_evidence":expected.identity_evidence}),
+                        "assessed_kinds":kinds,"artifact_attestation":false,"identity_evidence":expected.identity_evidence});
+                        if let Some(gated)=gated {value["support_gate"]=json!(gated.decisions);}
+                        value
+                    },
                     Err(_) => json!({"status":"invalid_output","window_index":window_index,"observed_identity":logical.identity}),
                 },
                 Err(_) => json!({"status":"invalid_output","window_index":window_index,"observed_identity":logical.identity}),

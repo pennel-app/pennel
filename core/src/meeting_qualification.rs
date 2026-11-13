@@ -326,6 +326,28 @@ impl MeetingQualificationRecord {
         let request = &self.context.request;
         let evidence = &self.evidence;
         let metrics = &self.metrics;
+        if crate::meeting_insight_engine::support_calibration::required(&request.configured) {
+            let Ok(gate) =
+                crate::meeting_insight_engine::support_calibration::SupportCalibration::bundled()
+            else {
+                return false;
+            };
+            let mut current = crate::meeting_insight_engine::qualification_request(
+                request.configured.clone(),
+                &request.language_policy,
+            );
+            // Intrinsic validity retains the measured cohort. Admission separately
+            // requires an exact match with the current host's resource profile.
+            current.resource_profile_sha256 = request.resource_profile_sha256.clone();
+            if self.context.calibration_sha256
+                != crate::meeting_insight_engine::support_calibration::ASSET_SHA256
+                || gate.validate_request(request).is_err()
+                || gate.validate_pin(&self.context.actual).is_err()
+                || current != *request
+            {
+                return false;
+            }
+        }
         if self.schema_version != 1
             || !text(&self.qualification_id, 256)
             || request.validate().is_err()
@@ -967,9 +989,34 @@ mod tests {
         value["context"]["configured"]["endpoint"] = "https://api.pennel.app/v1/decisions".into();
         value["context"]["configured"]["model"] = "pennel-review-v3".into();
         value["context"]["configured"]["upstream"] = serde_json::Value::Null;
-        let record: MeetingQualificationRecord = serde_json::from_value(value).unwrap();
+        let mut record: MeetingQualificationRecord = serde_json::from_value(value).unwrap();
+        // A raw Cloud record cannot authorize the calibrated support policy.
+        assert!(!record.valid());
+        record.context.request.configured.max_input_bytes = 65536;
+        record.context.request.configured.timeout_secs = 90;
+        record.context.request = crate::meeting_insight_engine::qualification_request(
+            record.context.request.configured.clone(),
+            "nl",
+        );
+        record.context.calibration_sha256 =
+            crate::meeting_insight_engine::support_calibration::ASSET_SHA256.into();
         let request = record.context.request.clone();
         let admitted = registry(record.clone()).admit(&request).unwrap();
+        let mut foreign = record.clone();
+        foreign.qualification_id.push_str("-foreign-cohort");
+        foreign.context.request.resource_profile_sha256 = sha('c');
+        assert!(foreign.valid());
+        assert!(matches!(
+            registry(foreign.clone()).admit(&request),
+            Err(MeetingQualificationError::Unqualified)
+        ));
+        let coexist = MeetingQualificationRegistry::from_asset(
+            &serde_json::json!({"schema_version":1,
+            "adopted_records":[record,foreign]})
+            .to_string(),
+        );
+        assert!(coexist.valid);
+        assert!(coexist.admit(&request).is_ok());
         let mut observed = provider_identity();
         observed.protocol = InferenceProtocol::PennelCloud;
         observed.endpoint = request.configured.endpoint.clone();
@@ -981,7 +1028,7 @@ mod tests {
                 .admit(&request)
                 .is_err()
         );
-        for change in 0..5 {
+        for change in 0..7 {
             let mut invalid = record.clone();
             match change {
                 0 => {
@@ -993,7 +1040,12 @@ mod tests {
                 3 => {
                     invalid.context.request.use_case = MeetingAnalysisUseCase::ManualLiveSuggestions
                 }
-                _ => invalid.context.request.language_policy = "en".into(),
+                4 => invalid.context.request.language_policy = "en".into(),
+                5 => {
+                    invalid.context.calibration_sha256 =
+                        "d7c5d03f73edfafcbeb15c8602196025ffa19ec033298282670eea469d8b51ee".into()
+                }
+                _ => invalid.context.request.preprocessing_sha256 = sha('f'),
             }
             let request = invalid.context.request.clone();
             assert!(

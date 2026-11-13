@@ -22,8 +22,7 @@ fn run(mut execution: Execution) -> std::io::Result<()> {
             writeln!(output, "{{\"error\":\"request_too_large\"}}")?;
             return Ok(());
         }
-        let result = serde_json::from_str(&line)
-            .map_err(|_| "invalid_json")
+        let result = pennel_core::evaluation::parse_request_json(&line)
             .and_then(|value| match &mut execution {
                 Execution::Cloud(client) => client.evaluate(value),
                 Execution::Local(client) => client.evaluate(value),

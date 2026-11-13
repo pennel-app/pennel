@@ -8,12 +8,12 @@ use super::{
     ManagedLocalDeciderRuntime, ManagedLocalDeciderRuntimeStatus, VerifiedLocalDeciderArtifact,
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod mac;
 
 /// A trusted app-bundle runtime. No PATH lookup or user-provided service URL is used.
 pub struct BundledLocalDeciderRuntime {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     inner: mac::Runtime,
 }
 
@@ -21,13 +21,13 @@ impl BundledLocalDeciderRuntime {
     /// The Rust host must supply its own verified app resources and worker executable.
     /// This constructor verifies the component manifest/hash without loading model weights.
     pub fn new(bundle: PathBuf, executable: PathBuf) -> Result<Arc<Self>, PennelError> {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             Ok(Arc::new(Self {
                 inner: mac::Runtime::new(bundle, executable)?,
             }))
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         {
             let _ = (bundle, executable);
             Err(super::invalid(
@@ -37,11 +37,11 @@ impl BundledLocalDeciderRuntime {
     }
 
     pub fn bundle_path(&self) -> &Path {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             self.inner.bundle_path()
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         {
             Path::new("")
         }
@@ -50,11 +50,11 @@ impl BundledLocalDeciderRuntime {
 
 impl ManagedLocalDeciderRuntime for BundledLocalDeciderRuntime {
     fn status(&self) -> ManagedLocalDeciderRuntimeStatus {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             self.inner.status()
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         {
             ManagedLocalDeciderRuntimeStatus {
                 available: false,
@@ -72,12 +72,12 @@ impl ManagedLocalDeciderRuntime for BundledLocalDeciderRuntime {
         cancellation: Arc<InferenceCancellation>,
         deadline: Instant,
     ) -> Result<DecisionResult, PennelError> {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             self.inner
                 .decide(model, request_id, request, cancellation, deadline)
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         {
             let _ = (model, request_id, request, cancellation, deadline);
             Err(super::invalid(
@@ -87,7 +87,7 @@ impl ManagedLocalDeciderRuntime for BundledLocalDeciderRuntime {
     }
 
     fn unload(&self) {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         self.inner.unload();
     }
 }
@@ -98,11 +98,11 @@ pub fn managed_local_decider_worker_main(arguments: Vec<String>) -> Option<i32> 
     if arguments.get(1).map(String::as_str) != Some("--pennel-decider-worker") {
         return None;
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
         Some(mac::worker_main(&arguments[2..]))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
         Some(2)
     }

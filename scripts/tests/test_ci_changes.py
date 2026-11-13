@@ -73,8 +73,10 @@ class ChangesTests(unittest.TestCase):
                          {'core', 'app'})
 
     def test_qualification_registry_validates_core_desktop_and_mobile(self):
-        self.assertEqual(self.classify('assets/qualifications/meeting-assistance.json'),
-                         {'core', 'app'})
+        for path in ('assets/qualifications/meeting-assistance.json',
+                     'assets/qualifications/meeting-support-cloud-v1.json'):
+            with self.subTest(path=path):
+                self.assertEqual(self.classify(path), {'core', 'app'})
         workflow = SCRIPT.parents[1] / '.github/workflows/mobile.yml'
         self.assertIn('      - "assets/qualifications/**"', workflow.read_text())
 

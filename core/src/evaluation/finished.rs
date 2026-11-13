@@ -140,6 +140,15 @@ fn source_hashes(configuration: &MeetingConfiguredInference) -> Value {
         let object = value.as_object_mut().expect("source manifest");
         for (name, bytes) in [
             (
+                "meeting_insight_engine/support_calibration.rs",
+                include_bytes!("../meeting_insight_engine/support_calibration.rs").as_slice(),
+            ),
+            (
+                "assets/qualifications/meeting-support-cloud-v1.json",
+                include_bytes!("../../../assets/qualifications/meeting-support-cloud-v1.json")
+                    .as_slice(),
+            ),
+            (
                 "cloud/account.rs",
                 include_bytes!("../cloud/account.rs").as_slice(),
             ),
@@ -307,17 +316,39 @@ pub(super) fn replay(input: Value) -> Result<Value, &'static str> {
     let mut rows = Vec::new();
     for response in &input.responses {
         let batch = if let Some(result) = &response.production_result {
-            if response.http_status.is_some()
-                || !response.body.is_empty()
-                || response.request_id.is_some()
-            {
-                return Err("finished_replay_invalid");
+            if p.uses_support_calibration() {
+                if response.body.len() > 2 * 1024 * 1024
+                    || !response
+                        .http_status
+                        .is_some_and(|status| (200..300).contains(&status))
+                {
+                    return Err("finished_replay_invalid");
+                }
+                let captured =
+                    crate::meeting_insight_engine::support_calibration::exact_json(&response.body)
+                        .map_err(|_| "finished_replay_invalid")?;
+                p.replay_observed_managed_result(
+                    response.batch_index,
+                    result.clone(),
+                    &captured,
+                    request.expected_actual.as_ref(),
+                    response.request_id.as_deref(),
+                )
+            } else {
+                if response.http_status.is_some()
+                    || !response.body.is_empty()
+                    || response.request_id.is_some()
+                {
+                    return Err("finished_replay_invalid");
+                }
+                p.replay_production_result(
+                    response.batch_index,
+                    result.clone(),
+                    request.expected_actual.as_ref(),
+                )
             }
-            p.replay_production_result(
-                response.batch_index,
-                result.clone(),
-                request.expected_actual.as_ref(),
-            )
+        } else if p.uses_support_calibration() {
+            json!({"status":"production_result_missing","batch_index":response.batch_index,"windows":[]})
         } else if !response
             .http_status
             .is_some_and(|status| (200..300).contains(&status))
