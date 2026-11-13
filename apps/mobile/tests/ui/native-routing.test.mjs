@@ -21,3 +21,11 @@ test('credentials, queries and fragments never become an accepted completion cal
 test('existing meeting paths and malformed inputs retain the router default behavior', () => {
   for (const path of ['pennel-preview:///meeting/fixture', '/settings/appearance', 'not a URL']) assert.equal(nativeSystemPath(path, ['pennel-preview']), path);
 });
+
+test('the keyboard session link opens the swipe-back page for this app identity only', () => {
+  assert.equal(nativeSystemPath('pennel-preview://sessie/start', ['pennel-preview']), '/session-return');
+  assert.equal(nativeSystemPath('pennel://sessie/start', ['pennel']), '/session-return');
+  for (const path of ['pennel://sessie/start', 'pennel-preview://sessie/stop', 'pennel-preview://sessie/start?x=1', 'https://pennel.app/sessie/start']) {
+    assert.equal(nativeSystemPath(path, ['pennel-preview']), path);
+  }
+});
