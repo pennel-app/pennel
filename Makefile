@@ -56,6 +56,7 @@ mobile-ios: mobile-prebuild
 	cd apps/mobile && npm run build:ios
 
 mobile-native-test:
+	node apps/mobile/plugins/peer-transport-qa.cjs apps/mobile
 	bash scripts/ci-xcodebuild.sh test -workspace apps/mobile/ios/Pennel.xcworkspace -scheme Pennel -configuration Debug \
 		-destination '$(IOS_DESTINATION)' -derivedDataPath apps/mobile/build/TestDerivedData \
 		CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=

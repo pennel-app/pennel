@@ -3,6 +3,7 @@ const path = require('node:path');
 const plist = require('@expo/plist').default;
 const { withBaseMod, withInfoPlist, withPodfileProperties } = require('expo/config-plugins');
 const { prepareNativeSources } = require('./native-sources.cjs');
+const { peerTransportQAEnabled, validatePeerArtifacts } = require('./peer-transport-qa.cjs');
 
 const keyboardName = 'PennelKeyboard';
 const widgetName = 'ExpoWidgetsTarget';
@@ -69,6 +70,10 @@ function patchAppDelegateSwift(contents) {
 function prepareNativeFiles(config, options) {
   const ios = config.modRequest.platformProjectRoot;
   const native = path.join(ios, 'PennelNative');
+  const peerQA = peerTransportQAEnabled(options);
+  const manifest = path.join(config.modRequest.projectRoot, 'artifacts/ios/manifest.json');
+  if (fs.existsSync(manifest)) validatePeerArtifacts(JSON.parse(fs.readFileSync(manifest, 'utf8')), peerQA);
+  else if (peerQA) throw new Error('Prepare matching peer-transport-qa core artifacts before generation');
   prepareNativeSources(config.modRequest.projectRoot);
   fs.mkdirSync(native, { recursive: true });
   const keyboardInfo = plist.parse(fs.readFileSync(path.join(config.modRequest.projectRoot, 'native/ios/Keyboard/Info.plist'), 'utf8'));
@@ -290,6 +295,11 @@ function configureProject(config, options) {
         .split(/\s+/).filter((flag) => flag !== 'PENNEL_KEYBOARD_FEASIBILITY');
       if (intentProbe && (id === app[0] || id === keyboard[0])) probeFlags.push('PENNEL_KEYBOARD_FEASIBILITY');
       settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS = quote(probeFlags.join(' '));
+      const peerFlags = unquote(settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS).split(/\s+/)
+        .filter((flag) => flag !== 'PENNEL_PEER_TRANSPORT_QA' && flag !== 'PENNEL_APP');
+      if (id === app[0]) peerFlags.push('PENNEL_APP');
+      if (peerTransportQAEnabled(options) && (id === app[0] || id === runtimeTest[0])) peerFlags.push('PENNEL_PEER_TRANSPORT_QA');
+      settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS = quote(peerFlags.join(' '));
       if (id === app[0]) {
         const flags = unquote(settings.SWIFT_ACTIVE_COMPILATION_CONDITIONS || '$(inherited)').split(/\s+/);
         if (!flags.includes('PENNEL_APP')) flags.push('PENNEL_APP');
@@ -352,9 +362,25 @@ function configureScheme(ios, testTargets, targetIds) {
 }
 
 function withPennel(config, options) {
+  const peerQA = peerTransportQAEnabled(options);
   config = withInfoPlist(config, (mod) => {
     // RN's pod installer scans every shipping plist; declare its flag before sealing the snapshot.
     Object.assign(mod.modResults, variantInfo(options), { RCTNewArchEnabled: true });
+    if (peerQA) {
+      mod.modResults.PennelQAProfile = 'peer-transport';
+      mod.modResults.PennelKeychainService = 'app.pennel.ios.preview.qa.peer-transport';
+      mod.modResults.NSLocalNetworkUsageDescription = 'This isolated Pennel qualification exchanges synthetic fixtures with your Mac.';
+      mod.modResults.NSAppTransportSecurity = { ...(mod.modResults.NSAppTransportSecurity || {}), NSAllowsLocalNetworking: true };
+    } else {
+      if (mod.modResults.PennelQAProfile === 'peer-transport' && mod.modResults.NSAppTransportSecurity) {
+        delete mod.modResults.NSAppTransportSecurity.NSAllowsLocalNetworking;
+        if (!Object.keys(mod.modResults.NSAppTransportSecurity).length) delete mod.modResults.NSAppTransportSecurity;
+      }
+      delete mod.modResults.PennelQAProfile;
+      if (mod.modResults.NSLocalNetworkUsageDescription === 'This isolated Pennel qualification exchanges synthetic fixtures with your Mac.') {
+        delete mod.modResults.NSLocalNetworkUsageDescription;
+      }
+    }
     return mod;
   });
   config = withPodfileProperties(config, (mod) => {

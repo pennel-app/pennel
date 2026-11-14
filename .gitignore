@@ -38,3 +38,6 @@ apps/ios/PennelCore/
 apps/ios/build/
 apps/ios/PennelMobileKit/.build/
 apps/ios/PennelMobileKit/Generated/
+tools/peer-comparison-relay/target/
+tools/peer-native-qa/.build/
+tools/peer-native-qa/.swiftpm/
