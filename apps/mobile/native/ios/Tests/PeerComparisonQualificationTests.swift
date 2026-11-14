@@ -48,12 +48,9 @@ struct PeerComparisonQualificationTests {
         }.value
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["PENNEL_PEER_COMPARISON_CONFIG"] != nil))
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PENNEL_PEER_COMPARISON_CONFIG_FILE"] == "1"))
     func syntheticMacIPhoneComparison() async throws {
-        guard AppPaths.qaProfile == "peer-transport", let value = ProcessInfo.processInfo.environment["PENNEL_PEER_COMPARISON_CONFIG"],
-              let configs = try JSONSerialization.jsonObject(with: Data(value.utf8)) as? [[String: String]] else {
-            throw Failure.invalidConfiguration
-        }
+        let configs = try PeerComparisonConfiguration.load("qa-roundtrip.json")
         for config in configs {
             try await Self.roundTrip(config)
         }

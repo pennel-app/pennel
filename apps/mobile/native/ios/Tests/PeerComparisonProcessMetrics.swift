@@ -1,6 +1,21 @@
 #if PENNEL_PEER_TRANSPORT_QA
 import Darwin
 import Foundation
+@testable internal import PennelMobile
+
+enum PeerComparisonConfiguration {
+    enum Failure: Error { case invalid }
+    static func load(_ name: String) throws -> [[String: String]] {
+        guard AppPaths.qaProfile == "peer-transport", ["qa-roundtrip.json", "qa-capture.json"].contains(name),
+              let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { throw Failure.invalid }
+        let url = documents.appendingPathComponent("QA/peer-transport", isDirectory: true).appendingPathComponent(name)
+        let data = try Data(contentsOf: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard data.count <= 32 * 1024, let configs = try JSONSerialization.jsonObject(with: data) as? [[String: String]],
+              !configs.isEmpty, configs.count <= 12 else { throw Failure.invalid }
+        return configs
+    }
+}
 
 /// Public SDK counters for this app process; this does not measure extensions or system services.
 final class PeerComparisonProcessMetrics: @unchecked Sendable {

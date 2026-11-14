@@ -26,10 +26,9 @@ struct PeerComparisonCaptureTests {
         func cancel() { lock.withLock { stop = true } }
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["PENNEL_PEER_CAPTURE_CONFIG"] != nil))
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PENNEL_PEER_CAPTURE_CONFIG_FILE"] == "1"))
     func microphoneCaptureDuringActiveAndStalledTransfers() async throws {
-        guard AppPaths.qaProfile == "peer-transport", let value = ProcessInfo.processInfo.environment["PENNEL_PEER_CAPTURE_CONFIG"],
-              let configs = try JSONSerialization.jsonObject(with: Data(value.utf8)) as? [[String: String]] else { throw Failure.configuration }
+        let configs = try PeerComparisonConfiguration.load("qa-capture.json")
         guard await MicCapture.requestPermission() else { throw Failure.permission }
         for config in configs {
             try await Self.run(config)
