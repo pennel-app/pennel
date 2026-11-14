@@ -282,3 +282,99 @@ fn initialization_never_overwrites_a_corrupt_published_manifest_or_unknown_file(
         b"unrelated owned data"
     );
 }
+
+#[test]
+fn a_replaced_source_inode_cannot_supply_different_bytes_under_the_old_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let source = root.join("source");
+    let old_source = root.join("old-source");
+    let replacement = root.join("replacement");
+    fs::write(&source, vec![4; 300_000]).unwrap();
+    let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+    fs::write(&replacement, vec![5; 300_000]).unwrap();
+    // Retain the old inode at another path so this is replacement, not an in-place edit.
+    fs::rename(&source, &old_source).unwrap();
+    fs::rename(&replacement, &source).unwrap();
+
+    assert_eq!(
+        manifest.read_block(&source, 0),
+        Err(pennel_core::peer_compare::PeerSyncError::SourceChanged)
+    );
+    assert_eq!(fs::read(&old_source).unwrap(), vec![4; 300_000]);
+    assert_eq!(fs::read(&source).unwrap(), vec![5; 300_000]);
+}
+
+#[test]
+fn an_obstructed_block_write_creates_no_receipt_and_preserves_the_obstruction() {
+    use pennel_core::peer_compare::PeerSyncError;
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let source = root.join("source");
+    fs::write(&source, b"synthetic block-write fixture").unwrap();
+    let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+    let stage = root.join("partial");
+    let mut transfer = PartialTransfer::open(manifest.clone(), &stage).unwrap();
+    let obstructed = stage.join("block-00000000.part");
+    fs::create_dir(&obstructed).unwrap();
+    fs::write(obstructed.join("keep-me"), b"unrelated local data").unwrap();
+
+    assert_eq!(
+        transfer.write_block(0, &manifest.read_block(&source, 0).unwrap()),
+        Err(PeerSyncError::Storage)
+    );
+    assert_eq!(transfer.received_bytes(), 0);
+    assert_eq!(transfer.needed_blocks(), vec![0]);
+    assert_eq!(
+        transfer.finish(&root.join("target")),
+        Err(PeerSyncError::Storage)
+    );
+    assert!(!root.join("target").exists());
+    assert_eq!(
+        fs::read(obstructed.join("keep-me")).unwrap(),
+        b"unrelated local data"
+    );
+    assert!(matches!(
+        PartialTransfer::open(manifest.clone(), &stage),
+        Err(PeerSyncError::Storage)
+    ));
+    drop(transfer);
+    fs::remove_file(obstructed.join("keep-me")).unwrap();
+    fs::remove_dir(obstructed).unwrap();
+    let resumed = PartialTransfer::open(manifest, &stage).unwrap();
+    assert_eq!(resumed.received_bytes(), 0);
+    assert_eq!(resumed.needed_blocks(), vec![0]);
+}
+
+#[test]
+fn failed_publication_keeps_verified_blocks_and_preserves_unrelated_parent_data() {
+    use pennel_core::peer_compare::PeerSyncError;
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let source = root.join("source");
+    let original = b"synthetic durable publication fixture";
+    fs::write(&source, original).unwrap();
+    let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+    let stage = root.join("partial");
+    let mut transfer = PartialTransfer::open(manifest.clone(), &stage).unwrap();
+    transfer
+        .write_block(0, &manifest.read_block(&source, 0).unwrap())
+        .unwrap();
+    let obstructed_parent = root.join("not-a-directory");
+    fs::write(&obstructed_parent, b"preserve this local file").unwrap();
+    let target = obstructed_parent.join("target");
+
+    assert_eq!(transfer.finish(&target), Err(PeerSyncError::Storage));
+    assert!(!target.exists());
+    assert_eq!(
+        fs::read(&obstructed_parent).unwrap(),
+        b"preserve this local file"
+    );
+    drop(transfer);
+    let resumed = PartialTransfer::open(manifest, &stage).unwrap();
+    assert!(resumed.needed_blocks().is_empty());
+    assert_eq!(resumed.received_bytes(), original.len() as u64);
+    let recovered = root.join("recovered");
+    resumed.finish(&recovered).unwrap();
+    assert_eq!(fs::read(recovered).unwrap(), original);
+}

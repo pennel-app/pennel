@@ -255,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn cancellation_unblocks_stalled_read_without_publication() {
         let dir = tempfile::tempdir().unwrap();
-        let (_a, b) = tokio::io::duplex(64);
+        let (mut a, b) = tokio::io::duplex(64);
         let token = Cancellation::default();
         let cancelled = token.clone();
         let task = tokio::spawn(receive(
@@ -265,9 +265,22 @@ mod tests {
             None,
             token,
         ));
-        tokio::task::yield_now().await;
+        assert_eq!(a.read_u8().await.unwrap(), 1);
+        let began = std::time::Instant::now();
         cancelled.cancel();
-        assert_eq!(task.await.unwrap(), Err(PeerCompareError::Cancelled));
+        let result = tokio::time::timeout(std::time::Duration::from_millis(250), task)
+            .await
+            .expect("stalled network cancellation must not wait for the step watchdog")
+            .unwrap();
+        eprintln!(
+            "peer_compare_stalled_read_cancel_ms={:.3}",
+            began.elapsed().as_secs_f64() * 1000.0
+        );
+        assert!(
+            began.elapsed() <= std::time::Duration::from_millis(250),
+            "the complete stalled-read cancel operation exceeded its deadline"
+        );
+        assert_eq!(result, Err(PeerCompareError::Cancelled));
         assert!(!dir.path().join("target").exists());
     }
     #[tokio::test]
@@ -289,5 +302,199 @@ mod tests {
         .await;
         assert_eq!(result, Err(PeerCompareError::LimitExceeded));
         task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn truncated_wire_headers_never_create_staging_or_complete() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let source = root.join("source");
+        std::fs::write(&source, b"synthetic header fixture").unwrap();
+        let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+        let encoded = serde_json::to_vec(&manifest).unwrap();
+        let mut truncated_length = MAGIC.to_vec();
+        truncated_length.extend_from_slice(&[0, 1]);
+        let mut truncated_manifest = MAGIC.to_vec();
+        truncated_manifest.extend_from_slice(&(encoded.len() as u32).to_be_bytes());
+        truncated_manifest.extend_from_slice(&encoded[..encoded.len() / 2]);
+        for (index, bytes) in [
+            MAGIC[..MAGIC.len() / 2].to_vec(),
+            truncated_length,
+            truncated_manifest,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (mut sender, receiver) = tokio::io::duplex(64 * 1024);
+            let malicious = tokio::spawn(async move {
+                assert_eq!(sender.read_u8().await.unwrap(), 1);
+                sender.write_all(&bytes).await.unwrap();
+                sender.shutdown().await.unwrap();
+                let mut unexpected = Vec::new();
+                sender.read_to_end(&mut unexpected).await.unwrap();
+                unexpected
+            });
+            let staging = root.join(format!("stage-{index}"));
+            let target = root.join(format!("target-{index}"));
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                receive(
+                    Box::new(receiver),
+                    staging.clone(),
+                    target.clone(),
+                    None,
+                    Cancellation::default(),
+                ),
+            )
+            .await
+            .unwrap();
+            assert_eq!(result, Err(PeerCompareError::Transport));
+            assert!(!staging.exists());
+            assert!(!target.exists());
+            assert!(malicious.await.unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_magic_and_malformed_manifest_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let mut invalid_magic = MAGIC.to_vec();
+        invalid_magic[0] ^= 1;
+        let mut malformed = MAGIC.to_vec();
+        malformed.extend_from_slice(&2u32.to_be_bytes());
+        malformed.extend_from_slice(b"{]");
+        for (index, (bytes, expected)) in [
+            (invalid_magic, PeerCompareError::InvalidProtocol),
+            (malformed, PeerCompareError::InvalidManifest),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let (mut sender, receiver) = tokio::io::duplex(64 * 1024);
+            let malicious = tokio::spawn(async move {
+                assert_eq!(sender.read_u8().await.unwrap(), 1);
+                sender.write_all(&bytes).await.unwrap();
+                sender.shutdown().await.unwrap();
+            });
+            let staging = root.join(format!("stage-{index}"));
+            let target = root.join(format!("target-{index}"));
+            assert_eq!(
+                receive(
+                    Box::new(receiver),
+                    staging.clone(),
+                    target.clone(),
+                    None,
+                    Cancellation::default(),
+                )
+                .await,
+                Err(expected)
+            );
+            assert!(!staging.exists());
+            assert!(!target.exists());
+            malicious.await.unwrap();
+        }
+    }
+
+    async fn write_manifest(sender: &mut tokio::io::DuplexStream, manifest: &TransferManifest) {
+        assert_eq!(sender.read_u8().await.unwrap(), 1);
+        let encoded = serde_json::to_vec(manifest).unwrap();
+        sender.write_all(MAGIC).await.unwrap();
+        sender.write_u32(encoded.len() as u32).await.unwrap();
+        sender.write_all(&encoded).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn truncated_block_preserves_only_verified_receipts() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let source = root.join("source");
+        std::fs::write(&source, vec![0x37; 128 * 1024 + 17]).unwrap();
+        let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+        let sending = manifest.clone();
+        let (mut sender, receiver) = tokio::io::duplex(64 * 1024);
+        let malicious = tokio::spawn(async move {
+            write_manifest(&mut sender, &sending).await;
+            assert_eq!(sender.read_u32().await.unwrap(), 0);
+            let first = sending.read_block(&source, 0).unwrap();
+            sender.write_u32(first.len() as u32).await.unwrap();
+            sender.write_all(&first).await.unwrap();
+            assert_eq!(sender.read_u32().await.unwrap(), 1);
+            let second = sending.read_block(&source, 1).unwrap();
+            sender.write_u32(second.len() as u32).await.unwrap();
+            sender.write_all(&second[..second.len() / 2]).await.unwrap();
+            sender.shutdown().await.unwrap();
+            let mut unexpected = Vec::new();
+            sender.read_to_end(&mut unexpected).await.unwrap();
+            unexpected
+        });
+        let staging = root.join("partial");
+        let target = root.join("target");
+        assert_eq!(
+            receive(
+                Box::new(receiver),
+                staging.clone(),
+                target.clone(),
+                None,
+                Cancellation::default(),
+            )
+            .await,
+            Err(PeerCompareError::Transport)
+        );
+        assert!(!target.exists());
+        assert!(malicious.await.unwrap().is_empty());
+        let resumed = PartialTransfer::open(manifest, &staging).unwrap();
+        assert_eq!(resumed.received_bytes(), 128 * 1024);
+        assert_eq!(resumed.needed_blocks(), vec![1]);
+    }
+
+    #[tokio::test]
+    async fn publication_failure_never_sends_a_completion_receipt() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let source = root.join("source");
+        let original = b"verified synthetic publication fixture";
+        std::fs::write(&source, original).unwrap();
+        let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+        let sending = manifest.clone();
+        let target = root.join("target");
+        let obstructed = target.clone();
+        let (mut sender, receiver) = tokio::io::duplex(64 * 1024);
+        let malicious = tokio::spawn(async move {
+            write_manifest(&mut sender, &sending).await;
+            assert_eq!(sender.read_u32().await.unwrap(), 0);
+            // A real competing filesystem change after the receiver checked absence.
+            std::fs::create_dir(&obstructed).unwrap();
+            std::fs::write(obstructed.join("keep-me"), b"unrelated local data").unwrap();
+            let bytes = sending.read_block(&source, 0).unwrap();
+            sender.write_u32(bytes.len() as u32).await.unwrap();
+            sender.write_all(&bytes).await.unwrap();
+            let mut unexpected = Vec::new();
+            sender.read_to_end(&mut unexpected).await.unwrap();
+            unexpected
+        });
+        let staging = root.join("partial");
+        assert_eq!(
+            receive(
+                Box::new(receiver),
+                staging.clone(),
+                target.clone(),
+                None,
+                Cancellation::default(),
+            )
+            .await,
+            Err(PeerCompareError::Storage)
+        );
+        assert!(malicious.await.unwrap().is_empty());
+        assert!(target.is_dir());
+        assert_eq!(
+            std::fs::read(target.join("keep-me")).unwrap(),
+            b"unrelated local data"
+        );
+        let resumed = PartialTransfer::open(manifest, &staging).unwrap();
+        assert!(resumed.needed_blocks().is_empty());
+        let recovered = root.join("recovered");
+        resumed.finish(&recovered).unwrap();
+        assert_eq!(std::fs::read(recovered).unwrap(), original);
     }
 }
