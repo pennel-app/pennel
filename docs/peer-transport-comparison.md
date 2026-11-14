@@ -111,7 +111,7 @@ final physical campaign:
 | Desktop frontend / backend | 538 / 426 passed; frontend build and backend Clippy passed |
 | Existing Mac platform | 241 passed |
 | Mobile UI / widget | 166 / 7 passed; typecheck passed |
-| Mobile generation plugins | 21 passed, including feature-switch rejection and ordinary Preview cleanup |
+| Mobile generation plugins | 22 passed, including explicit pending-state rejection in generation/Pods and ordinary Preview cleanup |
 | Mobile artifact preparation regressions | 15 passed, including both failed graph-switch directions |
 | Controller | 29 passed, including evidence, capability, capture, metric and identity-reuse validation |
 | Relay | 19 checks passed; strict Clippy and formatting passed |
@@ -303,10 +303,27 @@ both candidates in one app and is not a per-candidate performance comparison.
 
 ### Ordinary restoration and review validation
 
-The default-feature Core Release build passed after QA. Ordinary mobile
-artifact refresh, signed Preview restoration without uninstalling, and remote
-PR validation are still in progress at this report revision. The task-owned
-simulator is shut down. No Argent runner or Metro session was started.
+The default-feature Core Release build and ordinary mobile Release build passed
+after QA. Clean/repeated feature-off generation, locked Pods and seven actual
+ownership checks passed. The final manifest matches Core input SHA-256
+`ec1fcffb922faabdc152f6fedd45f43c830f823fe94a8913b876798dcbf37556`,
+declares `features: []` and both iOS targets, and its bindings contain no QA
+comparison types. Explicit pending-state checks also reject a `preparing: true`
+manifest even if it contains an ordinary feature list; the added validation
+does not change the evaluated pod attributes or lockfile.
+
+The personally signed ordinary Preview app was verified to have the normal
+Keychain namespace, no QA profile marker and no runtime-test plugin, then
+installed in place without uninstalling. The final host Core product was
+restored to default features after mobile bindgen preparation. All owned QA
+coordinators and test commands stopped, and the task-owned simulator is shut
+down. No Argent runner or Metro session was started; no post-install phone
+inspection or launch restarted a runner. Signed QA products, symbols and failed
+evidence remain retained separately.
+
+Normal ordinary-build validation is recorded on [PR #266's checks](https://github.com/pennel-app/pennel/pull/266/checks)
+for its exact current head. Its CI status is separate from the enabled QA
+physical campaign. Passing ordinary CI cannot clear the missing-audio gate.
 
 ### Decision and remaining gates
 
@@ -321,9 +338,9 @@ workflow also needs acceptance beyond the raw microphone component measured
 here. Issue #139 stays open; Cloud migration stays gated.
 
 The measured host file workload favors Quinn on elapsed time and sampled endpoint
-memory, with explicit pending-connection controls. Native TLS avoids maintaining
-a QUIC implementation in the application dependency graph, but this experiment
-still needs Swift identity handling, framed callback bridging, loopback pumps
+memory, with explicit pending-connection controls. A future native-only backend
+could omit a bundled QUIC implementation, but this experiment still needs Swift
+identity handling, framed callback bridging, loopback pumps
 and relay role coordination. The native implementation covers Apple platforms;
 Windows/Linux would need another backend and parity acceptance. Quinn uses the
 shared Rust path, but this campaign does not establish non-Apple qualification.
@@ -362,6 +379,8 @@ not change the transport under measurement.
 | Final lifecycle test source / immutable QA snapshot ID | `746e9ca68efef2adfa95fbf1d87dcf94422008e6efc7db9d8e9b7d2602f31dd3` |
 | Final preserved QA phone app executable | `2419dc2c2b6e8529ecc3a5ce9fad74b2935fed86bb79afa20eab292aaa80dab3` |
 | Final preserved QA runtime test executable | `d62ff6d21d93656eca81ecbf6d87dafeeb6ef264b25eb1c2d0bc2bcbdaad6722` |
+| Restored ordinary Preview app executable | `4fff55de7b5c37805b472817d617bacbb1c57bea9182b20c159cfe5dc2a08897` |
+| Restored default-feature host Core dylib | `4d805da5411a04144742cfa48a98a755982aa3f4590fd284e778244262343ae3` |
 | Core lockfile | `64c12fc2632c6e73591a3bf7f6cb0748ac232b12d0bcbd45890eecbc4599a1b5` |
 | Desktop backend lockfile | `fd23d75a8bec1205090a1bf475883219073b641a0ebb2be35943a602e99344bf` |
 | Relay lockfile | `efbc563197733e789d05c707d371fb49f027a6aa2cf0a3c759a043496422cff3` |

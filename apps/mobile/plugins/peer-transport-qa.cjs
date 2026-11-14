@@ -9,7 +9,7 @@ function peerTransportQAEnabled(options = {}, environment = process.env) {
 }
 
 function validatePeerArtifacts(manifest, enabled) {
-  if (!Array.isArray(manifest.features) || manifest.features.includes('peer-transport-qa') !== enabled) {
+  if (manifest.preparing === true || !Array.isArray(manifest.features) || manifest.features.includes('peer-transport-qa') !== enabled) {
     throw new Error('Prepare matching ordinary or peer-transport-qa core artifacts before generation');
   }
 }

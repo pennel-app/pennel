@@ -8,7 +8,9 @@ if peer_qa == '1' && (ENV['PENNEL_VARIANT'] == 'production' || ENV['PENNEL_TESTF
 end
 manifest_path = File.join(__dir__, '../../artifacts/ios/manifest.json')
 if File.exist?(manifest_path)
-  features = JSON.parse(File.read(manifest_path)).fetch('features')
+  manifest = JSON.parse(File.read(manifest_path))
+  raise 'Core preparation is incomplete; prepare matching complete artifacts before installing Pods' if manifest['preparing'] == true
+  features = manifest.fetch('features')
   unless features.include?('peer-transport-qa') == (peer_qa == '1')
     raise 'Prepare matching ordinary or peer-transport-qa core artifacts before installing Pods'
   end
