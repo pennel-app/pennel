@@ -93,6 +93,47 @@ pub struct Session {
     access: Mutex<Option<AccessToken>>,
     login: Mutex<LoginFlow>,
     identity_epoch: AtomicU64,
+    #[cfg(feature = "evaluation")]
+    evaluation_access_only: bool,
+}
+
+/// A bounded QA lease. It can be streamed to an owned FIFO, never displayed or serialized generically.
+#[cfg(feature = "evaluation")]
+pub struct EvaluationAccessLease {
+    origin: String,
+    token: Zeroizing<String>,
+    expires_at_unix_seconds: u64,
+}
+
+#[cfg(feature = "evaluation")]
+impl EvaluationAccessLease {
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+    pub fn expires_at_unix_seconds(&self) -> u64 {
+        self.expires_at_unix_seconds
+    }
+    pub fn write_secret(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        #[derive(serde::Serialize)]
+        struct Wire<'a> {
+            schema_version: u32,
+            access_token_only: bool,
+            origin: &'a str,
+            access_token: &'a str,
+            expires_at_unix_seconds: u64,
+        }
+        serde_json::to_writer(
+            writer,
+            &Wire {
+                schema_version: 1,
+                access_token_only: true,
+                origin: &self.origin,
+                access_token: &self.token,
+                expires_at_unix_seconds: self.expires_at_unix_seconds,
+            },
+        )
+        .map_err(std::io::Error::other)
+    }
 }
 
 fn invalid(what: &str) -> PennelError {
@@ -126,11 +167,98 @@ impl Session {
             access: Mutex::new(None),
             login: Mutex::new(LoginFlow::default()),
             identity_epoch: AtomicU64::new(next_identity_epoch()),
+            #[cfg(feature = "evaluation")]
+            evaluation_access_only: false,
         }
+    }
+
+    #[cfg(feature = "evaluation")]
+    pub(crate) fn evaluation_access_only(
+        base_url: String,
+        secrets: Arc<dyn SecretStore>,
+        value: String,
+        lifetime: Duration,
+    ) -> Result<Self, PennelError> {
+        crate::inference::validate_origin(&base_url)?;
+        if value.is_empty()
+            || value.len() > 16 * 1024
+            || value.chars().any(char::is_control)
+            || lifetime <= REFRESH_MARGIN
+            || lifetime > Duration::from_secs(900)
+            || secrets.get(REFRESH_ACCOUNT.into()).is_some()
+        {
+            return Err(PennelError::NotSignedIn);
+        }
+        let mut session = Self::new(base_url, secrets);
+        session.evaluation_access_only = true;
+        *session.access.lock().unwrap() = Some(AccessToken {
+            value,
+            expires_at: Instant::now() + lifetime,
+        });
+        Ok(session)
     }
 
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    #[cfg(feature = "evaluation")]
+    pub fn evaluation_access_token_lease(
+        &self,
+        minimum_ttl_secs: u64,
+    ) -> Result<EvaluationAccessLease, PennelError> {
+        self.evaluation_access_token_lease_before(
+            minimum_ttl_secs,
+            Instant::now() + Duration::from_secs(15),
+        )
+    }
+
+    #[cfg(feature = "evaluation")]
+    pub fn evaluation_access_token_lease_before(
+        &self,
+        minimum_ttl_secs: u64,
+        deadline: Instant,
+    ) -> Result<EvaluationAccessLease, PennelError> {
+        if !(61..=840).contains(&minimum_ttl_secs) || self.evaluation_access_only {
+            return Err(PennelError::NotSignedIn);
+        }
+        let generation = self.generation();
+        let cancellation = crate::InferenceCancellation::new();
+        if deadline <= Instant::now() || deadline > Instant::now() + Duration::from_secs(15) {
+            return Err(crate::inference::network());
+        }
+        for force in [false, true] {
+            let _token =
+                Zeroizing::new(self.inference_token(generation, force, &cancellation, deadline)?);
+            let access = loop {
+                self.check_inference(generation, &cancellation, deadline)?;
+                match self.access.try_lock() {
+                    Ok(access) => break access,
+                    Err(TryLockError::Poisoned(_)) => return Err(crate::inference::network()),
+                    Err(TryLockError::WouldBlock) => std::thread::sleep(
+                        deadline
+                            .saturating_duration_since(Instant::now())
+                            .min(Duration::from_millis(20)),
+                    ),
+                }
+            };
+            self.check_inference(generation, &cancellation, deadline)?;
+            let current = access.as_ref().ok_or(PennelError::NotSignedIn)?;
+            let remaining = current.expires_at.saturating_duration_since(Instant::now());
+            if remaining >= Duration::from_secs(minimum_ttl_secs) {
+                let expiry = std::time::SystemTime::now()
+                    .checked_add(remaining.min(Duration::from_secs(900)))
+                    .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+                    .ok_or(PennelError::NotSignedIn)?
+                    .as_secs();
+                return Ok(EvaluationAccessLease {
+                    origin: self.base_url.clone(),
+                    token: Zeroizing::new(current.value.clone()),
+                    expires_at_unix_seconds: expiry,
+                });
+            }
+        }
+        Err(PennelError::NotSignedIn)
     }
 
     fn invalidate_identity(&self) {
@@ -143,6 +271,10 @@ impl Session {
     }
 
     pub fn signed_in(&self) -> bool {
+        #[cfg(feature = "evaluation")]
+        if self.evaluation_access_only {
+            return true;
+        }
         self.secrets.get(REFRESH_ACCOUNT.into()).is_some()
     }
 

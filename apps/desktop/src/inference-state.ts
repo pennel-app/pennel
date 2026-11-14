@@ -13,14 +13,27 @@ export function inferenceProtocolsForProvider(protocols: InferenceProtocolInfo[]
 export function testedSuggestionDraft(preset: FinishedSuggestionPreset, account: ProviderAccount): InferenceConfig | null {
   const configured = preset.configured;
   const base = account.base_url.trim().replace(/\/+$/, "");
-  if (!configured || account.kind !== "open_router" || !["https://openrouter.ai", "https://openrouter.ai/api", "https://openrouter.ai/api/v1", "https://openrouter.ai/api/alpha/decisions"].includes(base)
+  const cloud = preset.provider_kind === "pennel_cloud";
+  const compatible = cloud ? account.kind === "pennel_cloud" && configured?.protocol === "pennel_cloud" && configured.model === "pennel-review-v3"
+    && ["https://api.pennel.app/v1/decisions", "https://api-staging.pennel.app/v1/decisions"].includes(configured.endpoint) && configured.upstream === null
+    : (!preset.provider_kind || preset.provider_kind === "open_router") && account.kind === "open_router"
+      && ["https://openrouter.ai", "https://openrouter.ai/api", "https://openrouter.ai/api/v1", "https://openrouter.ai/api/alpha/decisions"].includes(base)
+      && configured?.protocol === "open_router_decisions" && configured.endpoint === "https://openrouter.ai/api/alpha/decisions" && configured.upstream === "perplexity";
+  if (!configured || !compatible
     || !preset.qualification_id || preset.language_policy !== "nl" || preset.identity_evidence !== "provider_reported_version" || preset.weights_independently_verified !== false
-    || preset.actual_provider !== "Perplexity" || configured.protocol !== "open_router_decisions" || configured.endpoint !== "https://openrouter.ai/api/alpha/decisions"
-    || configured.upstream !== "perplexity" || !preset.actual_model || configured.expected_model !== preset.actual_model
+    || preset.actual_provider !== "Perplexity" || !preset.actual_model || configured.expected_model !== preset.actual_model
     || !Number.isInteger(configured.max_input_bytes) || configured.max_input_bytes < 1 || configured.max_input_bytes > 65536
     || !Number.isInteger(configured.timeout_secs) || configured.timeout_secs < 1 || configured.timeout_secs > 90) return null;
   return { provider_id: account.id, protocol: configured.protocol, model: configured.model, upstream: configured.upstream,
     expected_model: configured.expected_model, max_input_bytes: configured.max_input_bytes, timeout_secs: configured.timeout_secs };
+}
+
+export function normalizedInferenceDraft(draft: InferenceConfig): InferenceConfig {
+  const model = draft.model.trim();
+  if (draft.protocol !== "pennel_cloud") return { ...draft, model };
+  return model === "pennel-review-v3"
+    ? { ...draft, model, upstream: null }
+    : { ...draft, model: "pennel-auto", expected_model: null, upstream: null };
 }
 
 export function inferenceFingerprint(info: Pick<AppInfo, "settings" | "keys" | "provider_revisions" | "cloud_account_epoch" | "cloud_signed_in">, capability: InferenceCapability): string {

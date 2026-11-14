@@ -12,6 +12,127 @@ const MAX_INPUT_BYTES: u32 = 64 * 1024;
 // Providers document approximately normalized distributions. Keep their raw values.
 const DISTRIBUTION_TOLERANCE: f64 = 0.001;
 
+pub(crate) const MANAGED_REVIEW_MODEL: &str = "pennel-review-v3";
+pub(crate) const MANAGED_REVIEW_PROFILE: &str = "supported_passages_v3";
+pub(crate) const LOCAL_REVIEW_MODEL: &str = "pennel-decider-flash-v1.2-q8_0";
+pub(crate) const MANAGED_REVIEW_TIMEOUT_SECS: u32 = 35;
+const DECIDER_MODEL: &str = "perplexity/pplx-decider-v1.2";
+const SIZE_REQUEST_ID: &str = "00000000-0000-4000-8000-000000000001";
+
+pub(crate) fn managed_review(config: &InferenceConfig) -> bool {
+    config.protocol == InferenceProtocol::PennelCloud && config.model == MANAGED_REVIEW_MODEL
+}
+
+pub(crate) fn managed_local_review(config: &InferenceConfig) -> bool {
+    config.protocol == InferenceProtocol::LocalDecider && config.model == LOCAL_REVIEW_MODEL
+}
+
+pub(crate) fn supported_passage_profile(protocol: InferenceProtocol, model: &str) -> bool {
+    protocol == InferenceProtocol::OpenRouterDecisions
+        || protocol == InferenceProtocol::PennelCloud && model == MANAGED_REVIEW_MODEL
+        || protocol == InferenceProtocol::LocalDecider && model == LOCAL_REVIEW_MODEL
+}
+
+pub(crate) fn versioned_decider_model(model: &str) -> bool {
+    model
+        .strip_prefix(DECIDER_MODEL)
+        .and_then(|suffix| suffix.strip_prefix('-'))
+        .is_some_and(|date| {
+            date.len() == 8
+                && date.bytes().all(|byte| byte.is_ascii_digit())
+                && chrono::NaiveDate::parse_from_str(date, "%Y%m%d").is_ok()
+        })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ManagedReviewLimits {
+    pub(crate) max_input_bytes: u32,
+    pub(crate) max_questions: u32,
+    pub(crate) max_batch_windows: u32,
+    pub(crate) request_timeout_secs: u32,
+}
+
+impl Default for ManagedReviewLimits {
+    fn default() -> Self {
+        Self {
+            max_input_bytes: MAX_INPUT_BYTES,
+            max_questions: 64,
+            max_batch_windows: 8,
+            request_timeout_secs: MANAGED_REVIEW_TIMEOUT_SECS,
+        }
+    }
+}
+
+/// Managed configuration advertised by Cloud, not observed serving identity or qualification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ManagedMeetingReviewProfile {
+    pub(crate) available: bool,
+    pub(crate) reason_code: String,
+    profile: String,
+    model: String,
+    configured_model: Option<String>,
+    pub(crate) expected_model: Option<String>,
+    upstream: Option<String>,
+    limits: ManagedReviewLimits,
+}
+
+impl ManagedMeetingReviewProfile {
+    pub(crate) fn unavailable(reason: &str) -> Self {
+        Self {
+            available: false,
+            reason_code: reason.into(),
+            profile: MANAGED_REVIEW_PROFILE.into(),
+            model: MANAGED_REVIEW_MODEL.into(),
+            configured_model: None,
+            expected_model: None,
+            upstream: None,
+            limits: ManagedReviewLimits::default(),
+        }
+    }
+
+    pub(crate) fn matches_config(&self, config: &InferenceConfig) -> bool {
+        managed_review(config)
+            && self.expected_model == config.expected_model
+            && config.max_input_bytes <= self.limits.max_input_bytes
+    }
+}
+
+fn managed_review_profile(response: &Value) -> Result<ManagedMeetingReviewProfile, PennelError> {
+    let invalid_profile = || invalid("Pennel Cloud returned unsupported inference capabilities.");
+    if response["schema_version"].as_u64() != Some(1) {
+        return Err(invalid_profile());
+    }
+    let profile: ManagedMeetingReviewProfile =
+        serde_json::from_value(response["meeting_review"].clone())
+            .map_err(|_| invalid_profile())?;
+    let pin = profile
+        .expected_model
+        .as_deref()
+        .is_some_and(versioned_decider_model)
+        && profile.configured_model.as_deref() == Some(DECIDER_MODEL)
+        && profile.upstream.as_deref() == Some("perplexity");
+    let absent = profile.expected_model.is_none()
+        && profile.configured_model.is_none()
+        && profile.upstream.is_none();
+    if profile.profile != MANAGED_REVIEW_PROFILE
+        || profile.model != MANAGED_REVIEW_MODEL
+        || profile.limits != ManagedReviewLimits::default()
+        || if profile.available {
+            profile.reason_code != "available" || !pin
+        } else {
+            !matches!(
+                profile.reason_code.as_str(),
+                "disabled" | "unconfigured" | "processing_region"
+            ) || !(pin || absent)
+        }
+    {
+        return Err(invalid_profile());
+    }
+    Ok(profile)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum InferenceProtocol {
@@ -508,6 +629,7 @@ pub fn inference_protocols() -> Vec<InferenceProtocolInfo> {
             extraction: protocol == Mercury,
             requires_key,
             allowed_provider_kinds: match protocol {
+                LocalDecider => vec![crate::ProviderKind::Custom, crate::ProviderKind::Local],
                 PennelCloud => vec![crate::ProviderKind::PennelCloud],
                 OpenRouterDecisions | OpenRouterSystemOne => {
                     vec![crate::ProviderKind::OpenRouter, crate::ProviderKind::Custom]
@@ -573,8 +695,27 @@ pub(crate) fn validate_config(
             "This protocol does not support the selected inference capability.",
         ));
     }
+    if managed_local_review(config) {
+        if capability != InferenceCapability::Decision
+            || base_url != crate::local_decider::ENDPOINT
+            || config.upstream.is_some()
+            || config.expected_model.as_deref() != Some(crate::local_decider::MODEL_FINGERPRINT)
+        {
+            return Err(invalid(
+                "Choose a supported provider account for this inference protocol.",
+            ));
+        }
+        return Ok(crate::local_decider::ENDPOINT.into());
+    }
     if config.protocol == InferenceProtocol::PennelCloud
-        && (config.model != "pennel-auto" || config.upstream.is_some())
+        && (!(config.model == "pennel-auto"
+            || managed_review(config) && capability == InferenceCapability::Decision)
+            || config.upstream.is_some()
+            || managed_review(config)
+                && !config
+                    .expected_model
+                    .as_deref()
+                    .is_some_and(versioned_decider_model))
     {
         return Err(invalid(
             "Pennel Cloud manages its inference model and routing.",
@@ -744,6 +885,8 @@ impl Serialize for WireQuestions<'_> {
 #[derive(Serialize)]
 struct WireRequest<'a> {
     model: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_model: Option<&'a str>,
     state: &'a str,
     questions: WireQuestions<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -819,17 +962,21 @@ fn decision_body_with_id(
             "data_collection": "deny", "zdr": true,
         })
     });
-    let body = serde_json::to_vec(&WireRequest {
+    let wire = |request_id| WireRequest {
         model: &config.model,
+        expected_model: managed_review(config)
+            .then_some(config.expected_model.as_deref())
+            .flatten(),
         state: &request.state,
         questions: WireQuestions(&request.questions),
-        provider,
+        provider: provider.clone(),
         request_id,
-    })
-    .map_err(|_| invalid("The decision request could not be encoded."))?;
+    };
+    let body = serde_json::to_vec(&wire(request_id))
+        .map_err(|_| invalid("The decision request could not be encoded."))?;
     let protocol_bytes = match config.protocol {
         InferenceProtocol::TypeSafe => 32_000,
-        InferenceProtocol::LocalDecider => 32_768,
+        InferenceProtocol::LocalDecider if !managed_local_review(config) => 32_768,
         _ => MAX_INPUT_BYTES as usize,
     };
     if body.len() > protocol_bytes {
@@ -838,6 +985,36 @@ fn decision_body_with_id(
         ));
     }
     validate_size(config, &body)?;
+    if managed_review(config) {
+        if request.questions.len() > 64
+            || request
+                .questions
+                .iter()
+                .any(|question| question.kind != DecisionQuestionKind::Choice)
+        {
+            return Err(invalid(
+                "The decision question shape is unsupported by this protocol.",
+            ));
+        }
+        // Partition against the actual Cloud envelope even before its random UUID exists.
+        if request_id.is_none() {
+            let sized = serde_json::to_vec(&wire(Some(SIZE_REQUEST_ID)))
+                .map_err(|_| invalid("The decision request could not be encoded."))?;
+            validate_size(config, &sized)?;
+        }
+        // The service removes its UUID/pin, substitutes the dated model, then adds this
+        // fixed routing policy. The dated ID bounds both supported upstream aliases.
+        let upstream = InferenceConfig {
+            protocol: InferenceProtocol::OpenRouterDecisions,
+            model: config
+                .expected_model
+                .clone()
+                .ok_or_else(|| invalid("Pennel Cloud manages its inference model and routing."))?,
+            upstream: Some("perplexity".into()),
+            ..config.clone()
+        };
+        decision_body_with_id(&upstream, request, None)?;
+    }
     Ok(body)
 }
 
@@ -902,6 +1079,49 @@ pub(crate) fn run_cancelled_before<T: Send + 'static>(
         deadline,
         operation,
     )
+}
+
+/// The owned native supervisor itself enforces cancellation/deadline and reaps its worker.
+pub(crate) fn run_local_scheduled<T>(
+    cancellation: Arc<InferenceCancellation>,
+    timeout_secs: u32,
+    operation: impl FnOnce(std::time::Instant) -> Result<T, PennelError>,
+) -> Result<T, PennelError> {
+    let deadline = cancellation.effective_deadline(
+        std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.into()),
+    );
+    let _permit = crate::meeting_scheduler::physical_pool().acquire(
+        cancellation.priority(),
+        &cancellation,
+        deadline,
+    )?;
+    let _retained = cancellation.physical_retentions();
+    let mut observation = PhysicalObservation {
+        observers: cancellation.physical_observers(),
+        started: 0,
+        outcome: crate::meeting_scheduler::InferenceWorkerOutcome::Cancelled,
+    };
+    let result = if cancellation.is_cancelled() {
+        Err(PennelError::Cancelled)
+    } else if std::time::Instant::now() >= deadline {
+        Err(network())
+    } else {
+        observation.start().and_then(|()| operation(deadline))
+    };
+    observation.outcome = if cancellation.is_cancelled() {
+        crate::meeting_scheduler::InferenceWorkerOutcome::Cancelled
+    } else if result.is_ok() && std::time::Instant::now() < deadline {
+        crate::meeting_scheduler::InferenceWorkerOutcome::Completed
+    } else {
+        crate::meeting_scheduler::InferenceWorkerOutcome::Failed
+    };
+    if cancellation.is_cancelled() {
+        Err(PennelError::Cancelled)
+    } else if std::time::Instant::now() >= deadline {
+        Err(network())
+    } else {
+        result
+    }
 }
 
 #[cfg(test)]
@@ -1053,6 +1273,28 @@ impl ManagedInference {
         cancellation: &InferenceCancellation,
         deadline: std::time::Instant,
     ) -> Result<Value, PennelError> {
+        self.send_observed(endpoint, body, cancellation, deadline, None)
+    }
+
+    fn send_observed(
+        &self,
+        endpoint: &str,
+        body: Option<&[u8]>,
+        cancellation: &InferenceCancellation,
+        deadline: std::time::Instant,
+        _scope: Option<&str>,
+    ) -> Result<Value, PennelError> {
+        let send = |token: &str| {
+            #[cfg(feature = "evaluation")]
+            let observed =
+                crate::evaluation::managed_review::transport_start(_scope, endpoint, body);
+            let result = send_json_status(endpoint, Some(token), body, deadline);
+            #[cfg(feature = "evaluation")]
+            if let Some(observed) = observed {
+                observed.completed(&result);
+            }
+            result
+        };
         let token = zeroize::Zeroizing::new(self.session.inference_token(
             self.generation,
             false,
@@ -1061,7 +1303,7 @@ impl ManagedInference {
         )?);
         self.session
             .check_inference(self.generation, cancellation, deadline)?;
-        let mut response = send_json_status(endpoint, Some(&token), body, deadline)?;
+        let mut response = send(&token)?;
         self.session
             .check_inference(self.generation, cancellation, deadline)?;
         if response.0 == 401 {
@@ -1073,7 +1315,7 @@ impl ManagedInference {
             )?);
             self.session
                 .check_inference(self.generation, cancellation, deadline)?;
-            response = send_json_status(endpoint, Some(&token), body, deadline)?;
+            response = send(&token)?;
             self.session
                 .check_inference(self.generation, cancellation, deadline)?;
         }
@@ -1095,6 +1337,23 @@ fn managed_response(response: &Value, request_id: &str) -> Result<(), PennelErro
     Ok(())
 }
 
+pub(crate) fn managed_meeting_review_profile(
+    managed: ManagedInference,
+    cancellation: Arc<InferenceCancellation>,
+) -> Result<ManagedMeetingReviewProfile, PennelError> {
+    validate_origin(managed.session.base_url())?;
+    let base = managed.session.base_url().trim_end_matches('/');
+    let endpoint = format!(
+        "{}/v1/inference/capabilities",
+        base.strip_suffix("/v1").unwrap_or(base)
+    );
+    let worker_cancellation = cancellation.clone();
+    run_cancelled(cancellation, MANAGED_REVIEW_TIMEOUT_SECS, move |deadline| {
+        let response = managed.send(&endpoint, None, &worker_cancellation, deadline)?;
+        managed_review_profile(&response)
+    })
+}
+
 pub(crate) fn managed_capability_available(
     config: &InferenceConfig,
     managed: ManagedInference,
@@ -1108,12 +1367,22 @@ pub(crate) fn managed_capability_available(
         base.strip_suffix("/v1").unwrap_or(base)
     );
     let worker_cancellation = cancellation.clone();
+    let config = config.clone();
     run_cancelled(cancellation, config.timeout_secs, move |deadline| {
         let response = managed.send(&endpoint, None, &worker_cancellation, deadline)?;
         if response["schema_version"].as_u64() != Some(1) {
             return Err(invalid(
                 "Pennel Cloud returned unsupported inference capabilities.",
             ));
+        }
+        if managed_review(&config) {
+            let profile = managed_review_profile(&response)?;
+            if profile.available && !profile.matches_config(&config) {
+                return Err(invalid(
+                    "The inference provider returned a different model than the pinned identity.",
+                ));
+            }
+            return Ok(profile.available);
         }
         let field = match capability {
             InferenceCapability::Decision => "decision",
@@ -1140,11 +1409,37 @@ pub(crate) fn decide_managed(
     let body = decision_body_with_id(config, &request, Some(&request_id))?;
     let config = config.clone();
     let worker_cancellation = cancellation.clone();
-    run_cancelled(cancellation, config.timeout_secs, move |deadline| {
-        let response = managed.send(&endpoint, Some(&body), &worker_cancellation, deadline)?;
-        managed_response(&response, &request_id)?;
-        decision_result(&config, endpoint, &request, &response)
+    let timeout_secs = if managed_review(&config) {
+        config.timeout_secs.min(MANAGED_REVIEW_TIMEOUT_SECS)
+    } else {
+        config.timeout_secs
+    };
+    run_cancelled(cancellation, timeout_secs, move |deadline| {
+        let response = managed.send_observed(
+            &endpoint,
+            Some(&body),
+            &worker_cancellation,
+            deadline,
+            Some(&config.provider_id),
+        )?;
+        managed_decision_result(&config, endpoint, &request, &response, &request_id)
     })
+}
+
+fn managed_decision_result(
+    config: &InferenceConfig,
+    endpoint: String,
+    request: &DecisionRequest,
+    response: &Value,
+    request_id: &str,
+) -> Result<DecisionResult, PennelError> {
+    managed_response(response, request_id)?;
+    if managed_review(config) && response["profile"].as_str() != Some(MANAGED_REVIEW_PROFILE) {
+        return Err(invalid(
+            "Pennel Cloud returned an unsupported or mismatched inference response.",
+        ));
+    }
+    decision_result(config, endpoint, request, response)
 }
 
 pub(crate) fn rerank_managed(
@@ -1417,6 +1712,17 @@ fn identity(
     if config.protocol == InferenceProtocol::PennelCloud && actual_model.is_none() {
         return Err(invalid("Pennel Cloud omitted its actual model identity."));
     }
+    if managed_review(config)
+        && (actual_provider.as_deref() != Some("Perplexity")
+            || !config
+                .expected_model
+                .as_deref()
+                .is_some_and(versioned_decider_model))
+    {
+        return Err(invalid(
+            "The inference provider returned a different model than the pinned identity.",
+        ));
+    }
     if config
         .expected_model
         .as_ref()
@@ -1603,6 +1909,39 @@ pub(crate) fn evaluation_decision_response(
     decision_result(config, endpoint, request, &parse_unique_json(text)?)
 }
 
+#[cfg(feature = "evaluation")]
+pub(crate) fn evaluation_managed_decision_value(
+    config: &InferenceConfig,
+    endpoint: String,
+    request: &DecisionRequest,
+    response: &Value,
+    request_id: &str,
+) -> Result<DecisionResult, PennelError> {
+    managed_decision_result(config, endpoint, request, response, request_id)
+}
+
+#[cfg(feature = "evaluation")]
+pub(crate) fn evaluation_managed_decision_response(
+    config: &InferenceConfig,
+    endpoint: String,
+    request: &DecisionRequest,
+    raw: &[u8],
+    request_id: &str,
+) -> Result<DecisionResult, PennelError> {
+    if raw.len() as u64 > MAX_RESPONSE_BYTES || uuid::Uuid::parse_str(request_id).is_err() {
+        return Err(invalid("The inference response exceeds its size limit."));
+    }
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| invalid("The inference response is not valid UTF-8."))?;
+    managed_decision_result(
+        config,
+        endpoint,
+        request,
+        &parse_unique_json(text)?,
+        request_id,
+    )
+}
+
 fn validate_rerank_request(request: &RerankRequest) -> Result<(), PennelError> {
     let mut ids = std::collections::HashSet::new();
     if request.query.trim().is_empty()
@@ -1705,7 +2044,7 @@ pub(crate) fn rerank(
 }
 
 // Reject duplicate object keys before typed validation can lose them in a map.
-fn parse_unique_json(text: &str) -> Result<Value, PennelError> {
+pub(crate) fn parse_unique_json(text: &str) -> Result<Value, PennelError> {
     struct Unique(Value);
     impl<'de> Deserialize<'de> for Unique {
         fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

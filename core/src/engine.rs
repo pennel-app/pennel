@@ -2025,10 +2025,40 @@ impl PennelEngine {
         Ok(session)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "evaluation"))]
     pub(crate) fn use_cloud_session(&self, session: Session) {
         self.invalidate_inference_requests();
         *self.cloud_session.lock().unwrap() = Some(Arc::new(session));
+    }
+
+    #[cfg(feature = "evaluation")]
+    pub fn evaluation_cloud_access_token_lease(
+        &self,
+        minimum_ttl_secs: u64,
+    ) -> Result<crate::cloud::account::EvaluationAccessLease, PennelError> {
+        self.evaluation_cloud_access_token_lease_before(
+            minimum_ttl_secs,
+            std::time::Instant::now() + std::time::Duration::from_secs(15),
+        )
+    }
+
+    #[cfg(feature = "evaluation")]
+    pub fn evaluation_cloud_access_token_lease_before(
+        &self,
+        minimum_ttl_secs: u64,
+        deadline: std::time::Instant,
+    ) -> Result<crate::cloud::account::EvaluationAccessLease, PennelError> {
+        let session = self
+            .current_cloud_session()
+            .ok_or(PennelError::NotSignedIn)?;
+        let generation = session.generation();
+        let lease = session.evaluation_access_token_lease_before(minimum_ttl_secs, deadline)?;
+        if !self.current_cloud_session().is_some_and(|current| {
+            Arc::ptr_eq(&current, &session) && current.generation() == generation
+        }) {
+            return Err(PennelError::Cancelled);
+        }
+        Ok(lease)
     }
 
     pub(crate) fn endpoint(&self, account: &ProviderAccount, model: String) -> ProviderConfig {

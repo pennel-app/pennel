@@ -28,6 +28,7 @@ EXPECTED_TARGETS = {"Pennel": BUNDLE_ID, "PennelKeyboard": BUNDLE_ID + ".keyboar
                     "ExpoWidgetsTarget": BUNDLE_ID + ".widgets"}
 ARTIFACTS = Path("apps/mobile/artifacts/ios")
 QUALIFICATION_REGISTRY = Path("assets/qualifications/meeting-assistance.json")
+SUPPORT_CALIBRATION = Path("assets/qualifications/meeting-support-cloud-v1.json")
 SNAPSHOT = Path("apps/mobile/ios/pennel-testflight.json")
 SNAPSHOT_ORIGIN = Path("build/testflight/cloud-snapshot-origin.json")
 GENERATED_SEAL = Path("build/testflight/cloud-generated-seal.json")
@@ -127,7 +128,7 @@ def fingerprint(root, toolchain=None, environment=None):
                 if not stat.S_ISREG(file.lstat().st_mode):
                     raise ValueError("Native inputs require regular files")
                 inputs[file.relative_to(root).as_posix()] = digest(file)
-    for relative in (*NATIVE_SCRIPTS, QUALIFICATION_REGISTRY.as_posix()):
+    for relative in (*NATIVE_SCRIPTS, QUALIFICATION_REGISTRY.as_posix(), SUPPORT_CALIBRATION.as_posix()):
         file = root / relative
         no_symlink_path(file)
         if not file.is_file():
@@ -214,6 +215,9 @@ def validate_bundle(directory, inspector=None):
             or not isinstance(registry_count, int) or isinstance(registry_count, bool)
             or registry_count < 0):
         raise ValueError("Native artifact qualification registry provenance is missing or invalid")
+    support_hash = manifest.get("support_calibration_sha256")
+    if not isinstance(support_hash, str) or not HEX.fullmatch(support_hash):
+        raise ValueError("Native artifact support calibration provenance is missing or invalid")
     return files, symbol_paths
 
 
@@ -222,6 +226,9 @@ def validate_registry_input(directory, context):
     manifest = json.loads((directory / "manifest.json").read_text())
     if not expected or manifest.get("qualification_registry_sha256") != expected:
         raise ValueError("Native artifact qualification registry does not match its build inputs")
+    expected_support = context["context"]["inputs"].get(SUPPORT_CALIBRATION.as_posix())
+    if not expected_support or manifest.get("support_calibration_sha256") != expected_support:
+        raise ValueError("Native artifact support calibration does not match its build inputs")
 
 
 def validate_entry(entry, context, inspector=None):

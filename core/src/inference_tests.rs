@@ -1227,3 +1227,282 @@ fn managed_deadline_fixture_rejects_per_phase_reset() {
     assert!(observed.completed_at > observed.original_deadline);
     assert!(observed.completed_at < observed.fresh_deadline_lower_bound);
 }
+
+fn managed_review_config() -> InferenceConfig {
+    InferenceConfig {
+        model: "pennel-review-v3".into(),
+        expected_model: Some("perplexity/pplx-decider-v1.2-20261016".into()),
+        max_input_bytes: 65_536,
+        timeout_secs: 90,
+        ..new_inference_config("cloud".into(), InferenceProtocol::PennelCloud)
+    }
+}
+
+fn managed_review_capabilities() -> Value {
+    json!({"schema_version":1,"decision":{"available":false},"meeting_review":{
+        "available":true,"reason_code":"available","profile":"supported_passages_v3",
+        "model":"pennel-review-v3","configured_model":"perplexity/pplx-decider-v1.2",
+        "expected_model":"perplexity/pplx-decider-v1.2-20261016","upstream":"perplexity",
+        "limits":{"max_input_bytes":65536,"max_questions":64,"max_batch_windows":8,"request_timeout_secs":35}
+    }})
+}
+
+#[test]
+fn managed_review_configuration_requires_its_dated_pin_and_decision_capability() {
+    let config = managed_review_config();
+    assert_eq!(
+        validate_config(
+            &config,
+            "https://api.pennel.app",
+            InferenceCapability::Decision
+        )
+        .unwrap(),
+        "https://api.pennel.app/v1/decisions"
+    );
+    assert!(
+        validate_config(
+            &config,
+            "https://api.pennel.app",
+            InferenceCapability::Reranking
+        )
+        .is_err()
+    );
+    for change in 0..4 {
+        let mut invalid = config.clone();
+        match change {
+            0 => invalid.expected_model = None,
+            1 => invalid.expected_model = Some("perplexity/pplx-decider-latest".into()),
+            2 => invalid.expected_model = Some("perplexity/pplx-decider-v1.2-20261340".into()),
+            _ => invalid.upstream = Some("perplexity".into()),
+        }
+        assert!(
+            validate_config(
+                &invalid,
+                "https://api.pennel.app",
+                InferenceCapability::Decision
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn managed_review_capabilities_are_explicit_configured_metadata_not_serving_identity() {
+    let profile = managed_review_profile(&managed_review_capabilities()).unwrap();
+    assert!(profile.available && profile.matches_config(&managed_review_config()));
+    let encoded = serde_json::to_value(profile).unwrap();
+    assert_eq!(encoded["configured_model"], "perplexity/pplx-decider-v1.2");
+    assert!(encoded.get("actual_model").is_none());
+    assert!(encoded.get("actual_revision").is_none());
+    for change in 0..7 {
+        let mut invalid = managed_review_capabilities();
+        match change {
+            0 => invalid["schema_version"] = json!(2),
+            1 => invalid["meeting_review"]["profile"] = json!("unreviewed-profile"),
+            2 => invalid["meeting_review"]["configured_model"] = json!("other-model"),
+            3 => invalid["meeting_review"]["upstream"] = json!("other-provider"),
+            4 => invalid["meeting_review"]["limits"]["max_questions"] = json!(128),
+            5 => invalid["meeting_review"]["limits"]["request_timeout_secs"] = json!(90),
+            _ => invalid["meeting_review"]["reason_code"] = json!("disabled"),
+        }
+        assert!(managed_review_profile(&invalid).is_err(), "change {change}");
+    }
+    let mut unavailable = managed_review_capabilities();
+    unavailable["meeting_review"]["available"] = json!(false);
+    unavailable["meeting_review"]["reason_code"] = json!("disabled");
+    for field in ["configured_model", "expected_model", "upstream"] {
+        unavailable["meeting_review"][field] = Value::Null;
+    }
+    assert!(!managed_review_profile(&unavailable).unwrap().available);
+}
+
+#[test]
+fn managed_review_sends_its_pin_and_checks_profile_and_actual_provider_metadata() {
+    for change in 0..4 {
+        let mut server = mockito::Server::new();
+        let (managed, _) = managed_fixture(&server);
+        let refresh = managed_refresh(&mut server);
+        let post = server.mock("POST", "/v1/decisions")
+            .match_header("authorization", "Bearer synthetic-access")
+            .with_body_from_request(move |request| {
+                let body: Value = serde_json::from_slice(request.body().unwrap()).unwrap();
+                assert_eq!(body["model"], "pennel-review-v3");
+                assert_eq!(body["expected_model"], "perplexity/pplx-decider-v1.2-20261016");
+                assert!(body.get("provider").is_none());
+                let mut answers = serde_json::Map::new();
+                for (id, question) in body["questions"].as_object().unwrap() {
+                    let criteria = question["criteria"].as_object().unwrap();
+                    let chosen = if id.ends_with("_support") { "absent" } else { "none" };
+                    let probabilities: serde_json::Map<String, Value> = criteria.keys()
+                        .map(|key| (key.clone(), json!(if key == chosen { 1.0 } else { 0.0 }))).collect();
+                    answers.insert(id.clone(), json!({"type":"choice","choice":chosen,"probabilities":probabilities}));
+                }
+                let mut response = json!({"schema_version":1,"request_id":body["request_id"],
+                    "profile":"supported_passages_v3","model":"perplexity/pplx-decider-v1.2-20261016",
+                    "provider":"Perplexity","model_revision":null,"id":"owned-upstream-id","answers":answers});
+                match change {
+                    1 => { response.as_object_mut().unwrap().remove("profile"); },
+                    2 => response["provider"] = json!("Other provider"),
+                    3 => response["model"] = json!("perplexity/pplx-decider-v1.2-20261017"),
+                    _ => (),
+                }
+                response.to_string().into_bytes()
+            }).create();
+        let config = managed_review_config();
+        let result = decide_managed(
+            &config,
+            managed,
+            crate::meeting_insight_engine::verification_request(&config),
+            transport_cancellation(),
+        );
+        if change == 0 {
+            let result = result.unwrap();
+            assert_eq!(result.answers.len(), 8);
+            assert_eq!(result.identity.actual_revision, None);
+            assert_eq!(
+                result.identity.actual_provider.as_deref(),
+                Some("Perplexity")
+            );
+            assert_eq!(
+                result.identity.request_id.as_deref(),
+                Some("owned-upstream-id")
+            );
+        } else {
+            assert!(result.is_err(), "change {change}");
+        }
+        refresh.assert();
+        post.assert();
+    }
+}
+
+#[test]
+fn managed_review_batch_budget_accounts_for_uuid_pin_and_rewritten_provider_policy() {
+    let mut config = managed_review_config();
+    let mut request = crate::meeting_insight_engine::verification_request(&config);
+    request.state.push_str(&"x".repeat(20_000));
+    let plain = decision_body(&config, &request).unwrap();
+    let actual = decision_body_with_id(
+        &config,
+        &request,
+        Some("11111111-1111-4111-8111-111111111111"),
+    )
+    .unwrap();
+    assert!(actual.len() > plain.len());
+    let upstream_config = InferenceConfig {
+        protocol: InferenceProtocol::OpenRouterDecisions,
+        model: config.expected_model.clone().unwrap(),
+        upstream: Some("perplexity".into()),
+        ..config.clone()
+    };
+    let upstream = decision_body(&upstream_config, &request).unwrap();
+    config.max_input_bytes = u32::try_from(actual.len().max(upstream.len()) - 1).unwrap();
+    assert!(validate_decision_request(&config, &request).is_err());
+}
+
+#[test]
+fn managed_local_configuration_is_keyless_internal_and_artifact_pinned() {
+    let config = InferenceConfig {
+        protocol: InferenceProtocol::LocalDecider,
+        model: crate::local_decider::MODEL_ID.into(),
+        expected_model: Some(crate::local_decider::MODEL_FINGERPRINT.into()),
+        upstream: None,
+        ..new_inference_config("local".into(), InferenceProtocol::LocalDecider)
+    };
+    assert_eq!(
+        validate_config(
+            &config,
+            crate::local_decider::ENDPOINT,
+            InferenceCapability::Decision
+        )
+        .unwrap(),
+        crate::local_decider::ENDPOINT
+    );
+    assert!(
+        validate_config(
+            &config,
+            "http://127.0.0.1:8080",
+            InferenceCapability::Decision
+        )
+        .is_err()
+    );
+    let mut wrong = config.clone();
+    wrong.expected_model = Some(format!("sha256:{}", "a".repeat(64)));
+    assert!(
+        validate_config(
+            &wrong,
+            crate::local_decider::ENDPOINT,
+            InferenceCapability::Decision
+        )
+        .is_err()
+    );
+    assert!(
+        validate_config(
+            &config,
+            crate::local_decider::ENDPOINT,
+            InferenceCapability::Reranking
+        )
+        .is_err()
+    );
+    let mut ordinary = config;
+    ordinary.model = "external-local-model".into();
+    ordinary.expected_model = None;
+    assert!(
+        validate_config(
+            &ordinary,
+            "http://127.0.0.1:8080/v1",
+            InferenceCapability::Decision
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_config(
+            &ordinary,
+            crate::local_decider::ENDPOINT,
+            InferenceCapability::Decision
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn managed_local_scheduling_notifies_completion_only_after_native_operation_returns() {
+    struct Observer(Arc<Mutex<Vec<&'static str>>>);
+    impl crate::meeting_scheduler::InferencePhysicalObserver for Observer {
+        fn starting(&self) -> Result<(), PennelError> {
+            self.0.lock().unwrap().push("starting");
+            Ok(())
+        }
+        fn finished(&self, outcome: crate::meeting_scheduler::InferenceWorkerOutcome) {
+            self.0.lock().unwrap().push(match outcome {
+                crate::meeting_scheduler::InferenceWorkerOutcome::Completed => "completed",
+                crate::meeting_scheduler::InferenceWorkerOutcome::Cancelled => "cancelled",
+                _ => "failed",
+            });
+        }
+    }
+    for cancel in [false, true] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let cancellation = transport_cancellation();
+        let _observer = cancellation.observe_physical(Arc::new(Observer(events.clone())));
+        let result = run_local_scheduled(cancellation.clone(), 2, |_| {
+            events.lock().unwrap().push("native-return");
+            if cancel {
+                cancellation.cancel();
+            }
+            Ok(7)
+        });
+        assert_eq!(
+            *events.lock().unwrap(),
+            vec![
+                "starting",
+                "native-return",
+                if cancel { "cancelled" } else { "completed" }
+            ]
+        );
+        if cancel {
+            assert_eq!(result.unwrap_err(), PennelError::Cancelled);
+        } else {
+            assert_eq!(result.unwrap(), 7);
+        }
+    }
+}

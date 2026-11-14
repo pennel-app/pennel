@@ -1,0 +1,21 @@
+{
+  "schema_version": 3,
+  "protocol_id": "production-finished-meeting-v3",
+  "use_case": "manual_finished_suggestions",
+  "production_contract_source": "Actual Rust Engine export/replay with unchanged v3 model inputs and raw results, immutable committed Cloud support calibration asset, exact-source decoder and separately fingerprinted support abstention",
+  "languages": [
+    "nl"
+  ],
+  "split_unit": "meeting_family_including_all_lengths_and_text_variants",
+  "grouping": "At most eight source windows per serial physical request, actual encoded bytes bounded, original four state questions plus four independent SOURCE0 support questions with namespaced IDs",
+  "identity": "Explicit provider-reported versioned-model evidence pins exact returned dated model and provider/upstream route. Remote model weights and serving revision remain independently unverified, never invented.",
+  "runtime_policy": "calibrated_support_raw_state_v1; raw states unchanged; fitted support must agree with raw choice and meet its original frozen threshold; rejected support is unassessed",
+  "automatic_retries": false,
+  "fallbacks": false,
+  "hosted_total_usd_max": "2.00",
+  "activation": false,
+  "qualification": false,
+  "source_support": "Each kind has supported/absent/unclear choice. Questions and choices do not imply assigned work; a tentative choice alone is no open question. SOURCE0-only evidence; adjacent context cannot supply the event. Multiple same-kind states require unknown.",
+  "calibration_context": "Original96 real calibration jobs/180 requests retain their original manifest and context identity; reuse requires exact fixture/judgment/window/request/wire/identity equivalence. No new calibration inference is claimed.",
+  "replay": "Only the new policy accepts recorded parsed-service JSON plus its actual Engine typed result; exact decoder equality is required before gate application. Historical raw policies keep their original parser and fit."
+}

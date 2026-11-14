@@ -178,6 +178,7 @@ export interface InferenceConfig {
   timeout_secs: number;
 }
 export interface FinishedSuggestionPreset {
+  provider_kind?: "pennel_cloud" | "open_router";
   qualification_id: string;
   language_policy: "nl";
   configured: Omit<InferenceConfig, "provider_id"> & { endpoint: string };
@@ -185,6 +186,29 @@ export interface FinishedSuggestionPreset {
   weights_independently_verified: false;
   actual_model: string;
   actual_provider: string;
+}
+export interface ManagedMeetingReviewProfile {
+  available: boolean;
+  reason_code: string;
+  profile: string;
+  model: string;
+  configured_model: string | null;
+  expected_model: string | null;
+  upstream: string | null;
+  endpoint: string | null;
+  limits: { max_input_bytes: number; max_questions: number; max_batch_windows: number; request_timeout_secs: number };
+}
+export interface ManagedLocalDeciderStatus {
+  model_id: string;
+  display_name: string;
+  available: boolean;
+  qualified: boolean;
+  state: "not_installed" | "downloading" | "verifying" | "ready" | "unqualified" | "unsupported" | "error";
+  reason_code: string;
+  download_bytes: number;
+  downloaded_bytes: number;
+  runtime_available: boolean;
+  configuration?: InferenceConfig | null;
 }
 export interface InferenceProtocolInfo {
   protocol: InferenceProtocol;
@@ -1056,6 +1080,13 @@ export const api = {
     invoke<ProviderTaskTestResult>("test_provider_task_choice", { slot, choice }),
   inferenceProtocols: () => invoke<InferenceProtocolInfo[]>("inference_protocols"),
   qualifiedFinishedSuggestionPresets: () => invoke<FinishedSuggestionPreset[]>("qualified_finished_suggestion_presets"),
+  managedMeetingReviewProfile: () => invoke<ManagedMeetingReviewProfile>("managed_meeting_review_profile"),
+  managedLocalDeciderStatus: () => invoke<ManagedLocalDeciderStatus>("managed_local_decider_status"),
+  downloadManagedLocalDecider: () => invoke<void>("download_managed_local_decider"),
+  cancelManagedLocalDeciderDownload: () => invoke<void>("cancel_managed_local_decider_download"),
+  removeManagedLocalDecider: () => invoke<void>("remove_managed_local_decider"),
+  setMeetingReviewConfiguration: (config: InferenceConfig, expectedDecision: InferenceConfig | null, expectedCloudAccountEpoch: string | null, expectedProvider: ProviderAccount | null) =>
+    invoke<AppInfo>("set_meeting_review_configuration", { config, expectedDecision, expectedCloudAccountEpoch, expectedProvider }),
   inferenceAvailability: (capability: InferenceCapability) => invoke<InferenceAvailability>("inference_availability", { capability }),
   cleanupVerificationAvailability: () => invoke<CleanupVerificationAvailability>("cleanup_verification_availability"),
   decide: (request: DecisionRequest, requestId: string) => invoke<DecisionResult>("inference_decide", { request, requestId }),

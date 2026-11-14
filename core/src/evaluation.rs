@@ -20,8 +20,27 @@ use crate::summary::{BLOCK_CHARS, MAP_REDUCE_ABOVE, blocks, chunk_messages, summ
 use crate::templates::TemplateStore;
 
 mod finished;
+pub(crate) mod local_review;
+pub(crate) mod managed_review;
+pub use local_review::LocalReviewClient;
+pub use managed_review::CloudReviewClient;
 
 pub const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
+
+/// Only the new typed gate replay needs an exact float roundtrip. Legacy raw
+/// policies retain their original parser and recorded distributions.
+pub fn parse_request_json(raw: &str) -> Result<Value, &'static str> {
+    let value: Value = serde_json::from_str(raw).map_err(|_| "invalid_json")?;
+    if value["op"] == "finished_meeting_replay"
+        && value["export"]["runtime_policy"]
+            == crate::meeting_insight_engine::support_calibration::POLICY
+    {
+        crate::meeting_insight_engine::support_calibration::exact_json(raw)
+            .map_err(|_| "invalid_json")
+    } else {
+        Ok(value)
+    }
+}
 
 struct OwnedRoot(PathBuf);
 

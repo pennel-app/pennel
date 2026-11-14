@@ -174,6 +174,14 @@ fn text(value: &str, maximum: usize) -> bool {
 const OPENROUTER_DECISIONS: &str = "https://openrouter.ai/api/alpha/decisions";
 const PERPLEXITY_DECIDER: &str = "perplexity/pplx-decider-v1.2";
 
+fn managed_local_configuration(configured: &MeetingConfiguredInference) -> bool {
+    configured.protocol == InferenceProtocol::LocalDecider
+        && configured.endpoint == crate::local_decider::ENDPOINT
+        && configured.model == crate::local_decider::MODEL_ID
+        && configured.expected_model.as_deref() == Some(crate::local_decider::MODEL_FINGERPRINT)
+        && configured.upstream.is_none()
+}
+
 fn provider_versioned_model(model: &str) -> bool {
     let Some(date) = model
         .strip_prefix(PERPLEXITY_DECIDER)
@@ -205,17 +213,38 @@ impl MeetingActualInference {
     }
 
     fn matches_provider_configuration(&self, configured: &MeetingConfiguredInference) -> bool {
-        configured.protocol == InferenceProtocol::OpenRouterDecisions
+        let direct = configured.protocol == InferenceProtocol::OpenRouterDecisions
             && configured.endpoint == OPENROUTER_DECISIONS
             && (configured.model == PERPLEXITY_DECIDER || configured.model == self.model)
             && configured.expected_model.as_deref() == Some(self.model.as_str())
-            && configured.upstream.as_deref() == Some("perplexity")
+            && configured.upstream.as_deref() == Some("perplexity");
+        let managed = configured.protocol == InferenceProtocol::PennelCloud
+            && matches!(
+                configured.endpoint.as_str(),
+                "https://api.pennel.app/v1/decisions"
+                    | "https://api-staging.pennel.app/v1/decisions"
+            )
+            && configured.model == crate::inference::MANAGED_REVIEW_MODEL
+            && configured.expected_model.as_deref() == Some(self.model.as_str())
+            && configured.upstream.is_none();
+        direct || managed
     }
 
     fn valid_for_request(&self, request: &MeetingQualificationRequest) -> bool {
         self.valid_pin()
             && match self.identity_evidence {
-                MeetingIdentityEvidence::ServingRevisionAndArtifact => true,
+                MeetingIdentityEvidence::ServingRevisionAndArtifact => {
+                    if managed_local_configuration(&request.configured) {
+                        request.use_case == MeetingAnalysisUseCase::ManualFinishedSuggestions
+                            && request.language_policy == "nl"
+                            && self.model == crate::local_decider::MODEL_FINGERPRINT
+                            && self.artifact_sha256 == crate::local_decider::MODEL_SHA256
+                            && self.provider == crate::local_decider::PROVIDER
+                            && hash(&self.revision)
+                    } else {
+                        true
+                    }
+                }
                 MeetingIdentityEvidence::ProviderReportedVersion => {
                     request.use_case == MeetingAnalysisUseCase::ManualFinishedSuggestions
                         && request.language_policy == "nl"
@@ -297,6 +326,28 @@ impl MeetingQualificationRecord {
         let request = &self.context.request;
         let evidence = &self.evidence;
         let metrics = &self.metrics;
+        if crate::meeting_insight_engine::support_calibration::required(&request.configured) {
+            let Ok(gate) =
+                crate::meeting_insight_engine::support_calibration::SupportCalibration::bundled()
+            else {
+                return false;
+            };
+            let mut current = crate::meeting_insight_engine::qualification_request(
+                request.configured.clone(),
+                &request.language_policy,
+            );
+            // Intrinsic validity retains the measured cohort. Admission separately
+            // requires an exact match with the current host's resource profile.
+            current.resource_profile_sha256 = request.resource_profile_sha256.clone();
+            if self.context.calibration_sha256
+                != crate::meeting_insight_engine::support_calibration::ASSET_SHA256
+                || gate.validate_request(request).is_err()
+                || gate.validate_pin(&self.context.actual).is_err()
+                || current != *request
+            {
+                return false;
+            }
+        }
         if self.schema_version != 1
             || !text(&self.qualification_id, 256)
             || request.validate().is_err()
@@ -426,8 +477,10 @@ impl MeetingQualificationRegistry {
         self.records
             .iter()
             .filter_map(|record| {
-                if record.context.actual.identity_evidence
-                    != MeetingIdentityEvidence::ProviderReportedVersion
+                let local = managed_local_configuration(&record.context.request.configured)
+                    && record.context.actual.identity_evidence == MeetingIdentityEvidence::ServingRevisionAndArtifact;
+                if (!local && record.context.actual.identity_evidence
+                    != MeetingIdentityEvidence::ProviderReportedVersion)
                     || record.context.request.use_case
                         != MeetingAnalysisUseCase::ManualFinishedSuggestions
                     || record.context.request.language_policy != "nl"
@@ -451,7 +504,10 @@ impl MeetingQualificationRegistry {
                     "identity_evidence": record.context.actual.identity_evidence,
                     "actual_model": record.context.actual.model,
                     "actual_provider": record.context.actual.provider,
-                    "weights_independently_verified": false
+                    "provider_kind": if local { "local" } else if record.context.request.configured.protocol == InferenceProtocol::PennelCloud {
+                        "pennel_cloud"
+                    } else { "open_router" },
+                    "weights_independently_verified": local
                 }))
             })
             .collect()
@@ -566,11 +622,18 @@ impl PennelEngine {
         if !info.allowed_provider_kinds.contains(&account.kind) {
             return Err(MeetingQualificationError::InvalidConfiguration);
         }
+        if crate::inference::managed_local_review(&config)
+            != (account.kind == crate::ProviderKind::Local)
+        {
+            return Err(MeetingQualificationError::InvalidConfiguration);
+        }
         let base = if account.kind == crate::ProviderKind::PennelCloud {
             self.current_cloud_session().map_or_else(
                 || self.cloud_base_url(),
                 |session| session.base_url().into(),
             )
+        } else if account.kind == crate::ProviderKind::Local {
+            crate::local_decider::ENDPOINT.into()
         } else {
             account.base_url.clone()
         };
@@ -664,6 +727,64 @@ impl PennelEngine {
                 status.qualification_id = Some(qualification.record.qualification_id);
             }
             Err(error) => status.reason_code = error.reason_code().into(),
+        }
+        drop(_capture);
+        if status.available
+            && current.protocol == InferenceProtocol::PennelCloud
+            && current.model == crate::inference::MANAGED_REVIEW_MODEL
+        {
+            let epoch = self.inference_epoch();
+            let account_epoch = self.cloud_account_epoch();
+            let profile = self.managed_meeting_review_profile();
+            let _capture = self.inference_capture_gate();
+            if self.inference_epoch() != epoch
+                || self
+                    .current_cloud_session()
+                    .map_or(0, |session| session.generation())
+                    != account_epoch
+                || !self
+                    .meeting_analysis_configuration()
+                    .is_ok_and(|(provider, configured)| {
+                        Some(&provider) == status.provider_id.as_ref() && configured == current
+                    })
+            {
+                status.available = false;
+                status.reason_code = "configuration_changed".into();
+            } else {
+                match profile {
+                    Ok(profile)
+                        if profile.available
+                            && profile.expected_model == current.expected_model => {}
+                    Ok(profile) => {
+                        status.available = false;
+                        status.reason_code = if profile.available {
+                            "cloud_profile_changed".into()
+                        } else {
+                            format!("cloud_{}", profile.reason_code)
+                        };
+                    }
+                    Err(crate::PennelError::NotSignedIn) => {
+                        status.available = false;
+                        status.reason_code = "not_signed_in".into();
+                    }
+                    Err(_) => {
+                        status.available = false;
+                        status.reason_code = "cloud_unavailable".into();
+                    }
+                }
+            }
+        }
+        if status.available
+            && managed_local_configuration(&current)
+            && let Err(error) = self.managed_local_decider_inference_readiness()
+        {
+            status.available = false;
+            status.reason_code = if error == crate::PennelError::ModelNotDownloaded {
+                "local_not_downloaded"
+            } else {
+                "local_runtime_unavailable"
+            }
+            .into();
         }
         Ok(status)
     }
@@ -862,6 +983,133 @@ mod tests {
     }
 
     #[test]
+    fn managed_review_requires_its_own_official_route_record_and_exact_response_identity() {
+        let mut value = provider_record_value();
+        value["context"]["configured"]["protocol"] = "pennel_cloud".into();
+        value["context"]["configured"]["endpoint"] = "https://api.pennel.app/v1/decisions".into();
+        value["context"]["configured"]["model"] = "pennel-review-v3".into();
+        value["context"]["configured"]["upstream"] = serde_json::Value::Null;
+        let mut record: MeetingQualificationRecord = serde_json::from_value(value).unwrap();
+        // A raw Cloud record cannot authorize the calibrated support policy.
+        assert!(!record.valid());
+        record.context.request.configured.max_input_bytes = 65536;
+        record.context.request.configured.timeout_secs = 90;
+        record.context.request = crate::meeting_insight_engine::qualification_request(
+            record.context.request.configured.clone(),
+            "nl",
+        );
+        record.context.calibration_sha256 =
+            crate::meeting_insight_engine::support_calibration::ASSET_SHA256.into();
+        let request = record.context.request.clone();
+        let admitted = registry(record.clone()).admit(&request).unwrap();
+        let mut foreign = record.clone();
+        foreign.qualification_id.push_str("-foreign-cohort");
+        foreign.context.request.resource_profile_sha256 = sha('c');
+        assert!(foreign.valid());
+        assert!(matches!(
+            registry(foreign.clone()).admit(&request),
+            Err(MeetingQualificationError::Unqualified)
+        ));
+        let coexist = MeetingQualificationRegistry::from_asset(
+            &serde_json::json!({"schema_version":1,
+            "adopted_records":[record,foreign]})
+            .to_string(),
+        );
+        assert!(coexist.valid);
+        assert!(coexist.admit(&request).is_ok());
+        let mut observed = provider_identity();
+        observed.protocol = InferenceProtocol::PennelCloud;
+        observed.endpoint = request.configured.endpoint.clone();
+        observed.requested_model = "pennel-review-v3".into();
+        observed.requested_upstream = None;
+        assert!(admitted.validate_identity(&observed).is_ok());
+        let mut unmeasured = request.clone();
+        unmeasured.resource_profile_sha256 = sha('d');
+        assert!(
+            MeetingQualificationRegistry::bundled()
+                .admit(&unmeasured)
+                .is_err()
+        );
+        for change in 0..7 {
+            let mut invalid = record.clone();
+            match change {
+                0 => {
+                    invalid.context.request.configured.endpoint =
+                        "https://other.example/v1/decisions".into()
+                }
+                1 => invalid.context.request.configured.model = "pennel-auto".into(),
+                2 => invalid.context.request.configured.upstream = Some("perplexity".into()),
+                3 => {
+                    invalid.context.request.use_case = MeetingAnalysisUseCase::ManualLiveSuggestions
+                }
+                4 => invalid.context.request.language_policy = "en".into(),
+                5 => {
+                    invalid.context.calibration_sha256 =
+                        "d7c5d03f73edfafcbeb15c8602196025ffa19ec033298282670eea469d8b51ee".into()
+                }
+                _ => invalid.context.request.preprocessing_sha256 = sha('f'),
+            }
+            let request = invalid.context.request.clone();
+            assert!(
+                registry(invalid).admit(&request).is_err(),
+                "change {change}"
+            );
+        }
+        observed.actual_provider = None;
+        assert!(admitted.validate_identity(&observed).is_err());
+    }
+
+    #[test]
+    fn managed_local_record_requires_real_artifact_runtime_and_local_provider_metadata() {
+        let mut record = record();
+        record.context.request = crate::meeting_insight_engine::qualification_request(
+            MeetingConfiguredInference {
+                protocol: InferenceProtocol::LocalDecider,
+                endpoint: crate::local_decider::ENDPOINT.into(),
+                model: crate::local_decider::MODEL_ID.into(),
+                expected_model: Some(crate::local_decider::MODEL_FINGERPRINT.into()),
+                upstream: None,
+                max_input_bytes: 65536,
+                timeout_secs: 90,
+            },
+            "nl",
+        );
+        record.context.actual = MeetingActualInference {
+            model: crate::local_decider::MODEL_FINGERPRINT.into(),
+            revision: sha('f'),
+            provider: crate::local_decider::PROVIDER.into(),
+            artifact_sha256: crate::local_decider::MODEL_SHA256.into(),
+            identity_evidence: MeetingIdentityEvidence::ServingRevisionAndArtifact,
+        };
+        let request = record.context.request.clone();
+        assert!(registry(record.clone()).admit(&request).is_ok());
+        let presets = registry(record.clone()).finished_provider_presets();
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0]["provider_kind"], "local");
+        assert_eq!(presets[0]["weights_independently_verified"], true);
+        assert!(
+            MeetingQualificationRegistry::bundled()
+                .admit(&request)
+                .is_err()
+        );
+        for change in 0..5 {
+            let mut invalid = record.clone();
+            match change {
+                0 => invalid.context.actual.artifact_sha256 = sha('0'),
+                1 => invalid.context.actual.revision = "configured-runtime-alias".into(),
+                2 => invalid.context.actual.provider = "configured-provider-name".into(),
+                3 => invalid.context.request.language_policy = "en".into(),
+                _ => {
+                    invalid.context.actual.identity_evidence =
+                        MeetingIdentityEvidence::ProviderReportedVersion
+                }
+            }
+            let request = invalid.context.request.clone();
+            assert!(registry(invalid).admit(&request).is_err());
+        }
+    }
+
+    #[test]
     fn provider_reported_version_rejects_version_provider_and_route_drift() {
         let record: MeetingQualificationRecord =
             serde_json::from_value(provider_record_value()).unwrap();
@@ -1042,8 +1290,12 @@ mod tests {
     fn production_registry_admits_only_the_reviewed_manual_dutch_context() {
         let registry = MeetingQualificationRegistry::bundled();
         assert!(registry.valid);
-        assert_eq!(registry.records.len(), 1);
-        let record = &registry.records[0];
+        assert_eq!(registry.records.len(), 2);
+        let record = registry
+            .records
+            .iter()
+            .find(|record| record.qualification_id == "finished-nl-19bd8056cf84da327bad")
+            .unwrap();
         assert_eq!(record.qualification_id, "finished-nl-19bd8056cf84da327bad");
         assert!(record.valid());
         assert_eq!(
@@ -1085,6 +1337,124 @@ mod tests {
         assert_eq!(
             registry.admit(&request()).unwrap_err(),
             MeetingQualificationError::Unqualified
+        );
+    }
+
+    #[test]
+    fn production_cloud_record_admits_only_its_exact_calibrated_manual_dutch_context() {
+        use crate::meeting_insight_engine::support_calibration;
+        let registry = MeetingQualificationRegistry::bundled();
+        assert!(registry.valid);
+        let record = registry
+            .records
+            .iter()
+            .find(|record| record.qualification_id == "finished-nl-bbf47b3e584713bc29e0")
+            .unwrap();
+        assert!(record.valid());
+        assert_eq!(
+            record.context.request.use_case,
+            MeetingAnalysisUseCase::ManualFinishedSuggestions
+        );
+        assert_eq!(record.context.request.language_policy, "nl");
+        assert_eq!(
+            record.context.request.configured.protocol,
+            InferenceProtocol::PennelCloud
+        );
+        assert_eq!(
+            record.context.request.configured.endpoint,
+            "https://api.pennel.app/v1/decisions"
+        );
+        assert_eq!(record.context.request.configured.model, "pennel-review-v3");
+        assert_eq!(
+            record.context.request.configured.expected_model.as_deref(),
+            Some("perplexity/pplx-decider-v1.2-20261016")
+        );
+        assert_eq!(record.context.request.configured.upstream, None);
+        assert_eq!(
+            record.context.calibration_sha256,
+            support_calibration::ASSET_SHA256
+        );
+        let gate = support_calibration::SupportCalibration::bundled().unwrap();
+        assert_eq!(
+            support_calibration::POLICY,
+            "calibrated_support_raw_state_v1"
+        );
+        assert_eq!(
+            record.context.request.schema_sha256,
+            "3a1a258a1d336751226ec1dadf37e363e4d9b14ce4d21ec64b701313518d2e0e"
+        );
+        assert_eq!(
+            record.context.request.preprocessing_sha256,
+            "111f13c44ccf7f0083b235583f6cf795e12dabb77e07d9f6d05702ee1d21b17b"
+        );
+        gate.validate_request(&record.context.request).unwrap();
+        gate.validate_pin(&record.context.actual).unwrap();
+        assert_eq!(
+            record.context.actual.identity_evidence,
+            MeetingIdentityEvidence::ProviderReportedVersion
+        );
+        assert!(record.context.actual.revision.is_empty());
+        assert!(record.context.actual.artifact_sha256.is_empty());
+        assert!(!record.evidence.foreground_impact_accepted);
+        assert!(!record.evidence.background_resource_accepted);
+        let mut current = crate::meeting_insight_engine::qualification_request(
+            record.context.request.configured.clone(),
+            "nl",
+        );
+        let measured = record.context.request.clone();
+        let this_cohort = current.resource_profile_sha256 == measured.resource_profile_sha256;
+        assert_eq!(
+            registry
+                .admit(&current)
+                .ok()
+                .map(|admission| admission.record().qualification_id.clone()),
+            this_cohort.then(|| record.qualification_id.clone())
+        );
+        current.resource_profile_sha256 = measured.resource_profile_sha256.clone();
+        assert_eq!(current, measured);
+        assert_eq!(
+            registry.admit(&current).unwrap().record().qualification_id,
+            record.qualification_id
+        );
+        for use_case in [
+            MeetingAnalysisUseCase::ManualLiveSuggestions,
+            MeetingAnalysisUseCase::SourceAssessment,
+            MeetingAnalysisUseCase::BackgroundLiveSuggestions,
+        ] {
+            let mut changed = current.clone();
+            changed.use_case = use_case;
+            assert!(registry.admit(&changed).is_err());
+        }
+        for language in ["en", "mixed"] {
+            let mut changed = current.clone();
+            changed.language_policy = language.into();
+            assert!(registry.admit(&changed).is_err());
+        }
+        for change in 0..7 {
+            let mut changed = current.clone();
+            match change {
+                0 => {
+                    changed.configured.endpoint =
+                        "https://api-staging.pennel.app/v1/decisions".into()
+                }
+                1 => changed.configured.model = "pennel-auto".into(),
+                2 => {
+                    changed.configured.expected_model =
+                        Some("perplexity/pplx-decider-v1.2-20990101".into())
+                }
+                3 => changed.configured.upstream = Some("perplexity".into()),
+                4 => changed.resource_profile_sha256 = sha('d'),
+                5 => changed.schema_sha256 = sha('d'),
+                _ => changed.preprocessing_sha256 = sha('d'),
+            }
+            assert!(registry.admit(&changed).is_err(), "change {change}");
+        }
+        assert!(
+            registry
+                .records
+                .iter()
+                .all(|record| record.context.request.configured.protocol
+                    != InferenceProtocol::LocalDecider)
         );
     }
 

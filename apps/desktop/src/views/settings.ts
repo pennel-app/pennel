@@ -11,6 +11,7 @@ import { summaryAutomationChoice } from "../meeting-summary-automation";
 import { icon } from "../icons";
 import { appBadge } from "../app-icon";
 import { writingProfileSection } from "./writing-profile";
+import { reviewProcessingChoice } from "../review-processing";
 
 const apps: [string, string][] = [
   ["com.microsoft.teams2", "Microsoft Teams"], ["us.zoom.xos", "Zoom"],
@@ -187,6 +188,7 @@ export async function meetingSettingsView(ctx: Context): Promise<HTMLElement> {
   const pathLocked = ctx.info.preview || recording.busy;
   const path = h("span", { class: "grow meeting-path", "aria-label": l("settings.folder.label") }, ctx.info.preview ? l("settings.folder.preview") : settings.meetings_dir || "~/Pennel");
   return h("div", { class: "settings-pane" },
+    reviewProcessingChoice(ctx).root,
     section(l("settings.after_meeting"), null,
       h("h3", {}, l("meetings.automatic_titles_title")), h("p", { class: "help" }, l("meetings.automatic_titles_help")),
       h("h3", {}, l("meetings.summary_automation_title")),

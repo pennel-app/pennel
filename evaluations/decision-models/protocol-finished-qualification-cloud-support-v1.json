@@ -1,0 +1,61 @@
+{
+  "schema_version": 3,
+  "protocol_id": "production-finished-qualification-cloud-support-v1",
+  "use_case": "manual_finished_suggestions",
+  "languages": [
+    "nl"
+  ],
+  "production_contract": "Actual Rust Engine, access-only device Session, managed Review transport, state/support decoder and exact source replay; authenticated same-origin Cloud capability and expected-model pin.",
+  "runtime_policy": "calibrated_support_raw_state_v1",
+  "calibration_role": "Original state fits remain diagnostic. The immutable asset applies only original support fits/thresholds at runtime; raw state/support metrics and distributions remain unchanged.",
+  "identity_evidence": "provider_reported_version; exact returned dated model, actual provider, requested upstream and official endpoint are pinned. No independently verified remote artifact or serving revision is claimed.",
+  "acceptance": {
+    "component_macro_f1_min": 0.9,
+    "complete_item_macro_f1_min": 0.9,
+    "accepted_item_precision_min": 0.95,
+    "unsupported_or_duplicate_items_max": 0,
+    "minimum_calibration_observations": 10,
+    "minimum_calibration_classes": 2,
+    "minimum_calibration_families": 2,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "hosted_warm_complete_job_p95": "within the frozen configured whole-job deadline, never over 90 seconds",
+    "support_macro_f1_min": 0.9,
+    "calibrated_support_macro_f1_min": 0.9
+  },
+  "bounds": {
+    "whole_job_timeout_secs_max": 90,
+    "hosted_total_usd_max": "2.00",
+    "budget_is_cumulative": true,
+    "automatic_retries": false,
+    "fallbacks": false,
+    "new_model_runtime_downloads": false
+  },
+  "items": "Independently authored SOURCE0 state and kind-support judgments. Complete-item metrics include original four state components only, exact literal quotes and every frozen central/adjacent source anchor. Unsupported owner/due/prior extraction remains null. Easy support rows cannot inflate item F1.",
+  "calibration": "Exact original real calibration records and fitted artifact keep their original run_manifest_hash. Verify committed lock and byte-identical model-input contexts before reuse; bind the runtime gate asset separately. No fitting or threshold selection on fresh heldout.",
+  "resource_scope": "Five fresh isolated Python coordinators and thirty retained-coordinator complete jobs, each owning a fresh real Rust Engine CLI for the complete original job. All physical batches share that Engine and one 90-second deadline. RSS is maximum individual-process lifetime high-water mark over the isolated coordinator and waited Rust child; remote server/GUI/aggregate process-tree RSS unmeasured.",
+  "adoption": "All original component, calibrated, complete-item, precision, zero-unsupported/source/identity/deadline/resource gates remain unchanged. Fresh unseen heldout and new5cold/30warm real runtime jobs are mandatory. Original seen heldout is diagnostic only; emit no registry record automatically.",
+  "support_abstention": "Unclear or model-abstained support is a null prediction counted as a missed class/coverage loss, not a third event class. Retain its raw distribution for calibration. State unknown remains a real state.",
+  "transport": "pennel-review-v3 / supported_passages_v3; client UUID and expected_model pin; canonical upstream Perplexity alias and fixed no-fallback/ZDR policy. Captures parsed service JSON before decision decoding, not raw HTTP bytes or observed upstream wire.",
+  "authentication": "Short-lived device access token only via anonymous inherited pipe. No refresh token, OS credential lookup, account/device creation or refresh traffic. Stop on 401 or expiry; freeze each phase inside its usable TTL.",
+  "calibration_reuse": {
+    "source_manifest_sha256": "6a678edd97a67e2bae84734ffbffc72f4e938fdd2652c5059cf7d8193375ddd9",
+    "fitted_lock_commit": "0d4dcfa69c07b84769729e4dee97c42a83fe7436",
+    "preserve_original_run_manifest_hash": true,
+    "exact_model_input_equivalence_required": true,
+    "counts_as_new_inference": false,
+    "original_jobs": 96,
+    "original_requests": 180,
+    "new_calibration_requests": 0,
+    "original_fit_verification": "Historical immutable d38 bridge and original raw JSON replay reproduce the original fit; no refit from current typed Engine values.",
+    "new_runtime_replay": "Exact typed result from each actual recorded Engine outcome remains linked to the recorded parsed-service JSON/UUID/status; new Core validates equality and exposes unchanged raw result. Serialization deltas from historical raw replay are reported separately; choices/states/abstentions/contexts must match and probability drift is bounded to1e-12."
+  },
+  "fresh_evidence": {
+    "corpus_id": "authored-managed-decider-meetings-v2",
+    "heldout_fixtures": 72,
+    "heldout_families": 9,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "seen_heldout_quality_credit": false
+  }
+}

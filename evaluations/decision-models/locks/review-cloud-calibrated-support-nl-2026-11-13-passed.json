@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "experiment_id": "review-cloud-calibrated-support-nl-2026-11-13",
+  "qualification": true,
+  "qualification_id": "finished-nl-bbf47b3e584713bc29e0",
+  "freeze_sha256": "bbf47b3e584713bc29e0b3b3776ba65494f69989d24cc7c19a6420bf88187de6",
+  "ready_lock_original_commit": "2e582a03f2d20ae12d4630c3931176950b6e7759",
+  "report_sha256": "d9c6f08319569acfdda64b4a977af81a7cf5ef3b687d6e3b917e6b3a5c09303b",
+  "gates": [],
+  "runtime_policy": "calibrated_support_raw_state_v1",
+  "calibration_asset_sha256": "a75e758259bab834cc848760c122acc5a9dbd990461749010c063886006e4c1f",
+  "items": {
+    "expected_count": 776,
+    "proposed_count": 715,
+    "correct_count": 715,
+    "unsupported": 0,
+    "missed": 61,
+    "duplicates": 0,
+    "precision": 1.0,
+    "recall": 0.9213917525773195
+  },
+  "raw_component_macro_f1": 0.9221681017549056,
+  "calibrated_component_macro_f1": 0.9197263911616885,
+  "raw_support_macro_f1": 0.9965911865884944,
+  "calibrated_support_macro_f1": 0.9531070471083876,
+  "resources": {
+    "complete": true,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "warm_p95_ms": 5549.255134072155,
+    "peak_rss_bytes": 92684288,
+    "cpu_time_ms": 33873.71799999999,
+    "executed_requests": 70,
+    "remote_server_cpu_rss": "unavailable",
+    "scope": "owned_client"
+  },
+  "new_request_counts": {
+    "development": 2,
+    "heldout": 135,
+    "resources": 70,
+    "calibration": 0
+  },
+  "reused_calibration_requests": 180,
+  "cumulative_exposure_usd": "0.39214918",
+  "historical_conservative_bounds_usd": "0.01270636",
+  "automatic_analysis_accepted": false,
+  "maximum_512_stress_inference": "not_repeated_within_bounded_temporary_allowance",
+  "no_local_record": true,
+  "direct_C7_preserved": true,
+  "source_snapshot": "build/review-cloud-local/measured-source-cloud-support"
+}

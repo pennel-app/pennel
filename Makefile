@@ -27,6 +27,7 @@ desktop-test: theme
 
 packaging-test:
 	python3 -B -m unittest discover -s scripts/tests -p 'test_desktop_*.py'
+	python3 -B -m unittest scripts/tests/test_prepare_decider_runtime.py scripts/tests/test_stage_decider_runtime.py
 
 theme:
 	python3 scripts/generate-theme.py

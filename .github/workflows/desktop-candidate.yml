@@ -64,6 +64,8 @@ jobs:
       PENNEL_CANDIDATE_VERSION: ${{ inputs.version }}
       PENNEL_MAC_BUILD: ${{ inputs.mac_build_number }}
       PENNEL_PREVIOUS_MAC_BUILD: ${{ inputs.previous_mac_build_number }}
+      # Match the explicitly repaired workspace cache rather than a runner-global path.
+      CARGO_BUILD_BUILD_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
     steps:
       - uses: actions/checkout@v5
       - uses: maxim-lobanov/setup-xcode@v1
@@ -83,7 +85,14 @@ jobs:
           key: sherpa-prebuilt
       - name: Rerun sherpa-onnx's build script after a cache restore
         shell: bash
-        run: bash scripts/ci-sherpa-cache.sh apps/desktop/src-tauri/target
+        env:
+          PENNEL_CACHE_BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          py=python3
+          command -v python3 >/dev/null || py=python
+          "$py" -B -m unittest discover -s scripts/tests -p test_ci_sherpa_cache.py
+          bash scripts/ci-sherpa-cache.sh apps/desktop/src-tauri/target
+          bash scripts/ci-sherpa-cache.sh --profile release --target "$PENNEL_CACHE_BUILD_TARGET" apps/desktop/src-tauri/target
       - uses: actions/setup-node@v5
         with:
           node-version: 22

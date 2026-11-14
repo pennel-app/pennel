@@ -18,6 +18,10 @@ name = "pennel-eval"
 path = "src/bin/pennel-eval.rs"
 required-features = ["evaluation"]
 
+[[bin]]
+name = "pennel-decider"
+path = "src/bin/pennel-decider.rs"
+
 [dependencies]
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 base64 = "0.23.1"
@@ -30,7 +34,7 @@ pennel-speakers = { path = "speakers" }
 pennel-typing = { package = "pennel-keyboard", path = "keyboard", default-features = false }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 sha2 = "0.11.1"
 spake2 = "=0.4.0"
 qrcodegen = "1.8.0"

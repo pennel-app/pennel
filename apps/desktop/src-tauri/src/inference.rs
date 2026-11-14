@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use pennel_core::{
     DecisionRequest, DecisionResult, InferenceAvailability, InferenceCancellation,
-    InferenceCapability, InferenceProtocolInfo, InferenceVerification, RerankRequest, RerankResult,
+    InferenceCapability, InferenceConfig, InferenceProtocol, InferenceProtocolInfo,
+    InferenceVerification, ProviderAccount, ProviderKind, RerankRequest, RerankResult, Settings,
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -161,6 +162,259 @@ pub async fn qualified_finished_suggestion_presets(
 }
 
 #[tauri::command]
+pub async fn managed_meeting_review_profile(
+    shared: State<'_, Arc<Shared>>,
+) -> Result<serde_json::Value> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let profile = shared
+            .engine
+            .managed_meeting_review_profile_json()
+            .map_err(error)?;
+        serde_json::from_str(&profile).map_err(error)
+    })
+    .await
+    .map_err(|_| error("The inference availability could not be checked."))?
+}
+
+#[tauri::command]
+pub async fn managed_local_decider_status(
+    shared: State<'_, Arc<Shared>>,
+) -> Result<serde_json::Value> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = shared
+            .engine
+            .managed_local_decider_status_json()
+            .map_err(error)?;
+        serde_json::from_str(&status).map_err(error)
+    })
+    .await
+    .map_err(|_| error("The inference availability could not be checked."))?
+}
+
+struct ManagedLocalDownloadEvents {
+    app: AppHandle,
+    id: String,
+    last: Mutex<std::time::Instant>,
+}
+
+impl pennel_core::DownloadListener for ManagedLocalDownloadEvents {
+    fn on_progress(&self, downloaded: u64, total: u64) {
+        let mut last = self.last.lock().unwrap();
+        if last.elapsed().as_millis() < 200 && downloaded < total {
+            return;
+        }
+        *last = std::time::Instant::now();
+        let _ = self.app.emit(
+            "download-progress",
+            serde_json::json!({
+                "id": self.id, "downloaded": downloaded, "total": total,
+            }),
+        );
+    }
+}
+
+#[tauri::command]
+pub async fn download_managed_local_decider(
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<()> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let status: serde_json::Value = serde_json::from_str(
+            &shared
+                .engine
+                .managed_local_decider_status_json()
+                .map_err(error)?,
+        )
+        .map_err(error)?;
+        let id = status["model_id"]
+            .as_str()
+            .ok_or_else(|| error("The inference availability could not be checked."))?
+            .to_string();
+        let listener = Arc::new(ManagedLocalDownloadEvents {
+            app: app.clone(),
+            id: id.clone(),
+            last: Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(1)),
+        });
+        let result = shared
+            .engine
+            .download_managed_local_decider(listener)
+            .map_err(error);
+        let _ = app.emit(
+            "download-done",
+            serde_json::json!({"id": id, "error": result.as_ref().err()}),
+        );
+        result
+    })
+    .await
+    .map_err(|_| error("The inference request could not be completed."))?
+}
+
+#[tauri::command]
+pub fn cancel_managed_local_decider_download(shared: State<'_, Arc<Shared>>) {
+    shared.engine.cancel_managed_local_decider_download();
+}
+
+#[tauri::command]
+pub async fn remove_managed_local_decider(shared: State<'_, Arc<Shared>>) -> Result<()> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _mutation = mutation(&shared.engine);
+        shared.engine.remove_managed_local_decider().map_err(error)
+    })
+    .await
+    .map_err(|_| error("The inference request could not be completed."))?
+}
+
+fn review_config_matches(config: &InferenceConfig, value: &serde_json::Value) -> bool {
+    let Ok(mut actual) = serde_json::to_value(config) else {
+        return false;
+    };
+    actual.as_object_mut().unwrap().remove("provider_id");
+    let Some(mut expected) = value.as_object().cloned() else {
+        return false;
+    };
+    expected.remove("endpoint");
+    actual == serde_json::Value::Object(expected)
+}
+
+fn review_assignment(
+    settings: &mut Settings,
+    expected_decision: &Option<InferenceConfig>,
+    expected_provider: Option<&ProviderAccount>,
+    config: &InferenceConfig,
+    expected_cloud_epoch: Option<&str>,
+    current_cloud_epoch: &str,
+) -> Result<()> {
+    if settings.decision != *expected_decision
+        || config.protocol == InferenceProtocol::PennelCloud
+            && (expected_cloud_epoch.is_none_or(str::is_empty)
+                || expected_cloud_epoch != Some(current_cloud_epoch))
+    {
+        return Err(error("Review setup changed. Refresh and choose again."));
+    }
+    let mut next = config.clone();
+    let create = if let Some(expected_provider) = expected_provider {
+        if settings
+            .providers
+            .iter()
+            .find(|provider| provider.id == config.provider_id)
+            != Some(expected_provider)
+            || !matches!(
+                (config.protocol, expected_provider.kind),
+                (InferenceProtocol::PennelCloud, ProviderKind::PennelCloud)
+                    | (InferenceProtocol::LocalDecider, ProviderKind::Local)
+            )
+        {
+            return Err(error("Review setup changed. Refresh and choose again."));
+        }
+        None
+    } else if config.protocol == InferenceProtocol::PennelCloud
+        && config.provider_id.is_empty()
+        && !settings
+            .providers
+            .iter()
+            .any(|provider| provider.kind == ProviderKind::PennelCloud)
+    {
+        let account =
+            pennel_core::new_account(ProviderKind::PennelCloud, settings.providers.clone());
+        next.provider_id = account.id.clone();
+        Some(account)
+    } else {
+        return Err(error("Review setup changed. Refresh and choose again."));
+    };
+    if let Some(account) = create {
+        settings.providers.push(account);
+    }
+    settings.decision = Some(next);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_meeting_review_configuration(
+    config: InferenceConfig,
+    expected_decision: Option<InferenceConfig>,
+    expected_cloud_account_epoch: Option<String>,
+    expected_provider: Option<ProviderAccount>,
+    app: AppHandle,
+    shared: State<'_, Arc<Shared>>,
+) -> Result<crate::commands::AppInfo> {
+    let shared = shared.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        // Capability discovery may use the network. Resolve it before the settings writer gate.
+        let accepted = match config.protocol {
+            InferenceProtocol::PennelCloud => {
+                if expected_cloud_account_epoch.as_deref()
+                    != Some(crate::cloud::account_epoch(&shared).as_str())
+                {
+                    return Err(error("Review setup changed. Refresh and choose again."));
+                }
+                let profile: serde_json::Value = serde_json::from_str(
+                    &shared
+                        .engine
+                        .managed_meeting_review_profile_json()
+                        .map_err(error)?,
+                )
+                .map_err(error)?;
+                let presets: serde_json::Value = serde_json::from_str(
+                    &shared
+                        .engine
+                        .qualified_finished_suggestion_presets_json()
+                        .map_err(error)?,
+                )
+                .map_err(error)?;
+                profile["available"] == true
+                    && profile["profile"] == "supported_passages_v3"
+                    && profile["expected_model"]
+                        == config
+                            .expected_model
+                            .as_deref()
+                            .map_or(serde_json::Value::Null, serde_json::Value::from)
+                    && presets.as_array().is_some_and(|items| {
+                        items.iter().any(|preset| {
+                            preset["provider_kind"] == "pennel_cloud"
+                                && preset["configured"]["endpoint"] == profile["endpoint"]
+                                && review_config_matches(&config, &preset["configured"])
+                        })
+                    })
+            }
+            InferenceProtocol::LocalDecider => {
+                let status: serde_json::Value = serde_json::from_str(
+                    &shared
+                        .engine
+                        .managed_local_decider_status_json()
+                        .map_err(error)?,
+                )
+                .map_err(error)?;
+                status["available"] == true
+                    && status["qualified"] == true
+                    && status["configuration"] == serde_json::to_value(&config).map_err(error)?
+            }
+            _ => false,
+        };
+        if !accepted {
+            return Err(error(
+                "This Review setup is not available. Refresh and choose again.",
+            ));
+        }
+        crate::commands::change_settings(&app, &shared, |settings| {
+            review_assignment(
+                settings,
+                &expected_decision,
+                expected_provider.as_ref(),
+                &config,
+                expected_cloud_account_epoch.as_deref(),
+                &crate::cloud::account_epoch(&shared),
+            )
+        })
+    })
+    .await
+    .map_err(|_| error("The inference request could not be completed."))?
+}
+
+#[tauri::command]
 pub async fn set_meeting_suggestion_policy_checked(
     language_policy: String,
     expected_configuration_fingerprint: String,
@@ -273,6 +527,146 @@ pub fn cancel_inference(request_id: String) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn owned_review_setup() -> (Settings, ProviderAccount, InferenceConfig) {
+        let mut settings = pennel_core::default_settings();
+        let account =
+            pennel_core::new_account(ProviderKind::PennelCloud, settings.providers.clone());
+        let mut config =
+            pennel_core::new_inference_config(account.id.clone(), InferenceProtocol::PennelCloud);
+        config.model = "pennel-review-v3".into();
+        config.expected_model = Some("perplexity/pplx-decider-v1.2-20261016".into());
+        config.max_input_bytes = 65536;
+        config.timeout_secs = 90;
+        settings
+            .providers
+            .retain(|provider| provider.id != account.id);
+        settings.providers.push(account.clone());
+        (settings, account, config)
+    }
+
+    #[test]
+    fn scoped_review_assignment_preserves_concurrent_unrelated_settings_and_consent() {
+        let (mut settings, account, config) = owned_review_setup();
+        let expected = settings.decision.clone();
+        settings.meeting_audio_retention_days = 17;
+        settings.suggestion_language = Some("mixed".into());
+        let mut before = settings.clone();
+        review_assignment(
+            &mut settings,
+            &expected,
+            Some(&account),
+            &config,
+            Some("owner-1"),
+            "owner-1",
+        )
+        .unwrap();
+        before.decision = Some(config);
+        assert_eq!(settings, before);
+    }
+
+    #[test]
+    fn scoped_review_assignment_rejects_changed_route_account_or_cloud_session() {
+        for changed in 0..4 {
+            let (mut settings, account, config) = owned_review_setup();
+            let expected = settings.decision.clone();
+            let epoch = if changed == 0 { "owner-2" } else { "owner-1" };
+            match changed {
+                1 => settings.decision = Some(config.clone()),
+                2 => {
+                    settings
+                        .providers
+                        .iter_mut()
+                        .find(|provider| provider.id == account.id)
+                        .unwrap()
+                        .base_url = "https://changed.example".into()
+                }
+                3 => settings
+                    .providers
+                    .retain(|provider| provider.id != account.id),
+                _ => {}
+            }
+            let before = settings.clone();
+            assert!(
+                review_assignment(
+                    &mut settings,
+                    &expected,
+                    Some(&account),
+                    &config,
+                    Some("owner-1"),
+                    epoch
+                )
+                .is_err()
+            );
+            assert_eq!(settings, before);
+        }
+    }
+
+    #[test]
+    fn a_managed_review_assignment_must_match_all_adopted_configuration_fields() {
+        let (_, _, config) = owned_review_setup();
+        let mut value = serde_json::to_value(&config).unwrap();
+        value.as_object_mut().unwrap().remove("provider_id");
+        value["endpoint"] = serde_json::json!("https://api.pennel.app/v1/decisions");
+        assert!(review_config_matches(&config, &value));
+        for field in [
+            "model",
+            "protocol",
+            "expected_model",
+            "upstream",
+            "max_input_bytes",
+            "timeout_secs",
+        ] {
+            let mut changed = value.clone();
+            changed[field] = serde_json::json!("different");
+            assert!(!review_config_matches(&config, &changed));
+        }
+    }
+
+    #[test]
+    fn first_cloud_review_save_creates_only_its_account_and_assignment() {
+        let (_, _, mut config) = owned_review_setup();
+        config.provider_id.clear();
+        let mut settings = pennel_core::default_settings();
+        let before = settings.clone();
+        review_assignment(
+            &mut settings,
+            &None,
+            None,
+            &config,
+            Some("owner-1"),
+            "owner-1",
+        )
+        .unwrap();
+        assert_eq!(settings.providers.len(), before.providers.len() + 1);
+        let created = settings.providers.last().unwrap().clone();
+        assert_eq!(created.kind, ProviderKind::PennelCloud);
+        assert_eq!(settings.decision.as_ref().unwrap().provider_id, created.id);
+        let mut expected = before;
+        config.provider_id = created.id.clone();
+        expected.providers.push(created);
+        expected.decision = Some(config);
+        assert_eq!(settings, expected);
+    }
+
+    #[test]
+    fn first_cloud_review_save_rejects_a_concurrently_added_account() {
+        let (mut settings, _, mut config) = owned_review_setup();
+        config.provider_id.clear();
+        let before = settings.clone();
+        assert!(
+            review_assignment(
+                &mut settings,
+                &None,
+                None,
+                &config,
+                Some("owner-1"),
+                "owner-1"
+            )
+            .is_err()
+        );
+        assert_eq!(settings, before);
+    }
 
     struct NoPreview;
     impl pennel_core::DictationPreviewObserver for NoPreview {

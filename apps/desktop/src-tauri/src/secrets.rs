@@ -83,6 +83,11 @@ impl Secrets {
         }
     }
 
+    #[cfg(all(target_os = "macos", feature = "capture-evaluation"))]
+    pub(crate) fn is_capture_memory_store(&self) -> bool {
+        self.in_memory && self.service == "dev.pennel.Pennel.capture.preview"
+    }
+
     pub fn new(preview: bool) -> Self {
         let service = match (cfg!(target_os = "macos"), preview) {
             (true, false) => "dev.pennel.Pennel",
@@ -508,6 +513,18 @@ mod tests {
         assert_ne!(capture.service, Secrets::new(false).service);
         assert!(capture.service.ends_with(".preview"));
         assert!(capture.migrate_legacy(&[]).is_err());
+    }
+
+    #[cfg(all(target_os = "macos", feature = "capture-evaluation"))]
+    #[test]
+    fn evaluation_leases_require_the_capture_memory_store_not_saved_profile_access() {
+        assert!(Secrets::for_capture().is_capture_memory_store());
+        assert!(!Secrets::in_memory().is_capture_memory_store());
+        assert!(!Secrets::new(true).is_capture_memory_store());
+        assert!(!Secrets::new(false).is_capture_memory_store());
+        let mut capture = Secrets::for_capture();
+        capture.in_memory = false;
+        assert!(!capture.is_capture_memory_store());
     }
 
     #[test]

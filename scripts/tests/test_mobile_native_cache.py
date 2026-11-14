@@ -37,6 +37,7 @@ class NativeCacheTests(unittest.TestCase):
             "scripts/with-toolchain.sh": "fixture toolchain\n",
             "scripts/mobile-native-cache.py": "fixture cache\n",
             "assets/qualifications/meeting-assistance.json": '{"schema_version":1,"adopted_records":[]}\n',
+            "assets/qualifications/meeting-support-cloud-v1.json": '{"schema_version":1,"runtime_policy":"fixture-v1"}\n',
             ".cargo/config.toml": "[build]\n",
             "apps/mobile/app/index.tsx": "fixture UI\n",
         }.items():
@@ -69,6 +70,7 @@ class NativeCacheTests(unittest.TestCase):
             "bindings_sha256": hashlib.sha256(bindings.read_bytes()).hexdigest(),
             "qualification_registry_sha256": cache.digest(self.root / "assets/qualifications/meeting-assistance.json"),
             "qualification_registry_adopted_records": 0,
+            "support_calibration_sha256": cache.digest(self.root / "assets/qualifications/meeting-support-cloud-v1.json"),
         }))
         self.cache_root = self.root.parent / "derived-data/pennel-native"
         self.inspect = lambda file: ["arm64"]
@@ -142,6 +144,33 @@ class NativeCacheTests(unittest.TestCase):
         (self.root / "assets/qualifications/meeting-assistance.json").unlink()
         with self.assertRaisesRegex(ValueError, "input is missing"):
             cache.fingerprint(self.root, self.toolchain, {})
+
+    def test_support_asset_change_misses_old_cache_and_cannot_store_stale_libraries(self):
+        self.store()
+        original = (self.artifacts / "PennelCore/pennel_core.swift").read_bytes()
+        support = self.root / "assets/qualifications/meeting-support-cloud-v1.json"
+        support.write_text('{"schema_version":1,"runtime_policy":"updated-fixture"}\n')
+        updated = cache.fingerprint(self.root, self.toolchain, {})
+        self.assertNotEqual(updated["key"], self.context["key"])
+        self.assertEqual(updated["context"]["inputs"][support.relative_to(self.root).as_posix()], cache.digest(support))
+        self.assertFalse(cache.restore(self.root, self.cache_root, updated, self.inspect)["hit"])
+        self.assertEqual((self.artifacts / "PennelCore/pennel_core.swift").read_bytes(), original)
+        with self.assertRaisesRegex(ValueError, "support calibration"):
+            cache.store(self.root, self.cache_root, updated, "b" * 40, self.inspect)
+
+    def test_missing_support_asset_cannot_produce_a_native_cache_key(self):
+        (self.root / "assets/qualifications/meeting-support-cloud-v1.json").unlink()
+        with self.assertRaisesRegex(ValueError, "input is missing"):
+            cache.fingerprint(self.root, self.toolchain, {})
+
+    def test_support_asset_manifest_digest_is_required_and_validated(self):
+        file = self.artifacts / "manifest.json"
+        original = json.loads(file.read_text())
+        for digest in (None, 1, "", "0" * 63, "G" * 64):
+            with self.subTest(digest=digest):
+                file.write_text(json.dumps({**original, "support_calibration_sha256": digest}))
+                with self.assertRaisesRegex(ValueError, "support calibration"):
+                    self.store()
 
     def test_registry_manifest_count_requires_a_nonnegative_integer(self):
         file = self.artifacts / "manifest.json"

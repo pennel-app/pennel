@@ -145,9 +145,9 @@
     settings.providers.push({ id: "qa-verifier", kind: "custom", name: "Synthetic verifier", base_url: "https://verifier.example.invalid/v1" });
     settings.decision = { provider_id: "qa-verifier", protocol: "perplexity", model: "synthetic-unqualified", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 3 };
   }
-  if (options.inference_cloud) {
+  if (options.inference_cloud || options.review_cloud_available || options.review_cloud_qualified) {
     settings.providers.push({ id: "qa-cloud", kind: "pennel_cloud", name: "Pennel Cloud", base_url: "https://api.pennel.app/v1" });
-    if (options.inference_cloud !== "signed_out") {
+    if (options.inference_cloud && options.inference_cloud !== "signed_out") {
       settings.decision = { provider_id: "qa-cloud", protocol: "pennel_cloud", model: "pennel-auto", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 30 };
       settings.reranking = clone(settings.decision);
     }
@@ -322,6 +322,21 @@
   });
   // `cloud` is unset (signed out), "synced" or "conflict"; all accounts, devices and codes are synthetic.
   let signedIn = Boolean(options.cloud) || Boolean(options.inference_cloud && options.inference_cloud !== "signed_out");
+  let localReviewState = options.review_local_state || "unsupported";
+  const cloudReviewProfile = () => ({ available: signedIn && options.review_cloud_available === true,
+    reason_code: !signedIn ? "not_signed_in" : options.review_cloud_available ? "available" : options.review_cloud_reason || "disabled",
+    profile: "supported_passages_v3", model: "pennel-review-v3", configured_model: "perplexity/pplx-decider-v1.2",
+    expected_model: "perplexity/pplx-decider-v1.2-20261016", upstream: "perplexity", endpoint: signedIn ? "https://api.pennel.app/v1/decisions" : null,
+    limits: { max_input_bytes: 65536, max_questions: 64, max_batch_windows: 8, request_timeout_secs: 35 } });
+  const cloudReviewPreset = () => ({ provider_kind: "pennel_cloud", qualification_id: "synthetic-cloud-ui-only", language_policy: "nl",
+    identity_evidence: "provider_reported_version", weights_independently_verified: false, actual_provider: "Perplexity",
+    actual_model: "perplexity/pplx-decider-v1.2-20261016", configured: { protocol: "pennel_cloud", model: "pennel-review-v3",
+      expected_model: "perplexity/pplx-decider-v1.2-20261016", upstream: null, endpoint: "https://api.pennel.app/v1/decisions", max_input_bytes: 65536, timeout_secs: 90 } });
+  const localReviewStatus = () => ({ model_id: "pennel-decider-flash-v1.2-q8_0", display_name: "Decider Flash", available: options.review_local_qualified === true && localReviewState === "ready",
+    qualified: options.review_local_qualified === true && localReviewState === "ready", state: localReviewState, reason_code: localReviewState,
+    download_bytes: 5157837472, downloaded_bytes: ["ready", "unqualified"].includes(localReviewState) ? 5157837472 : localReviewState === "downloading" ? 1289459368 : 0,
+    runtime_available: localReviewState !== "unsupported", configuration: options.review_local_qualified ? { provider_id: "local", protocol: "local_decider", model: "pennel-decider-flash-v1.2-q8_0",
+      expected_model: "sha256:ffb27ade8976765b0e6943a0b7f5f3fd0f7042d45ad90256a76d608bcd3942c2", upstream: null, max_input_bytes: 16000, timeout_secs: 90 } : null });
   let cloudAccountEpoch = 0;
   let syncSetupPhase = options.sync_setup || (signedIn ? "active" : "signed_out");
   if (options.sync_setup) settings.cloud_sync = options.sync_setup === "active";
@@ -1317,7 +1332,26 @@
         keys[args.account] = Boolean(args.key); providerRevisions[args.account] = (providerRevisions[args.account] || 0) + 1;
         persistOwnerReview({ keys: { [args.account]: keys[args.account] }, providerRevisions: { [args.account]: providerRevisions[args.account] } }); return info();
       }
-      case "qualified_finished_suggestion_presets": return clone(options.tested_suggestion_presets || []);
+      case "qualified_finished_suggestion_presets": return clone([...(options.tested_suggestion_presets || []), ...options.review_cloud_qualified ? [cloudReviewPreset()] : []]);
+      case "managed_meeting_review_profile": return clone(cloudReviewProfile());
+      case "managed_local_decider_status": return clone(localReviewStatus());
+      case "set_meeting_review_configuration": {
+        if (JSON.stringify(settings.decision ?? null) !== JSON.stringify(args.expectedDecision)
+          || args.config.protocol === "pennel_cloud" && String(cloudAccountEpoch) !== args.expectedCloudAccountEpoch
+          || JSON.stringify(settings.providers.find(provider => provider.id === args.config.provider_id)) !== JSON.stringify(args.expectedProvider)) throw Error("Review setup changed. Refresh and choose again.");
+        if (options.settings_save_error) throw Error(options.settings_save_error);
+        settings.decision = clone(args.config); persistReviewSettings(); emit("settings-changed", null); return info();
+      }
+      case "download_managed_local_decider": {
+        if (localReviewState === "unsupported") throw Error("Local Review is not supported by this build.");
+        localReviewState = "downloading";
+        await new Promise(resolve => setTimeout(resolve, options.review_download_delay_ms || 50));
+        if (options.review_download_error) { localReviewState = "error"; throw Error("Synthetic Decider download failure"); }
+        if (localReviewState === "downloading") localReviewState = options.review_local_qualified ? "ready" : "unqualified";
+        return null;
+      }
+      case "cancel_managed_local_decider_download": localReviewState = "not_installed"; return null;
+      case "remove_managed_local_decider": localReviewState = "not_installed"; return null;
       case "inference_protocols": return [
         ["open_router_decisions", "OpenRouter Decisions", "https://openrouter.ai/api/v1"],
         ["open_router_system_one", "OpenRouter System One", "https://openrouter.ai/api/v1"],

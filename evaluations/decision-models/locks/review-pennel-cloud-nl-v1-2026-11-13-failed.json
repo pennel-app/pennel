@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "experiment_id": "review-pennel-cloud-nl-v1-2026-11-13",
+  "outcome": "failed_quality_no_adoption",
+  "qualification": false,
+  "production_admission": false,
+  "freeze_sha256": "ebee7a9eceb6478390998984e84df25417c115abaf5c33fc767b71d1b98b63b7",
+  "fitted_lock_commit": "0d4dcfa69c07b84769729e4dee97c42a83fe7436",
+  "report_sha256": "08b245946a91a3b0e54226e3808efdc7ff7906982ea9ae709ff3d39cde53a265",
+  "gates": [
+    "unsupported_owner_due_state_or_source"
+  ],
+  "items": {
+    "expected_count": 1044,
+    "proposed_count": 1027,
+    "correct_count": 1021,
+    "unsupported": 6,
+    "missed": 23,
+    "duplicates": 0,
+    "precision": 0.994157740993184,
+    "recall": 0.9779693486590039
+  },
+  "raw_component_macro_f1": 0.9775570119182435,
+  "calibrated_component_macro_f1": 0.9461689941909983,
+  "raw_support_macro_f1": 0.9924434542449101,
+  "calibrated_support_macro_f1": 0.9695092997881842,
+  "resources": {
+    "complete": true,
+    "cold_samples": 5,
+    "warm_samples": 30,
+    "warm_p95_ms": 6593.974139599597,
+    "peak_rss_bytes": 74989568,
+    "cpu_time_ms": 21844.768000000004,
+    "executed_requests": 70,
+    "remote_server_cpu_rss": "unavailable",
+    "scope": "owned_client"
+  },
+  "request_counts": {
+    "development": 2,
+    "calibration": 180,
+    "heldout": 181,
+    "resources": 70,
+    "total": 433
+  },
+  "new_heldout_inference_complete": true,
+  "maximum_512_stress": "not_run_after_quality_failure",
+  "no_local_record_created": true,
+  "no_cloud_record_created": true,
+  "cumulative_exposure_usd": "0.34262418",
+  "historical_conservative_bounds_usd": "0.01270636",
+  "source_snapshot": "build/review-cloud-local/measured-source-raw-cloud",
+  "failure_detail": "Three answered-location facts became decisions, two settled stacking choices became actions, one replaced stacking choice became a changed action. Source maps and frozen judgments independently verified.",
+  "next_policy_status": "unapproved; original calibration may support a separate abstention policy, requiring fresh held-out and new resource inference",
+  "normal_monthly_quota_unchanged": true
+}
