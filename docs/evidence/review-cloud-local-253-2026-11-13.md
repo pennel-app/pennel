@@ -60,3 +60,13 @@ The exact emitted record is `finished-nl-bbf47b3e584713bc29e0`, bound to the act
 - Owned mocked setup fixtures include matched English/Dutch light/dark before/after images, 340px enlarged-type geometry and advanced-provider regressions. Mock readiness is not service or model acceptance.
 
 The new-policy default Core suite passed 1,381 tests (eight explicit ignores); its evaluation Python suite passed 433 tests, and the desktop backend passed 426 tests using the existing matching native SDK. Final signed package checks, regenerated final mobile libraries/builds and merge evidence remain separate. Existing physical-device, signed-upgrade, keyboard, automatic-analysis and broader #96 acceptance gates remain open.
+
+## Final delivery and compatibility
+
+App PR #258 merged as `ce4d1370587717cdd603c7b5cbbb91c3617e3619` after every selected CI check passed: Mac desktop frontend/backend/package validation, offline decision evaluation, generated iOS simulator/device builds and hosted native runtime/keyboard tests. Windows/Linux routine product validation remains paused by #174.
+
+The local final Mac Preview was signed by personal team `B538Q2K76C`; strict/deep signatures, runtime distribution/signature checks and exact embedded registry/support bytes passed. Its main binary SHA-256 is `beb4b89e868049fbd3d7069a39797ceac2bbfd4506e834f364347ee7e7f6b513`; the app is 48.79 MiB. This is a signed Preview build, not notarized distribution acceptance.
+
+Final mobile compatibility passed clean/repeated generation, locked Pods, both unsigned ARM64 Release builds and 180 logical hosted native tests (188 parameter-expanded invocations). Both exact assets were found in both core archives/frameworks, both Release executables and the directly loaded Debug dylib. The generated bindings differ from the retained bytes only in inherited Teams-default documentation comments. See [exact mobile commands and hashes](../mobile.md). Prior projects/products/symbol trees were retained; the owned QA simulator was shut down and unrelated states preserved.
+
+Production Cloud availability was enabled after qualification. The isolated test grant was revoked, its device signed out and its memory-only holder stopped; ordinary app credentials were preserved. Public smoke checks passed. Total cumulative exposure was US$0.39214918 with no pending or unresolved new charge. No local or automatic-analysis approval was created. Issues #253 and #96 retain their remaining acceptance work.

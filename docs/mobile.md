@@ -657,3 +657,55 @@ bash scripts/ci-xcodebuild.sh test -workspace apps/mobile/ios/Pennel.xcworkspace
 ```
 
 These results establish build compatibility and synthetic-sample verification. Physical iPhone, signed upgrades, keyboard cold start, real provider/acoustic quality, Cloud and store acceptance remain separate gates. The offline speech check required the word “test”; it does not establish exact recognition of the Pennel name.
+
+## Managed Review shared-core compatibility — 14 November 2026
+
+Final managed Review mobile compatibility was verified on 14 November 2026. Both lean ARM64 core slices, clean and repeated non-clean Prebuild, locked CocoaPods 1.16.2 (`--deployment`), and all six native ownership checks passed. Simulator and device Release builds both passed with `CODE_SIGNING_ALLOWED=NO`.
+
+| Final input | Exact value |
+| --- | --- |
+| Source commit | `a384a5351050d33bc025022f03b280c711d3c4c2` |
+| Core source SHA-256 | `3adc3a32281f0903fbb26096f88fbc77e76f4b59e4c065d7822d772bd73b0c1b` |
+| Generated Swift bindings SHA-256 | `b2a97b2a3ef2b04e6a3a94972f4942582ca023738280f20dabaeff637c7ae48d` |
+| `assets/qualifications/meeting-assistance.json` SHA-256 | `b58ed47c4c4e4946845359df0c41da4afe048ce0a08e734cd75b715abdaff8e0` |
+| `assets/qualifications/meeting-support-cloud-v1.json` SHA-256 | `a75e758259bab834cc848760c122acc5a9dbd990461749010c063886006e4c1f` |
+
+The manifest declares no optional core features, both `aarch64-apple-ios` and `aarch64-apple-ios-sim`, and two adopted records. Source and both asset hashes remained unchanged throughout every phase. Exact registry and support-calibration bytes were verified in both core archives, their XCFramework copies, both Release app executables, and the Debug app's directly loaded `Pennel.debug.dylib`; Cargo dependency paths also include both assets.
+
+These exact guarded phase commands ran from the repository root:
+
+```sh
+/Users/landerparren/.local/bin/worktree-storage run -- \
+  env CI=1 PENNEL_VARIANT=preview make mobile-prebuild
+
+/Users/landerparren/.local/bin/worktree-storage run -- \
+  env CI=1 PENNEL_VARIANT=preview \
+  npm --prefix apps/mobile run build:ios
+
+/Users/landerparren/.local/bin/worktree-storage run -- \
+  env CI=1 PENNEL_VARIANT=preview PENNEL_IOS_DESTINATION=generic/platform=iOS \
+  npm --prefix apps/mobile run build:ios
+
+/Users/landerparren/.local/bin/worktree-storage run -- \
+  env CI=1 PENNEL_VARIANT=preview \
+  python3 build/review-cloud-local/mobile-compat/run-owned-hosted.py
+```
+
+The last command used a retained evidence wrapper to boot the owned QA simulator and guarantee its shutdown. Its captured repository test invocation, with checkout paths shown relative to the repository root, was:
+
+```sh
+bash scripts/ci-xcodebuild.sh test \
+  -workspace apps/mobile/ios/Pennel.xcworkspace \
+  -scheme Pennel -configuration Debug \
+  -destination 'platform=iOS Simulator,id=27FDA0E6-5C07-4193-AB2B-4C38FC32ADAF' \
+  -derivedDataPath apps/mobile/build/TestDerivedData \
+  -parallel-testing-enabled NO \
+  -resultBundlePath build/review-cloud-local/mobile-compat/final-hosted-tests/NativeTests.xcresult \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+```
+
+Hosted tests passed: **180 logical tests** (36 keyboard, 144 runtime), **188 parameter-expanded invocations**, zero failures and zero skips. Owned iPhone 18 Pro / iOS 27 simulator `27FDA0E6-5C07-4193-AB2B-4C38FC32ADAF` finished **Shutdown**. All five pre-existing simulator states were preserved; no extra clones were created. Earlier generated projects, artifacts, core libraries, and Xcode build/module/symbol trees remain retained.
+
+Evidence: `build/review-cloud-local/mobile-compat/final-summary.json`, `final-all-linked-artifacts.json`, `final-hosted-tests/xcresult-summary.json`, and `final-hosted-tests/NativeTests.xcresult` under that same evidence directory. The final verification made no canonical source edits.
+
+This run establishes build and simulator compatibility. It does **not** establish physical-device, mobile Cloud, App Store/TestFlight, or keyboard cold-start acceptance. No provider/model or external authentication operations ran in this mobile verification.
