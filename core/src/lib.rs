@@ -52,6 +52,8 @@ mod meeting_utterances;
 mod meetings;
 mod models;
 mod paste_queue;
+#[cfg(feature = "peer-transport-qa")]
+pub mod peer_compare;
 mod provider;
 mod provider_test;
 mod recording;

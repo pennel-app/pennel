@@ -1,5 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { peerTransportQAEnabled } = require('./peer-transport-qa.cjs');
+
+const peerQAServiceFiles = ['PeerComparisonTransport.swift', 'PeerComparisonBridge.swift'];
 
 const serviceFiles = [
   'AppModel.swift', 'AppPaths.swift', 'AppRouter.swift', 'Keychain.swift', 'ErrorText.swift', 'ProviderKinds.swift',
@@ -18,11 +21,12 @@ function link(source, destination, directory = false) {
   fs.symlinkSync(path.relative(path.dirname(destination), source), destination, directory ? 'dir' : 'file');
 }
 
-function prepareNativeSources(workspace) {
+function prepareNativeSources(workspace, environment = process.env) {
+  const selectedFiles = peerTransportQAEnabled({}, environment) ? [...serviceFiles, ...peerQAServiceFiles] : serviceFiles;
   const generated = path.join(workspace, 'modules/pennel-mobile/generated/ios');
   // CocoaPods ignores source patterns escaping the pod root. These links keep one canonical edited source.
   fs.rmSync(generated, { recursive: true, force: true });
-  for (const file of serviceFiles) {
+  for (const file of selectedFiles) {
     const source = path.join(workspace, 'native/ios/Services', file);
     if (!fs.existsSync(source)) throw new Error(`Required native service source is missing: ${file}`);
     link(source, path.join(generated, 'Services', file));
@@ -45,4 +49,4 @@ if (require.main === module) {
   process.stdout.write(`Prepared pod-visible links for ${serviceFiles.length} native service sources and the matching core artifacts.\n`);
 }
 
-module.exports = { prepareNativeSources, serviceFiles };
+module.exports = { prepareNativeSources, serviceFiles, peerQAServiceFiles };

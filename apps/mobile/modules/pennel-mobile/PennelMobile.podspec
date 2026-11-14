@@ -1,6 +1,20 @@
 require 'json'
 
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
+peer_qa = ENV.fetch('PENNEL_PEER_TRANSPORT_QA', '0')
+raise 'PENNEL_PEER_TRANSPORT_QA must be 0 or 1' unless ['0', '1'].include?(peer_qa)
+if peer_qa == '1' && (ENV['PENNEL_VARIANT'] == 'production' || ENV['PENNEL_TESTFLIGHT'] == '1')
+  raise 'Peer transport qualification is restricted to local Pennel Preview builds'
+end
+manifest_path = File.join(__dir__, '../../artifacts/ios/manifest.json')
+if File.exist?(manifest_path)
+  features = JSON.parse(File.read(manifest_path)).fetch('features')
+  unless features.include?('peer-transport-qa') == (peer_qa == '1')
+    raise 'Prepare matching ordinary or peer-transport-qa core artifacts before installing Pods'
+  end
+elsif peer_qa == '1'
+  raise 'Prepare peer-transport-qa core artifacts before installing Pods'
+end
 
 Pod::Spec.new do |s|
   s.name = 'PennelMobile'

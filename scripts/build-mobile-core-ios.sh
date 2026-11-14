@@ -2,6 +2,18 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+core_features=(--no-default-features)
+case "${PENNEL_PEER_TRANSPORT_QA-0}" in
+  0) ;;
+  1)
+    if [ "${PENNEL_VARIANT-preview}" = production ] || [ "${PENNEL_TESTFLIGHT-0}" = 1 ]; then
+      echo "Peer transport qualification is restricted to local Pennel Preview builds" >&2
+      exit 2
+    fi
+    core_features+=(--features peer-transport-qa)
+    ;;
+  *) echo "PENNEL_PEER_TRANSPORT_QA must be 0 or 1" >&2; exit 2 ;;
+esac
 artifacts="$root/apps/mobile/artifacts/ios"
 device_target=aarch64-apple-ios
 sim_target=aarch64-apple-ios-sim
@@ -56,6 +68,14 @@ with library.open('rb') as stream:
 PY
 }
 verify_qualification_inputs
+mkdir -p "$artifacts"
+# A failed switch must not leave new libraries labelled by an old ordinary/QA manifest.
+python3 - "$artifacts/manifest.json" <<'PY'
+import json,os,pathlib,sys,uuid
+path=pathlib.Path(sys.argv[1]); temporary=path.with_name(path.name+'.pending-'+uuid.uuid4().hex)
+temporary.write_text(json.dumps({'schema':1,'preparing':True})+'\n')
+os.replace(temporary,path)
+PY
 bash "$root/scripts/build-keyboard-core-ios.sh"
 verify_qualification_inputs
 binding_dir="$root/core/target/$binding_target/release"
@@ -64,7 +84,7 @@ framework="$artifacts/PennelCoreFFI.xcframework"
 
 for target in "${targets[@]}"; do
   verify_qualification_inputs
-  cargo build --manifest-path "$root/core/Cargo.toml" --release --target "$target" --lib --no-default-features
+  cargo build --manifest-path "$root/core/Cargo.toml" --release --target "$target" --lib "${core_features[@]}"
   verify_qualification_inputs
   verify_embedded_qualification_inputs "$target"
 done
@@ -72,7 +92,7 @@ done
 rm -rf "$bindings"
 # Bindgen reads crate metadata from its working directory; use the matching lean library.
 verify_qualification_inputs
-(cd "$root/core" && cargo run --quiet --no-default-features --bin uniffi-bindgen -- \
+(cd "$root/core" && cargo run --quiet "${core_features[@]}" --bin uniffi-bindgen -- \
   generate --library "$binding_dir/libpennel_core.dylib" --language swift --out-dir "$bindings")
 verify_qualification_inputs
 
@@ -92,7 +112,7 @@ verify_qualification_inputs
 mkdir -p "$artifacts/PennelCore"
 cp "$bindings/pennel_core.swift" "$artifacts/PennelCore/"
 python3 - "$root" "$artifacts" "$qualification_snapshot" "${targets[@]}" <<'PY'
-import base64,hashlib,json,pathlib,subprocess,sys
+import base64,hashlib,json,os,pathlib,subprocess,sys,uuid
 root,artifacts=map(pathlib.Path,sys.argv[1:3])
 pinned=json.loads(pathlib.Path(sys.argv[3]).read_text())
 registry=base64.b64decode(pinned['bytes_base64'],validate=True)
@@ -108,12 +128,15 @@ manifest={'schema':1,'revision':subprocess.check_output(['git','rev-parse','HEAD
  'qualification_registry_sha256':pinned['qualification_registry_sha256'],
  'qualification_registry_adopted_records':pinned['qualification_registry_adopted_records'],
  'support_calibration_sha256':pinned['support_calibration_sha256'],
- 'features':[],'targets':sys.argv[4:]}
+ 'features':['peer-transport-qa'] if os.environ.get('PENNEL_PEER_TRANSPORT_QA')=='1' else [],'targets':sys.argv[4:]}
 if (root/'assets/qualifications/meeting-assistance.json').read_bytes()!=registry:
  raise SystemExit('The qualification registry changed during native preparation. Start native preparation again.')
 if (root/'assets/qualifications/meeting-support-cloud-v1.json').read_bytes()!=support:
  raise SystemExit('The support calibration asset changed during native preparation. Start native preparation again.')
-(artifacts/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+destination=artifacts/'manifest.json'
+temporary=destination.with_name(destination.name+'.complete-'+uuid.uuid4().hex)
+temporary.write_text(json.dumps(manifest,indent=2)+'\n')
+os.replace(temporary,destination)
 PY
 verify_qualification_inputs
 echo "Prepared matching mobile Rust libraries and Swift bindings in $artifacts"

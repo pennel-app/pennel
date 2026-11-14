@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const xcode = require('xcode');
-const { serviceFiles } = require('../plugins/native-sources.cjs');
+const { serviceFiles, peerQAServiceFiles } = require('../plugins/native-sources.cjs');
+const { peerTransportQAEnabled } = require('../plugins/peer-transport-qa.cjs');
 
 const root = path.resolve(__dirname, '..');
 const support = path.join(root, 'ios/Pods/Target Support Files');
@@ -126,5 +127,19 @@ test('owned Swift remains strict 6 while undeclared SDK pods use stock Swift 5',
     const native = target(objects, name);
     const configs = objects.XCConfigurationList[native.buildConfigurationList].buildConfigurations;
     for (const entry of configs) assert.equal(unquote(objects.XCBuildConfiguration[entry.value].buildSettings.SWIFT_VERSION), expected, name);
+  }
+});
+
+test('QA source membership and pod flags agree with the explicitly selected core graph', () => {
+  const objects = graph();
+  const enabled = peerTransportQAEnabled();
+  const sources = compileSources(objects, 'PennelMobile');
+  for (const file of peerQAServiceFiles) assert.equal(sources.some((source) => source.endsWith(file)), enabled, file);
+  for (const [id, item] of realEntries(objects.PBXNativeTarget)) {
+    const name = unquote(item.name);
+    for (const entry of objects.XCConfigurationList[item.buildConfigurationList].buildConfigurations) {
+      const flags = unquote(objects.XCBuildConfiguration[entry.value].buildSettings.SWIFT_ACTIVE_COMPILATION_CONDITIONS);
+      assert.equal(flags.split(/\s+/).includes('PENNEL_PEER_TRANSPORT_QA'), enabled && name === 'PennelMobile', name);
+    }
   }
 });
