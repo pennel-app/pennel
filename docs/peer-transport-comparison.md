@@ -328,9 +328,42 @@ grew from 6,256 to 38,362. It failed transition validation after 2.807 seconds;
 this was not a new zero-PCM failure and is not a recovery pass. A separate
 preferred-sample-rate control then ended when its runner entered the background
 and exited with code zero before reaching the rate request. That result also
-does not establish format recovery. The short foreground-controlled check is
-pending; earlier failures and unsuccessful controls remain retained.
+does not establish format recovery. Live format recovery remains unverified; earlier failures and unsuccessful
+controls remain retained. No further hardware probe was used to claim a pass.
 These are recording-component results, not full meeting-archive or ASR acceptance.
+
+The 120-cycle recording evidence is bound to source revision
+`80bfb8fa315bf12e5245f4bd69aac49030e6e861`; subsequent optional hardware controls
+are in `ee91545a9c55234be54df21cd197f1481c8a06ff`. The signed recording binary was
+preserved before those controls were added. Logical evidence IDs below are
+relative to `mic-diagnostics`; configurations and complete diagnostics stay private.
+
+| Follow-up artifact | SHA-256 |
+| --- | --- |
+| Recording app executable | `4aa5a3399df604f7d82ef18915c1325b01f36b6bc9f40d0d2b8b03f46bd8800a` |
+| Recording runtime test executable | `a5997dc69dc2abec1d402dfb5b0cc9bc998c85f6d5415588529fb892541cee2b` |
+| Compiled capture test source | `9fc05ae638bda61e5dbda13b6f03aa2aa32fa0a163b64216af75268eaf539cac` |
+| Raw control numeric receipt | `5220b8573cdf10a602dfc460bf1892754f8b9281a31943f5c14093e35bebf0b1` |
+| Campaign 1 result receipt | `cef1da63d2df745c4370ab9efc0eef0985bc48d2668ebb2517a3451b2c1ddeee` |
+| Campaign 2 result receipt | `a59b8acb8cc7b3ead7da045cb0577da0f097307a05f37eb716feaee396f4c2c8` |
+
+Run the recording selector listed below with
+`PENNEL_PEER_CAPTURE_CONFIG_FILE=1` and fresh private capture controllers.
+Set `PENNEL_PEER_CAPTURE_RAW_CONTROL=1` only for the diagnostic raw control;
+leave it absent or zero for production owners. The stopped-engine regression
+selector is `MeetingRuntimeTests/shared_microphone_restarts_a_single_client_and_ignores_late_events_after_stop()`.
+The optional controls are `PeerComparisonCaptureTests/microphoneRecoversAfterPhysicalInputRouteChange()`
+with `PENNEL_PEER_CAPTURE_ROUTE_CONTROL=1`, and
+`PeerComparisonCaptureTests/microphoneRecoversAfterSessionFormatChange()` with
+`PENNEL_PEER_CAPTURE_FORMAT_CONTROL=1`. They require observed format changes;
+preference requests, unavailable inputs and interrupted runners cannot pass.
+
+Only hosted test sources changed during this follow-up. Ordinary Preview was
+therefore restored in place from its retained, reverified personally signed
+snapshot (`4fff55de…` in the artifact table), after restoring matching feature-off
+Core artifacts, bindings and Pods. All owned recording controllers stopped;
+there was no subsequent phone launch or inspection. No production microphone
+code, provider, sync behavior or persistent system audio setting was changed.
 
 ### Lifecycle checkpoint and reload
 
