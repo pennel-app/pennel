@@ -275,7 +275,62 @@ one bounded retry also failed, in the Quinn no-transfer baseline before any
 transport started: `running=false`, zero samples, no callback after stop, after
 3.111 seconds and with no completed phase receipt. Further broad retries stopped.
 The earlier 60-cycle table is historical passing evidence, not acceptance of the
-final app. Both final missing-audio failures leave the recording gate unresolved.
+final app. At that revision, both final missing-audio failures left the recording gate unresolved; the follow-up below records the corrected seam separately.
+
+### Microphone baseline investigation and corrected recording seam
+
+The follow-up diagnostic raw control reproduced zero PCM with the app active
+and record permission granted. At approximately 1.001 seconds a new-device route
+notification reported a 24 kHz session; at 1.132 seconds an engine-configuration
+notification reported a stopped engine. At the two-second PCM deadline the raw
+capture still remembered a 48 kHz physical format while the session was 24 kHz,
+and the engine remained stopped with no callbacks. No interruption or background
+transition was recorded. Notification object identity was not correlated to the
+private engine, so the event association is retained with that limit. Apple's
+[configuration-change documentation](https://developer.apple.com/documentation/foundation/nsnotification/name-swift.struct/avaudioengineconfigurationchange)
+explains why format changes can stop and uninitialize an engine.
+
+The qualification harness directly constructed raw `MicCapture`, bypassing the
+`SharedMicrophone` and `SharedAudioSession` owners used by meeting recording.
+The corrected seam uses isolated instances of those existing production owners;
+no production microphone or transport implementation changed. An explicit raw
+control remains available through `PENNEL_PEER_CAPTURE_RAW_CONTROL=1`.
+Diagnostics contain numeric state and counters only, with no microphone content,
+route names or device identifiers. Failure cleanup now also awaits cancelled
+transfers before removing scoped files and identities.
+
+Two fresh-process corrected campaigns passed all **120 cycles** across Quinn and
+native TLS, each with ten baseline, ten active and ten stalled operations per
+candidate. The existing two-second first-PCM deadline and 300 ms capture hold
+remain unchanged. Each cycle must additionally deliver more PCM during that
+hold; a single initial buffer cannot pass. Every passing cycle delivered at
+least 6,256 samples, with no callback observed in the 20 ms post-Stop window.
+A separate hosted regression verifies that a configuration change restarts a
+stopped engine for its existing listener, while late notifications after Stop
+cannot resurrect capture or callbacks.
+
+| Candidate / phase | Campaign 1 start median/max, ms | Campaign 1 stop median/max, ms | Campaign 2 start median/max, ms | Campaign 2 stop median/max, ms |
+| --- | ---: | ---: | ---: | ---: |
+| Quinn baseline | 280.41 / 331.88 | 156.04 / 159.73 | 281.67 / 325.81 | 155.45 / 188.25 |
+| Quinn active | 274.28 / 303.34 | 148.94 / 155.16 | 277.30 / 318.60 | 146.42 / 154.05 |
+| Quinn stalled | 281.94 / 332.04 | 162.78 / 183.65 | 280.62 / 332.05 | 163.42 / 189.88 |
+| Native baseline | 283.54 / 323.59 | 162.74 / 174.52 | 283.64 / 333.21 | 162.79 / 167.63 |
+| Native active | 277.39 / 320.82 | 118.05 / 128.54 | 278.66 / 315.76 | 114.06 / 117.54 |
+| Native stalled | 285.14 / 333.93 | 165.05 / 190.73 | 284.09 / 327.56 | 161.66 / 164.75 |
+
+The campaigns took 51.404 and 51.110 seconds respectively, with actual Swift
+case success and independently retained phase receipts. Their measured formats
+stayed at 48 kHz and no engine-configuration event occurred. Thus they validate
+the corrected recording seam under transfer load, but alone do not demonstrate
+recovery through the live 48-to-24 kHz transition. A separate preferred-input probe found both input types available, but iOS did
+not apply the requested HFP route: capture stayed running at 48 kHz and samples
+grew from 6,256 to 38,362. It failed transition validation after 2.807 seconds;
+this was not a new zero-PCM failure and is not a recovery pass. A separate
+preferred-sample-rate control then ended when its runner entered the background
+and exited with code zero before reaching the rate request. That result also
+does not establish format recovery. The short foreground-controlled check is
+pending; earlier failures and unsuccessful controls remain retained.
+These are recording-component results, not full meeting-archive or ASR acceptance.
 
 ### Lifecycle checkpoint and reload
 
@@ -323,12 +378,14 @@ evidence remain retained separately.
 
 Normal ordinary-build validation is recorded on [PR #266's checks](https://github.com/pennel-app/pennel/pull/266/checks)
 for its exact current head. Its CI status is separate from the enabled QA
-physical campaign. Passing ordinary CI cannot clear the missing-audio gate.
+physical campaign. Passing ordinary CI alone does not establish physical capture or archive acceptance.
 
 ### Decision and remaining gates
 
 Neither candidate is approved for production adoption by this experiment.
-The observed missing-audio baseline failure leaves the recording gate unresolved.
+The corrected production-owner recording component passed 120 cycles. Exact
+live format-transition recovery and full recording/archive acceptance remain
+unverified; the historical raw-control failures are preserved above.
 Complete network-byte accounting, sustained adversarial flood measurements,
 abrupt mid-block process death on the direct route, and physical
 cellular/background transfer acceptance remain open. A durable

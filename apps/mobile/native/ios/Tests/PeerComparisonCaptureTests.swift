@@ -8,7 +8,7 @@ import UIKit
 /// Real microphone timing is opt-in; fixtures never leave the isolated QA container.
 @Suite(.serialized)
 struct PeerComparisonCaptureTests {
-    private enum Failure: Error { case configuration, permission, response, transfer, capture }
+    private enum Failure: Error { case configuration, permission, response, transfer, capture, routeUnavailable, routeTransition }
 
     private final class Samples: @unchecked Sendable {
         struct Snapshot: Sendable { let count: Int; let late: Bool; let callbacks: Int; let firstPCM: Double? }
@@ -41,6 +41,8 @@ struct PeerComparisonCaptureTests {
     /// Numeric event codes: 0 begin, 1 start call, 2 start return, 3 first PCM,
     /// 4 first-PCM deadline, 5 stop call, 6 stop return, 7 failure, 8 engine change,
     /// 9 route change, 10 interruption, 11 media lost, 12 media reset, 13 app state, 14 end.
+    /// Route control: 20 available-input mask, 21 baseline PCM, 22 HFP request,
+    /// 23 changed physical format, 24 fresh PCM, 25 held PCM, 26 cleanup, 27 unavailable, 28 restored.
     private final class CaptureDiagnostics: @unchecked Sendable {
         private let cycle: Int
         private let candidate: Int
@@ -51,6 +53,7 @@ struct PeerComparisonCaptureTests {
         private let queue = DispatchQueue(label: "app.pennel.peer-transport.qa.capture-diagnostics")
         private var appState: Int
         private var sequence = 0
+        private var engineChanges = 0
         private var closed = false
         private var observers: [NSObjectProtocol] = []
 
@@ -77,6 +80,8 @@ struct PeerComparisonCaptureTests {
             }
         }
 
+        func engineConfigurationChanges() -> Int { lock.withLock { engineChanges } }
+
         func setAppState(_ value: Int) {
             lock.withLock { appState = value }
             emit(13)
@@ -88,6 +93,7 @@ struct PeerComparisonCaptureTests {
             let state: (Int, Int)? = lock.withLock {
                 guard !closed else { return nil }
                 sequence += 1
+                if event == 8 { engineChanges += 1 }
                 return (appState, sequence)
             }
             guard let state else { return }
@@ -162,8 +168,9 @@ struct PeerComparisonCaptureTests {
                 microphoneOwner = microphone; sessionOwner = sharedSession
             }
         }
+        func activateSession() throws { try session?.activate() }
         func start(_ append: @escaping @Sendable ([Float]) -> Void) throws {
-            try session?.activate()
+            try activateSession()
             try capture.start(onSamples: append)
         }
         func stop() { capture.stop(); session?.deactivate() }
@@ -176,6 +183,238 @@ struct PeerComparisonCaptureTests {
         for config in configs {
             try await Self.run(config)
         }
+    }
+
+    /// This separate opt-in control must observe a real physical-format transition.
+    /// No settings UI, synthetic notification, retry, or inferred route success is used.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PENNEL_PEER_CAPTURE_ROUTE_CONTROL"] == "1"))
+    func microphoneRecoversAfterPhysicalInputRouteChange() async throws {
+        guard AppPaths.qaProfile == "peer-transport" else { throw Failure.configuration }
+        guard await MicCapture.requestPermission() else { throw Failure.permission }
+        let before = await MainActor.run { UIApplication.shared.applicationState.rawValue }
+        // Candidate=2/phase=3 identify this standalone route control; seam=1 is shared ownership.
+        let diagnostics = CaptureDiagnostics(cycle: 1, candidate: 2, phase: 3, seam: 1, appState: before)
+        defer { diagnostics.close() }
+        diagnostics.emit(0)
+        do {
+            try await Task.detached { try Self.exercisePhysicalInputRoute(diagnostics) }.value
+            let after = await MainActor.run { UIApplication.shared.applicationState.rawValue }
+            diagnostics.setAppState(after)
+            diagnostics.emit(14)
+        } catch {
+            let after = await MainActor.run { UIApplication.shared.applicationState.rawValue }
+            diagnostics.setAppState(after)
+            diagnostics.emit(7, error: error)
+            throw error
+        }
+    }
+
+    /// Preferred rates are requests: only an observed reconfiguration can pass.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PENNEL_PEER_CAPTURE_FORMAT_CONTROL"] == "1"))
+    func microphoneRecoversAfterSessionFormatChange() async throws {
+        guard AppPaths.qaProfile == "peer-transport" else { throw Failure.configuration }
+        guard await MicCapture.requestPermission() else { throw Failure.permission }
+        let state = await MainActor.run { UIApplication.shared.applicationState.rawValue }
+        let diagnostics = CaptureDiagnostics(cycle: 1, candidate: 2, phase: 4, seam: 1, appState: state)
+        defer { diagnostics.close() }
+        diagnostics.emit(0)
+        do {
+            try await Task.detached { try Self.exerciseSessionFormat(diagnostics) }.value
+            diagnostics.emit(14)
+        } catch {
+            diagnostics.emit(7, error: error)
+            throw error
+        }
+    }
+
+    private static func exerciseSessionFormat(_ diagnostics: CaptureDiagnostics) throws {
+        let cycle = CaptureCycle(rawControl: false)
+        let session = AVAudioSession.sharedInstance()
+        let previous = session.preferredSampleRate
+        var requested = false
+        defer {
+            cycle.capture.stop()
+            if requested {
+                do { try session.setPreferredSampleRate(previous) }
+                catch {
+                    diagnostics.emit(7, error: error)
+                    Issue.record("Peer QA sample-rate preference restoration failed.")
+                }
+            }
+            cycle.stop()
+            diagnostics.emit(28)
+        }
+        let samples = Samples()
+        try cycle.start { samples.append($0) }
+        let initialDeadline = ProcessInfo.processInfo.systemUptime + 2
+        while samples.snapshot().count == 0 && ProcessInfo.processInfo.systemUptime < initialDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard cycle.capture.isRunning, samples.snapshot().count > 0,
+              let before = cycle.capture.inputFormat else { throw Failure.capture }
+        let ready = samples.snapshot().count
+        Thread.sleep(forTimeInterval: 0.3)
+        guard cycle.capture.isRunning, samples.snapshot().count > ready else { throw Failure.capture }
+        let target: Double = before.sampleRate == 48_000 ? 44_100 : 48_000
+        let events = diagnostics.engineConfigurationChanges()
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        diagnostics.emit(22, reason: Int(target), auxiliary: Int(previous), running: true,
+                         format: before, samples: samples.snapshot(), deadline: deadline)
+        requested = true
+        try session.setPreferredSampleRate(target)
+        var changed: MicrophoneInputFormat?
+        var checkpoint: Int?
+        var recovered = false
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            if cycle.capture.isRunning, let format = cycle.capture.inputFormat,
+               format.sampleRate != before.sampleRate,
+               abs(Double(format.sampleRate) - session.sampleRate) < 1 {
+                let count = samples.snapshot().count
+                if checkpoint == nil {
+                    changed = format
+                    checkpoint = count
+                    diagnostics.emit(23, running: true, format: format, samples: samples.snapshot())
+                } else if let checkpoint, count > checkpoint {
+                    recovered = true
+                    break
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard recovered, let changed, diagnostics.engineConfigurationChanges() > events else {
+            diagnostics.emit(4, running: cycle.capture.isRunning, format: cycle.capture.inputFormat,
+                             samples: samples.snapshot(), deadline: deadline)
+            throw Failure.routeTransition
+        }
+        let count = samples.snapshot().count
+        Thread.sleep(forTimeInterval: 0.3)
+        guard cycle.capture.isRunning, samples.snapshot().count > count else { throw Failure.capture }
+        diagnostics.emit(25, running: true, format: changed, samples: samples.snapshot())
+    }
+
+    private static func exercisePhysicalInputRoute(_ diagnostics: CaptureDiagnostics) throws {
+        let cycle = CaptureCycle(rawControl: false)
+        let session = AVAudioSession.sharedInstance()
+        let previous = session.preferredInput
+        var changedPreference = false
+        defer {
+            // Stop this client before restoration so restoration cannot start another owned engine.
+            diagnostics.emit(26, reason: changedPreference ? 1 : 0, running: cycle.capture.isRunning, format: cycle.capture.inputFormat)
+            cycle.capture.stop()
+            if changedPreference {
+                do { try session.setPreferredInput(previous) }
+                catch {
+                    diagnostics.emit(7, error: error)
+                    Issue.record("Peer QA route preference restoration failed.")
+                }
+            }
+            cycle.stop()
+            diagnostics.emit(28)
+        }
+        try cycle.activateSession()
+        // HFP may become available after activation. This bounded discovery does not
+        // start/retry capture or extend either subsequent PCM/route-change deadline.
+        let discoveryDeadline = ProcessInfo.processInfo.systemUptime + 2
+        var inputs: [AVAudioSessionPortDescription] = []
+        var builtIn: AVAudioSessionPortDescription?
+        var bluetooth: AVAudioSessionPortDescription?
+        while true {
+            inputs = session.availableInputs ?? []
+            builtIn = inputs.first { $0.portType == .builtInMic }
+            bluetooth = inputs.first { $0.portType == .bluetoothHFP }
+            if builtIn != nil, bluetooth != nil { break }
+            let remaining = discoveryDeadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { break }
+            Thread.sleep(forTimeInterval: min(0.01, remaining))
+        }
+        let mask = (builtIn == nil ? 0 : 1) | (bluetooth == nil ? 0 : 2)
+        diagnostics.emit(20, reason: mask, auxiliary: inputs.count, deadline: discoveryDeadline)
+        guard let builtIn, let bluetooth else {
+            diagnostics.emit(27, reason: mask, auxiliary: inputs.count)
+            FileHandle.standardError.write(Data("Peer QA physical route control unavailable.\n".utf8))
+            throw Failure.routeUnavailable
+        }
+        changedPreference = true
+        try session.setPreferredInput(builtIn)
+        let samples = Samples()
+        diagnostics.emit(1, reason: 1)
+        do { try cycle.start { samples.append($0) } }
+        catch { diagnostics.emit(7, error: error); throw error }
+        diagnostics.emit(2, running: cycle.capture.isRunning, format: cycle.capture.inputFormat)
+        let initialDeadline = ProcessInfo.processInfo.systemUptime + 2
+        var beforeFormat: MicrophoneInputFormat?
+        while ProcessInfo.processInfo.systemUptime < initialDeadline {
+            if cycle.capture.isRunning, samples.snapshot().count > 0,
+               session.currentRoute.inputs.contains(where: { $0.portType == .builtInMic }),
+               let format = cycle.capture.inputFormat, format.sampleRate > 0, format.channels > 0,
+               abs(Double(format.sampleRate) - session.sampleRate) < 1 {
+                beforeFormat = format
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard let beforeFormat else {
+            diagnostics.emit(4, running: cycle.capture.isRunning, format: cycle.capture.inputFormat,
+                             samples: samples.snapshot(), deadline: initialDeadline)
+            throw Failure.routeTransition
+        }
+        let beforeReady = samples.snapshot()
+        Thread.sleep(forTimeInterval: 0.3)
+        let beforeHeld = samples.snapshot()
+        diagnostics.emit(21, reason: beforeReady.count, auxiliary: beforeHeld.count,
+                         running: cycle.capture.isRunning, format: beforeFormat, samples: beforeHeld)
+        guard cycle.capture.isRunning, beforeHeld.count > beforeReady.count else { throw Failure.capture }
+
+        let engineChangesBefore = diagnostics.engineConfigurationChanges()
+        let transition = ProcessInfo.processInfo.systemUptime
+        let deadline = transition + 2
+        diagnostics.emit(22, reason: 2, running: cycle.capture.isRunning, format: beforeFormat,
+                         samples: beforeHeld, deadline: deadline)
+        try session.setPreferredInput(bluetooth)
+        var changedFormat: MicrophoneInputFormat?
+        var countAtChangedFormat: Int?
+        var freshPCM = false
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            let now = samples.snapshot()
+            if cycle.capture.isRunning,
+               session.currentRoute.inputs.contains(where: { $0.portType == .bluetoothHFP }),
+               let format = cycle.capture.inputFormat,
+               format.sampleRate != beforeFormat.sampleRate || format.channels != beforeFormat.channels {
+                if countAtChangedFormat == nil {
+                    changedFormat = format
+                    countAtChangedFormat = now.count
+                    diagnostics.emit(23, reason: beforeHeld.count, auxiliary: now.count,
+                                     running: true, format: format, samples: now, deadline: deadline)
+                } else if let checkpoint = countAtChangedFormat, now.count > checkpoint {
+                    freshPCM = true
+                    break
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard let changedFormat, freshPCM else {
+            diagnostics.emit(4, reason: beforeHeld.count, auxiliary: samples.snapshot().count,
+                             running: cycle.capture.isRunning, format: cycle.capture.inputFormat,
+                             samples: samples.snapshot(), deadline: deadline)
+            throw Failure.routeTransition
+        }
+        let afterReady = samples.snapshot()
+        diagnostics.emit(24, reason: countAtChangedFormat ?? -1, auxiliary: afterReady.count,
+                         running: cycle.capture.isRunning, format: changedFormat, samples: afterReady,
+                         deadline: deadline)
+        Thread.sleep(forTimeInterval: 0.3)
+        let afterHeld = samples.snapshot()
+        diagnostics.emit(25, reason: afterReady.count, auxiliary: afterHeld.count,
+                         running: cycle.capture.isRunning, format: cycle.capture.inputFormat, samples: afterHeld)
+        guard cycle.capture.isRunning, afterHeld.count > afterReady.count,
+              diagnostics.engineConfigurationChanges() > engineChangesBefore else { throw Failure.capture }
+        diagnostics.emit(5, reason: engineChangesBefore, auxiliary: diagnostics.engineConfigurationChanges(),
+                         running: cycle.capture.isRunning, format: cycle.capture.inputFormat, samples: afterHeld)
+        cycle.capture.stop()
+        diagnostics.emit(6, running: cycle.capture.isRunning, samples: samples.snapshot())
+        samples.lock.withLock { samples.stopped = true }
+        Thread.sleep(forTimeInterval: 0.02)
+        guard !samples.snapshot().late else { throw Failure.capture }
     }
 
     private static func run(_ config: [String: String]) async throws {
