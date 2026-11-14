@@ -21,6 +21,7 @@ import re
 import secrets
 import selectors
 import signal
+import stat
 import statistics
 import subprocess
 import sys
@@ -89,6 +90,29 @@ def new_directory(path):
             raise QualificationError("evidence_directory_must_be_git_ignored")
     path.mkdir(mode=0o700, parents=True, exist_ok=False)
     os.chmod(path, 0o700)
+    return path
+
+
+def identity_file_for_output(output, override=None):
+    if override is None:
+        return Path(output) / "identity.json"
+    lexical = Path(override).absolute()
+    if any(component.is_symlink() for component in (lexical, *lexical.parents)):
+        raise QualificationError("identity_metadata_must_not_be_symbolic")
+    try:
+        path = lexical.resolve(strict=True)
+        metadata = path.stat()
+    except OSError:
+        raise QualificationError("identity_metadata_unavailable") from None
+    repository = Path(__file__).resolve().parents[1]
+    if (not path.is_relative_to(repository) or not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_uid != os.getuid()
+            or not 0 < metadata.st_size <= MAX_CONTROL):
+        raise QualificationError("identity_metadata_requires_owned_private_ignored_file")
+    ignored = subprocess.run(["git", "check-ignore", "--quiet", "--", str(path.relative_to(repository))],
+                             cwd=repository, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if ignored.returncode != 0:
+        raise QualificationError("identity_metadata_must_be_git_ignored")
     return path
 
 
@@ -774,7 +798,9 @@ class DeviceController:
         self.token = secrets.token_urlsafe(32)
         self.peer, self.fixture, self.result = None, None, None
         self.lock = threading.RLock()
-        self.probe = Probe(args.binary, args.candidate, self.root / "identity.json", f"peer-probe-{args.run_id}",
+        self.identity_override = getattr(args, "identity_file", None)
+        self.identity_file = identity_file_for_output(self.root, self.identity_override)
+        self.probe = Probe(args.binary, args.candidate, self.identity_file, f"peer-probe-{args.run_id}",
                            self.root / "probe-initial.stderr.log", bind=f"{args.bind}:0")
         self.identity = self.probe.identity_id
         self.relay = None
@@ -798,7 +824,7 @@ class DeviceController:
                                    [self.identity, peer], self.args.run_id, bind=self.args.bind,
                                    rate=self.args.relay_rate_bytes_per_second)
                 relay_config = json.loads(self.relay.configs[1].read_text())
-                self.probe = Probe(self.args.binary, self.args.candidate, self.root / "identity.json",
+                self.probe = Probe(self.args.binary, self.args.candidate, identity_file_for_output(self.root, self.identity_override),
                     f"peer-probe-{self.args.run_id}", self.root / "probe-relay.stderr.log",
                     relay_config=self.relay.configs[0], bind=f"{self.args.bind}:0", start=False)
             self.preparation_config = {"candidate": self.args.candidate, "route": self.args.route,
@@ -1077,6 +1103,7 @@ def main(argv=None):
     device.add_argument("--candidate", choices=("quinn", "native"), required=True)
     device.add_argument("--route", choices=("direct", "forced_relay"), required=True)
     device.add_argument("--binary", type=Path, required=True)
+    device.add_argument("--identity-file", type=Path, help="Reuse an existing owned 0600 QA metadata file from this repository's ignored tree")
     device.add_argument("--bind", type=validate_bind, required=True)
     device.add_argument("--port", type=int, default=0)
     device.add_argument("--block-size", type=int, choices=BLOCK_SIZES, default=1024 * 1024)

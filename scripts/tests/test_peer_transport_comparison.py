@@ -270,6 +270,65 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(self.module.QualificationError):
                 self.module.validate_device_metrics({**metrics, field: True})
 
+    def test_identity_metadata_defaults_to_output_and_override_is_reused_without_copying(self):
+        repository = SCRIPT.parents[1]
+        with tempfile.TemporaryDirectory(prefix="peer-identity-test-", dir=repository / "build") as owned:
+            owned = Path(owned).resolve()
+            identity = owned / "existing-identity.json"
+            self.module.write_private_json(identity, {"keychain_account": "synthetic-owned-account"})
+            self.assertEqual(self.module.identity_file_for_output(owned), owned / "identity.json")
+            self.assertEqual(self.module.identity_file_for_output(owned, identity), identity)
+            calls = []
+            module = self.module
+            class Probe:
+                identity_id = "a" * 64
+                def __init__(self, binary, candidate, identity_file, *args, **kwargs):
+                    calls.append(identity_file)
+                def close(self): pass
+                def ready(self): pass
+                def call(self, command, **kwargs):
+                    if command == "offer": return {"sha256": module.sha256(kwargs["path"])}
+                    if command == "address": return json.dumps({"identity_id": self.identity_id})
+                    return True
+            class Relay:
+                def __init__(self, *args, **kwargs): self.configs = [owned / "relay-a.json", owned / "relay-b.json"]
+                def close(self): pass
+            for name in ("relay-a.json", "relay-b.json"):
+                self.module.write_private_json(owned / name, {"ticket": "synthetic"})
+            args = SimpleNamespace(output=owned / "new-run", binary=Path(sys.executable), candidate="quinn", route="forced_relay",
+                bind="127.0.0.1", run_id="reuse-test", relay_binary=Path(sys.executable), block_size=1024 * 1024,
+                mib=1, relay_rate_bytes_per_second=0, identity_file=identity)
+            with mock.patch.object(module, "Probe", Probe), mock.patch.object(module, "Relay", Relay):
+                controller = module.DeviceController(args)
+                try:
+                    controller.prepare("b" * 64)
+                    controller.preparation_thread.join(timeout=3)
+                    self.assertIsNone(controller.preparation_error)
+                    self.assertEqual(calls, [identity, identity])
+                    self.assertFalse((args.output / "identity.json").exists())
+                    self.assertEqual(json.loads(identity.read_text()), {"keychain_account": "synthetic-owned-account"})
+                finally:
+                    controller.close()
+
+    def test_identity_metadata_override_rejects_unignored_insecure_and_symbolic_paths(self):
+        with self.assertRaises(self.module.QualificationError):
+            self.module.identity_file_for_output(self.root, SCRIPT)
+        with self.assertRaises(self.module.QualificationError):
+            self.module.identity_file_for_output(self.root, self.fixture)
+        repository = SCRIPT.parents[1]
+        with tempfile.TemporaryDirectory(prefix="peer-identity-test-", dir=repository / "build") as owned:
+            owned = Path(owned).resolve()
+            identity = owned / "identity.json"
+            self.module.write_private_json(identity, {"keychain_account": "synthetic-owned-account"})
+            identity.chmod(0o644)
+            with self.assertRaises(self.module.QualificationError):
+                self.module.identity_file_for_output(owned, identity)
+            identity.chmod(0o600)
+            linked = owned / "alias.json"
+            linked.symlink_to(identity)
+            with self.assertRaises(self.module.QualificationError):
+                self.module.identity_file_for_output(owned, linked)
+
 
 class ProcessTests(unittest.TestCase):
     def setUp(self):

@@ -32,7 +32,7 @@ private final class PeerComparisonChannelBridge: PeerCompareNativeChannel, @unch
 }
 
 private func mapped<T>(_ operation: () throws -> T) throws -> T {
-    do { return try operation() }
+    do { return try autoreleasepool(invoking: operation) }
     catch let error as PeerCompareError { throw error }
     catch let error as QANativeTransportError {
         switch error {
@@ -77,6 +77,7 @@ final class PeerComparisonIdentityKeychain: PeerCompareIdentityStore, @unchecked
         var item: CFTypeRef?
         let status = SecItemCopyMatching(request as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
+        if status != errSecSuccess { Self.diagnostic("load", status) }
         guard status == errSecSuccess, let data = item as? Data, data.count <= 32 * 1024,
               let value = String(data: data, encoding: .utf8) else { throw PeerCompareError.Storage }
         return value
@@ -90,6 +91,7 @@ final class PeerComparisonIdentityKeychain: PeerCompareIdentityStore, @unchecked
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
         // Core creates only after a confirmed miss. Never replace an existing or inaccessible identity.
         let status = SecItemAdd(request.merging(attributes) { $1 } as CFDictionary, nil)
+        if status != errSecSuccess { Self.diagnostic("save", status) }
         guard status == errSecSuccess else { throw PeerCompareError.Storage }
     }
 
@@ -97,12 +99,22 @@ final class PeerComparisonIdentityKeychain: PeerCompareIdentityStore, @unchecked
         let status = SecItemDelete(try query(account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw PeerCompareError.Storage }
     }
+
+    private static func diagnostic(_ operation: String, _ status: OSStatus) {
+        // Numeric OS errors only: no identity, key, account, or file content enters diagnostics.
+        FileHandle.standardError.write(Data("Peer QA identity \(operation) failed (OSStatus \(status)).\n".utf8))
+    }
 }
 
 enum PeerComparisonFactory {
     static func identity(store: PeerComparisonIdentityKeychain, account: String) throws -> PeerCompareIdentity {
         if let saved = try store.load(account: account) { return try decodeIdentity(saved) }
-        let identity = try generatePeerCompareIdentity()
+        let identity: PeerCompareIdentity
+        do { identity = try generatePeerCompareIdentity() }
+        catch {
+            FileHandle.standardError.write(Data("Peer QA identity generation failed.\n".utf8))
+            throw error
+        }
         let encoded = try JSONSerialization.data(withJSONObject: [
             "certificate_der_b64": identity.certificateDerB64,
             "private_key_der_b64": identity.privateKeyDerB64,

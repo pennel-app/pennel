@@ -6,7 +6,7 @@ import Foundation
 enum PeerComparisonConfiguration {
     enum Failure: Error { case invalid }
     static func load(_ name: String) throws -> [[String: String]] {
-        guard AppPaths.qaProfile == "peer-transport", ["qa-roundtrip.json", "qa-capture.json"].contains(name),
+        guard AppPaths.qaProfile == "peer-transport", ["qa-roundtrip.json", "qa-capture.json", "qa-lifecycle.json"].contains(name),
               let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { throw Failure.invalid }
         let url = documents.appendingPathComponent("QA/peer-transport", isDirectory: true).appendingPathComponent(name)
         let data = try Data(contentsOf: url)

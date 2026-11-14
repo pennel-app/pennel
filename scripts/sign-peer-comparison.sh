@@ -15,6 +15,7 @@ import pathlib,plistlib,sys
 path=pathlib.Path(sys.argv[1])
 path.write_bytes(plistlib.dumps({'CFBundleIdentifier':'dev.pennel.Pennel.preview',
  'CFBundleName':'Pennel Peer Comparison','CFBundleExecutable':'peer-comparison-probe',
+ 'NSLocalNetworkUsageDescription':'This isolated Pennel qualification exchanges synthetic fixtures with your iPhone.',
  'CFBundlePackageType':'APPL','CFBundleVersion':'1','CFBundleShortVersionString':'0.1.0'}))
 PY
 install_name_tool -delete_rpath "$root/core/target/release" \

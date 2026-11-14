@@ -49,7 +49,8 @@ struct PeerComparisonCLI {
         let route = relay == nil ? "direct" : "forced_relay"
         emit(["ok": true, "event": "ready", "result": ["identity_id": probe.identityId(),
             "address_json": try probe.addressJson(), "candidate": candidate, "route": route]])
-        while let data = try readCommand() {
+        while let data = try autoreleasepool(invoking: readCommand) {
+            let shouldClose = autoreleasepool { () -> Bool in
             do {
                 guard let request = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let command = request["command"] as? String else { throw CLIError.invalidCommand }
@@ -78,13 +79,17 @@ struct PeerComparisonCLI {
                         "bytes_received": report.bytesReceived, "blocks_transferred": report.blocksTransferred,
                         "total_bytes": report.totalBytes, "sha256": report.sha256]
                 case "cancel": probe.cancel(); result = true
-                case "close": probe.close(); emit(["ok": true, "result": true]); return
+                case "close": probe.close(); emit(["ok": true, "result": true]); return true
                 default: throw CLIError.invalidCommand
                 }
                 emit(["ok": true, "result": result])
+                return false
             } catch {
                 emit(["ok": false, "error": code(error)])
+                return false
             }
+            }
+            if shouldClose { return }
         }
     }
 

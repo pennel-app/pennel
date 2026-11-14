@@ -44,8 +44,7 @@ struct PeerComparisonCaptureTests {
             try await save(base, token, Result(candidate: candidate, route: route, phase: phase, transport_ongoing: false, measurements: measurements))
             return
         }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PeerCapture-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let directory = try PeerComparisonQualificationTests.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = PeerComparisonIdentityKeychain()
         let account = "peer-probe-capture-\(UUID().uuidString)"
@@ -110,6 +109,10 @@ struct PeerComparisonCaptureTests {
             let capture = MicCapture(audioSession: SystemAudioSession(purpose: .meeting))
             let start = ProcessInfo.processInfo.systemUptime
             try capture.start { samples.append($0) }
+            let firstSampleDeadline = ProcessInfo.processInfo.systemUptime + 2
+            while samples.lock.withLock({ samples.count == 0 }) && ProcessInfo.processInfo.systemUptime < firstSampleDeadline {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
             let began = ProcessInfo.processInfo.systemUptime
             Thread.sleep(forTimeInterval: 0.3)
             let alive = capture.isRunning
@@ -122,7 +125,10 @@ struct PeerComparisonCaptureTests {
                 Measurement(start_ms: (began - start) * 1000, stop_ms: (ended - stop) * 1000,
                             samples: samples.count, callback_after_stop: samples.late)
             }
-            guard alive, measurement.samples > 0, !measurement.callback_after_stop else { throw Failure.capture }
+            guard alive, measurement.samples > 0, !measurement.callback_after_stop else {
+                FileHandle.standardError.write(Data("Peer QA capture failed: running=\(alive) samples=\(measurement.samples) callback-after-stop=\(measurement.callback_after_stop).\n".utf8))
+                throw Failure.capture
+            }
             results.append(measurement)
         }
         return results

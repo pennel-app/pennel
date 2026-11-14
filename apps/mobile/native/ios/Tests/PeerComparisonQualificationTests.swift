@@ -10,6 +10,37 @@ struct PeerComparisonQualificationTests {
     private enum Failure: Error { case invalidProfile, invalidConfiguration, invalidResponse, invalidReceipt }
 
     @Test
+    func ownedStorageBoundaryDiagnostics() async throws {
+        try await Task.detached {
+            guard AppPaths.qaProfile == "peer-transport" else { throw Failure.invalidProfile }
+            let root = try Self.directory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            var item = root
+            for depth in 0..<16 {
+                var value = stat()
+                let result = item.path.withCString { Darwin.lstat($0, &value) }
+                let code = result == 0 ? 0 : errno
+                let mode = result == 0 ? UInt32(value.st_mode) : 0
+                FileHandle.standardError.write(Data("Peer QA filesystem ancestor depth=\(depth) errno=\(code) mode=\(mode).\n".utf8))
+                if item.path == "/" { break }
+                item.deleteLastPathComponent()
+            }
+            let descriptor = root.path.withCString { Darwin.open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW) }
+            let opened = descriptor >= 0 ? 0 : errno
+            var synced: Int32 = -1
+            if descriptor >= 0 { synced = Darwin.fsync(descriptor) == 0 ? 0 : errno; Darwin.close(descriptor) }
+            FileHandle.standardError.write(Data("Peer QA filesystem directory-open errno=\(opened) directory-sync errno=\(synced).\n".utf8))
+            let source = root.appendingPathComponent("synthetic")
+            let linked = root.appendingPathComponent("linked")
+            try Data([0x41]).write(to: source)
+            let linkedResult = source.path.withCString { first in linked.path.withCString { Darwin.link(first, $0) } }
+            let linkError = linkedResult == 0 ? 0 : errno
+            FileHandle.standardError.write(Data("Peer QA filesystem hard-link errno=\(linkError).\n".utf8))
+            #expect(opened == 0)
+        }.value
+    }
+
+    @Test
     func bothCandidatesUseTheSameDurableFileEngine() async throws {
         try await Task.detached {
             guard AppPaths.qaProfile == "peer-transport" else { throw Failure.invalidProfile }
@@ -69,18 +100,23 @@ struct PeerComparisonQualificationTests {
         let account = "peer-probe-device-\(UUID().uuidString)"
         defer { try? store.remove(account: account) }
         let identity = try await Task.detached { try PeerComparisonFactory.identity(store: store, account: account) }.value
+        Self.marker("identity ready")
         let prepared: Preparation = try await post(url, token, "prepare", ["peer_id": identity.identityId])
+        Self.marker("coordinator prepared")
         guard prepared.candidate == candidate, prepared.route == route else { throw Failure.invalidResponse }
         let host = try localIPv4()
         let probe = try await Task.detached { try Self.probe(candidate, store, account, prepared.relay_config_json, host) }.value
+        Self.marker("transport ready")
         defer { probe.close() }
         let fixture: Fixture = try await getFixture(url, token)
+        Self.marker("fixture ready")
         guard fixture.candidate == candidate, fixture.route == route, fixture.source_identity == prepared.source_identity else { throw Failure.invalidResponse }
         let returned = try await Task.detached {
             _ = try probe.approvePeer(id: fixture.source_identity)
             let target = root.appendingPathComponent("received.bin")
             let stage = root.appendingPathComponent("partial")
             let first = try probe.receiveFile(addressJson: fixture.source_address_json, staging: stage.path, target: target.path, maxBlocks: 1)
+            Self.marker("first durable block received")
             guard !first.complete, !FileManager.default.fileExists(atPath: target.path) else { throw Failure.invalidReceipt }
             let resumed = try probe.receiveFile(addressJson: fixture.source_address_json, staging: stage.path, target: target.path, maxBlocks: nil)
             let unchanged = try probe.receiveFile(addressJson: fixture.source_address_json, staging: stage.path, target: target.path, maxBlocks: nil)
@@ -111,10 +147,17 @@ struct PeerComparisonQualificationTests {
             account: account, bindHost: host, advertisedHost: host, relayJSON: relay)
     }
 
-    private static func directory() throws -> URL {
+    static func directory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PeerComparison-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        return directory.resolvingSymlinksInPath()
+        // Foundation retains /var on physical iOS; the shared engine rejects every symlink.
+        guard let resolved = Darwin.realpath(directory.path, nil) else { throw Failure.invalidConfiguration }
+        defer { free(resolved) }
+        return URL(fileURLWithPath: String(cString: resolved), isDirectory: true)
+    }
+
+    private static func marker(_ stage: String) {
+        FileHandle.standardError.write(Data("Peer QA phase: \(stage).\n".utf8))
     }
 
     static func localIPv4() throws -> String {
