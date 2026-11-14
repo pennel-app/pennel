@@ -70,4 +70,8 @@ The Pennel team's shared maintainer guides live in private `pennel-app/pennel-ho
 - `docs/agents/domain.md` for glossary/ADR conventions; its paths resolve in this repository.
 - `docs/agents/hoppscotch.md` for API-workspace metadata maintenance and the owning API repository's setup.
 
+### Team knowledge (mandatory)
+
+Before authorized Pennel execution work, read Home's `docs/agents/knowledge.md`, `docs/knowledge/README.md` and relevant topics. Before completion, follow that workflow to capture useful, verified reusable findings and automatically commit and push factual notes only. Instruction, skill or policy changes follow PR review. Read-only tasks and Plan mode defer writes; unrelated use of shared helpers does not trigger Pennel capture. If Home access or publishing is unavailable, retain notes locally and report capture or publication pending; keep private findings out of public records.
+
 The shared files are also available in the private [Home repository](https://github.com/pennel-app/pennel-home/tree/main/docs/agents). Public contributors without Home access follow the local public requirements above; private Home access is not a build prerequisite.
