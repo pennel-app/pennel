@@ -375,6 +375,102 @@ impl AsyncWrite for QuinnChannel {
 mod tests {
     use super::super::generate_peer_compare_identity;
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn revocation_closes_an_active_pending_read_and_rejects_future_access() {
+        let source = QuinnTransport::bind(
+            generate_peer_compare_identity().unwrap(),
+            "127.0.0.1:0".parse().unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        let peer = QuinnTransport::bind(
+            generate_peer_compare_identity().unwrap(),
+            "127.0.0.1:0".parse().unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
+        source.approve(&peer.id()).unwrap();
+        peer.approve(&source.id()).unwrap();
+        let address = source.address_json().unwrap();
+        let listening = source.clone();
+        let accepted = tokio::spawn(async move { listening.accept().await });
+        let mut peer_channel = peer.connect(&address).await.unwrap();
+        peer_channel.write_u8(7).await.unwrap();
+        let mut source_channel = tokio::time::timeout(std::time::Duration::from_secs(2), accepted)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(source_channel.read_u8().await.unwrap(), 7);
+
+        let (observed, pending) = tokio::sync::oneshot::channel();
+        let reading = tokio::spawn(async move {
+            let mut read = Box::pin(peer_channel.read_u8());
+            // Observe the actual authenticated network read returning Pending first.
+            let was_pending =
+                std::future::poll_fn(|cx| Poll::Ready(read.as_mut().poll(cx).is_pending())).await;
+            observed.send(was_pending).unwrap();
+            read.await
+        });
+        assert!(pending.await.unwrap());
+        let began = std::time::Instant::now();
+        assert!(source.revoke(&peer.id()).unwrap());
+        let result = tokio::time::timeout(std::time::Duration::from_millis(250), reading)
+            .await
+            .expect("active revoked QUIC read must not wait for the idle watchdog")
+            .unwrap();
+        let elapsed = began.elapsed();
+        eprintln!(
+            "peer_compare_quinn_active_revoke_ms={:.3}",
+            elapsed.as_secs_f64() * 1000.0
+        );
+        assert!(elapsed <= std::time::Duration::from_millis(250));
+        assert!(result.is_err());
+        // Revocation, rather than dropping the source stream, closed the pending peer read.
+        drop(source_channel);
+
+        assert!(matches!(
+            source.connect(&peer.address_json().unwrap()).await,
+            Err(PeerCompareError::Unauthorized)
+        ));
+        let listening = source.clone();
+        let future_accept = tokio::spawn(async move {
+            match listening.accept().await {
+                Ok(mut channel) => {
+                    let _ = channel.write_u8(99).await;
+                    true
+                }
+                Err(_) => false,
+            }
+        });
+        let next = tokio::time::timeout(std::time::Duration::from_secs(1), peer.connect(&address))
+            .await
+            .expect("a newly connecting revoked peer must be rejected promptly");
+        match next {
+            Err(error) => assert_eq!(error, PeerCompareError::Unauthorized),
+            Ok(mut channel) => {
+                // A TLS client can finish its side before learning that client-auth failed.
+                // It must still receive no authenticated application response.
+                let response =
+                    tokio::time::timeout(std::time::Duration::from_millis(250), channel.read_u8())
+                        .await
+                        .expect("revoked incoming access must not remain open");
+                assert!(response.is_err());
+            }
+        }
+        source.close();
+        assert!(
+            !tokio::time::timeout(std::time::Duration::from_secs(1), future_accept)
+                .await
+                .unwrap()
+                .unwrap()
+        );
+        peer.close();
+    }
 
     #[tokio::test]
     async fn real_quic_attempts_are_bounded_before_any_tls_acceptance() {
