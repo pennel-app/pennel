@@ -63,7 +63,13 @@ Mobile changes also require the mobile workspace's type, unit, generation and na
 
 This repository uses GitHub Issues in `pennel-app/pennel`. Its public [roadmap agent workflow](docs/desktop-roadmap.md#agent-workflow), [contributor guide](CONTRIBUTING.md), product rules and build requirements remain usable without access to private maintainer records. Before exploration, read root `GLOSSARY.md` and relevant `docs/adr/` entries when present.
 
-The Pennel team's shared maintainer guides live in private `pennel-app/pennel-home`. Resolve an explicit `PENNEL_HOME` first; otherwise walk the real ancestors of this checkout for the Home root when using nested worktrees, then try the canonical sibling `pennel-home` checkout. Verify Home's `AGENTS.md` and repository identity. From the resolved Home, read:
+The Pennel team's shared maintainer guides live in private `pennel-app/pennel-home`. Resolve an explicit `PENNEL_HOME` first; otherwise walk the real ancestors of this checkout for the Home root when using nested worktrees, then try the canonical sibling `pennel-home` checkout. Verify Home's `AGENTS.md` and repository identity.
+
+### Home startup (mandatory)
+
+At each new Pennel task, before reading shared guidance, skills or knowledge, follow Home's `docs/agents/startup.md` using `scripts/sync-home.py`. Use the returned `guidance_root` for shared guides, knowledge, skills and helper execution; use `canonical_home` for checkout placement. Explicit filesystem restrictions and Plan-mode rules defer prohibited writes. If private Home is unavailable, continue under this repository's public requirements and report synchronization pending. If the startup files are absent and writes are allowed, verify Home's canonical origin, fetch `origin/main` without force, then read the startup guide with `git show origin/main:docs/agents/startup.md` from Home and follow its automatic bootstrap.
+
+From the selected Home guidance checkout, read:
 
 - `docs/agents/issue-tracker.md` before meaningful implementation or documentation work; always target this repository explicitly.
 - `docs/agents/triage-labels.md` when triaging an issue.
