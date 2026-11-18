@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   released-dictation:
+    env:
+      DICTATION_TRIAL: ${{ contains(github.event.head_commit.message, 'Trial=prepared-profile') && 'dictate' || 'wizard' }}
     runs-on: macos-26
     timeout-minutes: 16
     steps:
@@ -25,15 +27,15 @@ jobs:
         run: |
           swiftc scripts/hosted-audio-qa/null-signal.swift -o "$RUNNER_TEMP/pennel-audio-probe"
           "$RUNNER_TEMP/pennel-audio-probe" --blackhole
-      - name: Complete the fresh setup and dictate through the released application
+      - name: Dictate through the released application
         run: |
           swiftc scripts/release-install-qa/observe.swift -o "$RUNNER_TEMP/pennel-observe"
-          python3 -B scripts/release-dictation-qa/wizard.py
+          python3 -B "scripts/release-dictation-qa/$DICTATION_TRIAL.py"
       - name: Retain the sanitized signed-app result
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: released-onboarding-dictation
+          name: released-${{ env.DICTATION_TRIAL }}
           path: ${{ runner.temp }}/dictation-receipt.json
           retention-days: 30
           if-no-files-found: warn

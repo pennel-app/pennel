@@ -148,6 +148,12 @@ def exercise(receipt):
     if "Dictation" in current.get("enabled_buttons", []): control("audio-press", "Dictation")
     snapshot(receipt, "dictation_home", control())
     request_microphone(receipt)
+    current = control()
+    if not current.get("web_area_visible"):
+        control("audio-reopen")
+        current = control()
+    if "Dictation" in current.get("enabled_buttons", []):
+        control("audio-press", "Dictation")
     state = await_button("Start dictation", 10)
     if "Start dictation" not in state.get("enabled_buttons", []) and "Try it here" in state.get("enabled_buttons", []):
         control("audio-press", "Try it here")
