@@ -33,7 +33,7 @@ pub(crate) fn localize_error_message(source: impl AsRef<str>) -> String {
     localize_error_message_for_language(source.as_ref(), crate::ui::language())
 }
 
-fn localize_error_message_for_language(
+pub(crate) fn localize_error_message_for_language(
     source: &str,
     language: pennel_core::InterfaceLanguage,
 ) -> String {
@@ -1181,6 +1181,8 @@ fn runtime_status(
             result.audio_warning = warning.map(crate::ui::message);
             result.terminal_error = terminal;
             result.echo_cancellation_active = echo;
+            // Mac capture owns the per-recording request and microphone state, including restarts.
+            #[cfg(not(target_os = "macos"))]
             if recording
                 && !echo
                 && shared.settings().echo_cancellation
@@ -2470,6 +2472,53 @@ mod tests {
             assert!(projection.transcript[0].get("utterance_id").is_none());
         }
         assert!(transcript_projection("{\"meeting_uid\":\"legacy\"}").is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_runtime_does_not_infer_an_echo_warning_from_the_settings_switch() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = Shared::testing(root.path().join("preview"));
+        let mut settings = shared.settings();
+        settings.echo_cancellation = true;
+        shared.engine.update_settings(settings).unwrap();
+        let session = shared
+            .engine
+            .clone()
+            .start_meeting(
+                "Fixture".into(),
+                pennel_core::ApiKeys {
+                    by_provider: HashMap::new(),
+                },
+            )
+            .unwrap();
+        let token = shared.recording.lock().unwrap().begin(None).unwrap();
+        shared.recording.lock().unwrap().recording(&token).unwrap();
+        *shared.meeting_context.lock().unwrap() = Some(meeting_runtime::MeetingContext {
+            token,
+            uid: shared.engine.meeting_uid(session.id()).unwrap(),
+            session: session.clone(),
+            notes_gate: Arc::new(std::sync::Mutex::new(true)),
+            title: "Fixture".into(),
+            started: std::time::Instant::now(),
+            duration_secs: None,
+            pending_recording_finish: None,
+            system_audio: false,
+            heard_system_audio: false,
+            audio_warning: None,
+            consent_copied: false,
+            speaker_evidence: None,
+        });
+        *shared.meeting.lock().unwrap() = Some(crate::meeting::MeetingRecorder::testing(
+            session.clone(),
+            shared.engine.clone(),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        ));
+        let (status, _) = runtime_status(&shared);
+        assert!(status.recording);
+        assert!(!status.echo_cancellation_active);
+        assert!(status.audio_warning.is_none());
+        session.stop().unwrap();
     }
 
     #[test]

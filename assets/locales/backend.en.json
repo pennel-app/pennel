@@ -441,6 +441,7 @@
   "backend.linux_browser_helper_missing": "Detecting browser calls requires xprop and access to the X11 session (package x11-utils).",
   "backend.echo_check_failed": "Echo cancellation could not be checked",
   "backend.echo_unconfirmed": "This microphone does not provide confirmed echo cancellation",
+  "backend.echo_inactive_with_speakers": "Echo cancellation is not active. If you are using speakers, headphones can help prevent echo.",
   "backend.echo_microphone_start_failed": "The microphone with echo cancellation could not start",
   "backend.storage_data_symlink": "a data file is a symbolic link; make a regular local copy first",
   "backend.storage_audio_symlink": "an audio file is a symbolic link; make a regular local copy first",
