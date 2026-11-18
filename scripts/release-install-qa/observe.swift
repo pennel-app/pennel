@@ -163,16 +163,18 @@ func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken
             if let temp = ProcessInfo.processInfo.environment["RUNNER_TEMP"] {
                 try? digest.write(to: URL(fileURLWithPath: temp).appendingPathComponent("pennel-fixture-digest"), atomically: true, encoding: .utf8)
             }
-            for scalar in token.utf16 {
-                var ch = scalar
-                for down in [true, false] {
-                    let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
-                    event?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &ch)
-                    event?.postToPid(app.processIdentifier)
-                }
+            // A fresh CI account owns this pasteboard and the provider's normal paste field.
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(token, forType: .string)
+            for down in [true, false] {
+                let event = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: down)
+                event?.flags = .maskCommand
+                event?.postToPid(app.processIdentifier)
             }
+            Thread.sleep(forTimeInterval: 0.35)
             keyToApp(36, app)
             Thread.sleep(forTimeInterval: 1.2)
+            NSPasteboard.general.clearContents()
         }
     }
     let after = controls(root)
@@ -182,7 +184,8 @@ func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken
                 && labels.contains(where: { $0.contains("(saved)") }))
     }
     evidence["provider_shows_saved_access"] = saved
-    if saved && after.contains(where: { _, _, values in values.contains(where: { $0.hasPrefix("http://127.0.0.1:") && $0.hasSuffix("/v1") }) }) {
+    evidence["loopback_address_visible"] = after.contains(where: { _, _, values in values.contains(where: { $0.hasPrefix("http://127.0.0.1:") && $0.hasSuffix("/v1") }) })
+    if evidence["loopback_address_visible"] as? Bool == true {
         evidence["local_endpoint_test_requested"] = press(root, "Test connection")
     }
     return evidence
@@ -193,7 +196,7 @@ func write(_ values: [String: Any]) throws {
     print(String(decoding: data, as: UTF8.self))
 }
 
-if action == "first-launch" || action == "owned-key-consent" {
+if ["first-launch", "owned-key-consent", "dialog-observe"].contains(action) {
     var status: [String: Any] = ["observer_permitted": AXIsProcessTrusted(), "ordinary_confirmation": false]
     if AXIsProcessTrusted() {
         status["frontmost_app"] = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
@@ -210,6 +213,7 @@ if action == "first-launch" || action == "owned-key-consent" {
                     status["system_dialog_observed"] = true
                     if copy.contains("keychain") { status["keychain_dialog"] = true }
                     if copy.contains("password") { status["password_dialog"] = true }
+                    if copy.contains("groq") || copy.contains("dev.pennel.pennel") { status["synthetic_item_named"] = true }
                     if copy.contains("microphone") { status["microphone_dialog"] = true }
                     if copy.contains("pennel") { status["pennel_named"] = true }
                     if copy.contains("pennel") {
@@ -224,12 +228,13 @@ if action == "first-launch" || action == "owned-key-consent" {
                             (attribute($0.0, kAXSubroleAttribute as CFString) as? String) == "AXSecureTextField"
                         }
                         if identifier == "com.apple.SecurityAgent", copy.contains("pennel"), copy.contains("keychain"),
-                           copy.contains("groq"), !requiresPassword,
+                           (copy.contains("groq") || copy.contains("dev.pennel.pennel")), !requiresPassword,
                            let once = items.first(where: { $0.1 == "AXButton" && $0.2.contains("Allow") }) {
                             status["synthetic_item_allowed_once"] = AXUIElementPerformAction(once.0, kAXPressAction as CFString) == .success
                         }
                         continue
                     }
+                    if action == "dialog-observe" { continue }
                     // The ordinary first-open question follows successful notarized Gatekeeper assessment.
                     guard identifier == "com.apple.coreservices.uiagent", copy.contains("pennel"),
                           copy.contains("downloaded from the internet"), !copy.contains("open anyway"),
@@ -276,7 +281,7 @@ if AXIsProcessTrusted(), app.isFinishedLaunching {
         $0.contains("Welcome to Pennel") || $0.hasPrefix("Choose your language") || $0 == "Try dictation" || $0 == "What would you like to do first?"
     })
     if action.hasPrefix("credential-") {
-        evidence.merge(providerScreen(root, app, writeToken: action == "credential-legacy-save", migrate: action == "credential-migrate")) { _, new in new }
+        evidence.merge(providerScreen(root, app, writeToken: action == "credential-save", migrate: action == "credential-migrate")) { _, new in new }
     }
     if action == "fixtures" {
         _ = press(root, "Back to your work")

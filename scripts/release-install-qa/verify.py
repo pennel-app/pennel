@@ -228,6 +228,12 @@ def add_runtime_witness():
         insert_entry(database, "qa-expired", int((time.time() - 2 * 86400) * 1000), "expired fixture")
 
 
+def legacy_item_present():
+    # This query asks only for metadata about the single disposable provider's old-format item.
+    return subprocess.run(["security", "find-generic-password", "-s", "dev.pennel.Pennel", "-a", "groq"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=6).returncode == 0
+
+
 def verify_fixtures(result):
     settings = json.loads((DATA / "settings.json").read_text())
     require(settings["meetings_dir"] == str(LIBRARY) and settings["dictionary"] == ["QA-Proefwoord"]
@@ -265,10 +271,11 @@ def main(receipt):
     local.observations = []
     threading.Thread(target=local.serve_forever, daemon=True).start()
     tap_dir = Path(text("brew", "--repository")) / "Library/Taps/pennel-app/homebrew-pennel"
-    if scenario == "upgrade":
+    if scenario != "clean":
         run("brew", "tap", TAP)
+    versions = {"clean": ["0.1.52"], "upgrade": list(RELEASES), "signed-upgrade": ["0.1.49", "0.1.52"]}[scenario]
     fixture_available = False
-    for index, version in enumerate(["0.1.52"] if scenario == "clean" else RELEASES):
+    for index, version in enumerate(versions):
         result = receipt["versions"][version] = {}
         if scenario == "clean":
             require(text("git", "ls-remote", "https://github.com/pennel-app/homebrew-pennel", "refs/heads/main").split()[0]
@@ -279,10 +286,10 @@ def main(receipt):
             run("git", "-C", tap_dir, "checkout", "--detach", pin)
             verify_tap(tap_dir, version)
         args = ["brew", "upgrade", "--cask", "pennel"] if index else ["brew", "install", "--cask", CASK]
-        run(*args, env=history_env if scenario == "upgrade" else None, timeout=320)
+        run(*args, env=history_env if scenario != "clean" else None, timeout=320)
         result["homebrew_command"] = " ".join(args)
         package(version, tap_dir, result)
-        if scenario == "upgrade" and index == 0:
+        if scenario != "clean" and index == 0:
             launch(result)
             stop(result)
             if HISTORY.exists():
@@ -293,28 +300,42 @@ def main(receipt):
             add_runtime_witness()
         launch(result, fixture=fixture_available)
         if fixture_available and result.get("native", {}).get("finished_launching"):
-            actions = {"0.1.47": "credential-legacy-save", "0.1.49": "credential-migrate", "0.1.52": "credential-check"}
+            initial = index == 0
+            transition = scenario == "upgrade" and version == "0.1.49"
+            action = "credential-save" if initial else ("credential-migrate" if transition else "credential-check")
+            if initial and scenario == "upgrade":
+                require(not legacy_item_present(), "unexpected existing fixture credential")
             before = len(local.observations)
-            observed = json.loads(text(observer(), actions[version]))
+            observed = json.loads(text(observer(), action))
             result["installed_credential_ui"] = observed
+            if initial and scenario == "upgrade":
+                result["disposable_legacy_item_created"] = legacy_item_present()
             if observed.get("app_owned_legacy_migration_requested"):
-                seed_key = receipt["versions"]["0.1.47"].get("installed_credential_ui", {})
-                if seed_key.get("disposable_value_entered") and seed_key.get("provider_shows_saved_access"):
-                    result["system_observation_after_migration"] = json.loads(text(observer(), "owned-key-consent"))
-                    time.sleep(1)
-                    if result["system_observation_after_migration"].get("synthetic_item_allowed_once"):
-                        result["installed_credential_ui"] = json.loads(text(observer(), "credential-check"))
+                existing = receipt["versions"]["0.1.47"]
+                consent = "owned-key-consent" if existing.get("disposable_legacy_item_created") and existing.get("loopback_received_matching_synthetic_credential") else "dialog-observe"
+                for _ in range(6):
+                    system = json.loads(text(observer(), consent))
+                    result["system_observation_after_migration"] = system
+                    if system.get("synthetic_item_allowed_once") or system.get("password_dialog"):
+                        break
+                    time.sleep(0.6)
+            if not result.get("system_observation_after_migration", {}).get("password_dialog"):
+                # Saving a key rerenders the settings view and folds its disclosure. Reopen normally.
+                result["fresh_provider_readback"] = json.loads(text(observer(), "credential-check"))
+                time.sleep(0.6)
             result["loopback_received_matching_synthetic_credential"] = True in local.observations[before:]
+            result["loopback_request_count"] = len(local.observations) - before
         stop(result)
         print(json.dumps({version: result}), flush=True)
     require(all(v.get("native", {}).get("finished_launching") and v.get("normal_quit") for v in receipt["versions"].values()),
             "one or more native launches or normal quits remain unverified")
-    if scenario == "upgrade":
+    if scenario != "clean":
         require(all(v.get("runtime_applied_one_day_history_retention") for v in receipt["versions"].values()),
                 "one or more installed upgrade data checks remain unverified")
         receipt["credential_access_verified"] = all(
             v.get("loopback_received_matching_synthetic_credential") for v in receipt["versions"].values()
         )
+        require(receipt["credential_access_verified"], "installed credential acceptance remains open; see per-version results")
 
 
 if __name__ == "__main__":
