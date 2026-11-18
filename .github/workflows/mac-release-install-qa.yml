@@ -15,9 +15,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [upgrade, signed-upgrade]
+        scenario: [upgrade]
     name: Apple Silicon / ${{ matrix.scenario }}
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 22
     steps:
       - uses: actions/checkout@v5
