@@ -160,13 +160,15 @@ if action.hasPrefix("audio-") {
     guard let running = installedApp() else { try write(["installed_app_running": false]); exit(0) }
     let root = AXUIElementCreateApplication(running.processIdentifier)
     AXUIElementSetMessagingTimeout(root, 0.45)
-    let allowed = ["Dictation", "Finish setup", "Allow access", "Back", "Try it here",
+    let allowed = ["Dictation", "Finish setup", "Allow access", "Back", "Try it here", "Try dictation",
+                   "Continue", "Continue with the button", "Download and continue", "Open dictation",
                    "Hands-free", "Start dictation", "Stop dictation", "All history", "Open Pennel"]
     var result: [String: Any] = ["observer_permitted": true, "installed_pid": Int(running.processIdentifier)]
     if action == "audio-reopen" {
         running.activate(options: [.activateAllWindows])
         result["opened_workspace_from_tray"] = openWorkspace(root)
-    } else if action == "audio-press", let label = CommandLine.arguments.dropFirst(2).first, allowed.contains(label) {
+    } else if action == "audio-press", let label = CommandLine.arguments.dropFirst(2).first,
+              allowed.contains(label) || label.hasPrefix("Continue without ") {
         result["pressed"] = press(root, label)
     }
     let nodes = controls(root)

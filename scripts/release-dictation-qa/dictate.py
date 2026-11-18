@@ -37,7 +37,8 @@ def control(action="audio-state", label=None):
 def snapshot(receipt, stage, current):
     fields = {key: current.get(key) for key in ("observer_permitted", "web_area_visible", "app_window_count", "installed_pid")}
     # App text only ever comes from this disposable profile. Do not publish the transcript.
-    is_phrase = lambda value: any(word in value.lower() for word in KEYWORDS)
+    public_utterance_words = KEYWORDS + ("yellow", "lantern", "quiet", "garden")
+    is_phrase = lambda value: any(word in value.lower() for word in public_utterance_words)
     fields["enabled_buttons"] = sorted({word for word in current.get("enabled_buttons", []) if not is_phrase(word)})[:65]
     fields["status"] = [value for value in current.get("document_text", []) if not is_phrase(value) and
                         any(word in value.lower() for word in ("microphone", "dictation", "local", "permission", "model", "working", "ready"))][:20]
@@ -45,7 +46,7 @@ def snapshot(receipt, stage, current):
     save(receipt)
 
 
-def fresh_app(receipt):
+def fresh_app(receipt, keep_running=False):
     install.require(not APP.exists() and not DATA.exists(), "fresh Mac and application data required")
     tap_hash = install.RELEASES["0.1.52"][0]
     environment = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1"}
@@ -59,8 +60,9 @@ def fresh_app(receipt):
     install.package("0.1.52", tap, package)
     install.launch(package)
     install.require(package.get("native", {}).get("finished_launching") and install.HISTORY.exists(), "first launch failed")
-    install.stop(package)
-    install.require(package.get("normal_quit"), "clean app did not quit")
+    if not keep_running:
+        install.stop(package)
+        install.require(package.get("normal_quit"), "clean app did not quit")
     save(receipt)
 
 
@@ -153,13 +155,21 @@ def exercise(receipt):
     snapshot(receipt, "before_start", state)
     start_label = next((label for label in ("Start dictation", "Hands-free") if label in state.get("enabled_buttons", [])), None)
     install.require(start_label, "release UI did not offer a usable dictation control")
-    phrase_audio = TEMP / "pennel-public-utterance.aiff"
-    install.run("/usr/bin/say", "-r", "145", "-o", phrase_audio, PHRASE)
+    capture_ui(receipt, start_label, PHRASE, KEYWORDS, expected_prior=0)
+    history_ui(receipt, KEYWORDS)
+    install.stop(receipt)
+    install.require(receipt.get("normal_quit"), "release did not quit normally")
+
+
+def capture_ui(receipt, start_label, phrase, keywords, expected_prior):
+    phrase_audio = TEMP / f"pennel-public-utterance-{expected_prior}.aiff"
+    install.run("/usr/bin/say", "-r", "145", "-o", phrase_audio, phrase)
     install.require(phrase_audio.stat().st_size > 16_000, "the synthesized public utterance contains no useful duration")
     receipt["phrase_audio"] = {"generator":"macOS say, 145 words per minute", "sha256":hashlib.sha256(phrase_audio.read_bytes()).hexdigest(),
-                              "public_reference":PHRASE}
+                              "public_reference":phrase}
     before = history()
-    install.require(not before, "History changed before the actual dictation")
+    install.require(len(before) == expected_prior, "History changed before the actual dictation")
+    existing = {row[0] for row in before}
     receipt["history_before"] = len(before)
     began = int(time.time() * 1000)
     receipt["start_control"] = start_label
@@ -175,30 +185,32 @@ def exercise(receipt):
     rows = []
     while time.monotonic() < deadline:
         rows = history()
-        if rows: break
+        if any(row[0] not in existing for row in rows): break
         time.sleep(0.4)
     snapshot(receipt, "after_stop", control())
     receipt["history_after"] = len(rows)
-    install.require(len(rows) == 1, "expected exactly one new History entry")
-    entry_id, created, raw, text, status, error = rows[0]
+    added = [row for row in rows if row[0] not in existing]
+    install.require(len(rows) == expected_prior + 1 and len(added) == 1, "expected exactly one new History entry")
+    entry_id, created, raw, text, status, error = added[0]
     raw_words = set(re.findall(r"[a-z]+", raw.lower()))
     final_words = set(re.findall(r"[a-z]+", text.lower()))
     receipt.update(history_entry_created_after_start=created >= began, history_status=status, raw_length=len(raw),
                    final_length=len(text), error_present=bool(error), raw_sha256=hashlib.sha256(raw.encode()).hexdigest(),
                    final_sha256=hashlib.sha256(text.encode()).hexdigest(),
-                   raw_reference_matches={word: word in raw_words for word in KEYWORDS},
-                   final_reference_matches={word: word in final_words for word in KEYWORDS})
+                   raw_reference_matches={word: word in raw_words for word in keywords},
+                   final_reference_matches={word: word in final_words for word in keywords})
     save(receipt)
     install.require(bool(entry_id) and created >= began and status == "done" and not error and
-                    all(word in raw_words and word in final_words for word in KEYWORDS),
+                    all(word in raw_words and word in final_words for word in keywords),
                     "new app-generated recognition did not match the controlled phrase")
     receipt["dictation_verified"] = True
+
+
+def history_ui(receipt, keywords):
     if control("audio-press", "All history").get("pressed"):
         current = control()
         whole = " ".join(current.get("buttons", []) + current.get("document_text", [])).lower()
-        receipt["result_visible_in_history_ui"] = all(word in whole for word in KEYWORDS)
-    install.stop(receipt)
-    install.require(receipt.get("normal_quit"), "release did not quit normally")
+        receipt["result_visible_in_history_ui"] = all(word in whole for word in keywords)
 
 
 if __name__ == "__main__":
