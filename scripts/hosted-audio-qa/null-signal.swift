@@ -17,15 +17,33 @@ func deviceString(_ device: AudioObjectID, _ selector: AudioObjectPropertySelect
     guard let value else { throw Failure("empty device metadata") }
     return value.takeRetainedValue() as String
 }
-func nullDevice() throws -> String {
+let blackHole = CommandLine.arguments.dropFirst() == ["--blackhole"]
+let deviceName = blackHole ? "BlackHole 2ch" : "Null Audio Device"
+
+func selectedDevice() throws -> String {
     var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
     var bytes: UInt32 = 0
     let system = AudioObjectID(kAudioObjectSystemObject)
     try check(AudioObjectGetPropertyDataSize(system, &address, 0, nil, &bytes), "device count")
     var devices = [AudioDeviceID](repeating: 0, count: Int(bytes) / MemoryLayout<AudioDeviceID>.size)
     try check(AudioObjectGetPropertyData(system, &address, 0, nil, &bytes, &devices), "device list")
-    let matches = try devices.filter { try deviceString($0, kAudioObjectPropertyName) == "Null Audio Device" }
-    guard matches.count == 1 else { throw Failure("one explicit Null Audio Device required") }
+    let matches = try devices.filter { try deviceString($0, kAudioObjectPropertyName) == deviceName }
+    guard matches.count == 1 else { throw Failure("exactly one matching hosted audio device required") }
+    if blackHole {
+        let names = try devices.map { try deviceString($0, kAudioObjectPropertyName) }
+        guard names.allSatisfy({$0 == deviceName || $0 == "Null Audio Device"}) else {
+            throw Failure("unexpected audio endpoint on the disposable Mac: " + names.joined(separator: ", "))
+        }
+        var desired = matches[0]
+        for selector in [kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDefaultOutputDevice] {
+            var endpoint = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            try check(AudioObjectSetPropertyData(system, &endpoint, 0, nil, UInt32(MemoryLayout.size(ofValue: desired)), &desired), "select BlackHole default")
+            var actual: AudioDeviceID = 0
+            var size = UInt32(MemoryLayout.size(ofValue: actual))
+            try check(AudioObjectGetPropertyData(system, &endpoint, 0, nil, &size, &actual), "verify default endpoint")
+            guard actual == desired else { throw Failure("default endpoint changed") }
+        }
+    }
     return try deviceString(matches[0], kAudioDevicePropertyDeviceUID)
 }
 func bind(_ queue: AudioQueueRef, _ uid: String) throws {
@@ -86,8 +104,8 @@ let inputCallback: AudioQueueInputCallback = { context, queue, buffer, _, _, _ i
 func measure() throws {
     let env = ProcessInfo.processInfo.environment
     guard env["RUNNER_ENVIRONMENT"] == "github-hosted", env["GITHUB_REPOSITORY"] == "pennel-app/pennel",
-          env["GITHUB_REF"] == "refs/heads/codex/mac-release-install-qa" else { throw Failure("disposable hosted runner required") }
-    let uid = try nullDevice()
+          env["GITHUB_REF"] == (blackHole ? "refs/heads/codex/mac-release-loopback-dictation" : "refs/heads/codex/mac-release-install-qa") else { throw Failure("disposable hosted runner required") }
+    let uid = try selectedDevice()
     var format = AudioStreamBasicDescription(mSampleRate: rate, mFormatID: kAudioFormatLinearPCM,
         mFormatFlags: kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
         mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 2, mBitsPerChannel: 16, mReserved: 0)
@@ -118,8 +136,11 @@ func measure() throws {
     try check(AudioQueueStop(input, true), "stop input")
     measure.lock.lock()
     defer { measure.lock.unlock() }
-    print("Known 617 Hz output, both queues bound to Null Audio Device. Rendered frames", measure.renderedFrames,
+    print("Known 617 Hz output, both queues bound to", deviceName, "rendered frames", measure.renderedFrames,
           "captured frames", measure.capturedFrames, "peak PCM", measure.peakPCM, "peak tone amplitude", measure.peakTone)
     guard measure.renderedFrames > 44100 && measure.capturedFrames > 44100 else { throw Failure("no full signal window") }
+    if blackHole && (measure.peakPCM < 2000 || measure.peakTone < 0.08) {
+        throw Failure("the known tone did not cross BlackHole; no dictation may be claimed")
+    }
 }
 try measure()

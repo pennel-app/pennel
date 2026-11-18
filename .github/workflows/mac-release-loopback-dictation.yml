@@ -1,0 +1,27 @@
+name: Signed Mac release dictation with a virtual microphone
+
+on:
+  push:
+    branches: [codex/mac-release-loopback-dictation]
+    paths:
+      - .github/workflows/mac-release-loopback-dictation.yml
+      - scripts/hosted-audio-qa/**
+      - scripts/release-dictation-qa/**
+
+permissions:
+  contents: read
+
+jobs:
+  released-dictation:
+    runs-on: macos-26
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install the checksum-pinned, signed vendor audio package
+        run: bash scripts/release-dictation-qa/install-audio.sh
+      - name: Select the virtual driver and verify a known signal crosses it
+        run: |
+          swiftc scripts/hosted-audio-qa/null-signal.swift -o "$RUNNER_TEMP/pennel-audio-probe"
+          "$RUNNER_TEMP/pennel-audio-probe" --blackhole
