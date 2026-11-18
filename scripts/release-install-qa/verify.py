@@ -1,5 +1,6 @@
 """Exercise public Pennel installers, exclusively on a fresh GitHub-hosted Mac."""
 
+import contextlib
 import hashlib
 import json
 import os
@@ -95,21 +96,75 @@ def observer():
     return Path(os.environ["RUNNER_TEMP"]) / "pennel-observe"
 
 
+def summarize_wait(result):
+    pid = result.get("native", {}).get("pid")
+    if not pid:
+        return
+    executable = text("ps", "-p", str(pid), "-o", "comm=")
+    if not executable.startswith(str(APP / "Contents/MacOS") + "/"):
+        return
+    sample = Path(os.environ["RUNNER_TEMP"]) / "pennel-startup-sample.txt"
+    taken = run("sample", str(pid), "1", "10", "-file", sample, capture=True, check=False, timeout=10)
+    if taken.returncode == 0 and sample.is_file():
+        # Retain only selected app/OS stack symbols and an excerpt of the main thread.
+        body = sample.read_text(errors="replace").partition("Call graph:")[2].partition("Binary Images:")[0]
+        main = body.split("Thread_", 2)[1] if "Thread_" in body else ""
+        result["main_thread_wait"] = [line.strip()[:240] for line in main.splitlines()[1:36]]
+
+
+def reopen():
+    # A saved user profile starts in the menu bar. A standard Finder reopen displays the workspace.
+    try:
+        run("open", str(APP), timeout=4)
+    except subprocess.TimeoutExpired:
+        pass
+    time.sleep(1)
+
+
 def launch(result, fixture=False):
-    run("open", "-a", APP, timeout=20)
-    observer_result = {}
-    for _ in range(35):
-        probe = run(observer(), "inspect", capture=True, check=False, timeout=8)
-        if probe.returncode == 0:
-            observer_result = json.loads(probe.stdout)
-            if observer_result.get("finished_launching") and HISTORY.exists():
+    opened = subprocess.Popen(["open", "-a", str(APP)])
+    try:
+        deadline = time.monotonic() + 55
+        while time.monotonic() < deadline:
+            if result.get("personal_developer_id"):
+                dialog = json.loads(text(observer(), "first-launch"))
+                for key, observed in dialog.items():
+                    if observed:
+                        result.setdefault("first_launch_observations", {})[key] = True
+            probe = run(observer(), "inspect", capture=True, check=False, timeout=8)
+            if probe.stdout.strip():
+                result["native"] = json.loads(probe.stdout)
+            if result.get("native", {}).get("finished_launching") and HISTORY.exists():
                 break
-        time.sleep(0.5)
-    result["native"] = observer_result
-    require(observer_result.get("finished_launching") and HISTORY.exists(), "installed application did not finish initialization")
-    if fixture:
-        verify_fixtures(result)
-        result["native"] = json.loads(text(observer(), "fixtures"))
+            time.sleep(1)
+        result["launch_services_exit"] = opened.poll()
+        result["app_history_initialized"] = HISTORY.is_file()
+        finished = result.get("native", {}).get("finished_launching")
+        if not finished:
+            summarize_wait(result)
+        else:
+            reopen()
+            result["native"] = json.loads(text(observer(), "fixtures" if fixture else "onboarding"))
+        if fixture:
+            try:
+                verify_fixtures(result)
+            except (RuntimeError, OSError, sqlite3.Error) as error:
+                result["fixture_observation_failure"] = str(error)
+    finally:
+        if opened.poll() is None:
+            opened.terminate()
+            opened.wait(timeout=3)
+
+
+def stop(result):
+    quit_status = None
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        quit_status = run(observer(), "quit", check=False, timeout=12).returncode
+    result["normal_quit"] = quit_status == 0
+    if quit_status not in (0, 2):
+        # The disposable VM can still exercise the next real cask even after a stalled launch.
+        run(observer(), "stop-stalled", timeout=12)
+        result["required_forced_stop_of_owned_app"] = True
 
 
 def insert_entry(connection, entry_id, timestamp, value):
@@ -123,8 +178,8 @@ def seed():
     require(HISTORY.is_file(), "released app did not initialize the history database")
     stt = {"provider_id": "local", "model": "whisper-large-v3-turbo"}
     settings = {
-        "providers": [{"id": "local", "kind": "local", "name": "Local", "base_url": ""},
-                      {"id": "groq", "kind": "groq", "name": "Groq", "base_url": "https://api.groq.com/openai/v1"}],
+        "providers": [{"id": "groq", "kind": "groq", "name": "Groq", "base_url": "http://127.0.0.1:1/v1"},
+                      {"id": "local", "kind": "local", "name": "Local", "base_url": ""}],
         "dictation_stt": stt, "meeting_stt": stt, "llm": {"provider_id": "groq", "model": "llama-3.3-70b-versatile"},
         "mode": "fast", "language": "nl", "ui_language": "en", "dictionary": ["QA-Proefwoord"], "style_rules": [],
         "history_retention_days": 1, "hotkey": "fn", "local_unload_minutes": 5,
@@ -142,6 +197,7 @@ def seed():
 def add_runtime_witness():
     # Only the non-default one-day setting removes a two-day-old record on launch.
     with sqlite3.connect(HISTORY) as database:
+        database.execute("DELETE FROM dictations WHERE id='qa-expired'")
         insert_entry(database, "qa-expired", int((time.time() - 2 * 86400) * 1000), "expired fixture")
 
 
@@ -180,6 +236,7 @@ def main(receipt):
     tap_dir = Path(text("brew", "--repository")) / "Library/Taps/pennel-app/homebrew-pennel"
     if scenario == "upgrade":
         run("brew", "tap", TAP)
+    fixture_available = False
     for index, version in enumerate(["0.1.52"] if scenario == "clean" else RELEASES):
         result = receipt["versions"][version] = {}
         if scenario == "clean":
@@ -196,15 +253,30 @@ def main(receipt):
         package(version, tap_dir, result)
         if scenario == "upgrade" and index == 0:
             launch(result)
-            run(observer(), "quit")
-            seed()
-            result["seeded_synthetic_profile_in_app_initialized_storage"] = True
-        if scenario == "upgrade":
+            stop(result)
+            if HISTORY.exists():
+                seed()
+                fixture_available = True
+                result["seeded_synthetic_profile_in_app_initialized_storage"] = True
+        if fixture_available:
             add_runtime_witness()
-        launch(result, fixture=scenario == "upgrade")
-        run(observer(), "quit")
-        result["normal_quit"] = True
+        launch(result, fixture=fixture_available)
+        if fixture_available and result.get("native", {}).get("finished_launching"):
+            actions = {"0.1.47": "credential-legacy-save", "0.1.49": "credential-migrate", "0.1.52": "credential-check"}
+            observed = json.loads(text(observer(), actions[version]))
+            result["installed_credential_ui"] = observed
+            if observed.get("app_owned_legacy_migration_requested"):
+                result["system_observation_after_migration"] = json.loads(text(observer(), "first-launch"))
+        stop(result)
         print(json.dumps({version: result}), flush=True)
+    require(all(v.get("native", {}).get("finished_launching") and v.get("normal_quit") for v in receipt["versions"].values()),
+            "one or more native launches or normal quits remain unverified")
+    if scenario == "upgrade":
+        require(all(v.get("runtime_applied_one_day_history_retention") for v in receipt["versions"].values()),
+                "one or more installed upgrade data checks remain unverified")
+        receipt["credential_access_verified"] = all(
+            v.get("installed_credential_ui", {}).get("provider_shows_saved_access") for v in receipt["versions"].values()
+        )
 
 
 if __name__ == "__main__":
