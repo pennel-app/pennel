@@ -1,0 +1,25 @@
+name: Hosted Mac dictation input check
+on:
+  push:
+    branches: [codex/mac-release-install-qa]
+    paths: [.github/workflows/mac-release-audio-qa.yml]
+permissions: {}
+jobs:
+  devices:
+    runs-on: macos-15
+    timeout-minutes: 3
+    steps:
+      - name: Identify available hosted audio routes
+        shell: python3 {0}
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+          info = json.loads(subprocess.check_output(["system_profiler", "SPAudioDataType", "-json"]))
+          fields = ["_name", "coreaudio_device_manufacturer", "coreaudio_device_transport",
+                    "coreaudio_device_input", "coreaudio_device_output", "coreaudio_default_audio_input_device",
+                    "coreaudio_default_audio_output_device", "coreaudio_device_srate"]
+          for group in info.get("SPAudioDataType", []):
+              for device in group.get("_items", []):
+                  print(json.dumps({key: device[key] for key in fields if key in device}, sort_keys=True))
+          print("Installed audio drivers", sorted(p.name for p in Path("/Library/Audio/Plug-Ins/HAL").glob("*.driver")))
