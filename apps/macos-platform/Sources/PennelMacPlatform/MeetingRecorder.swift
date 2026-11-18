@@ -143,7 +143,7 @@ struct MeetingCaptureHealth {
 
     var echoWarning: String? {
         echoRequested && microphoneActive && !echoActive
-            ? "Echo cancellation is not active. Use headphones."
+            ? "Echo cancellation is not active. If you are using speakers, headphones can help prevent echo."
             : nil
     }
 
@@ -227,13 +227,13 @@ struct MeetingAudioClock {
 
 final class NativeMeetingRecorder {
     private let log = Diagnostics("meeting")
-    private var engine = AVAudioEngine()
+    private let microphone = MeetingMicrophoneCapture()
     private let tap = SystemAudioTap()
     private let systemRoutes = SystemAudioRouteObserver()
+    private var stopInputRouteObservation: (() -> Void)?
     private var me: TrackWriter?
     private var others: TrackWriter?
     private var startedAt: Date?
-    private let microphoneConfiguration = MeetingMicrophoneConfigurationObserver()
     private var pendingRebuild: DispatchWorkItem?
     private var forceRebuild = false
     private var rebuildGeneration = CaptureGeneration()
@@ -244,7 +244,6 @@ final class NativeMeetingRecorder {
     private var finalHeardSystemAudio = false
     private var diagnostics: CaptureDiagnostics?
     private let silence = SilenceProbe()
-    private let micSilence = SilenceProbe(threshold: 5)
     private var health = MeetingCaptureHealth(echoRequested: true)
     private var tapProcesses: (() -> [AudioObjectID])?
     private var audioSource = MeetingAudioSourceIntegrity(appRequested: false)
@@ -254,10 +253,13 @@ final class NativeMeetingRecorder {
 
     var heardSystemAudio: Bool { others?.heardSound ?? finalHeardSystemAudio }
     var systemAudioAvailable: Bool { health.systemAudioAvailable }
-    var isEchoCancellationEnabled: Bool { health.echoActive }
+    var isEchoCancellationEnabled: Bool { microphone.health.echoActive }
     var healthSnapshot: [String: Any] {
-        var object = health.bridgeObject(heardSystemAudio: heardSystemAudio, archiveError: me?.archiveError ?? others?.archiveError ?? finalArchiveError)
-        let warnings = [health.echoWarning, captureWarning, audioSource.warning].compactMap { $0 }
+        var current = health
+        microphone.health.apply(to: &current)
+        var object = current.bridgeObject(heardSystemAudio: heardSystemAudio, archiveError: me?.archiveError ?? others?.archiveError ?? finalArchiveError)
+        let warnings = [captureWarning, audioSource.warning, current.echoWarning].compactMap { $0 }
+        object["capture_warnings"] = warnings
         object["capture_warning"] = warnings.isEmpty ? NSNull() : warnings.joined(separator: " ") as Any
         object["capture_diagnostics"] = diagnostics?.snapshot() ?? [:]
         object["system_audio_scope"] = audioSource.scope
@@ -268,45 +270,57 @@ final class NativeMeetingRecorder {
 
     var elapsed: TimeInterval { startedAt.map { Date().timeIntervalSince($0) } ?? 0 }
 
-    /// `tapProcesses` is re-evaluated on every (re)start so helpers that appear later are included.
-    private var echoCancellation = true
-
     /// When the recording began, for mapping wall-clock moments (dictation) onto the meeting timeline.
     var startDate: Date? { startedAt }
 
     func start(directory: URL, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?, tapProcesses: (() -> [AudioObjectID])? = nil, echoCancellation: Bool = true, microphoneURL: URL? = nil, systemURL: URL? = nil, scopeChanged: ((Bool) -> Void)? = nil, level: ((UInt32, Float) -> Void)? = nil) throws {
-        quiescent = false
-        self.tapProcesses = tapProcesses
-        audioSource = MeetingAudioSourceIntegrity(appRequested: tapProcesses != nil)
-        self.scopeChanged = scopeChanged
-        self.echoCancellation = echoCancellation
-        health = MeetingCaptureHealth(echoRequested: echoCancellation)
-        let started = ProcessInfo.processInfo.systemUptime
-        audioClock.start(at: started)
-        startedAt = Date()
-        recordingGeneration &+= 1
-        captureWarning = nil
-        finalArchiveError = nil
-        finalHeardSystemAudio = false
-        let diagnostics = CaptureDiagnostics(started: started)
-        self.diagnostics = diagnostics
-        me = try TrackWriter(track: 0, sink: sink, context: context, started: started, url: microphoneURL ?? directory.appendingPathComponent("ik.m4a"), diagnostics: diagnostics, level: level)
-        others = try TrackWriter(track: 1, sink: sink, context: context, started: started, url: systemURL ?? directory.appendingPathComponent("anderen.m4a"), diagnostics: diagnostics, level: level)
-        // Device setup can stop the engine before system-audio initialization returns.
-        observeMicrophoneConfiguration()
-        do { try startMicrophone() } catch { _ = stop(); throw error }
-        let generation = recordingGeneration
-        systemRoutes.observe { [weak self] in
-            guard let self, self.recordingGeneration == generation else { return }
-            self.scheduleSystemAudioRebuild(reason: "output_route_changed")
+        let (writer, diagnostics, generation) = try onMain { () -> (TrackWriter, CaptureDiagnostics, UInt64) in
+            quiescent = false
+            self.tapProcesses = tapProcesses
+            audioSource = MeetingAudioSourceIntegrity(appRequested: tapProcesses != nil)
+            self.scopeChanged = scopeChanged
+            health = MeetingCaptureHealth(echoRequested: echoCancellation)
+            let started = ProcessInfo.processInfo.systemUptime
+            audioClock.start(at: started)
+            startedAt = Date()
+            recordingGeneration &+= 1
+            captureWarning = nil
+            finalArchiveError = nil
+            finalHeardSystemAudio = false
+            let diagnostics = CaptureDiagnostics(started: started)
+            self.diagnostics = diagnostics
+            let writer = try TrackWriter(track: 0, sink: sink, context: context, started: started, url: microphoneURL ?? directory.appendingPathComponent("ik.m4a"), diagnostics: diagnostics, level: level)
+            self.me = writer
+            others = try TrackWriter(track: 1, sink: sink, context: context, started: started, url: systemURL ?? directory.appendingPathComponent("anderen.m4a"), diagnostics: diagnostics, level: level)
+            let generation = recordingGeneration
+            stopInputRouteObservation = SystemAudioRouteObserver.systemSubscription(
+                object: AudioObjectID(kAudioObjectSystemObject), selector: kAudioHardwarePropertyDefaultInputDevice
+            ) { [weak self] in
+                guard let self, self.recordingGeneration == generation else { return }
+                self.microphone.defaultRouteDidChange()
+            }
+            return (writer, diagnostics, generation)
         }
-        startSystemAudio()
+        try onMain { try MicrophoneAccess.ensureGranted() }
+        try microphone.start(writer: writer, diagnostics: diagnostics, echo: echoCancellation)
+        try onMain {
+            guard recordingGeneration == generation, !quiescent else { throw CancellationError() }
+            systemRoutes.observe { [weak self] in
+                guard let self, self.recordingGeneration == generation else { return }
+                self.microphone.defaultRouteDidChange()
+                self.scheduleSystemAudioRebuild(reason: "output_route_changed")
+            }
+            microphone.defaultRouteDidChange()
+            startSystemAudio()
+        }
     }
 
     func quiesce() {
         guard !quiescent else { return }
         quiescent = true
-        microphoneConfiguration.stop()
+        stopInputRouteObservation?()
+        stopInputRouteObservation = nil
+        microphone.stop()
         systemRoutes.stop()
         recordingGeneration &+= 1
         pendingRebuild?.cancel()
@@ -315,9 +329,6 @@ final class NativeMeetingRecorder {
         forceRebuild = false
         tap.onConfigurationChange = nil
         tap.onInvalidBuffer = nil
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        disableVoiceProcessing()
         tap.stop()
         audioClock.stop(at: ProcessInfo.processInfo.systemUptime)
         me?.quiesce()
@@ -349,146 +360,6 @@ final class NativeMeetingRecorder {
         tapProcesses = nil
         scopeChanged = nil
         return meError ?? othersError
-    }
-
-    private func startMicrophone() throws {
-        guard let me else { return }
-        try MicrophoneAccess.ensureGranted()
-        health.microphoneStarting()
-        echoCancellation = try MeetingMicrophoneStartup.start(
-            echoCancellation: echoCancellation,
-            attempt: { try self.startMicrophone(echoCancellation: $0, writer: me) },
-            reset: {
-                self.log.notice("echo-enabled microphone start failed; retrying with a fresh engine without voice processing")
-                self.replaceMicrophoneEngine()
-            }
-        )
-        health.microphoneStarted(echoActive: engine.inputNode.isVoiceProcessingEnabled)
-    }
-
-    private func startMicrophone(echoCancellation: Bool, writer: TrackWriter) throws {
-        let input = engine.inputNode
-        let before = input.inputFormat(forBus: 0)
-        let beforeOutput = input.outputFormat(forBus: 0)
-        log.notice("microphone format before setup: input=\(before.sampleRate) Hz/\(before.channelCount) ch, output=\(beforeOutput.sampleRate) Hz/\(beforeOutput.channelCount) ch, echo_requested=\(echoCancellation)")
-        // Configure voice processing before selecting the tap format: it may replace the IO unit
-        // and asynchronously rebuild the default-device aggregate, including on the fresh raw retry.
-        var formatReads = 0
-        let hardwareFormat = try MeetingMicrophoneFormatReadiness.resolve(
-            attempts: 41,
-            configure: {
-                if echoCancellation {
-                    // Keep the duplex output running without playing the captured microphone.
-                    do {
-                        try input.setVoiceProcessingEnabled(true)
-                        input.voiceProcessingOtherAudioDuckingConfiguration =
-                            AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false, duckingLevel: .min)
-                        self.engine.mainMixerNode.outputVolume = 0
-                    } catch {
-                        self.log.error("voice processing unavailable: \(error.localizedDescription)")
-                    }
-                } else {
-                    self.disableVoiceProcessing()
-                }
-            },
-            read: {
-                formatReads += 1
-                let format = input.inputFormat(forBus: 0)
-                if formatReads == 1 || formatReads == 41 {
-                    let output = input.outputFormat(forBus: 0)
-                    self.log.notice("microphone format after setup: input=\(format.sampleRate) Hz/\(format.channelCount) ch, output=\(output.sampleRate) Hz/\(output.channelCount) ch, echo=\(input.isVoiceProcessingEnabled), read=\(formatReads)")
-                }
-                return format
-            },
-            usable: { AudioInput.isUsable(sampleRate: $0.sampleRate, channels: $0.channelCount) },
-            defaultInputAvailable: { AudioInput.defaultDeviceAvailable() },
-            checkAccess: {
-                switch MicrophoneAccess.state {
-                case .granted: break
-                case .denied: throw MicrophoneStartError.permissionDenied
-                case .notDetermined: throw MicrophoneStartError.permissionPending
-                }
-            },
-            pause: { Thread.sleep(forTimeInterval: 0.05) }
-        )
-        if formatReads > 1 { log.notice("microphone route format became ready after \(formatReads) reads") }
-        log.notice("microphone tap starting: hardware=\(hardwareFormat.sampleRate) Hz, channels=\(hardwareFormat.channelCount), echo=\(input.isVoiceProcessingEnabled)")
-        let resampler = MonoResampler(from: hardwareFormat)
-        let diagnostics = diagnostics
-        diagnostics?.format(track: "microphone", format: hardwareFormat, transport: CaptureDeviceTransport.input(input.audioUnit))
-        let micSilence = micSilence
-        micSilence.reset()
-        input.removeTap(onBus: 0)
-        // After a Bluetooth switch the cached client/output format can differ from the hardware.
-        input.installTap(onBus: 0, bufferSize: 4096, format: hardwareFormat) { [weak self] buffer, time in
-            guard let converted = resampler.convert(buffer) else { return }
-            diagnostics?.count(track: "microphone", key: "captured_frames", value: UInt64(buffer.frameLength))
-            let uptime = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime)
-                : ProcessInfo.processInfo.systemUptime - Double(buffer.frameLength) / buffer.format.sampleRate
-            writer.append(converted, capturedAt: uptime)
-            if micSilence.feed(converted.monoSamples) {
-                Task { @MainActor in self?.microphoneSilent() }
-            }
-        }
-        engine.prepare()
-        try MicrophoneAccess.start(engine)
-        guard engine.isRunning else { throw NoInputDevice() }
-    }
-
-    private func observeMicrophoneConfiguration() {
-        microphoneConfiguration.observe(engine) { [weak self] in
-            MainActor.assumeIsolated { self?.restartMicrophone() }
-        }
-    }
-
-    private func replaceMicrophoneEngine() {
-        microphoneConfiguration.stop()
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
-        disableVoiceProcessing()
-        // A failed voice-processing unit can leave the engine unusable even after it is disabled.
-        engine = AVAudioEngine()
-        observeMicrophoneConfiguration()
-    }
-
-    private func disableVoiceProcessing() {
-        guard engine.inputNode.isVoiceProcessingEnabled else { return }
-        do {
-            try engine.inputNode.setVoiceProcessingEnabled(false)
-        } catch {
-            log.error("could not disable voice processing: \(error.localizedDescription)")
-        }
-    }
-
-    /// Exact zeros from the mic mean the capture path is broken (seen with voice processing);
-    /// recording without echo cancellation beats losing the user's side of the meeting.
-    private func microphoneSilent() {
-        guard echoCancellation, startedAt != nil else {
-            log.error("microphone delivers only silence")
-            if startedAt != nil { health.microphoneFailed() }
-            return
-        }
-        log.error("microphone silent with voice processing; restarting without echo cancellation")
-        echoCancellation = false
-        replaceMicrophoneEngine()
-        do {
-            try startMicrophone()
-        } catch {
-            health.microphoneFailed()
-            log.error("microphone restart failed: \(String(describing: error))")
-        }
-    }
-
-    private func restartMicrophone() {
-        guard startedAt != nil else { return }
-        engine.stop()
-        do {
-            try startMicrophone()
-            log.notice("microphone restarted after configuration change")
-        } catch {
-            health.microphoneFailed()
-            log.error("microphone restart failed: \(String(describing: error))")
-        }
     }
 
     private func startSystemAudio() {
@@ -610,7 +481,7 @@ final class NativeMeetingRecorder {
 }
 
 /// Thread-safe wrapper so the IOProc can feed the silence watch.
-private final class SilenceProbe: @unchecked Sendable {
+final class SilenceProbe: @unchecked Sendable {
     private let lock = NSLock()
     private let threshold: TimeInterval
     private var watch: SilenceWatch

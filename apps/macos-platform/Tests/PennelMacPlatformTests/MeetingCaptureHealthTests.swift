@@ -3,6 +3,24 @@ import XCTest
 @testable import PennelMacPlatform
 
 final class MeetingCaptureHealthTests: XCTestCase {
+    func testTerminalMicrophoneErrorSurvivesQuiescenceUntilSuccessfulRecovery() {
+        let owner = MeetingMicrophoneHealth()
+        owner.set(.failed)
+        owner.deactivate()
+        var snapshot = MeetingCaptureHealth(echoRequested: true)
+        owner.apply(to: &snapshot)
+        let final = snapshot.bridgeObject(heardSystemAudio: false, archiveError: nil)
+        XCTAssertEqual(final["terminal_error"] as? String, "Microphone recording was interrupted. Check your microphone.")
+        XCTAssertEqual(final["microphone_active"] as? Bool, false)
+        owner.set(.running(echo: false))
+        owner.apply(to: &snapshot)
+        XCTAssertNil(snapshot.microphoneError)
+        owner.deactivate()
+        owner.apply(to: &snapshot)
+        XCTAssertFalse(snapshot.microphoneActive)
+        XCTAssertNil(snapshot.microphoneError)
+    }
+
     func testLiveLevelsUseRawBuffersAndStopAtQuiescenceWithoutChangingArchivedAudio() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

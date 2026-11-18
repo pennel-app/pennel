@@ -7,18 +7,24 @@ public enum AudioInput {
         sampleRate.isFinite && sampleRate > 0 && channels > 0
     }
 
-    static func defaultDeviceAvailable() -> Bool {
+    static func defaultDevice(_ selector: AudioObjectPropertySelector) -> AudioDeviceID? {
         let system = AudioObjectID(kAudioObjectSystemObject)
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        var address = AudioObjectPropertyAddress(mSelector: selector,
                                                 mScope: kAudioObjectPropertyScopeGlobal,
                                                 mElement: kAudioObjectPropertyElementMain)
         var device = AudioObjectID(kAudioObjectUnknown)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
         guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &device) == noErr,
-              device != kAudioObjectUnknown else { return false }
-        address.mSelector = kAudioDevicePropertyDeviceIsAlive
+              device != kAudioObjectUnknown else { return nil }
+        return device
+    }
+
+    static func defaultDeviceAvailable() -> Bool {
+        guard let device = defaultDevice(kAudioHardwarePropertyDefaultInputDevice) else { return false }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsAlive,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var alive: UInt32 = 0
-        size = UInt32(MemoryLayout<UInt32>.size)
+        var size = UInt32(MemoryLayout<UInt32>.size)
         guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &alive) == noErr, alive != 0 else { return false }
         address.mSelector = kAudioDevicePropertyStreamConfiguration
         address.mScope = kAudioObjectPropertyScopeInput

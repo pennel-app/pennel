@@ -34,51 +34,68 @@ enum MicrophoneStartError: LocalizedError, Equatable {
     }
 }
 
+@globalActor actor MeetingMicrophoneControl {
+    static let shared = MeetingMicrophoneControl()
+}
+
+@MeetingMicrophoneControl
 enum MeetingMicrophoneStartup {
+    static func verifyProcessing(requested: Bool, enabled: Bool, bypassed: Bool) throws {
+        if requested && (!enabled || bypassed) { throw MicrophoneStartError.failed }
+    }
+
     static func start(
         echoCancellation: Bool,
-        attempt: (Bool) throws -> Void,
+        checkCurrent: () throws -> Void = {},
+        attempt: (Bool) async throws -> Void,
         reset: () -> Void
-    ) throws -> Bool {
+    ) async throws -> Bool {
         do {
-            try attempt(echoCancellation)
+            try checkCurrent()
+            try await attempt(echoCancellation)
             return echoCancellation
         } catch {
             guard echoCancellation, error as? MicrophoneStartError == .failed else { throw error }
+            try checkCurrent()
             reset()
-            try attempt(false)
+            try await attempt(false)
             return false
         }
     }
 }
 
+@MeetingMicrophoneControl
 enum MeetingMicrophoneFormatReadiness {
     /// Voice-processing teardown can leave the new default-device aggregate temporarily empty.
     /// Wait only while a real default input remains available; permission and missing-device errors
     /// stay specific, and a persistent route failure remains a bounded startup failure.
     static func resolve<Format>(
         attempts: Int,
-        configure: () -> Void = {},
+        now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        configure: () throws -> Void = {},
         read: () -> Format,
         usable: (Format) -> Bool,
         defaultInputAvailable: () -> Bool,
         checkAccess: () throws -> Void,
-        pause: () -> Void
-    ) throws -> Format {
+        pause: () async throws -> Void
+    ) async throws -> Format {
         guard attempts > 0 else { throw MicrophoneStartError.failed }
         try checkAccess()
-        configure()
+        try configure()
+        let deadline = now() + 2
         for attempt in 0..<attempts {
             try checkAccess()
             let format = read()
             if usable(format) { return format }
             guard defaultInputAvailable() else { throw NoInputDevice() }
-            if attempt + 1 < attempts { pause() }
+            guard attempt + 1 < attempts, now() < deadline else { break }
+            try await pause()
         }
         throw MicrophoneStartError.failed
     }
 }
 
+@MeetingMicrophoneControl
 final class MeetingMicrophoneConfigurationObserver {
     private let center: NotificationCenter
     private var observer: NSObjectProtocol?
@@ -86,14 +103,14 @@ final class MeetingMicrophoneConfigurationObserver {
 
     init(center: NotificationCenter = .default) { self.center = center }
 
-    func observe(_ engine: AVAudioEngine, onChange: @escaping () -> Void) {
+    func observe(_ engine: AVAudioEngine, onChange: @escaping @MeetingMicrophoneControl () async -> Void) {
         stop()
         let expectedGeneration = generation
         observer = center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
             // Never block CoreAudio or reenter startup while it changes the engine's devices.
-            DispatchQueue.main.async { [weak self] in
+            Task { @MeetingMicrophoneControl [weak self] in
                 guard self?.generation == expectedGeneration else { return }
-                onChange()
+                await onChange()
             }
         }
     }
@@ -104,7 +121,7 @@ final class MeetingMicrophoneConfigurationObserver {
         observer = nil
     }
 
-    deinit { stop() }
+    deinit { if let observer { center.removeObserver(observer) } }
 }
 
 enum MicrophoneAccess {

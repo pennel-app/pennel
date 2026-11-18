@@ -441,6 +441,7 @@
   "backend.linux_browser_helper_missing": "Browsercalls herkennen vereist xprop en toegang tot de X11-sessie (pakket x11-utils).",
   "backend.echo_check_failed": "Echo-onderdrukking kon niet worden gecontroleerd",
   "backend.echo_unconfirmed": "Deze microfoon biedt geen bevestigde echo-onderdrukking",
+  "backend.echo_inactive_with_speakers": "Echo-onderdrukking is niet actief. Als je via luidsprekers luistert, kan een koptelefoon echo helpen voorkomen.",
   "backend.echo_microphone_start_failed": "Microfoon met echo-onderdrukking kon niet starten",
   "backend.storage_data_symlink": "een gegevensbestand is een symbolische koppeling; maak eerst een gewone lokale kopie",
   "backend.storage_audio_symlink": "een audiobestand is een symbolische koppeling; maak eerst een gewone lokale kopie",
