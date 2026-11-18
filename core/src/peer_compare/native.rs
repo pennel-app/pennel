@@ -110,7 +110,6 @@ pub(crate) fn stream(channel: Arc<dyn PeerCompareNativeChannel>) -> Channel {
                 break;
             }
             if bytes.is_empty() {
-                let _ = writer.shutdown().await;
                 break;
             }
             if writer.write_all(&bytes).await.is_err() {
@@ -118,6 +117,8 @@ pub(crate) fn stream(channel: Arc<dyn PeerCompareNativeChannel>) -> Channel {
                 break;
             }
         }
+        // The other split half still owns the duplex stream when a native read fails.
+        let _ = writer.shutdown().await;
     });
     let (sent, finished) = tokio::sync::oneshot::channel();
     let native_write = channel.clone();
@@ -162,4 +163,75 @@ pub(crate) fn stream(channel: Arc<dyn PeerCompareNativeChannel>) -> Channel {
         writer: finished,
         writer_done: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::peer_compare::{Cancellation, wire};
+    use std::sync::Mutex;
+
+    struct ClosedReader {
+        chunk: Mutex<Option<Vec<u8>>>,
+        buffered: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    }
+    impl PeerCompareNativeChannel for ClosedReader {
+        fn peer_id(&self) -> String {
+            "a".repeat(64)
+        }
+        fn read(&self, _: u32) -> Result<Vec<u8>, PeerCompareError> {
+            if let Some(bytes) = self.chunk.lock().unwrap().take() {
+                return Ok(bytes);
+            }
+            // The pump asks for the next chunk only after it buffered the previous one.
+            let _ = self.buffered.lock().unwrap().take().unwrap().send(());
+            Err(PeerCompareError::Closed)
+        }
+        fn write(&self, bytes: Vec<u8>) -> Result<u32, PeerCompareError> {
+            Ok(bytes.len() as u32)
+        }
+        fn finish_write(&self) -> Result<(), PeerCompareError> {
+            Ok(())
+        }
+        fn close(&self) {}
+    }
+
+    async fn buffered_stream(bytes: &[u8]) -> Channel {
+        let (sent, buffered) = tokio::sync::oneshot::channel();
+        let channel = stream(Arc::new(ClosedReader {
+            chunk: Mutex::new(Some(bytes.to_vec())),
+            buffered: Mutex::new(Some(sent)),
+        }));
+        tokio::time::timeout(std::time::Duration::from_secs(2), buffered)
+            .await
+            .expect("the native pump must buffer the fixture before the test")
+            .unwrap();
+        channel
+    }
+
+    #[tokio::test]
+    async fn native_read_failure_signals_the_open_duplex_reader() {
+        let mut stream = buffered_stream(b"x").await;
+        assert_eq!(stream.read_u8().await.unwrap(), b'x');
+        let read = tokio::time::timeout(std::time::Duration::from_secs(1), stream.read_u8())
+            .await
+            .expect("read termination must reach the wire while the write half is open");
+        assert_eq!(read.unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[tokio::test]
+    async fn cancelled_approval_stops_the_wire_with_native_bytes_already_buffered() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let stage = dir.path().join("stage");
+        let approval = Cancellation::default();
+        let stream = buffered_stream(b"ordinary native fixture").await;
+        approval.cancel();
+        assert_eq!(
+            wire::receive(stream, stage.clone(), target.clone(), None, approval).await,
+            Err(PeerCompareError::Cancelled)
+        );
+        assert!(!stage.exists());
+        assert!(!target.exists());
+    }
 }

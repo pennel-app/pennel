@@ -83,5 +83,5 @@ pub enum PeerCompareError {
     LimitExceeded,
 }
 
-// Preserve the retained file engine byte-for-byte, including its error spelling.
+// Retain the file engine's existing error type name in its public API.
 pub type PeerSyncError = PeerCompareError;

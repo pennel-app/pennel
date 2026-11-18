@@ -1,4 +1,5 @@
 use std::{
+    fs::File,
     future::Future,
     path::{Path, PathBuf},
 };
@@ -119,11 +120,22 @@ pub(crate) async fn send(
 }
 
 pub(crate) async fn receive(
+    channel: Channel,
+    staging: PathBuf,
+    target: PathBuf,
+    max_blocks: Option<u32>,
+    cancel: Cancellation,
+) -> Result<PeerCompareReport, PeerCompareError> {
+    receive_with_sync(channel, staging, target, max_blocks, cancel, File::sync_all).await
+}
+
+async fn receive_with_sync(
     mut channel: Channel,
     staging: PathBuf,
     target: PathBuf,
     max_blocks: Option<u32>,
     cancel: Cancellation,
+    sync: impl Fn(&File) -> std::io::Result<()> + Clone + Send + 'static,
 ) -> Result<PeerCompareReport, PeerCompareError> {
     step(&cancel, channel.write_u8(1)).await?;
     let mut magic = vec![0; MAGIC.len()];
@@ -143,17 +155,9 @@ pub(crate) async fn receive(
     let mut report = PeerCompareReport::pending(&manifest);
     let expected = manifest.clone();
     let check_target = target.clone();
+    let check_sync = sync.clone();
     let existing = disk(&cancel, move || {
-        if !check_target
-            .try_exists()
-            .map_err(|_| PeerCompareError::Storage)?
-        {
-            return Ok(false);
-        }
-        if TransferManifest::from_path(&check_target, expected.block_size())? != expected {
-            return Err(PeerCompareError::Storage);
-        }
-        Ok(true)
+        expected.confirm_existing(&check_target, check_sync)
     })
     .await?;
     if existing {
@@ -183,7 +187,7 @@ pub(crate) async fn receive(
         report.blocks_transferred += 1;
     }
     if partial.needed_blocks().is_empty() {
-        disk(&cancel, move || partial.finish(&target)).await?;
+        disk(&cancel, move || partial.finish_with_sync(&target, sync)).await?;
         report.complete = true;
     }
     finish(&mut channel, report.complete, &cancel).await?;
@@ -252,6 +256,126 @@ mod tests {
             vec![7; 300_000]
         );
     }
+
+    #[tokio::test]
+    async fn published_target_requires_file_and_parent_sync_before_a_zero_content_retry() {
+        for original in [b"synthetic retry fixture".as_slice(), b""] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path().canonicalize().unwrap();
+            let source = root.join("source");
+            let target = root.join("target");
+            let unavailable = root.join("unavailable-source");
+            std::fs::write(&source, original).unwrap();
+            let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+            let publication_syncs: &[&str] = if cfg!(windows) {
+                &["preflight", "file", "directory"]
+            } else {
+                &["file", "directory"]
+            };
+            for (send_from, fail, expected_syncs) in [
+                (&source, Some("directory"), publication_syncs),
+                (&unavailable, Some("file"), &["file"][..]),
+                (&unavailable, Some("directory"), &["file", "directory"][..]),
+                (&unavailable, None, &["file", "directory"][..]),
+            ] {
+                let syncs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+                let observed = syncs.clone();
+                let published = target.clone();
+                let (a, b) = tokio::io::duplex(64 * 1024);
+                let (sent, received) = tokio::join!(
+                    send(
+                        Box::new(a),
+                        manifest.clone(),
+                        send_from.clone(),
+                        Cancellation::default(),
+                    ),
+                    receive_with_sync(
+                        Box::new(b),
+                        root.join("partial"),
+                        target.clone(),
+                        None,
+                        Cancellation::default(),
+                        move |handle: &std::fs::File| {
+                            let kind = if handle.metadata()?.is_file() {
+                                "file"
+                            } else if published.exists() {
+                                "directory"
+                            } else {
+                                "preflight"
+                            };
+                            observed.lock().unwrap().push(kind);
+                            if fail == Some(kind) {
+                                return Err(std::io::Error::other("injected sync failure"));
+                            }
+                            handle.sync_all()
+                        },
+                    )
+                );
+                assert_eq!(*syncs.lock().unwrap(), expected_syncs);
+                assert_eq!(std::fs::read(&target).unwrap(), original);
+                if fail.is_some() {
+                    assert_eq!(received, Err(PeerCompareError::Storage));
+                    assert_eq!(sent, Err(PeerCompareError::Transport));
+                } else {
+                    let (sent, received) = (sent.unwrap(), received.unwrap());
+                    assert!(sent.complete && received.complete);
+                    assert_eq!((sent.bytes_sent, received.bytes_received), (0, 0));
+                    assert_eq!(
+                        (sent.blocks_transferred, received.blocks_transferred),
+                        (0, 0)
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_different_existing_target_is_preserved_without_staging() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        let staging = root.join("partial");
+        std::fs::write(&source, b"one").unwrap();
+        std::fs::write(&target, b"two").unwrap();
+        let manifest = TransferManifest::from_path(&source, 128 * 1024).unwrap();
+        let (a, b) = tokio::io::duplex(64 * 1024);
+        let (sent, received) = tokio::join!(
+            send(Box::new(a), manifest, source, Cancellation::default()),
+            receive(
+                Box::new(b),
+                staging.clone(),
+                target.clone(),
+                None,
+                Cancellation::default(),
+            )
+        );
+        assert_eq!(received, Err(PeerCompareError::Storage));
+        assert_eq!(sent, Err(PeerCompareError::Transport));
+        assert_eq!(std::fs::read(target).unwrap(), b"two");
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn replacing_the_target_during_sync_invalidates_the_verified_handle() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let target = root.join("target");
+        let edited = root.join("edited");
+        std::fs::write(&target, b"one").unwrap();
+        std::fs::write(&edited, b"two").unwrap();
+        let manifest = TransferManifest::from_path(&target, 128 * 1024).unwrap();
+        let result = manifest.confirm_existing(&target, |handle| {
+            handle.sync_all()?;
+            if handle.metadata()?.is_dir() {
+                std::fs::rename(&edited, &target)?;
+            }
+            Ok(())
+        });
+        assert_eq!(result, Err(PeerCompareError::SourceChanged));
+        assert_eq!(std::fs::read(target).unwrap(), b"two");
+    }
+
     #[tokio::test]
     async fn cancellation_unblocks_stalled_read_without_publication() {
         let dir = tempfile::tempdir().unwrap();

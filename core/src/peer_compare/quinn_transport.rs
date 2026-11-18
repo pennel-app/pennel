@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::{
-    ALPN, PeerCompareError, PeerCompareIdentity, STEP_TIMEOUT,
+    ALPN, Cancellation, PeerCompareError, PeerCompareIdentity, STEP_TIMEOUT,
     identity::{PeerVerifier, fingerprint, provider, valid_peer},
     relay::{RelayConfig, RelaySocket},
     wire::Channel,
@@ -186,11 +186,12 @@ impl QuinnTransport {
         }
     }
 
-    fn track(
+    fn track<T>(
         &self,
         connection: quinn::Connection,
         expected: Option<&str>,
-    ) -> Result<quinn::Connection, PeerCompareError> {
+        authorize: impl FnOnce(&str) -> Result<T, PeerCompareError>,
+    ) -> Result<(quinn::Connection, T), PeerCompareError> {
         let identity = connection
             .peer_identity()
             .ok_or(PeerCompareError::Unauthorized)?;
@@ -201,6 +202,9 @@ impl QuinnTransport {
             .first()
             .map(|cert| fingerprint(cert.as_ref()))
             .ok_or(PeerCompareError::Unauthorized)?;
+        let approval = authorize(&peer).inspect_err(|_| {
+            connection.close(403u32.into(), b"peer not approved");
+        })?;
         let pins = self.pins.lock().unwrap_or_else(|p| p.into_inner());
         if !pins.contains(&peer) || expected.is_some_and(|expected| expected != peer) {
             connection.close(403u32.into(), b"peer not approved");
@@ -214,7 +218,7 @@ impl QuinnTransport {
             return Err(PeerCompareError::LimitExceeded);
         }
         connections.push((peer, connection.clone()));
-        Ok(connection)
+        Ok((connection, approval))
     }
 
     pub(crate) async fn connect(&self, encoded: &str) -> Result<Channel, PeerCompareError> {
@@ -239,7 +243,7 @@ impl QuinnTransport {
             .await
             .map_err(|_| PeerCompareError::Transport)?
             .map_err(|_| PeerCompareError::Unauthorized)?;
-        let connection = self.track(connection, Some(&address.identity_id))?;
+        let (connection, ()) = self.track(connection, Some(&address.identity_id), |_| Ok(()))?;
         let (send, recv) = tokio::time::timeout(STEP_TIMEOUT, connection.open_bi())
             .await
             .map_err(|_| PeerCompareError::Transport)?
@@ -252,7 +256,10 @@ impl QuinnTransport {
         }))
     }
 
-    pub(crate) async fn accept(&self) -> Result<Channel, PeerCompareError> {
+    pub(crate) async fn accept(
+        &self,
+        approve_transfer: impl Fn(&str) -> Result<Cancellation, PeerCompareError>,
+    ) -> Result<(Channel, Cancellation), PeerCompareError> {
         loop {
             let incoming = self
                 .endpoint
@@ -262,19 +269,24 @@ impl QuinnTransport {
             let Ok(Ok(connection)) = tokio::time::timeout(STEP_TIMEOUT, incoming).await else {
                 continue;
             };
-            let Ok(connection) = self.track(connection, None) else {
+            let Ok((connection, approval)) = self.track(connection, None, &approve_transfer) else {
                 continue;
             };
-            let (send, recv) = tokio::time::timeout(STEP_TIMEOUT, connection.accept_bi())
-                .await
-                .map_err(|_| PeerCompareError::Transport)?
-                .map_err(|_| PeerCompareError::Transport)?;
-            return Ok(Box::new(QuinnChannel {
+            let (send, recv) = tokio::select! {
+                biased;
+                _ = approval.wait() => continue,
+                stream = tokio::time::timeout(STEP_TIMEOUT, connection.accept_bi()) => {
+                    stream.map_err(|_| PeerCompareError::Transport)?
+                        .map_err(|_| PeerCompareError::Transport)?
+                }
+            };
+            let channel = Box::new(QuinnChannel {
                 send,
                 recv,
                 connection,
                 shutdown: None,
-            }));
+            });
+            return Ok((channel, approval));
         }
     }
 }
@@ -397,14 +409,16 @@ mod tests {
         peer.approve(&source.id()).unwrap();
         let address = source.address_json().unwrap();
         let listening = source.clone();
-        let accepted = tokio::spawn(async move { listening.accept().await });
+        let accepted =
+            tokio::spawn(async move { listening.accept(|_| Ok(Cancellation::default())).await });
         let mut peer_channel = peer.connect(&address).await.unwrap();
         peer_channel.write_u8(7).await.unwrap();
-        let mut source_channel = tokio::time::timeout(std::time::Duration::from_secs(2), accepted)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
+        let (mut source_channel, _) =
+            tokio::time::timeout(std::time::Duration::from_secs(2), accepted)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
         assert_eq!(source_channel.read_u8().await.unwrap(), 7);
 
         let (observed, pending) = tokio::sync::oneshot::channel();
@@ -439,8 +453,8 @@ mod tests {
         ));
         let listening = source.clone();
         let future_accept = tokio::spawn(async move {
-            match listening.accept().await {
-                Ok(mut channel) => {
+            match listening.accept(|_| Ok(Cancellation::default())).await {
+                Ok((mut channel, _)) => {
                     let _ = channel.write_u8(99).await;
                     true
                 }

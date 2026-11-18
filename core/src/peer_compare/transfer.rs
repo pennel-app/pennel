@@ -13,6 +13,8 @@ const MAX_BLOCKS: usize = 16_384;
 const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 2 * 1024 * 1024;
 const MANIFEST_FILE: &str = "manifest.json";
+// Win32 FlushFileBuffers requires GENERIC_WRITE, including on a directory handle.
+const WRITE_ACCESS_FOR_SYNC: bool = cfg!(windows);
 
 type Result<T> = std::result::Result<T, PeerSyncError>;
 
@@ -60,14 +62,21 @@ impl TransferManifest {
         validate_block_size(block_size)?;
         let mut file = open_regular(path)?;
         let before = file.metadata().map_err(|_| PeerSyncError::Storage)?;
-        let size = before.len();
+        let manifest = Self::from_file(&mut file, before.len(), block_size)?;
+        if !unchanged(&before, &file, path)? {
+            return Err(PeerSyncError::SourceChanged);
+        }
+        Ok(manifest)
+    }
+
+    fn from_file(file: &mut File, size: u64, block_size: u32) -> Result<Self> {
         validate_size(size, block_size)?;
         let mut whole = Sha256::new();
         let mut blocks = Vec::new();
         let mut buffer = vec![0; block_size as usize];
         let mut read = 0_u64;
         loop {
-            let length = read_fill(&mut file, &mut buffer)?;
+            let length = read_fill(file, &mut buffer)?;
             if length == 0 {
                 break;
             }
@@ -80,7 +89,7 @@ impl TransferManifest {
             whole.update(&buffer[..length]);
             blocks.push(hash(&buffer[..length]));
         }
-        if read != size || !unchanged(&before, &file, path)? {
+        if read != size {
             return Err(PeerSyncError::SourceChanged);
         }
         let mut manifest = Self {
@@ -94,6 +103,36 @@ impl TransferManifest {
         manifest.revision = manifest.calculate_revision();
         manifest.validate()?;
         Ok(manifest)
+    }
+
+    pub(super) fn confirm_existing(
+        &self,
+        target: &Path,
+        sync: impl Fn(&File) -> std::io::Result<()>,
+    ) -> Result<bool> {
+        let target = checked_absolute(target)?;
+        match fs::symlink_metadata(&target) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(_) => return Err(PeerSyncError::Storage),
+            Ok(_) => {}
+        }
+        let parent = target.parent().ok_or(PeerSyncError::InvalidConfig)?;
+        let directory = open_directory_with_access(parent, WRITE_ACCESS_FOR_SYNC)?;
+        let mut file = open_regular_with_access(&target, WRITE_ACCESS_FOR_SYNC)?;
+        let before = file.metadata().map_err(|_| PeerSyncError::Storage)?;
+        if before.len() != self.size
+            || Self::from_file(&mut file, self.size, self.block_size)? != *self
+        {
+            return Err(PeerSyncError::Storage);
+        }
+        // A previous attempt may have linked this file before its directory sync failed.
+        sync(&file).map_err(|_| PeerSyncError::Storage)?;
+        sync(&directory).map_err(|_| PeerSyncError::Storage)?;
+        ensure_directory_identity(parent, &directory)?;
+        if !unchanged(&before, &file, &target)? {
+            return Err(PeerSyncError::SourceChanged);
+        }
+        Ok(true)
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -307,13 +346,24 @@ impl PartialTransfer {
 
     /// Installs only a fully checked file; an existing destination is preserved for the caller.
     pub fn finish(&self, target: &Path) -> Result<()> {
+        self.finish_with_sync(target, File::sync_all)
+    }
+
+    pub(super) fn finish_with_sync(
+        &self,
+        target: &Path,
+        sync: impl Fn(&File) -> std::io::Result<()>,
+    ) -> Result<()> {
         self.check_directory()?;
         let target = checked_absolute(target)?;
         let parent = target.parent().ok_or(PeerSyncError::InvalidConfig)?;
-        require_directory(parent)?;
+        let directory = open_directory_with_access(parent, WRITE_ACCESS_FOR_SYNC)?;
         if fs::symlink_metadata(&target).is_ok() {
             return Err(PeerSyncError::Storage);
         }
+        // Probe the held Windows directory before exposing a link on this filesystem.
+        #[cfg(windows)]
+        sync(&directory).map_err(|_| PeerSyncError::Storage)?;
         let temporary = parent.join(format!(".pennel-peer-{}.tmp", uuid::Uuid::now_v7()));
         let result = (|| {
             let mut file = private_new(&temporary)?;
@@ -328,13 +378,20 @@ impl PartialTransfer {
             if hex(&whole.finalize()) != self.manifest.sha256 {
                 return Err(PeerSyncError::InvalidBlock);
             }
-            file.sync_all().map_err(|_| PeerSyncError::Storage)?;
-            drop(file);
-            require_directory(parent)?;
+            sync(&file).map_err(|_| PeerSyncError::Storage)?;
+            let identity = file_identity(&file)?;
+            ensure_directory_identity(parent, &directory)?;
             // An exclusive hard link provides no-clobber publication on every supported OS.
             fs::hard_link(&temporary, &target).map_err(|_| PeerSyncError::Storage)?;
+            // Release the private name before its deletion on Windows.
+            #[cfg(windows)]
+            drop(file);
             fs::remove_file(&temporary).map_err(|_| PeerSyncError::Storage)?;
-            sync_directory(parent)?;
+            sync(&directory).map_err(|_| PeerSyncError::Storage)?;
+            ensure_directory_identity(parent, &directory)?;
+            if identity != file_identity(&open_regular(&target)?)? {
+                return Err(PeerSyncError::Storage);
+            }
             Ok(())
         })();
         if result.is_err() {
@@ -598,13 +655,17 @@ fn refuse_link_if_present(path: &Path) -> Result<()> {
 }
 
 fn open_regular(path: &Path) -> Result<File> {
+    open_regular_with_access(path, false)
+}
+
+fn open_regular_with_access(path: &Path, write: bool) -> Result<File> {
     let path = checked_absolute(path)?;
     let before = fs::symlink_metadata(&path).map_err(|_| PeerSyncError::Storage)?;
     if !before.is_file() || is_link(&before) {
         return Err(PeerSyncError::Storage);
     }
     let mut options = OpenOptions::new();
-    options.read(true);
+    options.read(true).write(write);
     no_follow(&mut options);
     let file = options.open(&path).map_err(|_| PeerSyncError::Storage)?;
     let opened = file.metadata().map_err(|_| PeerSyncError::Storage)?;
@@ -726,9 +787,13 @@ fn file_identity(file: &File) -> Result<FileIdentity> {
 }
 
 fn open_directory(path: &Path) -> Result<File> {
+    open_directory_with_access(path, false)
+}
+
+fn open_directory_with_access(path: &Path, write: bool) -> Result<File> {
     require_directory(path)?;
     let mut options = OpenOptions::new();
-    options.read(true);
+    options.read(true).write(write);
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
@@ -762,4 +827,38 @@ fn sync_directory(path: &Path) -> Result<()> {
         .map_err(|_| PeerSyncError::Storage)?;
     let _ = path;
     Ok(())
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use std::os::windows::fs::OpenOptionsExt;
+
+    #[test]
+    fn unsupported_parent_flush_preserves_the_checkpoint_without_publishing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        fs::write(&source, b"synthetic read-only source").unwrap();
+        let _reader = File::options()
+            .read(true)
+            .share_mode(0x1)
+            .open(&source)
+            .unwrap();
+        let manifest = TransferManifest::from_path(&source, MIN_BLOCK_SIZE).unwrap();
+        let block = manifest.read_block(&source, 0).unwrap();
+        let mut partial = PartialTransfer::open(manifest, &root.join("partial")).unwrap();
+        partial.write_block(0, &block).unwrap();
+
+        let result = partial.finish_with_sync(&target, |handle| {
+            if handle.metadata()?.is_dir() {
+                return Err(std::io::ErrorKind::Unsupported.into());
+            }
+            handle.sync_all()
+        });
+        assert_eq!(result, Err(PeerSyncError::Storage));
+        assert!(!target.exists());
+        assert!(partial.needed_blocks().is_empty());
+    }
 }
