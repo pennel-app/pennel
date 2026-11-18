@@ -15,7 +15,7 @@ jobs:
   released-dictation:
     env:
       DICTATION_TRIAL: ${{ contains(github.event.head_commit.message, 'Trial=prepared-profile') && 'dictate' || 'wizard' }}
-    runs-on: macos-26
+    runs-on: ${{ contains(github.event.head_commit.message, 'Pool=macos-15') && 'macos-15' || 'macos-26' }}
     timeout-minutes: 16
     steps:
       - uses: actions/checkout@v5
