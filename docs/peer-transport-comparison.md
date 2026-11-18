@@ -19,7 +19,7 @@ existing sync service. Its transient relay has no offline file mailbox.
 
 | Layer | Implementation |
 | --- | --- |
-| Shared file engine | `TransferManifest` and `PartialTransfer` recovered byte-for-byte from `22042c3`; SHA-256 `fb9833d26e6cb65e73fa93b573060c1c6ca6b8750ca85d60718304992edcacea` |
+| Shared file engine | Both candidates use `TransferManifest` and `PartialTransfer`. The 14 November campaign used the original import from `22042c3`, SHA-256 `fb9833d26e6cb65e73fa93b573060c1c6ca6b8750ca85d60718304992edcacea`. |
 | Shared protocol | Bounded Rust `AsyncRead`/`AsyncWrite` wire, verified checkpoints, final application acknowledgement, cancellation and atomic no-clobber publication |
 | Quinn | `0.11.12`, locked `quinn-proto 0.11.19` / `quinn-udp 0.5.16`, Tokio and Rustls/ring; private Apple fast datapath disabled |
 | Native | One Swift Network.framework implementation for macOS/iOS; P-256 identities in Data Protection Keychain, TLS 1.3, exact peer certificate pins and reciprocal admission |
@@ -94,7 +94,7 @@ here.
   sampling covers the app process through public Mach/getrusage counters at
   50 ms intervals. Neither includes unrelated services or extensions.
 - Capture trials measure native microphone start/release and delivered sample
-  counts while transferring or deliberately stalled. They do not establish ASR,
+  counts at baseline, with a pending transfer, or with its relay paused. They do not establish ASR,
   a real call, speaker attribution, permanent background execution or battery
   acceptance. Small timing samples use median/max, not a p95 claim.
 
@@ -242,8 +242,8 @@ observations, not isolated library footprints or statistically established
 latency advantages.
 
 The earlier complete capture campaign passed all 60 real microphone cycles.
-Startup now includes
-the first nonempty PCM callback, with a two-second readiness deadline. An initial
+It measured Start through observed nonempty PCM. Its two-second wait began
+after the synchronous Start call returned. An initial
 short baseline failed with no transport active; its precise failing subcondition
 was not logged. Every passing cycle delivered at least 6,256 samples and reported
 no raw callback in the 20 ms observation window after stop.
@@ -296,14 +296,15 @@ The corrected seam uses isolated instances of those existing production owners;
 no production microphone or transport implementation changed. An explicit raw
 control remains available through `PENNEL_PEER_CAPTURE_RAW_CONTROL=1`.
 Diagnostics contain numeric state and counters only, with no microphone content,
-route names or device identifiers. Failure cleanup now also awaits cancelled
-transfers before removing scoped files and identities.
+route names or device identifiers. At the recorded revision the harness awaited
+cancelled transfers and removed its temporary files and generic Keychain record.
 
 Two fresh-process corrected campaigns passed all **120 cycles** across Quinn and
 native TLS, each with ten baseline, ten active and ten stalled operations per
-candidate. The existing two-second first-PCM deadline and 300 ms capture hold
-remain unchanged. Each cycle must additionally deliver more PCM during that
-hold; a single initial buffer cannot pass. Every passing cycle delivered at
+candidate. In these tables, “active” means that the transfer job remained
+pending on an unpaused relay. The harness recorded no block-progress sample
+during the microphone window. Each cycle delivered more PCM during the 300 ms
+hold. Every passing cycle delivered at
 least 6,256 samples, with no callback observed in the 20 ms post-Stop window.
 A separate hosted regression verifies that a configuration change restarts a
 stopped engine for its existing listener, while late notifications after Stop
@@ -320,9 +321,9 @@ cannot resurrect capture or callbacks.
 
 The campaigns took 51.404 and 51.110 seconds respectively, with actual Swift
 case success and independently retained phase receipts. Their measured formats
-stayed at 48 kHz and no engine-configuration event occurred. Thus they validate
-the corrected recording seam under transfer load, but alone do not demonstrate
-recovery through the live 48-to-24 kHz transition. A separate preferred-input probe found both input types available, but iOS did
+stayed at 48 kHz and no engine-configuration event occurred. They establish
+sample delivery across the recorded phases. Recovery through the live 48-to-24 kHz
+transition remains open. A separate preferred-input probe found both input types available, but iOS did
 not apply the requested HFP route: capture stayed running at 48 kHz and samples
 grew from 6,256 to 38,362. It failed transition validation after 2.807 seconds;
 this was not a new zero-PCM failure and is not a recovery pass. A separate
@@ -377,8 +378,9 @@ matches the current host, excluding a queued initial-load notification.
 The owner confirmed lock for five seconds, unlock, Home and app return, Wi-Fi off
 for five seconds, Wi-Fi on and return to the Mac's Wi-Fi. The separate signed
 resume test passed one real Swift case in 27.281 seconds. It observed the warm-up
-replacement, then another newly loaded React presenter while both transfers
-remained active. Both independently resumed exactly 7,340,057 bytes, repeated
+replacement, then another newly loaded React presenter while both native jobs
+were outstanding. Each job included its receive, repeat, local hash and re-offer.
+The receipt does not locate payload progress within that reload. Both independently resumed exactly 7,340,057 bytes, repeated
 with zero content bytes and returned 8,388,633 bytes verified by the Mac against
 the retained SHA-256. The QA app and test executable hashes below stayed
 unchanged throughout these two phases.
@@ -409,9 +411,20 @@ down. No Argent runner or Metro session was started; no post-install phone
 inspection or launch restarted a runner. Signed QA products, symbols and failed
 evidence remain retained separately.
 
-Normal ordinary-build validation is recorded on [PR #266's checks](https://github.com/pennel-app/pennel/pull/266/checks)
-for its exact current head. Its CI status is separate from the enabled QA
-physical campaign. Passing ordinary CI alone does not establish physical capture or archive acceptance.
+The four-route and microphone results above belong to the signed 14 November
+artifacts listed below. The [PR checks](https://github.com/pennel-app/pennel/pull/266/checks)
+show ordinary-build validation for the selected commit.
+
+### Review fixes, 18 November 2026
+
+- iOS preparation publishes the completed manifest after linking native sources and rechecking the inputs. The build preflight compares the selected variant and QA mode with the generated bundle identifiers, app group, Keychain service, Swift flags and installed Pods sources. `npm run ios` regenerates a mismatched native project before launch.
+- Revoking a peer retires the approval associated with its current transfers. Block writes and final publication use that approval. A subsequent approval starts a new transfer lifetime. A retry that finds matching bytes syncs the verified file and its parent directory before acknowledging completion.
+- On Windows, the QA receiver requires an NTFS destination and checks that the parent directory can be flushed before it publishes a new link. Microsoft documents that other Windows filesystems can return success without persisting the directory structure. Windows runtime qualification remains open. [MS-FSA product note 80](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4e3695bd-7574-4f24-a223-b4679c065b63)
+- One-shot native trials remove their own test certificate, private key and generic Keychain record. The two-phase lifecycle trial retains its identity until resume finishes. The controller checks the ignore rules of the checkout that contains the requested private output directory.
+- Capture now measures the first nonempty PCM callback from entry into Start. New active-phase receipts require an increase in verified blocks across the whole ten-cycle observation. Progress within an individual microphone hold remains unmeasured. The lifecycle test checks that both resumed receive calls are pending across React replacement. The 14 November receipts retain their original meaning and measurements.
+- The Mac QA build stages the executable with the Core library used to generate its bindings. The signer reads that pair together and uses the certificate fingerprint from the verified signing plan.
+
+Eight QA tests passed on an iOS 26.5 simulator. Six exercised the timing and observation rules. One checked the Keychain entries after a successful trial, a failed probe and a partial import while a separate control identity stayed usable. The other transferred and verified synthetic files with both candidates. Physical capture and React reload on this revised build remain open.
 
 ### Decision and remaining gates
 
