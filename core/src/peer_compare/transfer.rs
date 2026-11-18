@@ -117,7 +117,7 @@ impl TransferManifest {
             Ok(_) => {}
         }
         let parent = target.parent().ok_or(PeerSyncError::InvalidConfig)?;
-        let directory = open_directory_with_access(parent, WRITE_ACCESS_FOR_SYNC)?;
+        let directory = open_publication_directory(parent)?;
         let mut file = open_regular_with_access(&target, WRITE_ACCESS_FOR_SYNC)?;
         let before = file.metadata().map_err(|_| PeerSyncError::Storage)?;
         if before.len() != self.size
@@ -357,7 +357,7 @@ impl PartialTransfer {
         self.check_directory()?;
         let target = checked_absolute(target)?;
         let parent = target.parent().ok_or(PeerSyncError::InvalidConfig)?;
-        let directory = open_directory_with_access(parent, WRITE_ACCESS_FOR_SYNC)?;
+        let directory = open_publication_directory(parent)?;
         if fs::symlink_metadata(&target).is_ok() {
             return Err(PeerSyncError::Storage);
         }
@@ -790,6 +790,57 @@ fn open_directory(path: &Path) -> Result<File> {
     open_directory_with_access(path, false)
 }
 
+fn open_publication_directory(path: &Path) -> Result<File> {
+    let directory = open_directory_with_access(path, WRITE_ACCESS_FOR_SYNC)?;
+    #[cfg(windows)]
+    {
+        use std::ffi::c_void;
+        use std::os::windows::io::AsRawHandle;
+        use std::ptr::null_mut;
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetVolumeInformationByHandleW(
+                file: *mut c_void,
+                volume_name: *mut u16,
+                volume_name_size: u32,
+                serial: *mut u32,
+                max_component: *mut u32,
+                flags: *mut u32,
+                fs_name: *mut u16,
+                fs_name_size: u32,
+            ) -> i32;
+        }
+        let mut fs_name = [0u16; 261]; // MAX_PATH + 1 WCHARs.
+        // The live directory owns the handle and only the filesystem name is requested.
+        let queried = unsafe {
+            GetVolumeInformationByHandleW(
+                directory.as_raw_handle(),
+                null_mut(),
+                0,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                fs_name.as_mut_ptr(),
+                fs_name.len() as u32,
+            )
+        };
+        // MS-FSA 2.1.5.7 note 80 documents that other filesystems can succeed without persisting the directory.
+        if queried == 0 || !supports_windows_directory_flush(&fs_name) {
+            return Err(PeerSyncError::Storage);
+        }
+    }
+    Ok(directory)
+}
+
+#[cfg(any(windows, test))]
+fn supports_windows_directory_flush(fs_name: &[u16]) -> bool {
+    fs_name
+        .iter()
+        .copied()
+        .take_while(|&unit| unit != 0)
+        .eq("NTFS".encode_utf16())
+}
+
 fn open_directory_with_access(path: &Path, write: bool) -> Result<File> {
     require_directory(path)?;
     let mut options = OpenOptions::new();
@@ -827,6 +878,20 @@ fn sync_directory(path: &Path) -> Result<()> {
         .map_err(|_| PeerSyncError::Storage)?;
     let _ = path;
     Ok(())
+}
+
+#[test]
+fn a_successful_volume_query_only_qualifies_ntfs_for_windows_directory_flushes() {
+    for (name, supported) in [
+        ("NTFS", true),
+        ("ReFS", false),
+        ("FAT32", false),
+        ("", false),
+    ] {
+        let mut utf16: Vec<_> = name.encode_utf16().collect();
+        utf16.push(0);
+        assert_eq!(supports_windows_directory_flush(&utf16), supported);
+    }
 }
 
 #[cfg(all(test, windows))]
