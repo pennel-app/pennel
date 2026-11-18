@@ -25,6 +25,17 @@ def pennel_post_install(installer)
   installer.pod_targets.each do |pod|
     targets = native_targets[pod.label] || []
     next if targets.empty?
+    if pod.pod_name == 'PennelMobile'
+      targets.each do |target|
+        target.build_configurations.each do |configuration|
+          settings = configuration.build_settings
+          flags = (settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] || '$(inherited)').to_s.split
+            .reject { |flag| flag == 'PENNEL_PEER_TRANSPORT_QA' }
+          flags << 'PENNEL_PEER_TRANSPORT_QA' if ENV['PENNEL_PEER_TRANSPORT_QA'] == '1'
+          settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = flags.join(' ')
+        end
+      end
+    end
     next if ['PennelMobile', 'PennelMobileKit'].include?(pod.pod_name)
     declared_versions = pod.specs.flat_map do |spec|
       Array(spec.attributes_hash['swift_versions'] || spec.attributes_hash['swift_version'])

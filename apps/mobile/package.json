@@ -11,7 +11,7 @@
     "assets:prepare": "../../scripts/prepare-mobile-assets.sh",
     "prebuild": "npm run assets:prepare && expo prebuild --platform ios --no-install --no-clean",
     "prebuild:clean": "npm run assets:prepare && expo prebuild --platform ios --no-install --clean",
-    "ios": "npm run assets:prepare && npm run native:prepare && expo run:ios",
+    "ios": "npm run assets:prepare && npm run native:prepare && make -C ../.. mobile-run-prepare && expo run:ios",
     "build:ios": "../../scripts/build-mobile-ios.sh",
     "typecheck": "tsc --noEmit",
     "test:plugins": "node --test tests/cng*.test.cjs",

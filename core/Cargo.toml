@@ -22,6 +22,10 @@ required-features = ["evaluation"]
 name = "pennel-decider"
 path = "src/bin/pennel-decider.rs"
 
+[[example]]
+name = "peer_compare_probe"
+required-features = ["peer-transport-qa"]
+
 [dependencies]
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 base64 = "0.23.1"
@@ -44,6 +48,11 @@ uniffi = { version = "0.32.2", features = ["cli"] }
 ureq = "3.5.0"
 uuid = { version = "1.29.0", features = ["v7"] }
 zeroize = "1.9.1"
+quinn = { version = "=0.11.12", default-features = false, features = ["runtime-tokio", "rustls-ring"], optional = true }
+rcgen = { version = "=0.14.10", default-features = false, features = ["crypto", "ring"], optional = true }
+rustls = { version = "0.23.46", default-features = false, features = ["std", "ring"], optional = true }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "net", "io-util", "macros"], optional = true }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 transcribe-cpp = { version = "0.4.1", default-features = false, features = ["metal"], optional = true }
@@ -57,6 +66,7 @@ transcribe-cpp = { version = "0.4.1", default-features = false, optional = true 
 [features]
 default = ["local-models", "speakers"]
 evaluation = []
+peer-transport-qa = ["dep:quinn", "dep:rcgen", "dep:rustls", "dep:tokio", "dep:tokio-rustls"]
 local-models = ["dep:transcribe-cpp"]
 # Local speaker recognition (sherpa-onnx with a statically linked ONNX Runtime). Without it the core
 # still matches voices from a Pennel Cloud diarization.

@@ -56,10 +56,13 @@ elif name == "git":
     mutate_registry("manifest")
     print("a" * 40)
 elif name == "node":
-    assert (root / "apps/mobile/artifacts/ios/manifest.json").is_file()
+    manifest = json.loads((root / "apps/mobile/artifacts/ios/manifest.json").read_text())
+    assert manifest.get("preparing") and "features" not in manifest
     assert not (root / "apps/ios").exists()
     assert not (root / "apps/macos").exists()
     mutate_registry("native-sources")
+    if os.environ.get("PENNEL_BUILD_TEST_LINK_FAILURE"):
+        raise SystemExit("Cannot stage native source links")
 else:
     raise SystemExit("Unexpected native build command: " + name)
 '''
@@ -98,6 +101,7 @@ class MobileCoreBuildTests(unittest.TestCase):
         self.env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
                     "PENNEL_BUILD_TEST_ROOT": str(self.root), "PENNEL_BUILD_TEST_LOG": str(self.log)}
         self.env.pop("PENNEL_IOS_ARCHIVE_ONLY", None)
+        self.env.pop("PENNEL_PEER_TRANSPORT_QA", None)
         self.artifacts = self.root / "apps/mobile/artifacts/ios"
 
     def prepare(self, archive_only=None, script=SCRIPT.name):
@@ -148,7 +152,7 @@ class MobileCoreBuildTests(unittest.TestCase):
         generator = next(args for name, *args in commands if name == "cargo" and args[0] == "run")
         self.assertIn("--no-default-features", generator)
         self.assertEqual(generator[generator.index("--library") + 1], str(self.core / "target/aarch64-apple-ios-sim/release/libpennel_core.dylib"))
-        self.assertEqual(commands[-1], ["node", str(self.root / "apps/mobile/plugins/native-sources.cjs")])
+        self.assertIn(["node", str(self.root / "apps/mobile/plugins/native-sources.cjs")], commands)
         self.assertFalse((self.root / "apps/ios").exists())
         self.assertFalse((self.root / "apps/macos").exists())
 
@@ -156,6 +160,58 @@ class MobileCoreBuildTests(unittest.TestCase):
         result = self.prepare("0")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_build_targets(self.commands(), ["aarch64-apple-ios", "aarch64-apple-ios-sim"])
+
+    def test_peer_transport_qualification_matches_both_libraries_and_bindgen(self):
+        self.env["PENNEL_PEER_TRANSPORT_QA"] = "1"
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads((self.artifacts / "manifest.json").read_text())
+        self.assertEqual(manifest["features"], ["peer-transport-qa"])
+        core_commands = [args for name, *args in self.commands() if name == "cargo"
+                         and (args[0] == "run" or str(self.core / "Cargo.toml") in args)]
+        self.assertEqual(len(core_commands), 3)
+        for args in core_commands:
+            self.assertEqual(args[args.index("--features") + 1], "peer-transport-qa")
+
+    def test_peer_transport_qualification_cannot_prepare_shipping_artifacts(self):
+        self.env.update(PENNEL_PEER_TRANSPORT_QA="1", PENNEL_VARIANT="production")
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Preview", result.stderr)
+        self.assertEqual(self.commands(), [])
+
+    def test_failed_qa_switch_cannot_keep_an_ordinary_artifact_label(self):
+        self.assertEqual(self.prepare().returncode, 0)
+        self.env.update(PENNEL_PEER_TRANSPORT_QA="1", PENNEL_BUILD_TEST_REGISTRY_MUTATION="framework")
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        manifest = json.loads((self.artifacts / "manifest.json").read_text())
+        self.assertTrue(manifest["preparing"])
+        self.assertNotIn("features", manifest)
+
+    def test_failed_return_to_ordinary_cannot_keep_a_qa_artifact_label(self):
+        self.env["PENNEL_PEER_TRANSPORT_QA"] = "1"
+        self.assertEqual(self.prepare().returncode, 0)
+        self.env.update(PENNEL_PEER_TRANSPORT_QA="0", PENNEL_BUILD_TEST_REGISTRY_MUTATION="bindings")
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        manifest = json.loads((self.artifacts / "manifest.json").read_text())
+        self.assertTrue(manifest["preparing"])
+        self.assertNotIn("features", manifest)
+
+    def test_failed_native_linking_blocks_both_feature_switches(self):
+        for previous, selected in (("0", "1"), ("1", "0")):
+            with self.subTest(previous=previous, selected=selected):
+                self.env["PENNEL_PEER_TRANSPORT_QA"] = previous
+                self.env.pop("PENNEL_BUILD_TEST_LINK_FAILURE", None)
+                self.assertEqual(self.prepare().returncode, 0)
+                self.env.update(PENNEL_PEER_TRANSPORT_QA=selected, PENNEL_BUILD_TEST_LINK_FAILURE="1")
+                failed = self.prepare()
+                self.assertNotEqual(failed.returncode, 0)
+                self.assertIn("Cannot stage native source links", failed.stderr)
+                pending = json.loads((self.artifacts / "manifest.json").read_text())
+                self.assertTrue(pending.get("preparing"))
+                self.assertNotIn("features", pending)
 
     def test_registry_provenance_changes_without_redefining_core_or_binding_hashes(self):
         result = self.prepare()
@@ -218,12 +274,13 @@ class MobileCoreBuildTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('support calibration asset is missing from', result.stderr.lower())
                 self.assertIn(target + '/release/libpennel_core.a', result.stderr)
-                self.assertFalse((self.artifacts / "manifest.json").exists())
+                pending = json.loads((self.artifacts / "manifest.json").read_text())
+                self.assertTrue(pending['preparing'])
+                self.assertNotIn('features', pending)
                 self.assertFalse(any(name == 'cargo' and args[0] == 'run' for name, *args in self.commands()))
 
     def test_registry_changes_during_preparation_never_label_old_outputs_with_new_registry(self):
         pinned = self.registry.read_bytes()
-        pinned_hash = hashlib.sha256(pinned).hexdigest()
         result = self.prepare()
         self.assertEqual(result.returncode, 0, result.stderr)
         for phase in ('keyboard-aarch64-apple-ios', 'core-aarch64-apple-ios',
@@ -235,16 +292,13 @@ class MobileCoreBuildTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('qualification registry changed', result.stderr.lower())
                 manifest_file = self.artifacts / 'manifest.json'
-                if manifest_file.exists():
-                    manifest = json.loads(manifest_file.read_text())
-                    self.assertEqual(manifest['qualification_registry_sha256'], pinned_hash)
-                    self.assertEqual(manifest['qualification_registry_adopted_records'], 0)
-                    self.assertNotEqual(manifest['qualification_registry_sha256'],
-                                        hashlib.sha256(self.registry.read_bytes()).hexdigest())
+                self.assertTrue(manifest_file.exists())
+                manifest = json.loads(manifest_file.read_text())
+                self.assertTrue(manifest.get('preparing'))
+                self.assertNotIn('features', manifest)
 
     def test_support_changes_during_preparation_never_mislabel_existing_outputs(self):
         pinned = self.support.read_bytes()
-        pinned_hash = hashlib.sha256(pinned).hexdigest()
         result = self.prepare()
         self.assertEqual(result.returncode, 0, result.stderr)
         for phase in ('keyboard-aarch64-apple-ios', 'core-aarch64-apple-ios',
@@ -256,11 +310,10 @@ class MobileCoreBuildTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('support calibration asset changed', result.stderr.lower())
                 manifest_file = self.artifacts / 'manifest.json'
-                if manifest_file.exists():
-                    manifest = json.loads(manifest_file.read_text())
-                    self.assertEqual(manifest['support_calibration_sha256'], pinned_hash)
-                    self.assertNotEqual(manifest['support_calibration_sha256'],
-                                        hashlib.sha256(self.support.read_bytes()).hexdigest())
+                self.assertTrue(manifest_file.exists())
+                manifest = json.loads(manifest_file.read_text())
+                self.assertTrue(manifest.get('preparing'))
+                self.assertNotIn('features', manifest)
 
     def test_archive_preparation_builds_only_device_libraries_and_matching_bindings(self):
         result = self.prepare("1")

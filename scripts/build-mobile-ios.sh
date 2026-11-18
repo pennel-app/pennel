@@ -7,6 +7,7 @@ if [ ! -d "$workspace/ios/Pennel.xcworkspace" ]; then
   echo "Prepare the native core, run Expo Prebuild, and install iOS pods before building." >&2
   exit 1
 fi
+node "$workspace/plugins/peer-transport-qa.cjs" "$workspace"
 bash "$root/scripts/ci-xcodebuild.sh" build \
   -workspace "$workspace/ios/Pennel.xcworkspace" \
   -scheme Pennel \

@@ -1,13 +1,9 @@
 import type { ExpoConfig, ConfigContext } from 'expo/config';
 import tokens from '../../assets/brand/tokens.json';
+import { resolveMobileVariant, targetBundleIdentifiers } from './plugins/mobile-variant.cjs';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const production = process.env.PENNEL_VARIANT === 'production';
-  const testFlight = process.env.PENNEL_TESTFLIGHT === '1';
-  if (testFlight && production) throw new Error('TestFlight distribution is restricted to Pennel Preview');
-  const bundleIdentifier = production ? 'app.pennel.ios' : 'app.pennel.ios.preview';
-  const groupIdentifier = production ? 'group.app.pennel' : 'group.app.pennel.preview';
-  const scheme = production ? 'pennel' : 'pennel-preview';
+  const { production, testFlight, bundleIdentifier, groupIdentifier, scheme } = resolveMobileVariant();
   return {
     ...config,
     name: 'Pennel',
@@ -55,7 +51,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         '../../assets/brand/fonts/InstrumentSerif-Regular.ttf',
       ] }],
       ['expo-widgets', {
-        bundleIdentifier: `${bundleIdentifier}.widgets`,
+        bundleIdentifier: targetBundleIdentifiers(bundleIdentifier).ExpoWidgetsTarget,
         groupIdentifier,
         enablePushNotifications: false,
         widgets: [],

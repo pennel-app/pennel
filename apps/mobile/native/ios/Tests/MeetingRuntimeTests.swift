@@ -328,6 +328,41 @@ struct MeetingRuntimeTests {
         #expect(received.count == 1)
     }
 
+    @Test func shared_microphone_restarts_a_single_client_and_ignores_late_events_after_stop() throws {
+        let capture = CountingCapture()
+        let center = NotificationCenter()
+        let microphone = SharedMicrophone(capture: capture, notifications: center)
+        let meeting = microphone.client()
+        let received = Received()
+        try meeting.start { received.add($0) }
+        defer { meeting.stop() }
+        capture.feed([0.1])
+        #expect(received.count == 1)
+
+        capture.die()
+        #expect(!meeting.isRunning)
+        center.post(name: .AVAudioEngineConfigurationChange, object: nil)
+        #expect(capture.starts == 2)
+        #expect(capture.stops == 1)
+        #expect(meeting.isRunning)
+        capture.feed([0.2, 0.3])
+        #expect(received.count == 3)
+
+        meeting.stop()
+        #expect(!meeting.isRunning)
+        #expect(capture.stops == 2)
+        for event in [Notification.Name.AVAudioEngineConfigurationChange,
+                      AVAudioSession.routeChangeNotification,
+                      AVAudioSession.mediaServicesWereResetNotification] {
+            center.post(name: event, object: nil)
+            capture.feed([0.4])
+            #expect(capture.starts == 2)
+            #expect(capture.stops == 2)
+            #expect(!meeting.isRunning)
+            #expect(received.count == 3)
+        }
+    }
+
     @Test func recording_takes_the_category_from_playback() throws {
         let backend = FakeSessionBackend()
         let shared = SharedAudioSession(backend: backend)
