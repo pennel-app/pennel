@@ -2,6 +2,8 @@
 
 import contextlib
 import hashlib
+import hmac
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -10,6 +12,7 @@ import plistlib
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from urllib.request import urlopen
 
@@ -130,7 +133,7 @@ def launch(result, fixture=False):
                 dialog = json.loads(text(observer(), "first-launch"))
                 for key, observed in dialog.items():
                     if observed:
-                        result.setdefault("first_launch_observations", {})[key] = True
+                        result.setdefault("first_launch_observations", {})[key] = observed
             probe = run(observer(), "inspect", capture=True, check=False, timeout=8)
             if probe.stdout.strip():
                 result["native"] = json.loads(probe.stdout)
@@ -174,11 +177,35 @@ def insert_entry(connection, entry_id, timestamp, value):
     )
 
 
-def seed():
+class LocalModels(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        if self.path != "/v1/models":
+            self.send_error(404)
+            return
+        # Keep only the hash comparison; no generated key, header, or request body leaves the runner.
+        expected = Path(os.environ["RUNNER_TEMP"]) / "pennel-fixture-digest"
+        value = self.headers.get("Authorization", "").removeprefix("Bearer ")
+        matches = expected.is_file() and hmac.compare_digest(hashlib.sha256(value.encode()).hexdigest(), expected.read_text())
+        self.server.observations.append(matches)
+        if not matches:
+            self.send_error(401)
+            return
+        body = b'{"object":"list","data":[{"id":"installation-fixture","object":"model"}]}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def seed(port):
     require(HISTORY.is_file(), "released app did not initialize the history database")
     stt = {"provider_id": "local", "model": "whisper-large-v3-turbo"}
     settings = {
-        "providers": [{"id": "groq", "kind": "groq", "name": "Groq", "base_url": "http://127.0.0.1:1/v1"},
+        "providers": [{"id": "groq", "kind": "groq", "name": "Groq", "base_url": f"http://127.0.0.1:{port}/v1"},
                       {"id": "local", "kind": "local", "name": "Local", "base_url": ""}],
         "dictation_stt": stt, "meeting_stt": stt, "llm": {"provider_id": "groq", "model": "llama-3.3-70b-versatile"},
         "mode": "fast", "language": "nl", "ui_language": "en", "dictionary": ["QA-Proefwoord"], "style_rules": [],
@@ -234,6 +261,9 @@ def main(receipt):
     receipt["hosted_audio_routes"] = [{key: device[key] for key in ("_name", "coreaudio_device_input", "coreaudio_device_output", "coreaudio_device_transport") if key in device} for device in devices]
     scenario = receipt["scenario"]
     history_env = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1"}
+    local = ThreadingHTTPServer(("127.0.0.1", 0), LocalModels)
+    local.observations = []
+    threading.Thread(target=local.serve_forever, daemon=True).start()
     tap_dir = Path(text("brew", "--repository")) / "Library/Taps/pennel-app/homebrew-pennel"
     if scenario == "upgrade":
         run("brew", "tap", TAP)
@@ -256,7 +286,7 @@ def main(receipt):
             launch(result)
             stop(result)
             if HISTORY.exists():
-                seed()
+                seed(local.server_address[1])
                 fixture_available = True
                 result["seeded_synthetic_profile_in_app_initialized_storage"] = True
         if fixture_available:
@@ -264,6 +294,7 @@ def main(receipt):
         launch(result, fixture=fixture_available)
         if fixture_available and result.get("native", {}).get("finished_launching"):
             actions = {"0.1.47": "credential-legacy-save", "0.1.49": "credential-migrate", "0.1.52": "credential-check"}
+            before = len(local.observations)
             observed = json.loads(text(observer(), actions[version]))
             result["installed_credential_ui"] = observed
             if observed.get("app_owned_legacy_migration_requested"):
@@ -273,6 +304,7 @@ def main(receipt):
                     time.sleep(1)
                     if result["system_observation_after_migration"].get("synthetic_item_allowed_once"):
                         result["installed_credential_ui"] = json.loads(text(observer(), "credential-check"))
+            result["loopback_received_matching_synthetic_credential"] = True in local.observations[before:]
         stop(result)
         print(json.dumps({version: result}), flush=True)
     require(all(v.get("native", {}).get("finished_launching") and v.get("normal_quit") for v in receipt["versions"].values()),
@@ -281,7 +313,7 @@ def main(receipt):
         require(all(v.get("runtime_applied_one_day_history_retention") for v in receipt["versions"].values()),
                 "one or more installed upgrade data checks remain unverified")
         receipt["credential_access_verified"] = all(
-            v.get("installed_credential_ui", {}).get("provider_shows_saved_access") for v in receipt["versions"].values()
+            v.get("loopback_received_matching_synthetic_credential") for v in receipt["versions"].values()
         )
 
 

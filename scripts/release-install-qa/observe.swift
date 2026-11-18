@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CryptoKit
 import Foundation
 
 let action = CommandLine.arguments[1]
@@ -90,8 +91,8 @@ func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken
     evidence["visible_provider_controls"] = contents.compactMap { _, role, names in
         ["Connections","Providers","Advanced","Groq","API key","Paste your key","Clear","Test connection","Saved access"].first(where: { name in names.contains(where: { $0 == name || $0.hasPrefix(name + " ") }) }).map { role + ":" + $0 }
     }
-    let field = contents.first { node, _, labels in
-        (attribute(node, kAXSubroleAttribute as CFString) as? String) == "AXSecureTextField"
+    let field = contents.first { node, role, labels in
+        (["AXTextField", "AXTextArea"].contains(role) || (attribute(node, kAXSubroleAttribute as CFString) as? String) == "AXSecureTextField")
             && labels.contains(where: { $0 == "API key" || $0 == "Paste your key" || $0.contains("(saved)") })
     }
     evidence["provider_key_field_visible"] = field != nil
@@ -102,6 +103,10 @@ func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken
         let filled = focused && AXUIElementSetAttributeValue(field.0, kAXValueAttribute as CFString, token as CFString) == .success
         evidence["disposable_value_entered"] = filled
         if filled {
+            let digest = SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
+            if let temp = ProcessInfo.processInfo.environment["RUNNER_TEMP"] {
+                try? digest.write(to: URL(fileURLWithPath: temp).appendingPathComponent("pennel-fixture-digest"), atomically: true, encoding: .utf8)
+            }
             for down in [true, false] {
                 CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down)?.postToPid(app.processIdentifier)
             }
@@ -109,10 +114,14 @@ func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken
         }
     }
     let after = controls(root)
-    evidence["provider_shows_saved_access"] = after.contains { node, role, labels in
+    let saved = after.contains { node, role, labels in
         (role == "AXButton" && labels.contains("Clear")) || (
             (attribute(node, kAXSubroleAttribute as CFString) as? String) == "AXSecureTextField"
                 && labels.contains(where: { $0.contains("(saved)") }))
+    }
+    evidence["provider_shows_saved_access"] = saved
+    if saved && after.contains(where: { _, _, values in values.contains(where: { $0.hasPrefix("http://127.0.0.1:") && $0.hasSuffix("/v1") }) }) {
+        evidence["local_endpoint_test_requested"] = press(root, "Test connection")
     }
     return evidence
 }
@@ -125,11 +134,13 @@ func write(_ values: [String: Any]) throws {
 if action == "first-launch" || action == "owned-key-consent" {
     var status: [String: Any] = ["observer_permitted": AXIsProcessTrusted(), "ordinary_confirmation": false]
     if AXIsProcessTrusted() {
+        status["frontmost_app"] = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         for identifier in ["com.apple.coreservices.uiagent", "com.apple.SecurityAgent", "com.apple.authorizationhost", "com.apple.UserNotificationCenter"] {
             for running in NSRunningApplication.runningApplications(withBundleIdentifier: identifier) {
                 let root = AXUIElementCreateApplication(running.processIdentifier)
                 AXUIElementSetMessagingTimeout(root, 0.5)
                 let windows = attribute(root, kAXWindowsAttribute as CFString) as? [AXUIElement] ?? []
+                if !windows.isEmpty { status["system_window_owner"] = identifier }
                 for window in windows {
                     let items = descendants([window])
                     let copy = items.flatMap { $0.2 }.joined(separator: " ").lowercased()
@@ -143,6 +154,7 @@ if action == "first-launch" || action == "owned-key-consent" {
                         status["pennel_dialog_owner"] = identifier
                         status["ordinary_open_button_visible"] = items.contains { $0.1 == "AXButton" && $0.2.contains("Open") }
                         status["downloaded_internet_wording"] = copy.contains("downloaded from the internet")
+                        status["open_question"] = copy.contains("are you sure") && copy.contains("open")
                     }
                     if action == "owned-key-consent" {
                         // Only an item created via this test's previous installed app can reach this action.
