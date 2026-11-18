@@ -1,8 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { peerTransportQAEnabled } = require('./peer-transport-qa.cjs');
-
-const peerQAServiceFiles = ['PeerComparisonTransport.swift', 'PeerComparisonBridge.swift'];
+const { peerTransportQAEnabled, peerQAServiceFiles } = require('./peer-transport-qa.cjs');
 
 const serviceFiles = [
   'AppModel.swift', 'AppPaths.swift', 'AppRouter.swift', 'Keychain.swift', 'ErrorText.swift', 'ProviderKinds.swift',

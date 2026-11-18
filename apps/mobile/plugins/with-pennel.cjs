@@ -3,7 +3,8 @@ const path = require('node:path');
 const plist = require('@expo/plist').default;
 const { withBaseMod, withInfoPlist, withPodfileProperties } = require('expo/config-plugins');
 const { prepareNativeSources } = require('./native-sources.cjs');
-const { peerTransportQAEnabled, validatePeerArtifacts } = require('./peer-transport-qa.cjs');
+const { targetBundleIdentifiers } = require('./mobile-variant.cjs');
+const { peerTransportQAEnabled, peerQAProfile, peerQAKeychainService, validatePeerArtifacts } = require('./peer-transport-qa.cjs');
 
 const keyboardName = 'PennelKeyboard';
 const widgetName = 'ExpoWidgetsTarget';
@@ -236,6 +237,7 @@ function swiftFiles(directory) {
 
 function configureProject(config, options) {
   const intentProbe = keyboardFeasibilityEnabled(options);
+  const bundleIds = targetBundleIdentifiers(options.bundleIdentifier);
   const project = config.modResults;
   removeLegacyKeyboardSources(project);
   const ios = config.modRequest.platformProjectRoot;
@@ -246,11 +248,11 @@ function configureProject(config, options) {
   const widget = targetsNamed(project, widgetName)[0];
   if (!widget) throw new Error('Expo Widgets target must be generated before Pennel adds native integrations');
   const keyboard = targetsNamed(project, keyboardName)[0] ?? (() => {
-    const added = project.addTarget(keyboardName, 'app_extension', keyboardName, `${options.bundleIdentifier}.keyboard`);
+    const added = project.addTarget(keyboardName, 'app_extension', keyboardName, bundleIds[keyboardName]);
     return [added.uuid, added.pbxNativeTarget];
   })();
   const test = targetsNamed(project, keyboardTestsName)[0] ?? (() => {
-    const added = project.addTarget(keyboardTestsName, 'unit_test_bundle', keyboardTestsName, `${options.bundleIdentifier}.keyboard-tests`);
+    const added = project.addTarget(keyboardTestsName, 'unit_test_bundle', keyboardTestsName, bundleIds[keyboardTestsName]);
     // Unit tests are built by the scheme, never embedded or made an app dependency.
     const objects = project.hash.project.objects;
     const deps = realEntries(objects.PBXTargetDependency).filter(([, dep]) => dep.target === added.uuid).map(([id]) => id);
@@ -258,7 +260,7 @@ function configureProject(config, options) {
     return [added.uuid, added.pbxNativeTarget];
   })();
   const runtimeTest = targetsNamed(project, runtimeTestsName)[0] ?? (() => {
-    const added = project.addTarget(runtimeTestsName, 'unit_test_bundle', runtimeTestsName, `${options.bundleIdentifier}.runtime-tests`);
+    const added = project.addTarget(runtimeTestsName, 'unit_test_bundle', runtimeTestsName, bundleIds[runtimeTestsName]);
     const objects = project.hash.project.objects;
     const deps = realEntries(objects.PBXTargetDependency).filter(([, dep]) => dep.target === added.uuid).map(([id]) => id);
     app[1].dependencies = app[1].dependencies.filter((entry) => !deps.includes(entry.value));
@@ -308,6 +310,7 @@ function configureProject(config, options) {
         Object.assign(settings, {
           APPLICATION_EXTENSION_API_ONLY: 'YES',
           CODE_SIGN_ENTITLEMENTS: quote(`${keyboardName}/${keyboardName}.entitlements`),
+          PRODUCT_BUNDLE_IDENTIFIER: quote(bundleIds[keyboardName]),
           INFOPLIST_FILE: quote(`${keyboardName}/Info.plist`),
           PRODUCT_MODULE_NAME: keyboardName,
           CURRENT_PROJECT_VERSION: quote(config.ios?.buildNumber ?? '1'),
@@ -316,7 +319,8 @@ function configureProject(config, options) {
           GENERATE_INFOPLIST_FILE: 'NO',
         });
       } else if (id === test[0] || id === runtimeTest[0]) {
-        Object.assign(settings, { GENERATE_INFOPLIST_FILE: 'YES', ENABLE_TESTING_SEARCH_PATHS: 'YES', CODE_SIGNING_ALLOWED: 'NO', PRODUCT_MODULE_NAME: id === test[0] ? keyboardTestsName : runtimeTestsName, TARGETED_DEVICE_FAMILY: quote('1,2') });
+        const name = id === test[0] ? keyboardTestsName : runtimeTestsName;
+        Object.assign(settings, { GENERATE_INFOPLIST_FILE: 'YES', ENABLE_TESTING_SEARCH_PATHS: 'YES', CODE_SIGNING_ALLOWED: 'NO', PRODUCT_MODULE_NAME: name, PRODUCT_BUNDLE_IDENTIFIER: quote(bundleIds[name]), TARGETED_DEVICE_FAMILY: quote('1,2') });
         if (id === runtimeTest[0]) {
           settings.TEST_HOST = quote('$(BUILT_PRODUCTS_DIR)/Pennel.app/Pennel');
           settings.BUNDLE_LOADER = quote('$(TEST_HOST)');
@@ -367,12 +371,12 @@ function withPennel(config, options) {
     // RN's pod installer scans every shipping plist; declare its flag before sealing the snapshot.
     Object.assign(mod.modResults, variantInfo(options), { RCTNewArchEnabled: true });
     if (peerQA) {
-      mod.modResults.PennelQAProfile = 'peer-transport';
-      mod.modResults.PennelKeychainService = 'app.pennel.ios.preview.qa.peer-transport';
+      mod.modResults.PennelQAProfile = peerQAProfile;
+      mod.modResults.PennelKeychainService = peerQAKeychainService;
       mod.modResults.NSLocalNetworkUsageDescription = 'This isolated Pennel qualification exchanges synthetic fixtures with your Mac.';
       mod.modResults.NSAppTransportSecurity = { ...(mod.modResults.NSAppTransportSecurity || {}), NSAllowsLocalNetworking: true };
     } else {
-      if (mod.modResults.PennelQAProfile === 'peer-transport' && mod.modResults.NSAppTransportSecurity) {
+      if (mod.modResults.PennelQAProfile === peerQAProfile && mod.modResults.NSAppTransportSecurity) {
         delete mod.modResults.NSAppTransportSecurity.NSAllowsLocalNetworking;
         if (!Object.keys(mod.modResults.NSAppTransportSecurity).length) delete mod.modResults.NSAppTransportSecurity;
       }

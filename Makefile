@@ -1,4 +1,4 @@
-.PHONY: core test verify-core desktop desktop-preview desktop-test packaging-test theme theme-check mobile-core mobile-prebuild mobile-test mobile-ios mobile-native-test
+.PHONY: core test verify-core desktop desktop-preview desktop-test packaging-test theme theme-check mobile-core mobile-prebuild mobile-pods mobile-run-prepare mobile-test mobile-ios mobile-native-test
 
 core:
 	scripts/with-toolchain.sh cargo build --manifest-path core/Cargo.toml --release --lib
@@ -44,9 +44,19 @@ mobile-core:
 mobile-prebuild: mobile-core
 	cd apps/mobile && npm run test:prebuild
 	cd apps/mobile && npm run prebuild:clean
+	$(MAKE) mobile-pods
+	cd apps/mobile && npm run test:pods
+
+mobile-pods:
 	cp apps/mobile/Podfile.lock apps/mobile/ios/Podfile.lock
 	cd apps/mobile/ios && pod '_$(PENNEL_PODS_VERSION)_' install --deployment
-	cd apps/mobile && npm run test:pods
+
+mobile-run-prepare:
+	@if ! node apps/mobile/plugins/peer-transport-qa.cjs apps/mobile; then \
+		(cd apps/mobile && npm run prebuild) && \
+		$(MAKE) mobile-pods && \
+		node apps/mobile/plugins/peer-transport-qa.cjs apps/mobile; \
+	fi
 
 mobile-test:
 	cd apps/mobile && npm run typecheck && npm run test:plugins && npm run test:widgets && npm run test:ui

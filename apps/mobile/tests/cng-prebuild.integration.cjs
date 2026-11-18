@@ -11,11 +11,17 @@ const workspace = path.resolve(__dirname, '..');
 const objects = (section = {}) => Object.entries(section).filter(([key]) => !key.endsWith('_comment'));
 const unquote = (value) => String(value ?? '').replace(/^"|"$/g, '');
 
-function addLegacyKeyboardReferences() {
+function introduceStaleProjectSettings() {
   const file = path.join(workspace, 'ios/Pennel.xcodeproj/project.pbxproj');
   const project = xcode.project(file);
   project.parseSync();
   const graph = project.hash.project.objects;
+  for (const name of ['PennelKeyboard', 'PennelKeyboardTests', 'PennelRuntimeTests']) {
+    const [id] = targetsNamed(project, name)[0];
+    for (const configuration of configurations(project, id)) {
+      configuration.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = '"app.pennel.stale"';
+    }
+  }
   const native = objects(graph.PBXGroup).find(([, group]) => unquote(group.name) === 'PennelNative')[1];
   for (const [source, targets] of [
     ['../../ios/PennelKeyboard/Sources/KeyboardRoot.swift', ['PennelKeyboard']],
@@ -104,7 +110,7 @@ test('clean and repeated non-clean Prebuild retain equivalent Pennel target owne
   const run = (script) => execFileSync('npm', ['run', script], { cwd: workspace, stdio: 'pipe', timeout: 60_000, env: { ...process.env, CI: '1', PENNEL_VARIANT: 'preview' } });
   run('prebuild:clean');
   const initial = snapshot();
-  addLegacyKeyboardReferences();
+  introduceStaleProjectSettings();
   run('prebuild');
   assert.deepEqual(snapshot(), initial);
   run('prebuild');

@@ -111,6 +111,8 @@ verify_qualification_inputs
 
 mkdir -p "$artifacts/PennelCore"
 cp "$bindings/pennel_core.swift" "$artifacts/PennelCore/"
+node "$root/apps/mobile/plugins/native-sources.cjs"
+verify_qualification_inputs
 python3 - "$root" "$artifacts" "$qualification_snapshot" "${targets[@]}" <<'PY'
 import base64,hashlib,json,os,pathlib,subprocess,sys,uuid
 root,artifacts=map(pathlib.Path,sys.argv[1:3])
@@ -138,7 +140,4 @@ temporary=destination.with_name(destination.name+'.complete-'+uuid.uuid4().hex)
 temporary.write_text(json.dumps(manifest,indent=2)+'\n')
 os.replace(temporary,destination)
 PY
-verify_qualification_inputs
 echo "Prepared matching mobile Rust libraries and Swift bindings in $artifacts"
-node "$root/apps/mobile/plugins/native-sources.cjs"
-verify_qualification_inputs
