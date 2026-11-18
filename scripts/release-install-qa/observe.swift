@@ -58,7 +58,7 @@ func openWorkspace(_ root: AXUIElement) -> Bool {
 func press(_ root: AXUIElement, _ label: String, prefix: Bool = false) -> Bool {
     for _ in 0..<4 {
         for (element, _, names) in controls(root)
-            where names.contains(where: { $0 == label || (prefix && $0.hasPrefix(label + " ")) }) {
+            where names.contains(where: { $0 == label || (prefix && $0.hasPrefix(label)) }) {
             var candidate = element
             for _ in 0..<3 {
                 var actions: CFArray?
@@ -78,12 +78,66 @@ func press(_ root: AXUIElement, _ label: String, prefix: Bool = false) -> Bool {
     return false
 }
 
+func keyToApp(_ code: CGKeyCode, _ app: NSRunningApplication) {
+    for down in [true, false] {
+        CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)?.postToPid(app.processIdentifier)
+    }
+}
+
+func clickControl(_ node: AXUIElement, _ app: NSRunningApplication) -> Bool {
+    guard let position = attribute(node, kAXPositionAttribute as CFString),
+          let bounds = attribute(node, kAXSizeAttribute as CFString),
+          CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(bounds) == AXValueGetTypeID() else { return false }
+    var origin = CGPoint.zero, size = CGSize.zero
+    guard AXValueGetValue(unsafeBitCast(position, to: AXValue.self), .cgPoint, &origin),
+          AXValueGetValue(unsafeBitCast(bounds, to: AXValue.self), .cgSize, &size),
+          size.width > 1, size.height > 1 else { return false }
+    let center = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+    for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+        CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: center, mouseButton: .left)?.postToPid(app.processIdentifier)
+    }
+    Thread.sleep(forTimeInterval: 0.7)
+    return true
+}
+
+func providerControlsVisible(_ root: AXUIElement) -> Bool {
+    controls(root).contains { _, _, labels in
+        labels.contains(where: { $0 == "API key" || $0 == "Paste your key" || $0.hasPrefix("Groq") || $0.contains("(saved)") })
+    }
+}
+
 func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken: Bool, migrate: Bool) -> [String: Any] {
     var stages: [String] = []
-    for label in ["Settings", "Advanced", "Connections", "Groq"] {
-        if press(root, label, prefix: label == "Groq") { stages.append(label) }
+    app.activate()
+    for label in ["Settings", "Advanced"] {
+        if !controls(root).contains(where: { $0.1 == "AXDisclosureTriangle" && $0.2.contains("Connections") }),
+           press(root, label) { stages.append(label) }
     }
     var evidence: [String: Any] = ["ordinary_provider_ui_navigation": stages]
+    func disclosure() -> AXUIElement? {
+        controls(root).first { $0.1 == "AXDisclosureTriangle" && $0.2.contains("Connections") }?.0
+    }
+    if let node = disclosure() {
+        evidence["connections_initially_expanded"] = attribute(node, kAXExpandedAttribute as CFString) as? Bool
+        if !providerControlsVisible(root) {
+            let expanded = AXUIElementSetAttributeValue(node, kAXExpandedAttribute as CFString, kCFBooleanTrue) == .success
+            evidence["set_disclosure_expanded"] = expanded
+            Thread.sleep(forTimeInterval: 0.75)
+        }
+        if !providerControlsVisible(root), let current = disclosure() {
+            evidence["clicked_connections_disclosure"] = clickControl(current, app)
+        }
+        if !providerControlsVisible(root), let current = disclosure() {
+            if AXUIElementSetAttributeValue(current, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success {
+                keyToApp(49, app)
+                Thread.sleep(forTimeInterval: 0.7)
+            }
+        }
+        if let current = disclosure() {
+            evidence["connections_finally_expanded"] = attribute(current, kAXExpandedAttribute as CFString) as? Bool
+        }
+    }
+    evidence["groq_provider_selected"] = press(root, "Groq", prefix: true)
     if migrate {
         evidence["app_owned_legacy_migration_requested"] = press(root, "Update saved access")
     }
@@ -98,18 +152,26 @@ func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken
     evidence["provider_key_field_visible"] = field != nil
     guard let field else { return evidence }
     if writeToken {
-        let focused = AXUIElementSetAttributeValue(field.0, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
+        _ = clickControl(field.0, app)
+        let focused = (attribute(field.0, kAXFocusedAttribute as CFString) as? Bool) == true ||
+            AXUIElementSetAttributeValue(field.0, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
         let token = "invalid-pennel-qa-" + UUID().uuidString
-        let filled = focused && AXUIElementSetAttributeValue(field.0, kAXValueAttribute as CFString, token as CFString) == .success
+        let filled = focused
         evidence["disposable_value_entered"] = filled
         if filled {
             let digest = SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
             if let temp = ProcessInfo.processInfo.environment["RUNNER_TEMP"] {
                 try? digest.write(to: URL(fileURLWithPath: temp).appendingPathComponent("pennel-fixture-digest"), atomically: true, encoding: .utf8)
             }
-            for down in [true, false] {
-                CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down)?.postToPid(app.processIdentifier)
+            for scalar in token.utf16 {
+                var ch = scalar
+                for down in [true, false] {
+                    let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
+                    event?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &ch)
+                    event?.postToPid(app.processIdentifier)
+                }
             }
+            keyToApp(36, app)
             Thread.sleep(forTimeInterval: 1.2)
         }
     }
@@ -217,13 +279,10 @@ if AXIsProcessTrusted(), app.isFinishedLaunching {
         evidence.merge(providerScreen(root, app, writeToken: action == "credential-legacy-save", migrate: action == "credential-migrate")) { _, new in new }
     }
     if action == "fixtures" {
+        _ = press(root, "Back to your work")
         var observed: [String] = initial.flatMap { $0.2 }
         for labels in [["Dictation"], ["History", "All history"], ["Meetings"]] {
-            let current = controls(root)
-            guard let hit = current.first(where: {
-                $0.1 == "AXButton" && $0.2.contains(where: labels.contains)
-            }) else { continue }
-            if AXUIElementPerformAction(hit.0, kAXPressAction as CFString) == .success {
+            if labels.contains(where: { press(root, $0) }) {
                 Thread.sleep(forTimeInterval: 1)
                 observed += controls(root).flatMap { $0.2 }
             }
