@@ -2,13 +2,17 @@ name: Hosted Mac dictation input check
 on:
   push:
     branches: [codex/mac-release-install-qa]
-    paths: [.github/workflows/mac-release-audio-qa.yml]
-permissions: {}
+    paths: [.github/workflows/mac-release-audio-qa.yml, scripts/hosted-audio-qa/**]
+permissions:
+  contents: read
 jobs:
   devices:
     runs-on: macos-15
     timeout-minutes: 3
     steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Identify available hosted audio routes
         shell: python3 {0}
         run: |
@@ -24,40 +28,6 @@ jobs:
                   print(json.dumps({key: device[key] for key in fields if key in device}, sort_keys=True))
           print("Installed audio drivers", sorted(p.name for p in Path("/Library/Audio/Plug-Ins/HAL").glob("*.driver")))
       - name: Check whether the preinstalled Null device returns a known signal
-        shell: python3 {0}
         run: |
-          from array import array
-          import math
-          from pathlib import Path
-          import subprocess
-          import tempfile
-          import time
-          import wave
-          # Use only the identified virtual Null device for input AND output.
-          # No default-route change, physical input, privacy override, or audio artifact.
-          with tempfile.TemporaryDirectory() as tmp:
-              wav = Path(tmp) / "probe.wav"
-              capture = subprocess.Popen(["sox", "-q", "-t", "coreaudio", "Null Audio Device",
-                                          "-c", "1", "-r", "44100", "-b", "16", str(wav), "trim", "0", "3"])
-              time.sleep(0.55)
-              tone = subprocess.run(["sox", "-q", "-n", "-r", "44100", "-c", "2", "-t", "coreaudio",
-                                     "Null Audio Device", "synth", "1.2", "sine", "617", "vol", "0.2"], timeout=8)
-              try:
-                  status = capture.wait(timeout=9)
-              except subprocess.TimeoutExpired:
-                  capture.terminate()
-                  capture.wait(timeout=3)
-                  status = 124
-              print("Playback exit", tone.returncode, "capture exit", status)
-              if status == 0 and tone.returncode == 0 and wav.exists():
-                  with wave.open(str(wav), "rb") as inp:
-                      samples = array("h", inp.readframes(inp.getnframes()))
-                  width = 4410
-                  tone_peaks = []
-                  for start in range(0, len(samples) - width, width):
-                      frame = samples[start:start + width]
-                      re = sum(s * math.cos(2 * math.pi * 617 * i / 44100) for i, s in enumerate(frame))
-                      im = sum(s * math.sin(2 * math.pi * 617 * i / 44100) for i, s in enumerate(frame))
-                      tone_peaks.append(2 * math.hypot(re, im) / width / 32768)
-                  print("Captured frames", len(samples), "peak PCM", max(map(abs, samples), default=0),
-                        "maximum calibrated 617 Hz amplitude", round(max(tone_peaks, default=0), 6))
+          swiftc scripts/hosted-audio-qa/null-signal.swift -o "$RUNNER_TEMP/null-signal"
+          python3 -c 'import os, subprocess; subprocess.run([os.environ["RUNNER_TEMP"] + "/null-signal"], timeout=18, check=True)'
