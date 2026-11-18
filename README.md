@@ -42,13 +42,15 @@ Download the Mac installer from the [latest release](https://github.com/pennel-a
 | Windows (paused) | Windows 11 · x64 | [Previous `.exe` or `.msi` releases](https://github.com/pennel-app/pennel/releases) |
 | Linux (paused) | x86-64 · WebKitGTK 4.1 | [Previous `.deb` or `.AppImage` releases](https://github.com/pennel-app/pennel/releases) |
 
-On a Mac, you can also install with Homebrew:
+On an Apple Silicon Mac, you can also install Pennel with Homebrew.
 
 ```sh
 brew install --cask pennel-app/pennel/pennel
 ```
 
-Mac releases use Pennel’s own signing certificate and are not yet Apple-notarized; the Homebrew cask handles download quarantine. Previously published Windows installers are unsigned, so SmartScreen may ask for confirmation. For existing Windows/Linux installs and source builds, the platform guidance below still applies; Linux users should check the [runtime dependencies](docs/linux-packaging.md#runtime-prerequisites), including when using an AppImage.
+To update a Homebrew installation, run `brew upgrade --cask pennel`. Mac releases from v0.1.49 onward use Developer ID signing and Apple notarization.
+
+Previously published Windows installers are unsigned, so SmartScreen may ask for confirmation. For existing Windows/Linux installs and source builds, the platform guidance below still applies. Linux users should check the [runtime dependencies](docs/linux-packaging.md#runtime-prerequisites), including when using an AppImage.
 
 ## Get started
 
