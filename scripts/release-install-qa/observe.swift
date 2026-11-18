@@ -131,6 +131,57 @@ func write(_ values: [String: Any]) throws {
     print(String(decoding: data, as: UTF8.self))
 }
 
+if action.hasPrefix("audio-") {
+    let env = ProcessInfo.processInfo.environment
+    guard env["RUNNER_ENVIRONMENT"] == "github-hosted", env["GITHUB_REPOSITORY"] == "pennel-app/pennel",
+          env["GITHUB_REF"] == "refs/heads/codex/mac-release-loopback-dictation",
+          AXIsProcessTrusted() else { try write(["observer_permitted": false]); exit(0) }
+    if action == "audio-microphone-consent" {
+        var result: [String: Any] = ["observer_permitted": true, "allowed": false]
+        for app in NSWorkspace.shared.runningApplications {
+            guard let identifier = app.bundleIdentifier,
+                  ["com.apple.UserNotificationCenter", "com.apple.SecurityAgent", "com.apple.coreautha",
+                   "com.apple.tccd", "com.apple.coreservices.uiagent", "com.apple.NotificationCenter"].contains(identifier) else { continue }
+            let root = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(root, 0.3)
+            for window in attribute(root, kAXWindowsAttribute as CFString) as? [AXUIElement] ?? [] {
+                let items = descendants([window])
+                let copy = items.flatMap { $0.2 }.joined(separator: " ").lowercased()
+                guard copy.contains("pennel"), copy.contains("microphone"), !copy.contains("password"),
+                      !copy.contains("keychain") else { continue }
+                result["microphone_prompt_owner"] = identifier
+                guard let yes = items.first(where: { $0.1 == "AXButton" && ($0.2.contains("Allow") || $0.2.contains("OK")) }) else { continue }
+                result["allowed"] = AXUIElementPerformAction(yes.0, kAXPressAction as CFString) == .success
+            }
+        }
+        try write(result)
+        exit(0)
+    }
+    guard let running = installedApp() else { try write(["installed_app_running": false]); exit(0) }
+    let root = AXUIElementCreateApplication(running.processIdentifier)
+    AXUIElementSetMessagingTimeout(root, 0.45)
+    let allowed = ["Dictation", "Finish setup", "Allow access", "Back", "Try it here",
+                   "Hands-free", "Start dictation", "Stop dictation", "All history", "Open Pennel"]
+    var result: [String: Any] = ["observer_permitted": true, "installed_pid": Int(running.processIdentifier)]
+    if action == "audio-reopen" {
+        running.activate(options: [.activateAllWindows])
+        result["opened_workspace_from_tray"] = openWorkspace(root)
+    } else if action == "audio-press", let label = CommandLine.arguments.dropFirst(2).first, allowed.contains(label) {
+        result["pressed"] = press(root, label)
+    }
+    let nodes = controls(root)
+    result["app_window_count"] = (attribute(root, kAXWindowsAttribute as CFString) as? [AXUIElement])?.count ?? 0
+    result["web_area_visible"] = nodes.contains { $0.1 == "AXWebArea" }
+    result["buttons"] = nodes.filter { $0.1 == "AXButton" }.flatMap { $0.2 }.filter { !$0.isEmpty && $0.count < 100 }
+    result["enabled_buttons"] = nodes.filter {
+        $0.1 == "AXButton" && (attribute($0.0, kAXEnabledAttribute as CFString) as? Bool) != false
+    }.flatMap { $0.2 }.filter { !$0.isEmpty && $0.count < 100 }
+    result["document_text"] = Array(nodes.filter { ["AXStaticText", "AXHeading", "AXTextArea"].contains($0.1) }
+        .flatMap { $0.2 }.filter { !$0.isEmpty && $0.count < 200 }.prefix(70))
+    try write(result)
+    exit(0)
+}
+
 if action == "first-launch" || action == "owned-key-consent" {
     var status: [String: Any] = ["observer_permitted": AXIsProcessTrusted(), "ordinary_confirmation": false]
     if AXIsProcessTrusted() {
