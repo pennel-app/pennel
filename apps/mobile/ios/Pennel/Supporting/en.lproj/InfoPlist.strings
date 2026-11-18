@@ -1,0 +1,3 @@
+"NSMicrophoneUsageDescription" = "Pennel uses your microphone for dictation and meeting recordings you start.";
+"NSSpeechRecognitionUsageDescription" = "Pennel uses Apple speech recognition when you select the Apple provider.";
+"NSCameraUsageDescription" = "Pennel uses your camera to scan a temporary device connection code. You can enter the code instead.";
