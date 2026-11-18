@@ -231,6 +231,7 @@ def main(receipt):
     audio = json.loads(text("system_profiler", "SPAudioDataType", "-json"))
     devices = [device for group in audio.get("SPAudioDataType", []) for device in group.get("_items", [])]
     receipt["audio_devices_with_input_channels"] = sum(bool(device.get("coreaudio_device_input")) for device in devices)
+    receipt["hosted_audio_routes"] = [{key: device[key] for key in ("_name", "coreaudio_device_input", "coreaudio_device_output", "coreaudio_device_transport") if key in device} for device in devices]
     scenario = receipt["scenario"]
     history_env = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1"}
     tap_dir = Path(text("brew", "--repository")) / "Library/Taps/pennel-app/homebrew-pennel"
@@ -266,7 +267,12 @@ def main(receipt):
             observed = json.loads(text(observer(), actions[version]))
             result["installed_credential_ui"] = observed
             if observed.get("app_owned_legacy_migration_requested"):
-                result["system_observation_after_migration"] = json.loads(text(observer(), "first-launch"))
+                seed_key = receipt["versions"]["0.1.47"].get("installed_credential_ui", {})
+                if seed_key.get("disposable_value_entered") and seed_key.get("provider_shows_saved_access"):
+                    result["system_observation_after_migration"] = json.loads(text(observer(), "owned-key-consent"))
+                    time.sleep(1)
+                    if result["system_observation_after_migration"].get("synthetic_item_allowed_once"):
+                        result["installed_credential_ui"] = json.loads(text(observer(), "credential-check"))
         stop(result)
         print(json.dumps({version: result}), flush=True)
     require(all(v.get("native", {}).get("finished_launching") and v.get("normal_quit") for v in receipt["versions"].values()),

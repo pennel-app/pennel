@@ -55,16 +55,26 @@ func openWorkspace(_ root: AXUIElement) -> Bool {
 }
 
 func press(_ root: AXUIElement, _ label: String, prefix: Bool = false) -> Bool {
-    let target = controls(root).first { element, role, names in
-        guard role != "AXStaticText", names.contains(where: { $0 == label || (prefix && $0.hasPrefix(label + " ")) }) else {
-            return false
+    for _ in 0..<4 {
+        for (element, _, names) in controls(root)
+            where names.contains(where: { $0 == label || (prefix && $0.hasPrefix(label + " ")) }) {
+            var candidate = element
+            for _ in 0..<3 {
+                var actions: CFArray?
+                if AXUIElementCopyActionNames(candidate, &actions) == .success,
+                   (actions as? [String])?.contains("AXPress") == true,
+                   AXUIElementPerformAction(candidate, kAXPressAction as CFString) == .success {
+                    Thread.sleep(forTimeInterval: 0.8)
+                    return true
+                }
+                guard let parent = attribute(candidate, kAXParentAttribute as CFString),
+                      CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+                candidate = unsafeBitCast(parent, to: AXUIElement.self)
+            }
         }
-        var actions: CFArray?
-        return AXUIElementCopyActionNames(element, &actions) == .success && (actions as? [String])?.contains("AXPress") == true
+        Thread.sleep(forTimeInterval: 0.4)
     }
-    guard let target, AXUIElementPerformAction(target.0, kAXPressAction as CFString) == .success else { return false }
-    Thread.sleep(forTimeInterval: 0.7)
-    return true
+    return false
 }
 
 func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken: Bool, migrate: Bool) -> [String: Any] {
@@ -77,6 +87,9 @@ func providerScreen(_ root: AXUIElement, _ app: NSRunningApplication, writeToken
         evidence["app_owned_legacy_migration_requested"] = press(root, "Update saved access")
     }
     let contents = controls(root)
+    evidence["visible_provider_controls"] = contents.compactMap { _, role, names in
+        ["Connections","Providers","Advanced","Groq","API key","Paste your key","Clear","Test connection","Saved access"].first(where: { name in names.contains(where: { $0 == name || $0.hasPrefix(name + " ") }) }).map { role + ":" + $0 }
+    }
     let field = contents.first { node, _, labels in
         (attribute(node, kAXSubroleAttribute as CFString) as? String) == "AXSecureTextField"
             && labels.contains(where: { $0 == "API key" || $0 == "Paste your key" || $0.contains("(saved)") })
@@ -109,10 +122,10 @@ func write(_ values: [String: Any]) throws {
     print(String(decoding: data, as: UTF8.self))
 }
 
-if action == "first-launch" {
+if action == "first-launch" || action == "owned-key-consent" {
     var status: [String: Any] = ["observer_permitted": AXIsProcessTrusted(), "ordinary_confirmation": false]
     if AXIsProcessTrusted() {
-        for identifier in ["com.apple.CoreServicesUIAgent", "com.apple.SecurityAgent", "com.apple.authorizationhost"] {
+        for identifier in ["com.apple.coreservices.uiagent", "com.apple.SecurityAgent", "com.apple.authorizationhost", "com.apple.UserNotificationCenter"] {
             for running in NSRunningApplication.runningApplications(withBundleIdentifier: identifier) {
                 let root = AXUIElementCreateApplication(running.processIdentifier)
                 AXUIElementSetMessagingTimeout(root, 0.5)
@@ -126,10 +139,27 @@ if action == "first-launch" {
                     if copy.contains("password") { status["password_dialog"] = true }
                     if copy.contains("microphone") { status["microphone_dialog"] = true }
                     if copy.contains("pennel") { status["pennel_named"] = true }
+                    if copy.contains("pennel") {
+                        status["pennel_dialog_owner"] = identifier
+                        status["ordinary_open_button_visible"] = items.contains { $0.1 == "AXButton" && $0.2.contains("Open") }
+                        status["downloaded_internet_wording"] = copy.contains("downloaded from the internet")
+                    }
+                    if action == "owned-key-consent" {
+                        // Only an item created via this test's previous installed app can reach this action.
+                        let requiresPassword = copy.contains("password") || items.contains {
+                            (attribute($0.0, kAXSubroleAttribute as CFString) as? String) == "AXSecureTextField"
+                        }
+                        if identifier == "com.apple.SecurityAgent", copy.contains("pennel"), copy.contains("keychain"),
+                           copy.contains("groq"), !requiresPassword,
+                           let once = items.first(where: { $0.1 == "AXButton" && $0.2.contains("Allow") }) {
+                            status["synthetic_item_allowed_once"] = AXUIElementPerformAction(once.0, kAXPressAction as CFString) == .success
+                        }
+                        continue
+                    }
                     // The ordinary first-open question follows successful notarized Gatekeeper assessment.
-                    guard identifier == "com.apple.CoreServicesUIAgent", copy.contains("pennel"),
-                          copy.contains("downloaded from the internet"), !copy.contains("malware"),
-                          !copy.contains("cannot verify"), !copy.contains("damaged"),
+                    guard identifier == "com.apple.coreservices.uiagent", copy.contains("pennel"),
+                          copy.contains("downloaded from the internet"), !copy.contains("open anyway"),
+                          !copy.contains("cannot verify"), !copy.contains("is damaged"), !copy.contains("will damage"),
                           let open = items.first(where: { $0.1 == "AXButton" && $0.2.contains("Open") }) else { continue }
                     status["ordinary_confirmation"] = AXUIElementPerformAction(open.0, kAXPressAction as CFString) == .success
                 }
@@ -168,7 +198,9 @@ if AXIsProcessTrusted(), app.isFinishedLaunching {
     evidence["app_window_count"] = (attribute(root, kAXWindowsAttribute as CFString) as? [AXUIElement])?.count ?? 0
     evidence["web_content"] = initial.contains { $0.1 == "AXWebArea" }
     let visible = initial.flatMap { $0.2 }
-    evidence["first_use_screen"] = visible.contains(where: { $0.contains("Welcome to Pennel") || $0 == "Choose your language" || $0 == "Continue in English" })
+    evidence["first_use_screen"] = visible.contains(where: {
+        $0.contains("Welcome to Pennel") || $0.hasPrefix("Choose your language") || $0 == "Try dictation" || $0 == "What would you like to do first?"
+    })
     if action.hasPrefix("credential-") {
         evidence.merge(providerScreen(root, app, writeToken: action == "credential-legacy-save", migrate: action == "credential-migrate")) { _, new in new }
     }
