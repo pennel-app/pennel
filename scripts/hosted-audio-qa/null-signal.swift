@@ -31,7 +31,8 @@ func selectedDevice() throws -> String {
     guard matches.count == 1 else { throw Failure("exactly one matching hosted audio device required") }
     if blackHole {
         let names = try devices.map { try deviceString($0, kAudioObjectPropertyName) }
-        guard names.allSatisfy({$0 == deviceName || $0 == "Null Audio Device"}) else {
+        let virtualDevices = Set([deviceName, "Null Audio Device", "Apple Virtual Sound Device"])
+        guard names.allSatisfy(virtualDevices.contains) else {
             throw Failure("unexpected audio endpoint on the disposable Mac: " + names.joined(separator: ", "))
         }
         var desired = matches[0]
@@ -40,15 +41,22 @@ func selectedDevice() throws -> String {
             try check(AudioObjectSetPropertyData(system, &endpoint, 0, nil, UInt32(MemoryLayout.size(ofValue: desired)), &desired), "select BlackHole default")
             var actual: AudioDeviceID = 0
             var size = UInt32(MemoryLayout.size(ofValue: actual))
-            try check(AudioObjectGetPropertyData(system, &endpoint, 0, nil, &size, &actual), "verify default endpoint")
+            for _ in 0..<25 {
+                try check(AudioObjectGetPropertyData(system, &endpoint, 0, nil, &size, &actual), "verify default endpoint")
+                if actual == desired { break }
+                Thread.sleep(forTimeInterval: 0.1)
+            }
             guard actual == desired else { throw Failure("default endpoint changed") }
         }
     }
     return try deviceString(matches[0], kAudioDevicePropertyDeviceUID)
 }
 func bind(_ queue: AudioQueueRef, _ uid: String) throws {
-    var value = uid as CFString
-    try check(AudioQueueSetProperty(queue, kAudioQueueProperty_CurrentDevice, &value, UInt32(MemoryLayout<CFString>.size)), "select null device")
+    let identifier = uid as CFString
+    var value = Unmanaged.passUnretained(identifier)
+    try withExtendedLifetime(identifier) {
+        try check(AudioQueueSetProperty(queue, kAudioQueueProperty_CurrentDevice, &value, UInt32(MemoryLayout.size(ofValue: value))), "select exact virtual device")
+    }
     var current: Unmanaged<CFString>?
     var bytes = UInt32(MemoryLayout.size(ofValue: current))
     try check(AudioQueueGetProperty(queue, kAudioQueueProperty_CurrentDevice, &current, &bytes), "read selected device")
@@ -143,4 +151,5 @@ func measure() throws {
         throw Failure("the known tone did not cross BlackHole; no dictation may be claimed")
     }
 }
-try measure()
+do { try measure() }
+catch { FileHandle.standardError.write(Data("\(error)\n".utf8)); exit(1) }
