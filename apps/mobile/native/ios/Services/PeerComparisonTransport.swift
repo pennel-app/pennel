@@ -67,20 +67,47 @@ public final class QANativeIdentity: @unchecked Sendable {
     public let identityID: String
     public let certificateDER: Data
     fileprivate let identity: SecIdentity
-    private let label: String
-    private let tag: Data
+    private let items: KeychainItems
+
+    /// A trial can retain these exact selectors before an import writes its first item.
+    struct KeychainItems: Sendable {
+        fileprivate let pin: String
+        fileprivate let label: String
+        fileprivate let tag: Data
+
+        init(account: String, certificateDER: Data) throws {
+            guard (account.hasPrefix("peer-compare-") || account.hasPrefix("peer-probe-")), account.utf8.count <= 100,
+                  account.utf8.allSatisfy({ (45...46).contains($0) || (48...57).contains($0)
+                      || (65...90).contains($0) || (97...122).contains($0) }),
+                  !certificateDER.isEmpty, certificateDER.count <= 16_384 else {
+                throw QANativeTransportError.invalidIdentity
+            }
+            pin = QAConstants.pin(certificateDER)
+            label = "app.pennel.peer-compare.qa.\(account).\(pin)"
+            tag = Data(label.utf8)
+        }
+
+        func remove() throws {
+            let queries: [[String: Any]] = [
+                [kSecClass as String: kSecClassCertificate, kSecAttrLabel as String: label,
+                 kSecUseDataProtectionKeychain as String: true],
+                [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: tag,
+                 kSecAttrKeyClass as String: kSecAttrKeyClassPrivate, kSecAttrLabel as String: label,
+                 kSecUseDataProtectionKeychain as String: true],
+            ]
+            let statuses = queries.map { SecItemDelete($0 as CFDictionary) }
+            if let failure = statuses.first(where: { $0 != errSecSuccess && $0 != errSecItemNotFound }) {
+                throw QANativeTransportError.identityStorage(failure)
+            }
+        }
+    }
 
     public init(certificateDER: Data, privateKeyDER: Data, account: String) throws {
-        guard (account.hasPrefix("peer-compare-") || account.hasPrefix("peer-probe-")), account.utf8.count <= 100,
-              account.utf8.allSatisfy({ (45...46).contains($0) || (48...57).contains($0)
-                  || (65...90).contains($0) || (97...122).contains($0) }),
-              certificateDER.count <= 16_384, privateKeyDER.count <= 16_384,
+        let items = try KeychainItems(account: account, certificateDER: certificateDER)
+        guard privateKeyDER.count <= 16_384,
               let certificate = SecCertificateCreateWithData(nil, certificateDER as CFData) else {
             throw QANativeTransportError.invalidIdentity
         }
-        let pin = QAConstants.pin(certificateDER)
-        let label = "app.pennel.peer-compare.qa.\(account).\(pin)"
-        let tag = Data(label.utf8)
         let cryptoKey: P256.Signing.PrivateKey
         do { cryptoKey = try P256.Signing.PrivateKey(derRepresentation: privateKeyDER) }
         catch { throw QANativeTransportError.invalidIdentity }
@@ -100,7 +127,7 @@ public final class QANativeIdentity: @unchecked Sendable {
 
         // Reusing an exact QA identity is safe; a failed lookup never replaces a key.
         let keyQuery: [String: Any] = [kSecClass as String: kSecClassKey,
-                                      kSecAttrApplicationTag as String: tag,
+                                      kSecAttrApplicationTag as String: items.tag,
                                       kSecUseDataProtectionKeychain as String: true,
                                       kSecReturnRef as String: true]
         var found: CFTypeRef?
@@ -108,8 +135,8 @@ public final class QANativeIdentity: @unchecked Sendable {
         if lookup == errSecItemNotFound {
             let add: [String: Any] = [kSecClass as String: kSecClassKey,
                                       kSecValueRef as String: key,
-                                      kSecAttrApplicationTag as String: tag,
-                                      kSecAttrLabel as String: label,
+                                      kSecAttrApplicationTag as String: items.tag,
+                                      kSecAttrLabel as String: items.label,
                                       kSecUseDataProtectionKeychain as String: true,
                                       kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
             let added = SecItemAdd(add as CFDictionary, nil)
@@ -132,14 +159,14 @@ public final class QANativeIdentity: @unchecked Sendable {
         let certificateAdd: [String: Any] = [kSecClass as String: kSecClassCertificate,
                                            kSecValueRef as String: certificate,
                                            kSecUseDataProtectionKeychain as String: true,
-                                           kSecAttrLabel as String: label]
+                                           kSecAttrLabel as String: items.label]
         let certificateStatus = SecItemAdd(certificateAdd as CFDictionary, nil)
         guard certificateStatus == errSecSuccess || certificateStatus == errSecDuplicateItem else {
             throw QANativeTransportError.identityStorage(certificateStatus)
         }
         var result: CFTypeRef?
         let identityQuery: [String: Any] = [kSecClass as String: kSecClassIdentity,
-                                          kSecAttrLabel as String: label,
+                                          kSecAttrLabel as String: items.label,
                                           kSecUseDataProtectionKeychain as String: true,
                                           kSecReturnRef as String: true,
                                           kSecMatchLimit as String: kSecMatchLimitOne]
@@ -153,30 +180,18 @@ public final class QANativeIdentity: @unchecked Sendable {
         var identityCertificate: SecCertificate?
         guard SecIdentityCopyCertificate(identity, &identityCertificate) == errSecSuccess,
               let identityCertificate,
-              QAConstants.pin(SecCertificateCopyData(identityCertificate) as Data) == pin else {
+              QAConstants.pin(SecCertificateCopyData(identityCertificate) as Data) == items.pin else {
             throw QANativeTransportError.invalidIdentity
         }
-        self.identityID = pin
+        self.identityID = items.pin
         self.certificateDER = certificateDER
         self.identity = identity
-        self.label = label
-        self.tag = tag
+        self.items = items
     }
 
     /// Called only by the owner of this freshly scoped qualification account.
     public func removeFromKeychain() throws {
-        let certificateQuery: [String: Any] = [kSecClass as String: kSecClassCertificate,
-                                              kSecUseDataProtectionKeychain as String: true,
-                                              kSecAttrLabel as String: label]
-        let keyQuery: [String: Any] = [kSecClass as String: kSecClassKey,
-                                      kSecUseDataProtectionKeychain as String: true,
-                                      kSecAttrApplicationTag as String: tag]
-        for query in [certificateQuery, keyQuery] {
-            let status = SecItemDelete(query as CFDictionary)
-            guard status == errSecSuccess || status == errSecItemNotFound else {
-                throw QANativeTransportError.invalidIdentity
-            }
-        }
+        try items.remove()
     }
 }
 
@@ -504,6 +519,7 @@ public final class QANativeTransport: @unchecked Sendable {
     private var auxiliaryListeners: [UUID: NWListener] = [:]
     private var relayPreparing = false
     private var relayGeneration: UInt64 = 0
+    private var relayPeer: String?
     private var relayOuter: NWConnection?
     private var relayOutgoing: QARelayOutgoing?
     private var relaySignalSent = false
@@ -585,14 +601,12 @@ public final class QANativeTransport: @unchecked Sendable {
         access.set(allowed)
         let affected = channels.values.filter { $0.peerID == id }
         incoming.removeAll { $0.peerID == id }
-        let relayPumps = Array(pumps.values)
+        let ownedGeneration = removed && (relayPeer == id || relayOutgoing?.peer == id)
+            ? relayGeneration : nil
         condition.broadcast()
         condition.unlock()
         affected.forEach { $0.abort() }
-        if removed {
-            relayPumps.forEach { $0.close() }
-            if relay != nil { resetRelay() }
-        }
+        if let ownedGeneration { resetRelay(generation: ownedGeneration) }
         return removed
     }
 
@@ -649,6 +663,7 @@ public final class QANativeTransport: @unchecked Sendable {
         if closed { condition.unlock(); return }
         closed = true
         relayGeneration &+= 1
+        relayPeer = nil
         let outgoing = relayOutgoing
         relayOutgoing = nil
         access.set([])
@@ -844,8 +859,11 @@ public final class QANativeTransport: @unchecked Sendable {
 
     private func prepareResponderRelay() {
         condition.lock()
-        guard !closed, !relayPreparing, allowed.count == 1 else { condition.unlock(); return }
+        guard !closed, !relayPreparing, allowed.count == 1, let peer = allowed.first else {
+            condition.unlock(); return
+        }
         relayPreparing = true
+        relayPeer = peer
         relayGeneration &+= 1
         let generation = relayGeneration
         condition.unlock()
@@ -1023,10 +1041,10 @@ public final class QANativeTransport: @unchecked Sendable {
         pump.start()
     }
 
-    private func resetRelay(generation: UInt64? = nil, error: QANativeTransportError = .closed,
+    private func resetRelay(generation: UInt64, error: QANativeTransportError = .closed,
                             graceful: Bool = false) {
         condition.lock()
-        guard generation == nil || relayGeneration == generation else { condition.unlock(); return }
+        guard relayGeneration == generation else { condition.unlock(); return }
         relayGeneration &+= 1
         let currentPumps = Array(pumps.values)
         let raw = Array(rawConnections.values)
@@ -1034,6 +1052,7 @@ public final class QANativeTransport: @unchecked Sendable {
         let outgoing = relayOutgoing
         relayOutgoing = nil
         relayOuter = nil
+        relayPeer = nil
         relaySignalSent = false
         relayIncoming = false
         relayPreparing = false

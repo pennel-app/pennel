@@ -82,12 +82,17 @@ def write_private_json(path, value, *, replace=False):
 
 def new_directory(path):
     path = Path(path).resolve()
-    repository = Path(__file__).resolve().parents[1]
-    if path.is_relative_to(repository):
-        ignored = subprocess.run(["git", "check-ignore", "--quiet", "--", str(path.relative_to(repository))],
-                                 cwd=repository, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for parent in path.parents:
+        git_dir = parent / ".git"
+        if not os.path.lexists(git_dir):
+            continue
+        # Linked worktrees have their own ignore rules. The directory may not exist yet.
+        ignored = subprocess.run(["git", "--git-dir", str(git_dir), "--work-tree", str(parent),
+                                  "check-ignore", "--quiet", "--", f"./{path.relative_to(parent)}/"],
+                                 cwd=parent, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if ignored.returncode != 0:
             raise QualificationError("evidence_directory_must_be_git_ignored")
+        break
     path.mkdir(mode=0o700, parents=True, exist_ok=False)
     os.chmod(path, 0o700)
     return path
@@ -908,8 +913,12 @@ class DeviceController:
             return {"saved": True}
 
     def save_capture_result(self, value):
+        if not isinstance(value, dict):
+            raise QualificationError("invalid_capture_result")
         required = {"candidate", "route", "phase", "transport_ongoing", "measurements"}
-        if not isinstance(value, dict) or set(value) != required:
+        if value.get("phase") == "active":
+            required.add("verified_blocks_during_observation")
+        if set(value) != required:
             raise QualificationError("invalid_capture_result")
         phase = value["phase"]
         if (value["candidate"] != self.args.candidate or value["route"] != self.args.route
@@ -917,6 +926,10 @@ class DeviceController:
             raise QualificationError("incorrect_capture_scope")
         if type(value["transport_ongoing"]) is not bool or value["transport_ongoing"] != (phase != "baseline"):
             raise QualificationError("capture_transport_state_not_proven")
+        if phase == "active":
+            blocks = value["verified_blocks_during_observation"]
+            if type(blocks) is not int or blocks < 1:
+                raise QualificationError("capture_transfer_progress_missing")
         rows = value["measurements"]
         if not isinstance(rows, list) or len(rows) != 10:
             raise QualificationError("capture_requires_ten_measurements")
@@ -926,6 +939,8 @@ class DeviceController:
             for field in ("start_ms", "stop_ms"):
                 if type(row[field]) not in (int, float) or not math.isfinite(row[field]) or row[field] < 0:
                     raise QualificationError("invalid_capture_timing")
+            if row["start_ms"] > 2000:
+                raise QualificationError("capture_first_pcm_deadline_exceeded")
             if not nonnegative_int(row["samples"]) or row["samples"] == 0:
                 raise QualificationError("capture_samples_missing")
             if row["callback_after_stop"] is not False:

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -96,10 +97,13 @@ class EvidenceTests(unittest.TestCase):
                 self.module.make_fixtures(self.root / "invalid", mib=size)
 
     def capture_payload(self, phase="active"):
-        return {"candidate": "quinn", "route": "forced_relay", "phase": phase,
-                "transport_ongoing": phase != "baseline",
-                "measurements": [{"start_ms": 2.5, "stop_ms": 1.5, "samples": 4000,
-                                  "callback_after_stop": False} for _ in range(10)]}
+        result = {"candidate": "quinn", "route": "forced_relay", "phase": phase,
+                  "transport_ongoing": phase != "baseline",
+                  "measurements": [{"start_ms": 2.5, "stop_ms": 1.5, "samples": 4000,
+                                    "callback_after_stop": False} for _ in range(10)]}
+        if phase == "active":
+            result["verified_blocks_during_observation"] = 2
+        return result
 
     def capture_controller(self):
         controller = self.module.DeviceController.__new__(self.module.DeviceController)
@@ -113,7 +117,9 @@ class EvidenceTests(unittest.TestCase):
     def test_capture_receipt_is_independent_of_returned_transfer_and_never_qualifies_candidate(self):
         controller = self.capture_controller()
         for phase in ("baseline", "active", "stalled"):
-            receipt = controller.save_capture_result(self.capture_payload(phase))
+            payload = self.capture_payload(phase)
+            payload["measurements"][0]["start_ms"] = 2000.0
+            receipt = controller.save_capture_result(payload)
             self.assertTrue(receipt["saved"])
             self.assertFalse(receipt["qualification_complete"])
         saved = json.loads((self.root / "private-capture-result.json").read_text())
@@ -131,6 +137,7 @@ class EvidenceTests(unittest.TestCase):
             lambda value: value.update(transport_ongoing=False),
             lambda value: value["measurements"].pop(),
             lambda value: value["measurements"][0].update(start_ms=float("inf")),
+            lambda value: value["measurements"][0].update(start_ms=2000.1),
             lambda value: value["measurements"][0].update(stop_ms=-1),
             lambda value: value["measurements"][0].update(samples=True),
             lambda value: value["measurements"][0].update(samples=0),
@@ -154,6 +161,22 @@ class EvidenceTests(unittest.TestCase):
             controller.save_capture_result(changed)
         saved = json.loads((self.root / "capture-active-result.json").read_text())
         self.assertEqual(saved["result"], payload)
+
+    def test_active_capture_requires_progress_and_preserves_historical_evidence(self):
+        controller = self.capture_controller()
+        payload = self.capture_payload()
+        historical = dict(payload)
+        historical.pop("verified_blocks_during_observation")
+        file = self.root / "capture-active-result.json"
+        original = json.dumps({"schema_version": 1, "result": historical})
+        file.write_text(original)
+        with self.assertRaises(self.module.QualificationError):
+            controller.save_capture_result(historical)
+        for count in (0, -1, True, 1.5):
+            with self.subTest(count=count), self.assertRaises(self.module.QualificationError):
+                controller.save_capture_result({**payload, "verified_blocks_during_observation": count})
+        self.assertEqual(file.read_text(), original)
+        self.assertFalse(controller.capture_results)
 
     def test_capture_aggregate_write_failure_is_retryable_without_false_acknowledgement(self):
         controller = self.capture_controller()
@@ -209,6 +232,22 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(self.module.QualificationError):
             self.module.new_directory(output)
         self.assertFalse(output.exists())
+
+    def test_output_uses_the_destination_worktrees_ignore_rules(self):
+        checkout = self.root / "other-checkout"
+        subprocess.run(["git", "init", "--quiet", "--separate-git-dir", str(self.root / "git-dir"),
+                        str(checkout)], check=True)
+        (checkout / ".gitignore").write_text("private-runs/\n")
+        unignored = checkout / "runs" / "new"
+        with self.assertRaisesRegex(self.module.QualificationError, "git_ignored"):
+            self.module.new_directory(unignored)
+        self.assertFalse(unignored.parent.exists())
+
+        ignored = checkout / "private-runs"
+        self.assertEqual(self.module.new_directory(ignored), ignored.resolve())
+        self.assertEqual(stat.S_IMODE(ignored.stat().st_mode), 0o700)
+        outside = self.root / "standalone" / "new"
+        self.assertEqual(self.module.new_directory(outside), outside.resolve())
 
     def test_controller_rejects_boolean_counts_wrong_route_and_nonfinite_time(self):
         state = self.module.DeviceEvidence(self.fixture, "quinn", "forced_relay", 4)

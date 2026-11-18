@@ -8,7 +8,9 @@ import UIKit
 /// Real microphone timing is opt-in; fixtures never leave the isolated QA container.
 @Suite(.serialized)
 struct PeerComparisonCaptureTests {
-    private enum Failure: Error { case configuration, permission, response, transfer, capture, routeUnavailable, routeTransition }
+    private enum Failure: Error {
+        case configuration, permission, response, transfer, noVerifiedBlockProgress, capture, routeUnavailable, routeTransition
+    }
 
     private final class Samples: @unchecked Sendable {
         struct Snapshot: Sendable { let count: Int; let late: Bool; let callbacks: Int; let firstPCM: Double? }
@@ -27,15 +29,6 @@ struct PeerComparisonCaptureTests {
             }
         }
         func snapshot() -> Snapshot { lock.withLock { Snapshot(count: count, late: late, callbacks: callbacks, firstPCM: firstPCM) } }
-    }
-    private final class Job: @unchecked Sendable {
-        let lock = NSLock()
-        var stop = false
-        var finished = false
-        func shouldStop() -> Bool { lock.withLock { stop } }
-        func end() { lock.withLock { finished = true } }
-        func ongoing() -> Bool { lock.withLock { !finished } }
-        func cancel() { lock.withLock { stop = true } }
     }
 
     /// Numeric event codes: 0 begin, 1 start call, 2 start return, 3 first PCM,
@@ -169,9 +162,23 @@ struct PeerComparisonCaptureTests {
             }
         }
         func activateSession() throws { try session?.activate() }
-        func start(_ append: @escaping @Sendable ([Float]) -> Void) throws {
-            try activateSession()
-            try capture.start(onSamples: append)
+        func start(_ samples: Samples, diagnostics: CaptureDiagnostics, reason: Int = -1) throws
+            -> (milliseconds: Double, deadline: TimeInterval) {
+            let timing = try PeerComparisonFirstPCM(start: {
+                diagnostics.emit(1, reason: reason)
+                do {
+                    try activateSession()
+                    try capture.start(onSamples: { samples.append($0) })
+                } catch {
+                    diagnostics.emit(7, running: capture.isRunning, format: capture.inputFormat, error: error)
+                    throw error
+                }
+                diagnostics.emit(2, running: capture.isRunning, format: capture.inputFormat)
+            }, firstPCM: { samples.snapshot().firstPCM })
+            diagnostics.emit(timing.milliseconds == nil ? 4 : 3, running: capture.isRunning,
+                             format: capture.inputFormat, samples: samples.snapshot(), deadline: timing.deadline)
+            guard let milliseconds = timing.milliseconds else { throw Failure.capture }
+            return (milliseconds, timing.deadline)
         }
         func stop() { capture.stop(); session?.deactivate() }
     }
@@ -245,13 +252,8 @@ struct PeerComparisonCaptureTests {
             diagnostics.emit(28)
         }
         let samples = Samples()
-        try cycle.start { samples.append($0) }
-        let initialDeadline = ProcessInfo.processInfo.systemUptime + 2
-        while samples.snapshot().count == 0 && ProcessInfo.processInfo.systemUptime < initialDeadline {
-            Thread.sleep(forTimeInterval: 0.01)
-        }
-        guard cycle.capture.isRunning, samples.snapshot().count > 0,
-              let before = cycle.capture.inputFormat else { throw Failure.capture }
+        _ = try cycle.start(samples, diagnostics: diagnostics)
+        guard cycle.capture.isRunning, let before = cycle.capture.inputFormat else { throw Failure.capture }
         let ready = samples.snapshot().count
         Thread.sleep(forTimeInterval: 0.3)
         guard cycle.capture.isRunning, samples.snapshot().count > ready else { throw Failure.capture }
@@ -337,21 +339,19 @@ struct PeerComparisonCaptureTests {
         changedPreference = true
         try session.setPreferredInput(builtIn)
         let samples = Samples()
-        diagnostics.emit(1, reason: 1)
-        do { try cycle.start { samples.append($0) } }
-        catch { diagnostics.emit(7, error: error); throw error }
-        diagnostics.emit(2, running: cycle.capture.isRunning, format: cycle.capture.inputFormat)
-        let initialDeadline = ProcessInfo.processInfo.systemUptime + 2
+        let initialDeadline = try cycle.start(samples, diagnostics: diagnostics, reason: 1).deadline
         var beforeFormat: MicrophoneInputFormat?
-        while ProcessInfo.processInfo.systemUptime < initialDeadline {
-            if cycle.capture.isRunning, samples.snapshot().count > 0,
+        while true {
+            if cycle.capture.isRunning,
                session.currentRoute.inputs.contains(where: { $0.portType == .builtInMic }),
                let format = cycle.capture.inputFormat, format.sampleRate > 0, format.channels > 0,
                abs(Double(format.sampleRate) - session.sampleRate) < 1 {
                 beforeFormat = format
                 break
             }
-            Thread.sleep(forTimeInterval: 0.01)
+            let remaining = initialDeadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { break }
+            Thread.sleep(forTimeInterval: min(0.01, remaining))
         }
         guard let beforeFormat else {
             diagnostics.emit(4, running: cycle.capture.isRunning, format: cycle.capture.inputFormat,
@@ -423,45 +423,42 @@ struct PeerComparisonCaptureTests {
               let phase = config["phase"], ["baseline", "active", "stalled"].contains(phase) else { throw Failure.configuration }
         if phase == "baseline" {
             let measurements = try await captureTen(candidate: candidate, phase: phase)
-            try await save(base, token, Result(candidate: candidate, route: route, phase: phase, transport_ongoing: false, measurements: measurements))
+            try await save(base, token, Result(candidate: candidate, route: route, phase: phase, transport_ongoing: false,
+                                               verified_blocks_during_observation: nil, measurements: measurements))
             return
         }
         let directory = try PeerComparisonQualificationTests.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = PeerComparisonIdentityKeychain()
-        let account = "peer-probe-capture-\(UUID().uuidString)"
-        defer { try? store.remove(account: account) }
-        let identity = try await Task.detached { try PeerComparisonFactory.identity(store: store, account: account) }.value
-        let preparation: Preparation = try await post(base, token, "prepare", ["peer_id": identity.identityId])
+        let trial = try await Task.detached { try PeerComparisonTrialIdentity(candidate: candidate) }.value
+        defer { trial.remove() }
+        let preparation: Preparation = try await post(base, token, "prepare", ["peer_id": trial.identity.identityId])
         let host = try PeerComparisonQualificationTests.localIPv4()
         let probe = try await Task.detached {
-            try PeerComparisonQualificationTests.probe(candidate, store, account, preparation.relay_config_json, host)
+            try trial.probe(relay: preparation.relay_config_json, host: host)
         }.value
         defer { probe.close() }
         let fixture = try await fixture(base, token)
         guard fixture.candidate == candidate, fixture.route == route, fixture.source_identity == preparation.source_identity else { throw Failure.response }
         _ = try await Task.detached { try probe.approvePeer(id: fixture.source_identity) }.value
-        let job = Job()
+        let job = PeerComparisonCaptureJob(directory: directory)
+        let firstManifest = job.paths().stage.appendingPathComponent("manifest.json")
         let transfer = Task.detached {
             defer { job.end() }
-            var generation = 0
             while !job.shouldStop() {
-                let stage = directory.appendingPathComponent("stage-\(generation)")
-                let target = directory.appendingPathComponent("target-\(generation)")
+                let (stage, target) = job.paths()
                 let result = try probe.receiveFile(addressJson: fixture.source_address_json, staging: stage.path, target: target.path, maxBlocks: nil)
                 guard result.complete else { throw Failure.transfer }
+                job.finishedTransfer(blocks: result.blocksTransferred)
                 try FileManager.default.removeItem(at: target)
                 try FileManager.default.removeItem(at: stage)
-                generation += 1
             }
         }
         defer { job.cancel(); probe.cancel(); transfer.cancel() }
         var relayPaused = false
         do {
-            let firstStage = directory.appendingPathComponent("stage-0/manifest.json")
             var started = false
             for _ in 0..<100 {
-                if FileManager.default.fileExists(atPath: firstStage.path) { started = true; break }
+                if FileManager.default.fileExists(atPath: firstManifest.path) { started = true; break }
                 guard job.ongoing() else { throw Failure.transfer }
                 try await Task.sleep(for: .milliseconds(100))
             }
@@ -471,7 +468,16 @@ struct PeerComparisonCaptureTests {
                 guard paused.paused else { throw Failure.response }
                 relayPaused = true
             }
+            let before = phase == "active" ? try job.verifiedBlockCount() : nil
             let measurements = try await captureTen(candidate: candidate, phase: phase)
+            let observedBlocks: UInt64?
+            if let before {
+                let after = try job.verifiedBlockCount()
+                guard after > before else { throw Failure.noVerifiedBlockProgress }
+                observedBlocks = after - before
+            } else {
+                observedBlocks = nil
+            }
             let ongoing = job.ongoing()
             if relayPaused {
                 let resumed: Pause = try await post(base, token, "resume", [String: String]())
@@ -481,7 +487,8 @@ struct PeerComparisonCaptureTests {
             try await drain(transfer, job: job, probe: probe)
             guard ongoing else { throw Failure.transfer }
             try await save(base, token, Result(candidate: candidate, route: route, phase: phase,
-                                               transport_ongoing: ongoing, measurements: measurements))
+                                               transport_ongoing: ongoing, verified_blocks_during_observation: observedBlocks,
+                                               measurements: measurements))
         } catch {
             let failure = error
             // Retire the real owned worker before scoped files and keychain entries are removed.
@@ -491,7 +498,7 @@ struct PeerComparisonCaptureTests {
         }
     }
 
-    private static func drain(_ transfer: Task<Void, Error>, job: Job, probe: PeerComparisonProbe) async throws {
+    private static func drain(_ transfer: Task<Void, Error>, job: PeerComparisonCaptureJob, probe: PeerComparisonProbe) async throws {
         job.cancel(); probe.cancel(); transfer.cancel()
         do { try await transfer.value }
         catch PeerCompareError.Cancelled { }
@@ -534,19 +541,8 @@ struct PeerComparisonCaptureTests {
         let samples = Samples()
         let cycle = CaptureCycle(rawControl: rawControl)
         defer { cycle.stop() }
-        let start = ProcessInfo.processInfo.systemUptime
-        diagnostics.emit(1)
-        do { try cycle.start { samples.append($0) } }
-        catch { diagnostics.emit(7, running: cycle.capture.isRunning, format: cycle.capture.inputFormat, error: error); throw error }
-        diagnostics.emit(2, running: cycle.capture.isRunning, format: cycle.capture.inputFormat)
-        let firstSampleDeadline = ProcessInfo.processInfo.systemUptime + 2
-        while samples.snapshot().count == 0 && ProcessInfo.processInfo.systemUptime < firstSampleDeadline {
-            Thread.sleep(forTimeInterval: 0.01)
-        }
+        let start = try cycle.start(samples, diagnostics: diagnostics)
         let ready = samples.snapshot()
-        diagnostics.emit(ready.count > 0 ? 3 : 4, running: cycle.capture.isRunning,
-                         format: cycle.capture.inputFormat, samples: ready, deadline: firstSampleDeadline)
-        let began = ProcessInfo.processInfo.systemUptime
         Thread.sleep(forTimeInterval: 0.3)
         let held = samples.snapshot()
         let alive = cycle.capture.isRunning
@@ -558,9 +554,9 @@ struct PeerComparisonCaptureTests {
         Thread.sleep(forTimeInterval: 0.02)
         let final = samples.snapshot()
         diagnostics.emit(6, running: cycle.capture.isRunning, format: cycle.capture.inputFormat, samples: final)
-        let measurement = Measurement(start_ms: (began - start) * 1000, stop_ms: (ended - stop) * 1000,
+        let measurement = Measurement(start_ms: start.milliseconds, stop_ms: (ended - stop) * 1000,
                                       samples: final.count, callback_after_stop: final.late)
-        guard alive, ready.count > 0, held.count > ready.count, !measurement.callback_after_stop else {
+        guard alive, held.count > ready.count, !measurement.callback_after_stop else {
             diagnostics.emit(7, reason: ready.count, auxiliary: held.count, running: alive, samples: final)
             throw Failure.capture
         }
@@ -599,6 +595,11 @@ struct PeerComparisonCaptureTests {
     private struct Saved: Decodable { let saved: Bool }
     private struct Pause: Decodable { let paused: Bool }
     private struct Measurement: Encodable, Sendable { let start_ms: Double; let stop_ms: Double; let samples: Int; let callback_after_stop: Bool }
-    private struct Result: Encodable { let candidate: String; let route: String; let phase: String; let transport_ongoing: Bool; let measurements: [Measurement] }
+    private struct Result: Encodable {
+        let candidate: String; let route: String; let phase: String
+        let transport_ongoing: Bool
+        let verified_blocks_during_observation: UInt64?
+        let measurements: [Measurement]
+    }
 }
 #endif

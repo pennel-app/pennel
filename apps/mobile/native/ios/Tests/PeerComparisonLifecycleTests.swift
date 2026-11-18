@@ -70,13 +70,13 @@ struct PeerComparisonLifecycleTests {
         let probe: PeerComparisonProbe
         let fixture: Fixture
         let checkpoint: Checkpoint?
-        let nativeIdentity: QANativeIdentity?
+        let nativeItems: QANativeIdentity.KeychainItems?
         let metrics = PeerComparisonProcessMetrics()
         let began = ProcessInfo.processInfo.systemUptime
 
         init(config: Configuration, directory: URL, store: PeerComparisonIdentityKeychain,
              identity: PeerCompareIdentity, probe: PeerComparisonProbe, fixture: Fixture,
-             checkpoint: Checkpoint?, nativeIdentity: QANativeIdentity?) {
+             checkpoint: Checkpoint?, nativeItems: QANativeIdentity.KeychainItems?) {
             self.config = config
             self.directory = directory
             self.store = store
@@ -84,20 +84,11 @@ struct PeerComparisonLifecycleTests {
             self.probe = probe
             self.fixture = fixture
             self.checkpoint = checkpoint
-            self.nativeIdentity = nativeIdentity
+            self.nativeItems = nativeItems
         }
 
         var target: URL { directory.appendingPathComponent("received.bin") }
         var stage: URL { directory.appendingPathComponent("partial", isDirectory: true) }
-    }
-
-    private final class JobState: @unchecked Sendable {
-        private let lock = NSLock()
-        private var started = false
-        private var finished = false
-        func begin() { lock.withLock { started = true } }
-        func end() { lock.withLock { finished = true } }
-        func ongoing() -> Bool { lock.withLock { started && !finished } }
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PENNEL_PEER_LIFECYCLE_CONFIG_FILE"] == "1"))
@@ -127,28 +118,29 @@ struct PeerComparisonLifecycleTests {
 
         // All probes and their stable keychain identities exist before any React reload.
         Self.marker(3)
-        let states = contexts.map { _ in JobState() }
-        let tasks = zip(contexts, states).map { context, state in
-            Task.detached {
-                state.begin()
-                defer { state.end() }
-                return try Self.resume(context)
-            }
+        let receives = contexts.map { _ in PeerComparisonPayloadReceive() }
+        let tasks = zip(contexts, receives).map { context, receive in
+            Task.detached { try Self.resume(context, receive: receive) }
         }
         defer {
             contexts.forEach { $0.probe.cancel(); $0.probe.close() }
             tasks.forEach { $0.cancel() }
         }
         let began = ContinuousClock.now
-        while !states.allSatisfy({ $0.ongoing() }) {
-            guard began.duration(to: .now) < .seconds(2), !tasks.contains(where: \.isCancelled) else {
+        while true {
+            let phases = receives.map(\.phase)
+            if phases.allSatisfy({ $0 == .pending }) { break }
+            guard !phases.contains(.returned), began.duration(to: .now) < .seconds(2),
+                  !tasks.contains(where: \.isCancelled) else {
                 throw Failure.overlap
             }
             try await Task.sleep(for: .milliseconds(10))
         }
         Self.marker(4)
         try await Self.reloadJavaScript()
-        guard states.allSatisfy({ $0.ongoing() }) else { throw Failure.overlap }
+        // The two resumed payload calls must bracket the witnessed reload. Their
+        // final receipts establish byte counts separately from this timing check.
+        guard receives.allSatisfy({ $0.phase == .pending }) else { throw Failure.overlap }
         Self.marker(5)
 
         var receipts: [Resumed] = []
@@ -183,16 +175,11 @@ struct PeerComparisonLifecycleTests {
                 let prepared: Preparation = try await post(config, "prepare", ["peer_id": identity.identityId])
                 guard prepared.candidate == config.candidate, prepared.route == config.route else { throw Failure.response }
                 let host = try PeerComparisonQualificationTests.localIPv4()
-                let nativeIdentity: QANativeIdentity? = try await Task.detached {
-                    guard config.candidate == "native" else { return nil }
-                    guard let certificate = Data(base64Encoded: identity.certificateDerB64),
-                          let key = Data(base64Encoded: identity.privateKeyDerB64) else { throw Failure.persistentState }
-                    // Retain an exact scoped cleanup handle; the shared factory reuses these items.
-                    return try QANativeIdentity(certificateDER: certificate, privateKeyDER: key, account: config.account)
-                }.value
+                let nativeItems = config.candidate == "native"
+                    ? try PeerComparisonFactory.nativeItems(identity: identity, account: config.account) : nil
                 let probe = try await Task.detached {
                     try PeerComparisonQualificationTests.probe(config.candidate, store, config.account,
-                                                               prepared.relay_config_json, host)
+                                                               prepared.relay_config_json, host, identity: identity)
                 }.value
                 do {
                     let fixture = try await getFixture(config)
@@ -207,7 +194,7 @@ struct PeerComparisonLifecycleTests {
                     }
                     _ = try await Task.detached { try probe.approvePeer(id: fixture.source_identity) }.value
                     result.append(Context(config: config, directory: directory, store: store, identity: identity,
-                                          probe: probe, fixture: fixture, checkpoint: checkpoint, nativeIdentity: nativeIdentity))
+                                          probe: probe, fixture: fixture, checkpoint: checkpoint, nativeItems: nativeItems))
                 } catch { probe.close(); throw error }
             }
             return result
@@ -242,10 +229,12 @@ struct PeerComparisonLifecycleTests {
         context.probe.close()
     }
 
-    private static func resume(_ context: Context) throws -> Resumed {
+    private static func resume(_ context: Context, receive: PeerComparisonPayloadReceive) throws -> Resumed {
         guard let checkpoint = context.checkpoint else { throw Failure.persistentState }
-        let resumed = try context.probe.receiveFile(addressJson: context.fixture.source_address_json,
-            staging: context.stage.path, target: context.target.path, maxBlocks: nil)
+        let resumed = try receive.observe {
+            try context.probe.receiveFile(addressJson: context.fixture.source_address_json,
+                staging: context.stage.path, target: context.target.path, maxBlocks: nil)
+        }
         guard resumed.complete, resumed.bytesReceived == checkpoint.total_bytes - checkpoint.first_bytes,
               resumed.totalBytes == checkpoint.total_bytes, resumed.sha256 == checkpoint.sha256 else { throw Failure.receipt }
         let unchanged = try context.probe.receiveFile(addressJson: context.fixture.source_address_json,
@@ -268,7 +257,7 @@ struct PeerComparisonLifecycleTests {
         let saved: Saved = try await post(context.config, "result", result)
         guard saved.saved else { throw Failure.receipt }
         context.probe.close()
-        try context.nativeIdentity?.removeFromKeychain()
+        try context.nativeItems?.remove()
         try context.store.remove(account: context.config.account)
         // This directory was validated against the fixed QA root and lifecycle identifier.
         try FileManager.default.removeItem(at: context.directory)

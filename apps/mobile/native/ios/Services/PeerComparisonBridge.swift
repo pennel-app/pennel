@@ -96,6 +96,7 @@ final class PeerComparisonIdentityKeychain: PeerCompareIdentityStore, @unchecked
     }
 
     func remove(account: String) throws {
+        lock.lock(); defer { lock.unlock() }
         let status = SecItemDelete(try query(account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw PeerCompareError.Storage }
     }
@@ -107,8 +108,8 @@ final class PeerComparisonIdentityKeychain: PeerCompareIdentityStore, @unchecked
 }
 
 enum PeerComparisonFactory {
-    static func identity(store: PeerComparisonIdentityKeychain, account: String) throws -> PeerCompareIdentity {
-        if let saved = try store.load(account: account) { return try decodeIdentity(saved) }
+    static func identity(store: PeerComparisonIdentityKeychain, account: String, requireNew: Bool = false) throws -> PeerCompareIdentity {
+        if !requireNew, let saved = try store.load(account: account) { return try decodeIdentity(saved) }
         let identity: PeerCompareIdentity
         do { identity = try generatePeerCompareIdentity() }
         catch {
@@ -122,7 +123,13 @@ enum PeerComparisonFactory {
         ], options: [.sortedKeys])
         guard let value = String(data: encoded, encoding: .utf8) else { throw PeerCompareError.Storage }
         try store.save(account: account, value: value)
-        guard try store.load(account: account) == value else { throw PeerCompareError.Storage }
+        do {
+            guard try store.load(account: account) == value else { throw PeerCompareError.Storage }
+        } catch {
+            // The insert succeeded. Only a new, one-shot trial owns rollback on readback failure.
+            if requireNew { try store.remove(account: account) }
+            throw error
+        }
         return identity
     }
 
@@ -131,6 +138,11 @@ enum PeerComparisonFactory {
               let certificate = object["certificate_der_b64"], let key = object["private_key_der_b64"],
               let id = object["identity_id"] else { throw PeerCompareError.Storage }
         return PeerCompareIdentity(certificateDerB64: certificate, privateKeyDerB64: key, identityId: id)
+    }
+
+    static func nativeItems(identity: PeerCompareIdentity, account: String) throws -> QANativeIdentity.KeychainItems {
+        guard let certificate = Data(base64Encoded: identity.certificateDerB64) else { throw PeerCompareError.Storage }
+        return try QANativeIdentity.KeychainItems(account: account, certificateDER: certificate)
     }
 
     static func native(identity: PeerCompareIdentity, account: String, bindHost: String = "127.0.0.1",

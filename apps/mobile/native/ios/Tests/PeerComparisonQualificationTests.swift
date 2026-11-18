@@ -2,12 +2,106 @@
 import CryptoKit
 import Darwin
 import Foundation
+import Security
 import Testing
 @testable internal import PennelMobile
+
+struct PeerComparisonTrialIdentity: Sendable {
+    let store = PeerComparisonIdentityKeychain()
+    let account = "peer-probe-trial-\(UUID().uuidString)"
+    let identity: PeerCompareIdentity
+    private let candidate: String
+    private let nativeItems: QANativeIdentity.KeychainItems?
+
+    init(candidate: String) throws {
+        guard ["quinn", "native"].contains(candidate) else { throw PeerCompareError.InvalidConfig }
+        self.candidate = candidate
+        identity = try PeerComparisonFactory.identity(store: store, account: account, requireNew: true)
+        do {
+            nativeItems = candidate == "native" ? try PeerComparisonFactory.nativeItems(identity: identity, account: account) : nil
+        } catch {
+            try store.remove(account: account)
+            throw error
+        }
+    }
+
+    func probe(relay: String?, host: String) throws -> PeerComparisonProbe {
+        try PeerComparisonQualificationTests.probe(candidate, store, account, relay, host, identity: identity)
+    }
+
+    func remove() {
+        do { try nativeItems?.remove() }
+        catch { Issue.record(error, "Could not remove the trial's native keychain items.") }
+        do { try store.remove(account: account) }
+        catch { Issue.record(error, "Could not remove the trial's identity record.") }
+    }
+}
 
 @Suite(.serialized)
 struct PeerComparisonQualificationTests {
     private enum Failure: Error { case invalidProfile, invalidConfiguration, invalidResponse, invalidReceipt }
+
+    #if targetEnvironment(simulator)
+    @Test
+    func oneShotNativeTrialsRemoveOnlyTheirOwnKeychainItems() async throws {
+        try await Task.detached {
+            guard AppPaths.qaProfile == "peer-transport" else { throw Failure.invalidProfile }
+            func nativeQueries(_ trial: PeerComparisonTrialIdentity) -> (certificate: [String: Any], key: [String: Any]) {
+                let label = "app.pennel.peer-compare.qa.\(trial.account).\(trial.identity.identityId)"
+                return ([kSecClass as String: kSecClassCertificate, kSecAttrLabel as String: label,
+                         kSecUseDataProtectionKeychain as String: true],
+                        [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: Data(label.utf8),
+                         kSecUseDataProtectionKeychain as String: true])
+            }
+            func checkItems(_ trial: PeerComparisonTrialIdentity, present: Bool) throws {
+                let hasIdentityRecord = try trial.store.load(account: trial.account) != nil
+                #expect(hasIdentityRecord == present)
+                let queries = nativeQueries(trial)
+                for query in [queries.certificate, queries.key] {
+                    let status = SecItemCopyMatching(query as CFDictionary, nil)
+                    #expect(status == (present ? errSecSuccess : errSecItemNotFound))
+                }
+            }
+            func run(_ trial: PeerComparisonTrialIdentity, host: String) throws {
+                defer { trial.remove() }
+                let probe = try trial.probe(relay: nil, host: host)
+                defer { probe.close() }
+                try checkItems(trial, present: true)
+            }
+
+            let control = try PeerComparisonTrialIdentity(candidate: "native")
+            defer { control.remove() }
+            let controlProbe = try control.probe(relay: nil, host: "127.0.0.1")
+            defer { controlProbe.close() }
+            #expect(throws: PeerCompareError.Storage) {
+                _ = try PeerComparisonFactory.identity(store: control.store, account: control.account, requireNew: true)
+            }
+            let completed = try PeerComparisonTrialIdentity(candidate: "native")
+            try run(completed, host: "127.0.0.1")
+            try checkItems(completed, present: false)
+
+            let failed = try PeerComparisonTrialIdentity(candidate: "native")
+            #expect(throws: QANativeTransportError.invalidConfiguration) {
+                try run(failed, host: "invalid-host")
+            }
+            try checkItems(failed, present: false)
+
+            let partial = try PeerComparisonTrialIdentity(candidate: "native")
+            do {
+                defer { partial.remove() }
+                let probe = try partial.probe(relay: nil, host: "127.0.0.1")
+                probe.close()
+                // Reproduce the state an import leaves between its key and certificate writes.
+                let status = SecItemDelete(nativeQueries(partial).certificate as CFDictionary)
+                #expect(status == errSecSuccess)
+            }
+            try checkItems(partial, present: false)
+            try checkItems(control, present: true)
+            let reopenedID = try PeerComparisonFactory.identity(store: control.store, account: control.account).identityId
+            #expect(reopenedID == control.identity.identityId)
+        }.value
+    }
+    #endif
 
     @Test
     func ownedStorageBoundaryDiagnostics() async throws {
@@ -47,13 +141,14 @@ struct PeerComparisonQualificationTests {
             for candidate in ["quinn", "native"] {
                 let root = try Self.directory()
                 defer { try? FileManager.default.removeItem(at: root) }
-                let store = PeerComparisonIdentityKeychain()
-                let aKey = "peer-probe-local-\(UUID().uuidString)"
-                let bKey = "peer-probe-local-\(UUID().uuidString)"
-                defer { try? store.remove(account: aKey); try? store.remove(account: bKey) }
-                let a = try Self.probe(candidate, store, aKey, nil, "127.0.0.1")
-                let b = try Self.probe(candidate, store, bKey, nil, "127.0.0.1")
-                defer { a.close(); b.close() }
+                let firstTrial = try PeerComparisonTrialIdentity(candidate: candidate)
+                defer { firstTrial.remove() }
+                let a = try firstTrial.probe(relay: nil, host: "127.0.0.1")
+                defer { a.close() }
+                let secondTrial = try PeerComparisonTrialIdentity(candidate: candidate)
+                defer { secondTrial.remove() }
+                let b = try secondTrial.probe(relay: nil, host: "127.0.0.1")
+                defer { b.close() }
                 _ = try a.approvePeer(id: b.identityId())
                 _ = try b.approvePeer(id: a.identityId())
                 let source = root.appendingPathComponent("synthetic.bin")
@@ -96,16 +191,14 @@ struct PeerComparisonQualificationTests {
         let metrics = PeerComparisonProcessMetrics()
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = PeerComparisonIdentityKeychain()
-        let account = "peer-probe-device-\(UUID().uuidString)"
-        defer { try? store.remove(account: account) }
-        let identity = try await Task.detached { try PeerComparisonFactory.identity(store: store, account: account) }.value
+        let trial = try await Task.detached { try PeerComparisonTrialIdentity(candidate: candidate) }.value
+        defer { trial.remove() }
         Self.marker("identity ready")
-        let prepared: Preparation = try await post(url, token, "prepare", ["peer_id": identity.identityId])
+        let prepared: Preparation = try await post(url, token, "prepare", ["peer_id": trial.identity.identityId])
         Self.marker("coordinator prepared")
         guard prepared.candidate == candidate, prepared.route == route else { throw Failure.invalidResponse }
         let host = try localIPv4()
-        let probe = try await Task.detached { try Self.probe(candidate, store, account, prepared.relay_config_json, host) }.value
+        let probe = try await Task.detached { try trial.probe(relay: prepared.relay_config_json, host: host) }.value
         Self.marker("transport ready")
         defer { probe.close() }
         let fixture: Fixture = try await getFixture(url, token)
@@ -138,12 +231,12 @@ struct PeerComparisonQualificationTests {
     }
 
     static func probe(_ candidate: String, _ store: PeerComparisonIdentityKeychain, _ account: String,
-                              _ relay: String?, _ host: String) throws -> PeerComparisonProbe {
+                      _ relay: String?, _ host: String, identity: PeerCompareIdentity) throws -> PeerComparisonProbe {
         if candidate == "quinn" {
             return try PeerComparisonProbe.newQuinn(identityStore: store, identityAccount: account,
                 bindAddress: "\(host):0", relayConfigJson: relay)
         }
-        return try PeerComparisonFactory.native(identity: PeerComparisonFactory.identity(store: store, account: account),
+        return try PeerComparisonFactory.native(identity: identity,
             account: account, bindHost: host, advertisedHost: host, relayJSON: relay)
     }
 
