@@ -1,0 +1,39 @@
+name: Released Mac installation acceptance
+
+on:
+  push:
+    branches: [codex/mac-release-install-qa]
+    paths:
+      - .github/workflows/mac-release-install-qa.yml
+      - scripts/release-install-qa/**
+
+permissions:
+  contents: read
+
+jobs:
+  installation:
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [clean, upgrade]
+    name: Apple Silicon / ${{ matrix.scenario }}
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Build the read-only UI observer
+        run: swiftc scripts/release-install-qa/observe.swift -o "$RUNNER_TEMP/pennel-observe"
+      - name: Exercise the published casks
+        run: python3 -B scripts/release-install-qa/verify.py "${{ matrix.scenario }}"
+        env:
+          HOMEBREW_NO_ANALYTICS: "1"
+      - name: Retain outcome
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: mac-install-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/pennel-install-receipt.json
+          retention-days: 30
+          if-no-files-found: warn
