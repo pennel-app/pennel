@@ -7,7 +7,6 @@ import { clock, dateLabel } from '../format';
 import { Actions, Body, Button, Empty, Loading, Notice, Page, Row, Section, confirm } from '../components/ui';
 import { Wave } from '../components/Wave';
 import { ownedFailureText } from '../errors';
-import { ActiveCleanupVerification } from './CleanupVerification';
 import { workflowText } from '../workflow-copy';
 import { useHapticFeedback } from '../haptics';
 import { dictationProcessingRoutes, recentResults, taskReadiness } from '../task-readiness';
@@ -66,7 +65,6 @@ export default function Dictation() {
         <Text style={{ fontFamily: theme.font.medium, fontSize: theme.size.section, color: theme.colors['pill-text'] }}>{t(phase === 'listening' ? 'dictation.pad.listening' : phase === 'processing' ? 'dictation.pad.processing' : 'mobile.dictate')}</Text>
       </Pressable>
       {(phase === 'listening' || phase === 'processing') && <Button title={t('common.cancel')} subtle onPress={() => void run('dictation-cancel', 'dictation.cancel').then((result) => { if (result !== undefined) haptic('recordingCancelled'); })} />}
-      {(phase === 'listening' || phase === 'processing') && <ActiveCleanupVerification />}
       {phase === 'idle' && !snapshot?.dictation.text && <Notice>{t('mobile.simple.dictation_ready')}</Notice>}
       {phase === 'processing' && <Notice>{t('mobile.simple.processing_help')}</Notice>}
       {snapshot?.dictation.error && <><Notice error>{ownedFailureText(language, snapshot.dictation.error, snapshot.dictation.error_code)}</Notice><Button title={t('dictation.pad.settings')} subtle onPress={() => snapshot.dictation.error_code === 'microphone_denied' ? void run('microphone-settings', 'system.openSettings') : router.push({ pathname: '/settings/[section]', params: { section: 'models', task: 'dictation_stt' } })} /></>}
@@ -80,7 +78,6 @@ export default function Dictation() {
       {session?.phase === 'off' && <Notice>{copy('keyboardInactive')}</Notice>}
       <Button title={copy('keyboardSetup')} subtle icon="keypad-outline" onPress={() => setKeyboardHelp((shown) => !shown)} />
       {keyboardHelp && <><Notice>{copy('keyboardHelp')}</Notice><Notice>{t('mobile.session.help')}</Notice><Notice>{t('mobile.keyboard.setup')}</Notice><Notice>{copy(session?.full_access_seen ? 'keyboardLastVerified' : 'keyboardNotVerified')}</Notice><Button title={t('dictation.pad.settings')} subtle icon="settings-outline" onPress={() => router.push({ pathname: '/settings/[section]', params: { section: 'dictation' } })} /></>}
-      {(session?.phase === 'listening' || session?.phase === 'processing') && phase === 'idle' && <ActiveCleanupVerification />}
     </Section>
     <Actions><Body accessibilityRole="header" style={{ flex: 1, fontFamily: theme.font.semibold }}>{t(allHistory ? 'dictation.history.title' : 'mobile.simple.recent')}</Body><Button title={t(allHistory ? 'mobile.simple.recent_only' : 'mobile.simple.all_history')} subtle onPress={() => setAllHistory(value => !value)} /></Actions>
     {history.loading && !history.value && <Loading />}

@@ -10,7 +10,7 @@ import { ownedMetadata } from '../../owned-labels';
 export function InferencePanels() {
   const { snapshot } = useRuntime();
   const protocols = useQuery<InferenceProtocolInfo[]>('inference.protocols', {}, snapshot?.platform === 'ios');
-  return <><InferencePanel capability="decision" protocols={protocols.value ?? []} /><InferencePanel capability="reranking" protocols={protocols.value ?? []} /></>;
+  return <InferencePanel capability="decision" protocols={protocols.value ?? []} />;
 }
 
 function InferencePanel({ capability, protocols }: { capability: InferenceCapability; protocols: InferenceProtocolInfo[] }) {

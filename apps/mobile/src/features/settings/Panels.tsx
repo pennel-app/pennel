@@ -8,8 +8,6 @@ import { ModelVerification, selectedVerification, sameVerificationSelection, ver
 import { localizedFailure } from '../../errors';
 import { ownedMetadata, templateLabel } from '../../owned-labels';
 import { inferenceCopy } from '../../inference';
-import { InferencePanels } from './InferencePanel';
-import { CleanupVerificationPanel } from '../CleanupVerification';
 import { KeyboardPanel } from './KeyboardPanel';
 import { SummaryAutomation } from '../../components/SummaryAutomation';
 
@@ -123,7 +121,7 @@ export function ModelsPanel() {
   const { t, snapshot, busy } = useSettings();
   const router = useRouter();
   const testing = [...busy].some((key) => key.startsWith('verify-model-'));
-  return <><Section><Button title={t('mobile.provider.new')} subtle disabled={testing} onPress={() => router.push({ pathname: '/settings/[section]', params: { section: 'providers' } })} /></Section><TaskModel task="dictation_stt" label={t('mobile.provider.task.dictation')} speech /><TaskModel task="meeting_stt" label={t('mobile.provider.task.meetings')} speech /><TaskModel task="llm" label={t('mobile.provider.task.text')} speech={false} /><InferencePanels /><Section title={t('navigation.models')}><Notice>{snapshot?.capabilities.local_models?.reason || t('mobile.local_models')}</Notice></Section></>;
+  return <><Section><Button title={t('mobile.provider.new')} subtle disabled={testing} onPress={() => router.push({ pathname: '/settings/[section]', params: { section: 'providers' } })} /></Section><TaskModel task="dictation_stt" label={t('mobile.provider.task.dictation')} speech /><TaskModel task="meeting_stt" label={t('mobile.provider.task.meetings')} speech /><TaskModel task="llm" label={t('mobile.provider.task.text')} speech={false} /><Section title={t('navigation.models')}><Notice>{snapshot?.capabilities.local_models?.reason || t('mobile.local_models')}</Notice></Section></>;
 }
 
 export function DictationPanel() {
@@ -131,7 +129,6 @@ export function DictationPanel() {
   const appleAutomatic = settings.language === null && settings.providers.find((provider) => provider.id === settings.dictation_stt.provider_id)?.kind === 'apple_speech';
   return <>
     <Section><Choice label={t('dictation.mode.title')} value={settings.mode} options={[{ value: 'fast', label: t('dictation.mode.fast') }, { value: 'clean', label: t('dictation.mode.clean') }]} onChange={(mode) => void save({ mode })} /><Choice label={t('dictation.language.title')} value={settings.language ?? ''} options={[{ value: '', label: t('common.automatic') }, { value: 'nl', label: t('dictation.language.dutch') }, { value: 'en', label: t('dictation.language.english') }, { value: 'fr', label: t('dictation.language.french') }, { value: 'de', label: t('dictation.language.german') }]} onChange={(language) => void save({ language: language || null })} /><Choice label={t('dictation.history.retention')} value={settings.history_retention_days} options={[30, 90, 365, 0].map((value) => ({ value, label: value ? t('dictation.history.days', { days: value }) : t('dictation.history.always') }))} onChange={(history_retention_days) => void save({ history_retention_days })} /></Section>
-    <CleanupVerificationPanel />
     {appleAutomatic && <Notice>{language === 'nl' ? 'Automatisch gebruikt bij Apple dicteren de voorkeurstaal van je iPhone. Kies Nederlands of Engels om de spreektaal vast te zetten.' : 'Automatic uses your iPhone’s preferred language with Apple dictation. Choose Dutch or English to set a specific speech language.'}</Notice>}
     <KeyboardPanel />
     <Notice>{t('mobile.keyboard.goal')}</Notice>
