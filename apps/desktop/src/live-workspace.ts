@@ -276,9 +276,8 @@ function createWorkspace(initialContext: Context, initial: MeetingStatus, initia
   });
   const history = questions.history;
   panels.get("questions")!.append(h("details", { class: "conversation-context-help" }, h("summary", {}, l("conversations.context")),
-    h("p", { class: "help live-question-scope" }, l("meetings.workspace_scope")),
-    h("p", { class: "help live-source-assessment" }, l("meetings.workspace_sourcecheck_unavailable"))), questions.root);
-  panels.get("suggestions")!.append(h("h2", {}, l("meetings.workspace_suggestions")), h("p", { class: "help" }, l("meetings.workspace_suggestions_unavailable")));
+    h("p", { class: "help live-question-scope" }, l("meetings.workspace_scope"))), questions.root);
+  panels.get("suggestions")!.append(h("h2", {}, l("meetings.workspace_suggestions")), h("p", { class: "help" }, l("insights.review_intro")));
   let consent: ReturnType<typeof meetingSummaryConsent> | null = null;
   const summary = meetingSummaryEditor(ctx, { meetingUid: () => uid, changed: () => { consent?.refresh(); insights?.readiness(); }, id: () => owner.id, finished: () => finalized, flushNotes: async () => { await saveNotes(); await saveTitle(); }, template: () => selectedTemplate,
     processing: () => !!reviewDetail?.retranscription_status?.running,

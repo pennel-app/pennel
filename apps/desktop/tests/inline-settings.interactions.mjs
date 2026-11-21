@@ -96,8 +96,8 @@ export async function checkInlineSettingsFlow() {
     assert((await api.meetingDetail(id)).notes === literal, "Entering Settings lost the unsaved meeting draft.");
     assert(visible(document.querySelector('.settings-back[data-action="back-to-work"]')), "Settings lacks a visible way back to the prior task.");
 
-    click(button(document.querySelector(".settings-categories"), t("navigation.appearance")));
-    const appearanceReady = () => button(document.querySelector(".settings-categories"), t("navigation.appearance"))?.getAttribute("aria-current") === "page"
+    click(document.querySelector('[data-settings-category="appearance"]'));
+    const appearanceReady = () => document.querySelector('[data-settings-category="appearance"]')?.getAttribute("aria-current") === "page"
       && [...document.querySelectorAll(".settings-pane .choice[aria-label]")].some(node => node.getAttribute("aria-label").startsWith(t("interface.language") + ":"));
     await until(appearanceReady, "The appearance category did not finish opening.");
     click(document.querySelector(".settings-back"));
@@ -113,7 +113,7 @@ export async function checkInlineSettingsFlow() {
     await until(() => document.querySelector(".settings-workspace"), "The standard Settings shortcut did not navigate inline.");
     await until(appearanceReady, () => `Reopening Settings forgot its category: ${document.querySelector('.settings-categories [aria-current="page"]')?.dataset.settingsCategory ?? "none"}.`);
     fixture.emit("workspace-navigate", settingsRoute("models"));
-    await until(() => document.querySelector(".models-settings"), "A Settings deep link did not open in the main window.");
+    await until(() => document.querySelector(".ai-models-hub"), "A Settings deep link did not open in the main window.");
     click(document.querySelector(".settings-back"));
     await until(() => document.querySelector('.live-workspace[data-document-layout="continuous"] .live-notes-pane:not([hidden])'), "A category deep link overwrote the previous task.");
     assert(document.querySelector(".live-notes").value === literal, "The deep-link roundtrip lost the note.");
@@ -145,7 +145,7 @@ export async function checkInlineSettingsRecordingFlow() {
     await until(() => visible(document.querySelector(".settings-recording")), "Inline Settings hides the active recording state.");
     assert(document.querySelector(".settings-recording").textContent.includes(t("meetings.return_recording")), "Inline Settings has no useful active-recording return action.");
     fixture.emit("workspace-navigate", settingsRoute("recording"));
-    await until(() => document.querySelector('[data-settings-category="meeting-settings"][aria-current="page"]') && document.querySelector('[data-settings-detail="recording"][open]'), "The recording preference subsection is not available.");
+    await until(() => document.querySelector('[data-settings-category="meeting-settings"][aria-current="page"]') && document.querySelector('[data-settings-anchor="recording-detect"]'), "The recording preference subsection is not available.");
     click(document.querySelector(".settings-recording"));
     await until(() => document.querySelector(".live-notes"), "The visible recording action did not return to the same active task.");
     click(document.querySelector(".library-settings"));

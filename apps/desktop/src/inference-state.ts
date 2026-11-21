@@ -42,6 +42,13 @@ export function inferenceFingerprint(info: Pick<AppInfo, "settings" | "keys" | "
   return JSON.stringify([config, account ? providerFingerprint(info, account) : null]);
 }
 
+export function reviewConnectionFingerprint(info: Pick<AppInfo, "settings" | "keys" | "provider_revisions" | "cloud_account_epoch" | "cloud_signed_in">): string {
+  if (info.settings.decision) return inferenceFingerprint(info, "decision");
+  const choice = info.settings.llm ?? null;
+  const account = choice ? info.settings.providers.find((provider) => provider.id === choice.provider_id) : undefined;
+  return JSON.stringify(["llm", choice, account ? providerFingerprint(info, account) : null]);
+}
+
 export class InferenceVerificationState {
   private active: { id: string; fingerprint: string } | null = null;
   private saved: { fingerprint: string; result: InferenceVerification } | null = null;

@@ -74,11 +74,11 @@ test("legacy windows and settings aliases now land in one workspace", () => {
   assert.deepEqual(legacyWorkspaceRoute("live", "meeting"), workspaceRoute("recording"));
 });
 
-test("new Settings opens at task readiness while old advanced links stay valid", () => {
-  assert.deepEqual(legacyWorkspaceRoute("settings"), workspaceRoute("settings", "dictation"));
+test("new Settings opens at AI & Models while old links stay valid", () => {
+  assert.deepEqual(legacyWorkspaceRoute("settings"), workspaceRoute("settings", "ai-models"));
   assert.deepEqual(legacyWorkspaceRoute("settings", "models"), workspaceRoute("settings", "models"));
   assert.deepEqual(parseWorkspaceRoute({ section: "settings", tab: "overview" }), workspaceRoute("settings", "overview"));
-  assert.deepEqual(new WorkspaceNavigation().select("settings"), workspaceRoute("settings", "dictation"));
+  assert.deepEqual(new WorkspaceNavigation().select("settings"), workspaceRoute("settings", "ai-models"));
   assert.equal(parseWorkspaceRoute({ section: "meetings", meeting_id: "overview" }), null);
 });
 
@@ -103,15 +103,17 @@ test("only a verified different active capture may bypass old retained draft per
   assert.equal(resumesOtherCapture(route, "old-session", { ...active, id: null }), false);
 });
 
-test("five settings categories retain Dictionary and Styles as full Dictation subpages", () => {
-  for (const tab of ["dictation", "dictionary", "styles", "overview", null]) assert.equal(settingsCategory(tab), "dictation");
+test("six settings categories route AI hub, Dictation subpages, Meetings, Shortcuts, Cloud, and Appearance", () => {
+  for (const tab of ["ai-models", "models", "providers", "local", "advanced", "overview", null]) assert.equal(settingsCategory(tab), "ai-models");
+  for (const tab of ["dictation", "dictionary", "styles"]) assert.equal(settingsCategory(tab), "dictation");
   for (const tab of ["dictionary", "styles"]) {
     assert.deepEqual(parseWorkspaceRoute({ section: "settings", tab }), workspaceRoute("settings", tab));
     assert.deepEqual(legacyWorkspaceRoute("settings", tab), workspaceRoute("settings", tab));
   }
   for (const tab of ["meeting-settings", "recording", "meetings"]) assert.equal(settingsCategory(tab), "meeting-settings");
-  for (const tab of ["models", "providers", "local", "advanced"]) assert.equal(settingsCategory(tab), "advanced");
-  assert.equal(settingsCategory("appearance"), "appearance"); assert.equal(settingsCategory("account"), "account");
+  assert.equal(settingsCategory("shortcuts"), "shortcuts");
+  for (const tab of ["account", "cloud"]) assert.equal(settingsCategory(tab), "account");
+  assert.equal(settingsCategory("appearance"), "appearance");
 });
 
 test("remembered workspace survives a launch with its Settings return and task contexts", () => {

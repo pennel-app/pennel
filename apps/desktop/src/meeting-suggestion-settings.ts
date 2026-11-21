@@ -13,7 +13,7 @@ export function suggestionAutomationChoice(ctx: Context) {
   const automatic = controlButton({ class: "btn compact", "data-suggestion-automation": "automatic", onclick: () => { void choose("automatic"); } }, l("settings.suggestions_automatic"));
   const manual = controlButton({ class: "btn compact", "data-suggestion-automation": "manual", onclick: () => { void choose("manual"); } }, l("settings.suggestions_manual"));
   const language = select([["", l("settings.suggestions_ask_language")], ["en", l("insights.language_en")], ["nl", l("insights.language_nl")], ["mixed", l("insights.language_mixed")]], "", value => { void choose(undefined, value === "" ? null : value as "en" | "nl" | "mixed"); }, "menu");
-  const setup = h("button", { class: "text-button suggestion-settings-setup", onclick: () => ctx.navigate("providers") }, l("insights.connection_settings"));
+  const setup = h("button", { class: "text-button suggestion-settings-setup", onclick: () => ctx.navigate("ai-models") }, l("settings.ai.manage_link"));
   const root = h("section", { class: "meeting-suggestion-settings", "aria-label": l("settings.suggestions_title") }, h("h3", {}, l("settings.suggestions_title")), description,
     h("div", { class: "row" }, automatic, manual), h("label", { class: "suggestion-settings-language" }, l("settings.suggestions_fallback"), language), reason, setup, error);
   function refresh() {
@@ -21,7 +21,8 @@ export function suggestionAutomationChoice(ctx: Context) {
     root.dataset.suggestionAutomation = policy; automatic.setAttribute("aria-pressed", String(policy === "automatic")); manual.setAttribute("aria-pressed", String(policy === "manual"));
     automatic.disabled = manual.disabled = language.disabled = pending;
     language.value = ["en", "nl", "mixed"].includes(fallback ?? "") ? fallback! : "";
-    const choice = ctx.info.settings.decision, provider = ctx.info.settings.providers.find(provider => provider.id === choice?.provider_id);
+    const choice = ctx.info.settings.decision ?? (ctx.info.settings.llm.model ? ctx.info.settings.llm : null);
+    const provider = ctx.info.settings.providers.find(provider => provider.id === choice?.provider_id);
     const destination = `${provider ? providerDestination(provider) : t("insights.none")} · ${choice?.model ?? t("insights.none")}`;
     description.textContent = t("settings.suggestions_help", { destination });
     reason.textContent = !choice || !provider ? t("insights.reason_unconfigured") : t("settings.suggestions_qualification");

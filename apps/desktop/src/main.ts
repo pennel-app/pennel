@@ -18,15 +18,19 @@ import { RecordingActionGate, meetingLevels } from "./recording-control-state";
 import { recordingEntry } from "./voice-flow-state";
 import { PadNavigationBlocked } from "./dictation-session-state";
 import { icon } from "./icons";
-import { modelsView } from "./views/models";
 import { accountView } from "./views/account";
-import { providersView } from "./views/providers";
+import { aiModelsView } from "./views/ai-models";
+import { writingProfileSection } from "./views/writing-profile";
 import { meetingSettingsView, recordingSettingsView } from "./views/settings";
 import { promptView } from "./views/welcome";
 import { onboardingView } from "./views/onboarding";
 import { padView } from "./views/pad";
-import { openTaskSetupDialog, settingsTaskRows, type TaskSetupDialog } from "./views/setup";
+import { openTaskSetupDialog, type TaskSetupDialog } from "./views/setup";
 import type { SetupTask } from "./task-setup-state";
+import { choiceDestination } from "./processing-state";
+import { searchSettings } from "./settings-search";
+import { CommandPalette } from "./command-palette";
+import { textField } from "./dom";
 import { watchKeyboardLayout } from "./shortcut-layout";
 import { shortcutCaptureActive } from "./shortcut-capture-state";
 import { appInfoContentEqual } from "./presentation";
@@ -73,10 +77,12 @@ interface Mounted {
 }
 
 const tabs: [string, TranslationKey, View][] = [
-  ["dictation", "navigation.dictation", dictationSettings], ["meeting-settings", "navigation.meetings", meetingTaskSettings],
+  ["ai-models", "navigation.ai_models", aiModelsSettings],
+  ["dictation", "navigation.dictation", dictationSettings],
+  ["meeting-settings", "navigation.meetings", meetingTaskSettings],
   ["shortcuts", "navigation.shortcuts", shortcutsView],
-  ["appearance", "navigation.appearance", appearanceView], ["account", "navigation.sync_account", accountView],
-  ["advanced", "navigation.advanced", advancedSettings],
+  ["account", "navigation.cloud_integrations", cloudIntegrationsSettings],
+  ["appearance", "navigation.general", appearanceView],
 ];
 const query = new URLSearchParams(location.search);
 const requestedWindow = query.get("window") ?? "workspace";
@@ -276,6 +282,8 @@ let taskSetupCaptureSession: string | null = null;
 let setupOpening = false;
 let deferredRender = false;
 let settingsFocusRequest: string | null = null;
+let settingsAnchorRequest: string | null = null;
+let palette: CommandPalette | null = null;
 
 function showRecovery() {
   const unsaved = (info?.unsaved_history_count ?? 0) > 0;
@@ -383,6 +391,7 @@ function navigate(tab: string, param?: string, jumpMs?: number, sourceTarget?: M
   if (tab === "settings") { void go(workspaceRoute("settings", null)); return; }
   if (tab === "dictation-home") { void go(workspaceRoute("dictation", "home")); return; }
   if (tab === "dictation-pad") { void go(workspaceRoute("dictation", "pad")); return; }
+  if (tab === "cloud") { void go(workspaceRoute("settings", "account")); return; }
   if (settingTabs.includes(tab as typeof settingTabs[number]) || tab === "local") void go(workspaceRoute("settings", tab));
 }
 
@@ -523,6 +532,17 @@ function cancelCaptureSetup(session: string) {
   taskSetupClosed();
 }
 
+function scrollToSettingsAnchor(pane: HTMLElement) {
+  if (!settingsAnchorRequest) return;
+  const target = pane.querySelector<HTMLElement>(`[data-settings-anchor="${CSS.escape(settingsAnchorRequest)}"]`);
+  settingsAnchorRequest = null;
+  if (!target) return;
+  if (target instanceof HTMLDetailsElement) target.open = true;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  target.classList.add("settings-anchor-highlight");
+  window.setTimeout(() => target.classList.remove("settings-anchor-highlight"), 1600);
+}
+
 async function settingsView(ctx: Context): Promise<HTMLElement> {
   const current = settingsCategory(navigation.current.tab);
   const tabButton = ([id, label]: [string, TranslationKey, View]) => h("button", {
@@ -533,13 +553,66 @@ async function settingsView(ctx: Context): Promise<HTMLElement> {
       navigate(id);
     },
   }, l(label));
+  const searchInput = textField({
+    type: "search",
+    class: "settings-search-input",
+    placeholder: l("settings.search.placeholder"),
+    "aria-label": l("settings.search.label"),
+    spellcheck: false,
+  });
+  const searchResults = h("div", { class: "settings-search-results", hidden: true });
+  const categoryButtons = tabs.map(tabButton);
+  const updateSearch = () => {
+    const query = searchInput.value.trim();
+    if (!query) {
+      searchResults.hidden = true;
+      searchResults.replaceChildren();
+      for (const button of categoryButtons) button.hidden = false;
+      return;
+    }
+    for (const button of categoryButtons) button.hidden = true;
+    searchResults.hidden = false;
+    const matches = searchSettings(query);
+    if (!matches.length) {
+      searchResults.replaceChildren(h("p", { class: "help settings-search-empty" }, l("settings.search.empty")));
+      return;
+    }
+    searchResults.replaceChildren(...matches.map(({ entry, title, categoryLabel }) =>
+      h("button", {
+        type: "button",
+        class: "settings-search-item",
+        onclick: () => {
+          searchInput.value = "";
+          updateSearch();
+          settingsAnchorRequest = entry.anchor ?? null;
+          navigate(entry.tab ?? entry.category);
+          if (settingsCategory(navigation.current.tab) === entry.category && (!entry.tab || navigation.current.tab === entry.tab)) {
+            const paneEl = content.querySelector<HTMLElement>(".settings-pane");
+            if (paneEl) scrollToSettingsAnchor(paneEl);
+          }
+        },
+      }, h("span", { class: "settings-search-title" }, title), h("span", { class: "settings-search-category help" }, categoryLabel))));
+  };
+  searchInput.addEventListener("input", updateSearch);
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && searchInput.value) {
+      event.preventDefault();
+      searchInput.value = "";
+      updateSearch();
+    } else if (event.key === "Enter" && searchInput.value.trim()) {
+      const first = searchResults.querySelector<HTMLButtonElement>(".settings-search-item");
+      if (first) { event.preventDefault(); first.click(); }
+    }
+  });
   const nav = h("nav", { id: "settings-navigation", class: "settings-categories", "aria-label": l("navigation.settings_categories") },
     h("button", { class: "settings-back", "data-action": "back-to-work", onclick: () => navigate("settings-back") }, icon("arrowLeft"), l("navigation.back_to_work")),
     h("button", { class: "settings-recording", hidden: true, onclick: async () => {
       try { const status = await api.meetingRuntimeStatus(); currentMeetingStatus = status; const entry = recordingEntry(status); await go(entry.kind === "new" ? navigation.settingsBack() : workspaceRoute("recording", null, entry.meetingId)); }
       catch (error) { report(error); }
     } }),
-    ...tabs.map(tabButton));
+    h("div", { class: "settings-search" }, icon("search"), searchInput),
+    searchResults,
+    ...categoryButtons);
   nav.addEventListener("keydown", (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
     const target = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-settings-category]");
@@ -555,15 +628,21 @@ async function settingsView(ctx: Context): Promise<HTMLElement> {
   const selected = tabs.find(([id]) => id === current) ?? tabs[0];
   const pane = h("section", { class: "settings-pane" });
   const positionKey = scrollKey(navigation.current);
-  const content = async () => [h("h2", { class: "settings-title" }, l(selected[1])), await selected[2](ctx), settingsFooter(ctx)];
+  const contentNodes = async () => [h("h2", { class: "settings-title" }, l(selected[1])), await selected[2](ctx), settingsFooter(ctx)];
   // A re-render of the same category keeps its old content until the new one is ready, so the
   // scroll position survives; a new category appears at once and fills in as its data arrives.
-  if (rerendering) pane.append(...await content());
-  else {
+  if (rerendering) {
+    pane.append(...await contentNodes());
+    requestAnimationFrame(() => scrollToSettingsAnchor(pane));
+  } else {
     let live = true;
     ctx.onDispose(() => { live = false; });
     const loading = h("p", { class: "help settings-loading", role: "status" }, l("common.loading"));
-    void fillWhenReady(pane, loading, content, () => live).then(() => { refreshLocalization(pane); pane.scrollTop = settingsPositions.get(positionKey) ?? 0; }).catch((error: unknown) => {
+    void fillWhenReady(pane, loading, contentNodes, () => live).then(() => {
+      refreshLocalization(pane);
+      pane.scrollTop = settingsPositions.get(positionKey) ?? 0;
+      scrollToSettingsAnchor(pane);
+    }).catch((error: unknown) => {
       if (live) pane.replaceChildren(h("p", { class: "error", role: "status" }, errorText(error)));
       report(error);
     });
@@ -587,10 +666,14 @@ function appearanceView(ctx: Context): HTMLElement {
   updateLabels();
   bindLocalization(interfacePicker, updateLabels);
   ctx.onInfoChange((next) => { picker.value = next.settings.appearance; interfacePicker.value = next.settings.ui_language ?? "system"; });
-  return h("div", {}, section(l("interface.language"), l("interface.language_help"), interfacePicker),
-    section(l("appearance.title"), l("appearance.help"), h("div", { class: "preference-row" }, h("span", {}, l("appearance.title")), picker)),
-    section(l("intro.title"), l("intro.help"),
-      controlButton({ class: "btn onboarding-replay", onclick: () => api.showWindow("onboarding", "language") }, l("intro.open"))));
+  const langSection = section(l("interface.language"), l("interface.language_help"), interfacePicker);
+  langSection.dataset.settingsAnchor = "interface-language";
+  const themeSection = section(l("appearance.title"), l("appearance.help"), h("div", { class: "preference-row" }, h("span", {}, l("appearance.title")), picker));
+  themeSection.dataset.settingsAnchor = "appearance";
+  const introSection = section(l("intro.title"), l("intro.help"),
+    controlButton({ class: "btn onboarding-replay", onclick: () => api.showWindow("onboarding", "language") }, l("intro.open")));
+  introSection.dataset.settingsAnchor = "intro";
+  return h("div", {}, langSection, themeSection, introSection);
 }
 
 /** As in the original library, the main window opens on the newest meeting when none is chosen. */
@@ -659,8 +742,8 @@ function updateNavigation() {
   syncSidebarPresentation();
 }
 
-function settingsDisclosure(title: TranslationKey, child: HTMLElement, id: string, expanded = false): HTMLElement {
-  return h("details", { class: "task-settings-detail", open: expanded, "data-settings-detail": id }, h("summary", {}, l(title)), child);
+function aiModelsSettings(ctx: Context): Promise<HTMLElement> {
+  return aiModelsView(ctx, navigation.current.tab);
 }
 
 function dictationSettings(ctx: Context): HTMLElement {
@@ -674,15 +757,26 @@ function dictationSettings(ctx: Context): HTMLElement {
 }
 
 async function meetingTaskSettings(ctx: Context): Promise<HTMLElement> {
-  return h("div", { class: "task-settings meeting-task-settings" }, settingsTaskRows(ctx, ["meeting_stt", "llm"]), await meetingSettingsView(ctx),
-    settingsDisclosure("settings.recording.options", await recordingSettingsView(ctx), "recording", navigation.current.tab === "recording"));
+  const settings = ctx.info.settings;
+  const aiStrip = section(l("navigation.ai_models"), null,
+    h("div", { class: "row ai-summary-strip" },
+      h("span", { class: "help grow" }, t("settings.ai.compact_speech_text", {
+        speech: choiceDestination(settings, settings.meeting_stt),
+        text: choiceDestination(settings, settings.llm),
+      })),
+      controlButton({ class: "btn", onclick: () => ctx.navigate("ai-models") }, l("settings.ai.manage_link"))));
+  return h("div", { class: "task-settings meeting-task-settings" },
+    aiStrip,
+    await meetingSettingsView(ctx),
+    await recordingSettingsView(ctx));
 }
 
-async function advancedSettings(ctx: Context): Promise<HTMLElement> {
-  const tab = navigation.current.tab;
-  return h("div", { class: "task-settings advanced-task-settings" }, h("p", { class: "help" }, l("settings.advanced.help")),
-    settingsDisclosure("settings.advanced.connections", await providersView({ ...ctx, get info() { return ctx.info; }, param: tab === "local" ? "__local__" : undefined }), "providers", tab === "providers" || tab === "local"),
-    settingsDisclosure("settings.advanced.models", await modelsView(ctx), "models", tab === "models"));
+async function cloudIntegrationsSettings(ctx: Context): Promise<HTMLElement> {
+  const writing = writingProfileSection(ctx);
+  if (writing) writing.dataset.settingsAnchor = "writing-profile";
+  return h("div", { class: "task-settings cloud-integrations-settings" },
+    await accountView(ctx),
+    writing);
 }
 
 function updateSettingsRecording() {
@@ -777,6 +871,7 @@ function titlebarDragRegion(): HTMLElement {
 function workspaceShell() {
   library = new LibrarySidebar({ record: openRecording, info: visibleInfo, current: () => navigation.current, go: (route) => { void go(route); }, report,
     select: (section) => { void go(navigation.select(section)); },
+    openPalette: () => { palette?.toggle(); },
     statusChanged: (status) => { currentMeetingStatus = status; updateSettingsRecording(); publishDesktopCommands(); } });
   library.element.id = "workspace-navigation";
   toolbarRecording = library.element.querySelector<HTMLButtonElement>(".library-record")!;
@@ -785,6 +880,37 @@ function workspaceShell() {
   toolbarStop = captureStopControl("btn toolbar-capture-stop");
   sidebarToggle = controlButton({ class: "toolbar-sidebar toolbar-icon", "data-command": "toggle_sidebar", onclick: () => { void runDesktopCommand("toggle_sidebar"); } }, icon("sidebar"));
   toolbarCaption = h("span", { class: "toolbar-section", "data-tauri-drag-region": true, "aria-hidden": "true" });
+  palette = new CommandPalette({
+    info: visibleInfo,
+    recording: () => !!currentMeetingStatus?.recording,
+    startRecording: () => openRecording(),
+    stopRecording: async () => {
+      if (toolbarStop && !toolbarStop.hidden && !toolbarStop.disabled) toolbarStop.click();
+    },
+    toggleSidebar: () => setSidebarVisible(!sidebar.visible),
+    navigate,
+    openSettingsAnchor: (category, tab, anchor) => {
+      settingsAnchorRequest = anchor ?? null;
+      navigate(tab ?? category);
+      if (navigation.current.section === "settings" && settingsCategory(navigation.current.tab) === category && (!tab || navigation.current.tab === tab)) {
+        const paneEl = content.querySelector<HTMLElement>(".settings-pane");
+        if (paneEl) scrollToSettingsAnchor(paneEl);
+      }
+    },
+    selectSpeechModel: async (choice) => {
+      await settingsQueue.run(async () => {
+        await flushSettings();
+        const latest = await api.info();
+        const next = structuredClone(latest.settings);
+        const linked = next.meeting_stt.provider_id === next.dictation_stt.provider_id && next.meeting_stt.model === next.dictation_stt.model;
+        next.dictation_stt = choice;
+        if (linked) next.meeting_stt = choice;
+        info = await api.saveSettings(next);
+        notifyInfo();
+      });
+    },
+    report,
+  });
   const toolbar = h("div", { class: "workspace-toolbar", role: "toolbar", "aria-label": l("chrome.toolbar") },
     h("div", { class: "toolbar-leading", "data-tauri-drag-region": true }, sidebarToggle), toolbarCaption,
     h("div", { class: "toolbar-drag grow", "data-tauri-drag-region": true, "aria-hidden": "true" }),
@@ -918,6 +1044,11 @@ function windowShortcuts() {
     }
     if (!(info.platform === "macos" ? event.metaKey : event.ctrlKey) || event.altKey || event.shiftKey) return;
     const key = event.key.toLowerCase();
+    if (key === "k" && mode === "workspace" && palette && !barrier.locked && !taskSetup && !setupOpening) {
+      event.preventDefault();
+      palette.toggle();
+      return;
+    }
     if (key === "w" && !fixtureClient()) {
       event.preventDefault();
       try { void getCurrentWindow().close().catch(report); } catch { /* Window APIs are unavailable in a browser-only preview. */ }

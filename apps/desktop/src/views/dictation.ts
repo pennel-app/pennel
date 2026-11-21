@@ -4,10 +4,9 @@ import { controlButton, textField, errorText, h, section, select, showPopupMenu,
 import type { Context } from "../main";
 import { icon } from "../icons";
 import { appBadge } from "../app-icon";
-import { settingsTaskRows } from "./setup";
 import { applicationLabel } from "../presentation";
 import { shortcutRecorder } from "../shortcut-recorder";
-import { cleanupVerificationControl, cleanupVerificationDestination, cleanupVerificationReason } from "../cleanup-verification-state.ts";
+import { choiceDestination } from "../processing-state";
 
 
 function styleOptions(): [Style, UiText][] { return [
@@ -24,7 +23,7 @@ function preference(title: UiText, help: UiText | null, control: HTMLElement, na
 
 export function dictationView(ctx: Context): HTMLElement {
   let disposed = false;
-  const group = (name: string, title: UiText, ...children: HTMLElement[]) => h("section", { class: "dictation-settings-group", "data-dictation-group": name }, h("h2", {}, title), h("div", { class: "dictation-settings-rows" }, ...children));
+  const group = (name: string, title: UiText, ...children: HTMLElement[]) => h("section", { class: "dictation-settings-group", "data-dictation-group": name, "data-settings-anchor": name }, h("h2", {}, title), h("div", { class: "dictation-settings-rows" }, ...children));
   const save = (change: Parameters<Context["save"]>[0]) => { void ctx.save(change).catch(ctx.report); };
   const mode = select([["clean", l("dictation.settings.cleaned")], ["fast", l("dictation.settings.spoken")]], ctx.info.settings.mode, value => save(settings => { settings.mode = value; }), "segmented");
   mode.setAttribute("aria-label", t("dictation.settings.result"));
@@ -36,9 +35,6 @@ export function dictationView(ctx: Context): HTMLElement {
   const language = select([["", l("common.automatic")], ["nl", l("dictation.language.dutch")], ["en", l("dictation.language.english")], ["fr", l("dictation.language.french")], ["de", l("dictation.language.german")]], ctx.info.settings.language ?? "", value => save(settings => { settings.language = value || null; }), "menu");
   language.setAttribute("aria-label", t("dictation.language.title"));
   const live = toggle(l("settings.live_text.enabled"), ctx.info.settings.live_text_enabled !== false, value => save(settings => { settings.live_text_enabled = value; }));
-  const verify = toggle(l("dictation.verification.title"), !!ctx.info.settings.cleanup_verification_enabled, value => save(settings => { settings.cleanup_verification_enabled = value; }));
-  const verificationState = h("p", { class: "help", role: "status" });
-  const verificationDestination = h("p", { class: "help" });
   const paste = toggle(l("dictation.pad.paste_externally"), ctx.info.settings.dictation_pad_auto_paste, value => save(settings => { settings.dictation_pad_auto_paste = value; }));
   const pasteReason = h("p", { class: "help", role: "status", hidden: true });
   const retention = select([["7", l("dictation.history.days", { days: 7 })], ["30", l("dictation.history.days", { days: 30 })], ["90", l("dictation.history.days", { days: 90 })], ["0", l("dictation.history.always")]], String(ctx.info.settings.history_retention_days), value => save(settings => { settings.history_retention_days = Number(value); }), "menu");
@@ -62,13 +58,18 @@ export function dictationView(ctx: Context): HTMLElement {
       h("div", { class: "dictation-preference-copy grow" }, h("h3", {}, title), h("p", { class: "help" }, description), help), status, action);
     permissions.append(root); permissionRows.set(kind, { root, status, action, help });
   }
+  const permissionsSummary = h("summary", { class: "dictation-permissions-summary" });
+  const permissionsDetails = h("details", { class: "dictation-permissions-details", open: true }, permissionsSummary, permissions, permissionError,
+    h("button", { class: "text-button dictation-permission-repair", onclick: () => api.showWindow("onboarding", "dictation-permissions") }, l("dictation.access.check_ellipsis")));
   const updatePermissions = () => {
     const account = ctx.info.settings.providers.find(provider => provider.id === ctx.info.settings.dictation_stt.provider_id);
+    let allGranted = permissionValues.length > 0;
     for (const [kind, row] of permissionRows) {
       row.root.hidden = kind === "speech" && account?.kind !== "apple_speech";
       const state = permissionValues.find(permission => permission.kind === kind)?.status ?? "unknown";
       const granted = state === "granted" || state === "not_required";
       const unsupported = state === "unsupported";
+      if (!row.root.hidden && !granted) allGranted = false;
       row.status.replaceChildren(icon(granted ? "check" : "warning"), h("span", {}, l(granted ? "onboarding.permission_ready" : unsupported ? "dictation.settings.permission_unavailable" : "dictation.settings.permission_needed")));
       row.status.classList.toggle("success", granted);
       row.action.hidden = granted || unsupported;
@@ -77,6 +78,9 @@ export function dictationView(ctx: Context): HTMLElement {
       row.help.textContent = unsupported ? t("onboarding.permission_unsupported") : state === "unknown" && ["linux", "windows"].includes(ctx.info.platform) && kind === "microphone" ? t("onboarding.microphone_checked_later") : "";
       row.help.hidden = !row.help.textContent;
     }
+    permissionsSummary.replaceChildren(icon(allGranted ? "check" : "warning"), h("span", {}, l(allGranted ? "settings.dictation.permissions_ok" : "dictation.settings.permission_needed")));
+    permissionsSummary.classList.toggle("success", allGranted);
+    permissionsDetails.open = !allGranted;
   };
   const refreshPermissions = () => {
     const revision = ++permissionRevision;
@@ -103,7 +107,6 @@ export function dictationView(ctx: Context): HTMLElement {
       speechPickerLabel.textContent = selected?.label ?? t("dictation.pill.models");
       speechPicker.disabled = models.length === 0;
       speechPicker.hidden = models.length === 0;
-      if (speechSetupAction) speechSetupAction.hidden = models.length > 0;
       speechPicker.title = models.length === 0 ? t("dictation.pill.model_unavailable") : "";
       const next = ctx.info.shortcuts?.find(row => row.id === "next_model");
       const key = next?.binding && next.capability.available ? next.label.text : "";
@@ -148,17 +151,16 @@ export function dictationView(ctx: Context): HTMLElement {
     const selected = speechModels.find(model => sameChoice(model.choice) === sameChoice(settings.dictation_stt));
     sampleModel.hidden = speechModels.length < 2 || settings.pill_model_switch_enabled === false || !selected; sampleModel.textContent = selected?.label ?? "";
   };
-  const taskRows = settingsTaskRows(ctx, ["dictation_stt", "llm"]);
-  const speechSetupAction = taskRows.querySelector<HTMLElement>('[data-task-row="dictation_stt"] [data-setup-task]');
-  taskRows.querySelector('[data-task-row="dictation_stt"]')?.append(speechPicker);
-  taskRows.querySelector('[data-task-row="llm"] h3')?.replaceChildren(h("span", {}, l("dictation.processing.text")));
+  const aiSummaryText = h("p", { class: "help" });
+  const aiSummaryBar = h("div", { class: "dictation-preference ai-summary-strip" },
+    h("div", { class: "dictation-preference-copy" }, h("h3", {}, l("navigation.ai_models")), aiSummaryText),
+    h("div", { class: "row" }, speechPicker, controlButton({ class: "btn", onclick: () => ctx.navigate("ai-models") }, l("settings.ai.manage_link"))));
   const root = h("div", { class: "dictation-settings" },
-    group("processing", l("dictation.settings.processing"), taskRows),
+    group("processing", l("dictation.settings.processing"), aiSummaryBar),
     group("during", l("dictation.settings.during"),
       preference(l("dictation.settings.result"), l("dictation.settings.result_help"), mode, "result"),
       preference(l("dictation.shortcut.title"), l("dictation.shortcut.help"), h("div", { class: "dictation-shortcut-controls" }, shortcut, h("button", { class: "text-button", onclick: () => ctx.navigate("shortcuts") }, l("shortcuts.all"))), "shortcut"),
       preference(l("dictation.language.title"), null, language, "language"),
-      preference(l("dictation.verification.title"), l("dictation.verification.help"), h("div", { "data-cleanup-verification": true }, verify, verificationState, verificationDestination, h("button", { class: "text-button", onclick: () => ctx.navigate("models") }, l("navigation.models"))), "verification"),
       preference(l("dictation.pad.title"), l("dictation.pad.preference_help"), h("div", {}, paste, h("p", { class: "help" }, l("dictation.settings.pad_target")), pasteReason), "pad")),
     group("pill", l("dictation.pill.settings_title"), pillPreview,
       preference(l("dictation.pill.colour"), l("dictation.pill.colour.follow_help"), pillColour, "pill-colour"),
@@ -168,18 +170,18 @@ export function dictationView(ctx: Context): HTMLElement {
       preference(l("dictation.pill.switch_enabled"), l("dictation.pill.switch_help"), h("div", {}, modelSwitch, modelSwitchReason), "model-switch"),
       preference(l("dictation.pill.show_help"), null, h("div", {}, showPill, previewResponse), "show-pill")),
     group("words", l("dictation.settings.words"), destination("dictionary", l("dictation.dictionary.title"), l("dictation.dictionary.help")), destination("styles", l("dictation.style.title"), l("dictation.settings.style_help")), preference(l("dictation.history.retention"), null, retention, "history")),
-    group("permissions", l("dictation.access.title"), permissions, permissionError, h("button", { class: "text-button dictation-permission-repair", onclick: () => api.showWindow("onboarding", "dictation-permissions") }, l("dictation.access.check_ellipsis"))));
+    group("permissions", l("dictation.access.title"), permissionsDetails));
   const refresh = () => {
-    const settings = ctx.info.settings, verification = ctx.info.cleanup_verification;
+    const settings = ctx.info.settings;
+    aiSummaryText.textContent = t("settings.ai.compact_speech_text", {
+      speech: choiceDestination(settings, settings.dictation_stt),
+      text: settings.mode === "fast" ? t("dictation.processing.fast") : choiceDestination(settings, settings.llm),
+    });
     mode.setAttribute("aria-label", t("dictation.settings.result"));
     language.setAttribute("aria-label", t("dictation.language.title"));
     retention.setAttribute("aria-label", t("dictation.history.retention"));
     mode.value = settings.mode; language.value = settings.language ?? ""; retention.value = String(settings.history_retention_days);
     live.querySelector<HTMLInputElement>("input")!.checked = settings.live_text_enabled !== false;
-    const control = cleanupVerificationControl(settings, verification);
-    const input = verify.querySelector<HTMLInputElement>("input")!; input.checked = control.enabled; input.disabled = control.disabled;
-    verificationState.textContent = control.enabled && verification?.available && settings.mode === "clean" ? t("dictation.verification.active") : cleanupVerificationReason(verification);
-    verificationDestination.textContent = t("dictation.verification.destination", { destination: cleanupVerificationDestination(verification) });
     const external = ctx.info.capabilities.pad_external_paste, pasteInput = paste.querySelector<HTMLInputElement>("input")!;
     pasteInput.checked = settings.dictation_pad_auto_paste; pasteInput.disabled = ["unsupported", "unavailable"].includes(external.status);
     pasteReason.textContent = external.reason ? localizeBackendText(external.reason) : ""; pasteReason.hidden = !pasteReason.textContent;

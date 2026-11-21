@@ -2,7 +2,7 @@ import { t } from "./i18n.ts";
 
 export type WorkspaceSection = "dictation" | "meetings" | "history" | "settings" | "recording";
 export type WorkspaceTask = "dictation" | "meetings";
-export type SettingsCategory = "dictation" | "meeting-settings" | "shortcuts" | "appearance" | "account" | "advanced";
+export type SettingsCategory = "ai-models" | "dictation" | "meeting-settings" | "shortcuts" | "account" | "appearance";
 
 /** History and active capture belong to their task even when reached by a legacy link. */
 export function workspaceTask(route: WorkspaceRoute): WorkspaceTask {
@@ -18,9 +18,10 @@ export function resumesOtherCapture(route: WorkspaceRoute, currentSession: strin
 
 export function settingsCategory(tab: string | null): SettingsCategory {
   if (["meeting-settings", "meetings", "recording"].includes(tab ?? "")) return "meeting-settings";
-  if (tab === "appearance" || tab === "account" || tab === "shortcuts") return tab;
-  if (["advanced", "providers", "local", "models"].includes(tab ?? "")) return "advanced";
-  return "dictation";
+  if (tab === "account" || tab === "cloud") return "account";
+  if (tab === "appearance" || tab === "shortcuts") return tab;
+  if (["dictation", "dictionary", "styles"].includes(tab ?? "")) return "dictation";
+  return "ai-models";
 }
 export interface MeetingSourceTarget {
   kind: "notes" | "summary" | "transcript";
@@ -55,7 +56,7 @@ export function windowMode(_value: string | null): WindowMode {
   return "workspace";
 }
 
-export const settingTabs = ["dictation", "meeting-settings", "shortcuts", "appearance", "account", "advanced", "overview", "providers", "models", "recording", "dictionary", "styles"] as const;
+export const settingTabs = ["ai-models", "dictation", "meeting-settings", "shortcuts", "appearance", "account", "cloud", "advanced", "overview", "providers", "models", "recording", "dictionary", "styles"] as const;
 const settings = new Set<string>([...settingTabs, "local"]);
 const reserved = new Set<string>([...settings, "workspace", "settings", "history", "meeting", "live", "onboarding", "prompt", "record-prompt", "pill", "library", "meetings", "chat"]);
 
@@ -115,7 +116,7 @@ export function parseWorkspaceRoute(value: unknown): WorkspaceRoute | null {
 }
 
 export function legacyWorkspaceRoute(kind: string, route?: string | null): WorkspaceRoute | null {
-  if (kind === "settings") return workspaceRoute("settings", route === "meetings" ? "meeting-settings" : settings.has(route ?? "") ? route! : "dictation");
+  if (kind === "settings") return workspaceRoute("settings", route === "meetings" ? "meeting-settings" : route === "cloud" ? "account" : settings.has(route ?? "") ? route! : "ai-models");
   if (kind === "history") return historyRoute(historyEntryId(route));
   if (kind === "dictation") return workspaceRoute("dictation", route === "pad" || route === "home" ? route : null);
   if (kind === "live" || kind === "meeting") return workspaceRoute("recording", null, validMeetingId(route) ? route : null);
@@ -174,7 +175,7 @@ export class WorkspaceNavigation {
   select(section: WorkspaceSection): WorkspaceRoute {
     if (section === "history") return historyRoute();
     if (section === "dictation") return this.current.section === "dictation" || this.current.section === "history" ? workspaceRoute("dictation", "home") : { ...this.dictationContext };
-    return this.remembered.get(section) ?? (this.current.section === section ? { ...this.current } : workspaceRoute(section, section === "settings" ? "dictation" : null));
+    return this.remembered.get(section) ?? (this.current.section === section ? { ...this.current } : workspaceRoute(section, section === "settings" ? "ai-models" : null));
   }
 
   settingsBack(): WorkspaceRoute {

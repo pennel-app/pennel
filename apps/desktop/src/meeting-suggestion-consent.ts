@@ -5,7 +5,7 @@ import { bindLocalization, l, t } from "./i18n";
 import { controlButton, errorText, h, select } from "./dom";
 import { safeInsightDestination } from "../../../assets/contracts/meeting-insights.ts";
 import { meetingPostprocess } from "./meeting-postprocess-state";
-import { inferenceFingerprint } from "./inference-state";
+import { reviewConnectionFingerprint } from "./inference-state";
 import { performSuggestionConsent, requireSuggestionAvailability, SuggestionAvailabilityError, suggestionConsentPresentation, type SuggestionConsentAction, type SuggestionPolicy } from "./suggestion-consent-state";
 
 export function meetingSuggestionConsent(initial: Context, host: {
@@ -91,7 +91,7 @@ export function meetingSuggestionConsent(initial: Context, host: {
   async function choose(action: SuggestionConsentAction) {
     if (!bound || pending || action !== "not_now" && (blocksAnalysis() || !host.canAnalyze()) || action === "not_now" && (!host.canDismiss() || preparing())) return;
     const focused = root.contains(document.activeElement), mine = binding, operation = ++choiceEpoch, ownerContext = ctx, wantedAutomatic = action === "consent" && automatic.checked;
-    const expectedConnection = inferenceFingerprint(ctx.info, "decision"), id = host.id(), chosen = host.language();
+    const expectedConnection = reviewConnectionFingerprint(ctx.info), id = host.id(), chosen = host.language();
     const displayedConfiguration = host.manualAvailability?.()?.configuration_fingerprint;
     const sameScope = () => bound && mine === binding && operation === choiceEpoch && ctx === ownerContext && id === host.id() && chosen === host.language();
     const localCurrent = () => sameScope() && (action === "not_now" || displayedConfiguration === host.manualAvailability?.()?.configuration_fingerprint);
@@ -99,7 +99,7 @@ export function meetingSuggestionConsent(initial: Context, host: {
     const unchanged = async () => {
       if (!localCurrent()) return false;
       const latest = await api.info();
-      return localCurrent() && expectedConnection === inferenceFingerprint(latest, "decision");
+      return localCurrent() && expectedConnection === reviewConnectionFingerprint(latest);
     };
     invalidate(); pending = true; failure = ""; readFailure = false; refresh(); host.changed();
     if (focused) host.focusTarget.focus({ preventScroll: true });
@@ -123,7 +123,7 @@ export function meetingSuggestionConsent(initial: Context, host: {
             requireCurrent();
             const latest = await api.info();
             requireCurrent();
-            if (expectedConnection !== inferenceFingerprint(latest, "decision")) throw new Error(host.reason("configuration_changed"));
+            if (expectedConnection !== reviewConnectionFingerprint(latest)) throw new Error(host.reason("configuration_changed"));
             requireCurrent();
             return api.setMeetingSuggestionPolicyChecked(chosen, displayedConfiguration!, next, fallback).catch(reason => {
               const code = errorText(reason);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState, testedSuggestionDraft } from "../src/inference-state.ts";
+import { inferenceConfig, inferenceFingerprint, inferenceProtocolsForProvider, InferenceVerificationState, reviewConnectionFingerprint, testedSuggestionDraft } from "../src/inference-state.ts";
 
 const config = { provider_id: "custom", protocol: "mercury", model: "decision-model", expected_model: null, upstream: null, max_input_bytes: 16000, timeout_secs: 30 };
 const info = { settings: { providers: [{ id: "custom", kind: "custom", name: "My server", base_url: "https://example.com/v1" }], decision: config }, keys: { custom: true }, provider_revisions: { custom: 1 } };
@@ -80,4 +80,33 @@ test("tested suggestion setup only fills the selected official OpenRouter accoun
   assert.deepEqual([account,preset],before);
   for(const patch of [{kind:"pennel_cloud"},{kind:"custom"},{base_url:"https://untrusted.example/api/v1"},{base_url:"http://openrouter.ai/api/v1"},{base_url:"https://openrouter.ai/api/v1?secret=x"}])assert.equal(testedSuggestionDraft(preset,{...account,...patch}),null);
   for(const patch of [{qualification_id:""},{identity_evidence:"serving_revision_and_artifact"},{weights_independently_verified:true},{language_policy:"en"},{configured:{...preset.configured,expected_model:"other"}},{configured:{...preset.configured,upstream:"other"}},{configured:{...preset.configured,timeout_secs:91}}])assert.equal(testedSuggestionDraft({...preset,...patch},account),null);
+});
+
+test("reviewConnectionFingerprint tracks decision override first and falls back to settings.llm", () => {
+  const withDecision = reviewConnectionFingerprint(info);
+  assert.equal(withDecision, inferenceFingerprint(info, "decision"));
+
+  const llmInfo = {
+    settings: {
+      providers: [{ id: "openai", kind: "open_ai", name: "OpenAI", base_url: "https://api.openai.com/v1" }],
+      decision: null,
+      llm: { provider_id: "openai", model: "gpt-4o-mini" },
+    },
+    keys: { openai: true },
+    provider_revisions: { openai: 1 },
+  };
+  const baseLlm = reviewConnectionFingerprint(llmInfo);
+  assert.ok(baseLlm.includes("gpt-4o-mini"));
+  assert.notEqual(
+    reviewConnectionFingerprint({ ...llmInfo, settings: { ...llmInfo.settings, llm: { provider_id: "openai", model: "gpt-4o" } } }),
+    baseLlm,
+  );
+  assert.notEqual(
+    reviewConnectionFingerprint({ ...llmInfo, provider_revisions: { openai: 2 } }),
+    baseLlm,
+  );
+  assert.notEqual(
+    reviewConnectionFingerprint({ ...llmInfo, settings: { ...llmInfo.settings, llm: null } }),
+    baseLlm,
+  );
 });

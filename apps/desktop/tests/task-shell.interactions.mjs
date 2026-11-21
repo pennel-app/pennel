@@ -64,8 +64,7 @@ export async function checkTaskShell() {
     click(document.querySelector(".settings-back"));
     await until(() => document.querySelector("textarea.dictation-pad")?.value === draft, "Settings Back did not restore Write in Pennel and its draft.");
     fixture.emit("workspace-navigate", {section: "settings", tab: "models", meeting_id: null, jump_ms: null});
-    await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]') && document.querySelector('[data-settings-detail="models"][open]'), "The old Models link did not open Advanced Models.");
-    assert(!document.querySelector(".models-settings [data-setup-task]"), "Advanced Models duplicates the task readiness overview.");
+    await until(() => document.querySelector('[data-settings-category="ai-models"][aria-current="page"]') && document.querySelector(".ai-models-hub"), "The old Models link did not open AI & Models.");
     assert(!document.querySelector("[data-inference-experimental]")?.open, "Experimental connections expanded in ordinary setup.");
     assert(!operations.some(item => ["start_meeting", "stop_meeting", "toggle_dictation", "toggle_dictation_session"].includes(item.command)), "Browsing tasks changed capture.");
     assert(!fixture.unknown.length, `Unknown fixture commands: ${fixture.unknown.join(", ")}`);

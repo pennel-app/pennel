@@ -79,5 +79,18 @@
   "navigation.app": "Pennel",
   "navigation.advanced": "Advanced",
   "appearance.zoom_help": "Text size: {modifier} + = to enlarge, {modifier} + - to reduce, and {modifier} + 0 to reset.",
-  "navigation.sync_account": "Sync & account"
+  "navigation.sync_account": "Sync & account",
+  "navigation.ai_models": "AI & Models",
+  "navigation.cloud_integrations": "Cloud & Integrations",
+  "navigation.general": "General & Appearance",
+  "command_palette.title": "Quick actions",
+  "command_palette.placeholder": "Search meetings, settings, models or actions…",
+  "command_palette.empty": "No matching commands or meetings.",
+  "command_palette.hint": "↑↓ navigate · Enter select · Esc close",
+  "command_palette.group.actions": "Actions",
+  "command_palette.group.models": "Switch speech model",
+  "command_palette.group.settings": "Settings",
+  "command_palette.group.meetings": "Meetings",
+  "command_palette.open": "Quick actions",
+  "command_palette.model_active": "Active"
 }

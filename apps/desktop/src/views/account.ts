@@ -289,21 +289,26 @@ export async function accountView(ctx: Context, options: { taskSetup?: boolean }
   shownReport = report;
   syncBlock = { element: syncElement, build };
 
+  syncElement.dataset.settingsAnchor = "cloud-sync";
+  const claudeEl = claude ? claudeSection(ctx, claude) : null;
+  if (claudeEl) claudeEl.dataset.settingsAnchor = "cloud-integrations";
   return h("div", {},
     heading(),
     syncElement,
     ui.shownCode ? recoverySheet(ctx, ui.shownCode) : null,
     unlockSection(ctx, report, enabled),
     connectionVisible() ? connectionSection(ctx, setup ? connectionRole(setup) : linkView?.role ?? "new_device") : null,
-    !ui.shownCode ? h("details", { class: "account-management" },
-      h("summary", {}, l("account.setup.admin")),
+    !ui.shownCode ? [
+      options.taskSetup ? null : cloudPrompt(ctx),
       accountSection(ctx, account, accountError),
       account ? usageSection(account) : null,
-      enabled && !needsVault(report) ? recoverySection(ctx) : null,
-      options.taskSetup ? null : cloudPrompt(ctx),
-      claude ? claudeSection(ctx, claude) : null,
+      claudeEl,
       devices ? devicesSection(ctx, devices) : null,
-      deleteSection(ctx)) : null);
+      enabled && !needsVault(report) ? recoverySection(ctx) : null,
+      h("details", { class: "account-management" },
+        h("summary", {}, l("account.setup.admin")),
+        deleteSection(ctx)),
+    ] : null);
 }
 
 function needsVault(report: SyncReport): boolean {

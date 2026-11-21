@@ -184,7 +184,7 @@ export async function checkSettingsFlow() {
     const restored = await api.info();
     await api.saveSettings({ ...restored.settings, dictation_stt: speechBefore });
 
-    const account = button(document.querySelector(".settings-categories"), t("navigation.sync_account"));
+    const account = document.querySelector('[data-settings-category="account"]');
     assert(account, "Account is missing from Settings navigation.");
     account.focus(); await settle();
     const bounds = account.getBoundingClientRect();
@@ -192,11 +192,11 @@ export async function checkSettingsFlow() {
     click(account);
     await until(() => document.querySelector('[data-settings-category="account"][aria-current="page"]'), "Account did not become the selected Settings category.");
     fixture.emit("workspace-navigate", { section: "settings", tab: "models", meeting_id: null, jump_ms: null });
-    await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]') && document.querySelector('[data-settings-detail="models"][open]'), "The existing Models deep link no longer opens Advanced Models.");
+    await until(() => document.querySelector('[data-settings-category="ai-models"][aria-current="page"]') && document.querySelector(".ai-models-hub"), "The existing Models deep link no longer opens AI & Models.");
     fixture.emit("workspace-navigate", { section: "settings", tab: "providers", meeting_id: null, jump_ms: null });
-    await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]') && document.querySelector('[data-settings-detail="providers"][open]'), "The existing Providers deep link no longer selects its Advanced editor.");
+    await until(() => document.querySelector('[data-settings-category="ai-models"][aria-current="page"]') && document.querySelector(".ai-advanced-providers[open]"), "The existing Providers deep link no longer opens providers inside AI & Models.");
     click(document.querySelector('[data-settings-category="dictation"]'));
-    await until(() => document.querySelector(".dictation-task-settings .settings-task-readiness"), "Advanced configuration has no path back to task readiness.");
+    await until(() => document.querySelector(".dictation-task-settings"), "AI & Models has no path to Dictation settings.");
     assert(!observed.operations.some(operation => ["set_key", "test_provider_task", "test_provider_task_choice", "start_meeting", "toggle_dictation"].includes(operation.command)), "Browsing settings silently changed credentials, tested a provider or started capture.");
     assert(!fixture.unknown.length, "Settings used a non-fixture operation.");
     return { overview: true, taskLocalSetup: true, modalOptionsAccessible: true, settingsSaveRetried: true, focusRestored: true, accountReachable: true, legacyDeepLinks: true, externalServicesUsed: false, userDataUsed: false };

@@ -79,5 +79,18 @@
   "navigation.app": "Pennel",
   "navigation.advanced": "Geavanceerd",
   "appearance.zoom_help": "Tekstgrootte: {modifier} + = om te vergroten, {modifier} + - om te verkleinen en {modifier} + 0 om terug te zetten.",
-  "navigation.sync_account": "Sync en account"
+  "navigation.sync_account": "Sync en account",
+  "navigation.ai_models": "AI & Modellen",
+  "navigation.cloud_integrations": "Cloud & Integraties",
+  "navigation.general": "Algemeen & Weergave",
+  "command_palette.title": "Snelle acties",
+  "command_palette.placeholder": "Zoek meetings, instellingen, modellen of acties…",
+  "command_palette.empty": "Geen passende opdrachten of meetings.",
+  "command_palette.hint": "↑↓ navigeren · Enter kiezen · Esc sluiten",
+  "command_palette.group.actions": "Acties",
+  "command_palette.group.models": "Spraakmodel wisselen",
+  "command_palette.group.settings": "Instellingen",
+  "command_palette.group.meetings": "Meetings",
+  "command_palette.open": "Snelle acties",
+  "command_palette.model_active": "Actief"
 }

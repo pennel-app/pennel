@@ -22,6 +22,7 @@ export interface LibraryHost {
   go: (route: WorkspaceRoute) => void;
   record?: (title?: string) => Promise<void>;
   select?: (section: WorkspaceRoute["section"]) => void;
+  openPalette?: () => void;
   report: (error: unknown) => void;
   statusChanged?: (status: MeetingRuntimeStatus) => void;
 }
@@ -104,6 +105,16 @@ export class LibrarySidebar {
       h("button", { class: "text-button", "data-workspace-section": "history", onclick: () => select("history") }, icon("history"), l("dictation.history.title")),
       h("button", { class: "text-button", "data-dictation-section": "pad", onclick: () => host.go(workspaceRoute("dictation", "pad")) }, l("dictation.home.open_pad")));
     this.dictationResults = h("div", { class: "dictation-search-results", role: "list", hidden: true });
+    const paletteShortcut = host.info().platform === "macos" ? "⌘K" : "Ctrl+K";
+    const paletteTrigger = host.openPalette
+      ? h("button", {
+          class: "text-button library-palette",
+          "data-command": "command-palette",
+          title: `${t("command_palette.open")} (${paletteShortcut})`,
+          "aria-label": l("command_palette.open"),
+          onclick: () => host.openPalette?.(),
+        }, icon("search"), h("span", { class: "grow" }, l("command_palette.open")), h("kbd", {}, paletteShortcut))
+      : null;
     this.element = h("aside", { class: "library-sidebar", "aria-label": l("meetings.library_label") },
       h("div", { class: "library-actions" }, this.live),
       h("div", { class: "library-shortcuts" },
@@ -111,7 +122,9 @@ export class LibrarySidebar {
         this.dictationNavigation,
         h("button", { class: "text-button", "data-workspace-section": "meetings", onclick: () => select("meetings") }, icon("notebook"), l("navigation.meetings"))),
       h("div", { class: "library-search" }, h("div", { class: "library-search-control" }, icon("search"), this.search)), this.ask, this.list, this.dictationResults,
-      h("button", { class: "text-button library-settings", onclick: () => host.go(workspaceRoute("settings")) }, icon("settings"), l("common.settings")));
+      h("div", { class: "library-footer" },
+        paletteTrigger,
+        h("button", { class: "text-button library-settings", onclick: () => host.go(workspaceRoute("settings")) }, icon("settings"), l("common.settings"))));
     bindLocalization(this.live, () => { if (this.status) this.showLive(this.status); });
     bindLocalization(this.search, () => this.syncTask());
     this.layoutUnsubscribe = onShortcutLayoutChange(() => this.syncTask());

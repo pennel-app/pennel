@@ -1,6 +1,6 @@
 import { playMotion } from "../motion";
 import { bindLocalization, l, t, localizeBackendText, formatDateTime } from "../i18n.ts";
-import { api, listen, type DictationSessionSnapshot, type HistoryEntry, type LocalModel, type PillState, type SetupReadiness } from "../api";
+import { api, listen, type DictationSessionSnapshot, type HistoryEntry, type LocalModel, type SetupReadiness } from "../api";
 import { SerialQueue } from "../async";
 import { controlButton, errorText, formatBytes, h } from "../dom";
 import { OwnedDictationSession } from "../dictation-session";
@@ -10,7 +10,6 @@ import type { Context } from "../main";
 import { shortcutRow, shortcutText as effectiveShortcutText } from "../shortcut-presentation";
 import { shortcutAccessHint } from "../pad-shortcut-state";
 import { processingSummary } from "../processing-state";
-import { cleanupVerificationCurrent } from "../cleanup-verification-state.ts";
 import { recentDictations, recommendedSpeechModel } from "../dictation-home-state";
 
 const draft = new PadDraftState();
@@ -52,7 +51,6 @@ export async function padView(ctx: Context): Promise<HTMLElement> {
   const shortcutKey = h("kbd", {}, effectiveShortcutText(ctx.info, "dictate"));
   const shortcutInstruction = h("span", {}, l("dictation.pad.shortcut_help"));
   const processing = h("dl", { class: "help processing-path compact-processing", "aria-label": l("dictation.processing.title") });
-  const currentVerification = h("p", { class: "help", role: "status", hidden: true });
   const refreshProcessing = () => updateProcessing(processing, ctx);
   refreshProcessing();
 
@@ -71,8 +69,6 @@ export async function padView(ctx: Context): Promise<HTMLElement> {
   const apply = (snapshot: DictationSessionSnapshot) => {
     if (!mounted) return;
     const busy = snapshot.phase === "listening" || snapshot.phase === "working";
-    currentVerification.hidden = !busy || !snapshot.cleanup_verification;
-    currentVerification.textContent = snapshot.cleanup_verification ? cleanupVerificationCurrent(snapshot.cleanup_verification) : "";
     if (!busy && !transition) navigationNotice = false;
     back.disabled = busy;
     textarea.disabled = busy;
@@ -149,7 +145,7 @@ export async function padView(ctx: Context): Promise<HTMLElement> {
   ctx.onVisibilityChange((visible) => { if (visible) void restoreSession().catch(showError); });
   const root = h("div", { class: "pad-workspace" }, back, setup,
     h("div", { class: "page-heading" }, h("div", {}, h("h1", {}, l("dictation.pad.title")), h("p", { class: "muted" }, l("dictation.pad.intro"))), start),
-    h("div", { class: "shortcut-instruction" }, shortcutKey, shortcutInstruction), shortcutHelp, processing, currentVerification,
+    h("div", { class: "shortcut-instruction" }, shortcutKey, shortcutInstruction), shortcutHelp, processing,
     textarea, h("div", { class: "row pad-actions" }, copy, cancel, h("span", { class: "grow" }),
       h("button", { class: "text-button", onclick: () => ctx.navigate("dictation") }, icon("settings"), l("dictation.pad.settings"))), status, target);
   bindLocalization(root, () => {
@@ -170,7 +166,6 @@ function dictationHome(ctx: Context): HTMLElement {
   let notice = false;
   let practiceActivated = false;
   let actionError: string | null = null;
-  let activeDictation: PillState | null = null;
   let recommendedSize: string | null = null;
   let speechModels: LocalModel[] = [];
   const timers = new Set<number>();
@@ -189,7 +184,6 @@ function dictationHome(ctx: Context): HTMLElement {
   const status = h("p", { class: "help home-practice-status", role: "status", "aria-live": "polite", hidden: true });
   const textarea = h("textarea", { class: "home-practice-field", value: homeDraft.value, spellcheck: true,
     lang: ctx.info.settings.language ?? "", "aria-label": l("dictation.home.message"), placeholder: l("dictation.home.message_placeholder") });
-  const currentVerification = h("p", { class: "help", role: "status", hidden: true });
   const showError = (error: unknown) => {
     if (!disposed) { actionError = errorText(error); status.textContent = actionError; status.classList.add("error"); status.hidden = false; }
   };
@@ -208,14 +202,6 @@ function dictationHome(ctx: Context): HTMLElement {
     try { await api.copyText(textarea.value); status.textContent = t("dictation.pad.copied"); status.classList.remove("error"); status.hidden = false; }
     catch (error) { showError(error); }
   } }, icon("copy"), l("common.copy"));
-  const updateVerification = () => {
-    const owned = session.state.snapshot;
-    const busy = owned && ["listening", "working"].includes(owned.phase);
-    const active = activeDictation && !["hidden", "inserted", "copied", "problem"].includes(activeDictation.state);
-    const verification = busy ? owned.cleanup_verification : active ? activeDictation?.cleanup_verification : null;
-    currentVerification.hidden = !verification;
-    currentVerification.textContent = verification ? cleanupVerificationCurrent(verification) : "";
-  };
   const apply = (snapshot: DictationSessionSnapshot) => {
     if (disposed) return;
     homeDraft.accept(snapshot);
@@ -234,7 +220,6 @@ function dictationHome(ctx: Context): HTMLElement {
       : snapshot.phase === "done" ? t("dictation.home.result_here") : "");
     status.classList.toggle("error", !!actionError || !!snapshot.error || notice); status.hidden = !status.textContent;
     panel.dataset.active = String(practiceActivated || busy || !!textarea.value);
-    updateVerification();
   };
   const session = new OwnedDictationSession("home_practice", apply);
   const toggle = async () => {
@@ -254,7 +239,7 @@ function dictationHome(ctx: Context): HTMLElement {
     h("div", { class: "home-practice-message" }, h("label", { for: "home-practice-message", class: "help" }, l("dictation.home.message")), textarea),
     practiceHint, h("div", { class: "row home-practice-actions" }, start, copyPractice), status);
   textarea.id = "home-practice-message";
-  const changeProcessing = h("button", { class: "text-button dictation-home-settings", onclick: () => ctx.navigate("dictation") }, l("dictation.home.change"));
+  const changeProcessing = h("button", { class: "text-button dictation-home-settings", onclick: () => ctx.navigate("ai-models") }, l("dictation.home.change"));
   const processing = h("div", { class: "home-processing-chips", "aria-label": l("dictation.processing.title") }, changeProcessing);
   const updateChips = () => {
     const settings = ctx.info.settings;
@@ -265,11 +250,16 @@ function dictationHome(ctx: Context): HTMLElement {
       const account = settings.providers.find(provider => provider.id === choice.provider_id);
       const local = index === 1 && settings.mode === "fast" || account && ["local", "apple_speech", "apple_intelligence"].includes(account.kind);
       const label = index === 0 ? local ? t("dictation.home.speech_local") : t("dictation.home.speech_by", { provider: account?.name ?? stage.destination })
-        : index === 1 ? settings.mode === "fast" ? t("dictation.processing.fast") : local ? t("dictation.home.cleanup_local") : t("dictation.home.cleanup_by", { provider: account?.name ?? stage.destination })
-        : `${stage.label}: ${stage.destination}`;
+        : settings.mode === "fast" ? t("dictation.processing.fast") : local ? t("dictation.home.cleanup_local") : t("dictation.home.cleanup_by", { provider: account?.name ?? stage.destination });
       const destination = `${stage.label}: ${stage.destination}`;
-      processing.insertBefore(h("span", { class: "home-processing-chip", title: destination, "aria-label": destination, "data-processing-stage": index === 0 ? "recognition" : index === 1 ? "cleanup" : "verification" },
-        icon(local ? "laptop" : "globe"), h("span", {}, label)), changeProcessing);
+      processing.insertBefore(h("button", {
+        type: "button",
+        class: "home-processing-chip",
+        title: destination,
+        "aria-label": destination,
+        "data-processing-stage": index === 0 ? "recognition" : "cleanup",
+        onclick: () => ctx.openSetup(index === 0 ? "dictation_stt" : "llm"),
+      }, icon(local ? "laptop" : "globe"), h("span", {}, label)), changeProcessing);
     }
   };
   const recent = h("div", { class: "recent-dictations", role: "list", "data-recent-dictations": true });
@@ -280,7 +270,7 @@ function dictationHome(ctx: Context): HTMLElement {
   const root = h("div", { class: "pad-workspace dictation-home", "data-dictation-readiness": "checking" },
     h("div", { class: "dictation-home-content" },
       h("section", { class: "dictation-home-hero" }, h("div", { class: "dictation-home-guidance" }, readiness, instruction, introduction,
-        h("div", { class: "dictation-home-actions row" }, repair, practice, handsFree, cancel), detail, processing, currentVerification), panel),
+        h("div", { class: "dictation-home-actions row" }, repair, practice, handsFree, cancel), detail, processing), panel),
       h("section", { class: "dictation-recent" }, h("div", { class: "row" }, h("h2", { class: "grow" }, l("dictation.home.recent")),
         h("button", { class: "text-button", "data-action": "all-history", onclick: () => ctx.navigate("history") }, l("dictation.home.all_history"))), recent, recentLoadStatus, recentFeedback)));
   let recentRevision = 0;
@@ -338,16 +328,12 @@ function dictationHome(ctx: Context): HTMLElement {
     } catch (error) { if (!disposed && mine === recentRevision) { recentError.textContent = errorText(error); recentLoadStatus.hidden = false; } }
   };
   void listen("history-changed", () => { void refreshRecent(); }).then((unlisten) => { if (disposed) unlisten(); else ctx.onDispose(unlisten); }).catch(ctx.report);
-  void listen<PillState>("dictation-state", (event) => {
-    if (!disposed) { activeDictation = event.payload; updateVerification(); }
-  }).then((unlisten) => { if (disposed) unlisten(); else ctx.onDispose(unlisten); }).catch(ctx.report);
-  void api.dictationState().then((value) => { if (!disposed) { activeDictation = value; updateVerification(); } }).catch(ctx.report);
   const refresh = async () => {
     const mine = ++revision;
     key.textContent = effectiveShortcutText(ctx.info, "dictate");
     const hasShortcut = !!shortcutRow(ctx.info, "dictate")?.binding;
     textarea.lang = ctx.info.settings.language ?? "";
-    updateChips(); updateVerification();
+    updateChips();
     try {
       const ready = await api.onboardingReadiness("dictation_pad");
       if (disposed || mine !== revision) return;

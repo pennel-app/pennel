@@ -5,10 +5,10 @@ export async function checkDictationSettings() {
   assert(window.__PENNEL_FIXTURE__, 'Use the owned fixture.');
   const root=document.querySelector('.dictation-task-settings');
   assert(root, 'Dictation Settings missing.');
-  assert([...root.querySelectorAll('[data-dictation-group]')].map(x=>x.dataset.dictationGroup).join(',')==='processing,during,words,permissions','Dictation groups do not follow the approved order.');
+  assert([...root.querySelectorAll('[data-dictation-group]')].map(x=>x.dataset.dictationGroup).join(',')==='processing,during,pill,words,permissions','Dictation groups do not follow the approved order.');
   assert(!document.querySelector('[data-settings-category="dictionary"]'),'Dictionary still duplicates a category.');
   assert(!root.querySelector('[data-settings-detail="styles"]'),'Styles is still hidden in a disclosure.');
-  const change=root.querySelector('[data-setup-task="dictation_stt"]');change.focus();
+  const change=root.querySelector('.ai-summary-strip .btn');change.focus();
   window.__PENNEL_FIXTURE__.emit('settings-changed',null);await settle();await new Promise(r=>setTimeout(r,100));
   assert(change.isConnected && document.activeElement===change,'Information refresh replaced the focused setup action.');
   const {api}=await import('/src/api.ts');
@@ -17,7 +17,7 @@ export async function checkDictationSettings() {
   await until(()=>window.__PENNEL_FIXTURE__.info().settings.mode==='clean','Result did not save.');await settle();
   assert(mode.isConnected && mode.value==='clean','Saving Result replaced its control.');
   const {t}=await import('/src/i18n.ts');
-  const controls=[['result','dictation.settings.result'],['shortcut','dictation.shortcut.title'],['language','dictation.language.title'],['history','dictation.history.retention']].map(([name,key])=>({control:root.querySelector(`[data-preference="${name}"] .choice`),key}));
+  const controls=[['result','dictation.settings.result'],['language','dictation.language.title'],['history','dictation.history.retention']].map(([name,key])=>({control:root.querySelector(`[data-preference="${name}"] .choice`),key}));
   const values=controls.map(({control})=>control.value), originalLanguage=document.documentElement.lang;
   for(const language of [originalLanguage==='en'?'nl':'en',originalLanguage]) {
     const info=await api.info();await api.saveSettings({...info.settings,ui_language:language});

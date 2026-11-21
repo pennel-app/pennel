@@ -55,7 +55,7 @@ function assertMain(owner, operations) {
 async function showPad() {
   click(section("dictation"));
   await until(() => document.querySelector(".dictation-home") || document.querySelector("textarea.dictation-pad"), "Dictation did not open inside main.");
-  if (!document.querySelector("textarea.dictation-pad")) click(document.querySelector(".dictation-pad-option button"));
+  if (!document.querySelector("textarea.dictation-pad")) click(document.querySelector('[data-dictation-section="pad"]'));
   await until(() => document.querySelector("textarea.dictation-pad:not(:disabled)"), "The editable dictation pad did not become ready.");
   return document.querySelector("textarea.dictation-pad");
 }

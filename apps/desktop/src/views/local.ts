@@ -71,7 +71,11 @@ export async function localView(ctx: Context, embedded = false): Promise<HTMLEle
   const use = (model: LocalModel) =>
     ctx.save((s) => {
       if (!localId) return;
+      const linked = s.meeting_stt.provider_id === s.dictation_stt.provider_id && s.meeting_stt.model === s.dictation_stt.model;
       s.dictation_stt = { provider_id: localId, model: model.id };
+      if (linked || s.meeting_stt.provider_id === localId) {
+        s.meeting_stt = { provider_id: localId, model: model.id };
+      }
     });
 
   const unsupported = ctx.info.capabilities.local_models.status === "unsupported" ? ctx.info.capabilities.local_models.reason : null;
@@ -98,20 +102,25 @@ export async function localView(ctx: Context, embedded = false): Promise<HTMLEle
         ),
       ];
     } else {
-      const start = async () => {
+      const start = async (autoUse = false) => {
         failures.delete(model.id);
         progress.set(model.id, { downloaded: 0, total: model.size_bytes });
-        try { await api.downloadModel(model.id); }
-        catch (error) { progress.delete(model.id); failures.set(model.id, errorText(error)); }
+        try {
+          await api.downloadModel(model.id);
+          if (autoUse && localId) await use(model);
+        } catch (error) { progress.delete(model.id); failures.set(model.id, errorText(error)); }
         ctx.rerender();
       };
       actions =
         model.state.kind === "partial"
           ? [
-              controlButton({ class: "btn", disabled: !!unsupported, onclick: start }, l("providers.local.resume")),
+              controlButton({ class: "btn", disabled: !!unsupported, onclick: () => void start(false) }, l("providers.local.resume")),
               controlButton({ class: "btn danger", onclick: async () => await ctx.mutate(() => api.deleteModel(model.id)) }, l("settings.template.delete")),
             ]
-          : [controlButton({ class: "btn", disabled: !!unsupported, onclick: start }, l("providers.local.download"))];
+          : [
+              controlButton({ class: "btn primary", disabled: !!unsupported, onclick: () => void start(true) }, l("settings.ai.download_and_use")),
+              controlButton({ class: "btn", disabled: !!unsupported, onclick: () => void start(false) }, l("providers.local.download")),
+            ];
     }
     const inUseHere = inUse.has(model.id);
     const unmeasuredVariant = model.id === "whisper-large-v3-turbo-q5_0";

@@ -4,14 +4,12 @@ import { templateDisplayName, recordActionOptions } from "../settings-presentati
 import { api, type Capability, type KnownVoice, type MeetingTemplate, type SpeakerRecognitionMode, type SpeakerSetup } from "../api";
 import { controlButton, textField, askText, confirmDialog, errorText, h, section, select, toggle } from "../dom";
 import { trainedLabel } from "../speaker-state";
-import { SpeakerModels, enrollmentBlocker, enrollmentDialog, speakerDownload } from "./voices";
+import { SpeakerModels, enrollmentBlocker, enrollmentDialog } from "./voices";
 import type { Context } from "../main";
 import { suggestionAutomationChoice } from "../meeting-suggestion-settings";
 import { summaryAutomationChoice } from "../meeting-summary-automation";
 import { icon } from "../icons";
 import { appBadge } from "../app-icon";
-import { writingProfileSection } from "./writing-profile";
-import { reviewProcessingChoice } from "../review-processing";
 
 const apps: [string, string][] = [
   ["com.microsoft.teams2", "Microsoft Teams"], ["us.zoom.xos", "Zoom"],
@@ -94,27 +92,14 @@ async function templateSection(ctx: Context, templates: MeetingTemplate[]) {
 async function speakerSections(ctx: Context, setup: SpeakerSetup): Promise<HTMLElement[]> {
   const settings = ctx.info.settings;
   const mode: SpeakerRecognitionMode = settings.speaker_recognition === "cloud" ? "cloud" : "local";
-  const modelStatus = h("p", { class: "help", role: "status" });
-  let download: ReturnType<typeof speakerDownload> | null = null;
   const updateModels = () => {
-    modelStatus.textContent = models.ready ? t("settings.speakers.models_ready")
-      : models.downloading ? t("settings.speakers.models_downloading")
-      : setup.legacy_model ? t("settings.speakers.legacy_help")
-      : t("settings.speakers.models_missing");
-    download?.update();
     learnReason.textContent = enrollmentBlocker(setup, mode, models) ?? "";
     learnReason.hidden = !learnReason.textContent;
     for (const button of [learn, again]) button.disabled = !!enrollmentBlocker(setup, mode, models);
   };
   const models = new SpeakerModels(setup.model_ids, updateModels);
-  download = speakerDownload(models);
   ctx.onDispose(() => models.dispose());
 
-  const choice = select<SpeakerRecognitionMode>([["local", l("settings.speakers.route_local")], ["cloud", l("settings.speakers.route_cloud")]], mode,
-    (value) => ctx.save((next) => { next.speaker_recognition = value; }), "segmented");
-  choice.setAttribute("aria-label", t("settings.speakers.route_label"));
-  bindLocalization(choice, () => choice.setAttribute("aria-label", t("settings.speakers.route_label")));
-  choice.options[0].disabled = !setup.local_available;
   const namingPolicy = select<"suggest" | "automatic">([
     ["suggest", l("settings.speakers.names_suggest")], ["automatic", l("settings.speakers.names_automatic")],
   ], settings.meeting_app_name_policy === "automatic" ? "automatic" : "suggest",
@@ -122,13 +107,6 @@ async function speakerSections(ctx: Context, setup: SpeakerSetup): Promise<HTMLE
   namingPolicy.disabled = !settings.meeting_app_participants || locked(ctx.info.capabilities.meeting_app_speakers);
   namingPolicy.setAttribute("aria-label", t("settings.speakers.names_policy"));
   bindLocalization(namingPolicy, () => namingPolicy.setAttribute("aria-label", t("settings.speakers.names_policy")));
-  const route = [
-    setup.local_available ? null : h("p", { class: "help" }, l("settings.speakers.unavailable")),
-    ...mode === "cloud"
-      ? [h("p", { class: "help" }, l("settings.speakers.cloud_help")),
-        setup.signed_in ? null : h("button", { class: "text-button speaker-sign-in", onclick: () => ctx.navigate("account") }, l("settings.speakers.sign_in"))]
-      : setup.local_available ? [modelStatus, download.element, h("p", { class: "help" }, l("settings.speakers.local_help"))] : [],
-  ];
 
   const learnVoice = async () => {
     if (await enrollmentDialog(setup.enrollment_text)) ctx.rerender();
@@ -159,20 +137,19 @@ async function speakerSections(ctx: Context, setup: SpeakerSetup): Promise<HTMLE
   } }, l("settings.voice.forget_all"));
 
   const trained = h("span", { class: "grow" }, liveText(() => trainedLabel(setup.profile)));
-  bindLocalization(modelStatus, updateModels);
+  bindLocalization(learnReason, updateModels);
+  const voiceSection = section(l("settings.voice.title"), l("settings.voice.help"),
+    h("div", { class: "row" }, trained, ...(setup.profile ? [again, forget] : [learn])),
+    learnReason,
+    toggle(l("settings.speakers.meeting_app"), settings.meeting_app_participants,
+      (value) => ctx.save((next) => { next.meeting_app_participants = value; }), ctx.info.capabilities.meeting_app_speakers),
+    h("p", { class: "help" }, l("settings.speakers.meeting_app_help")),
+    h("div", { class: "row speaker-name-policy" }, h("span", { class: "grow" }, l("settings.speakers.names_policy")), namingPolicy),
+    h("p", { class: "help" }, l("settings.speakers.names_help")),
+    h("button", { class: "text-button", onclick: () => ctx.navigate("ai-models") }, l("settings.ai.manage_link")));
+  voiceSection.dataset.settingsAnchor = "meeting-voices";
   const sections = [
-    section(l("settings.speakers.title"), l("settings.speakers.identity_help"),
-      toggle(l("settings.speakers.automatic"), settings.diarization,
-        (value) => ctx.save((next) => { next.diarization = value; }), ctx.info.capabilities.diarization),
-      toggle(l("settings.speakers.meeting_app"), settings.meeting_app_participants,
-        (value) => ctx.save((next) => { next.meeting_app_participants = value; }), ctx.info.capabilities.meeting_app_speakers),
-      h("p", { class: "help" }, l("settings.speakers.meeting_app_help")),
-      h("div", { class: "row speaker-name-policy" }, h("span", { class: "grow" }, l("settings.speakers.names_policy")), namingPolicy),
-      h("p", { class: "help" }, l("settings.speakers.names_help")),
-      h("div", { class: "row speaker-route" }, choice), ...route),
-    section(l("settings.voice.title"), l("settings.voice.help"),
-      h("div", { class: "row" }, trained,
-        ...(setup.profile ? [again, forget] : [learn])), learnReason),
+    voiceSection,
     section(l("settings.voice.known_title"), l("settings.voice.known_help"),
       setup.known.length ? setup.known.map(knownRow)
         : h("p", { class: "help" }, l("settings.voice.known_empty")),
@@ -187,29 +164,33 @@ export async function meetingSettingsView(ctx: Context): Promise<HTMLElement> {
   const [templates, recording, setup] = await Promise.all([api.meetingTemplates(), api.meetingStatus(), api.speakerSetup()]);
   const pathLocked = ctx.info.preview || recording.busy;
   const path = h("span", { class: "grow meeting-path", "aria-label": l("settings.folder.label") }, ctx.info.preview ? l("settings.folder.preview") : settings.meetings_dir || "~/Pennel");
+  const afterMeeting = section(l("settings.after_meeting"), null,
+    h("h3", {}, l("meetings.automatic_titles_title")), h("p", { class: "help" }, l("meetings.automatic_titles_help")),
+    h("h3", {}, l("meetings.summary_automation_title")),
+    summaryAutomationChoice({ ...ctx, get info() { return ctx.info; }, onInfoChange: () => undefined }).root,
+    suggestionAutomationChoice(ctx).root);
+  afterMeeting.dataset.settingsAnchor = "after-meeting";
+  const folderSection = section(l("settings.folder.title"), l("settings.folder.help"),
+    h("div", { class: "row" }, path,
+      controlButton({ class: "btn", disabled: pathLocked, onclick: async () => {
+        const selected = await api.chooseMeetingsDir();
+        if (selected !== null) await ctx.save((next) => { next.meetings_dir = selected; });
+      } }, l("settings.folder.choose")),
+      settings.meetings_dir ? controlButton({ class: "btn", disabled: pathLocked, onclick: () => ctx.save((next) => { next.meetings_dir = ""; }) }, l("settings.folder.default")) : null),
+    ctx.info.preview ? h("p", { class: "help" }, l("settings.folder.preview_help")) : null,
+    !ctx.info.preview && recording.busy ? h("p", { class: "help" }, l("settings.folder.busy_help")) : null,
+    /(?:Mobile Documents|\/Documents(?:\/|$)|\/Desktop(?:\/|$))/.test(settings.meetings_dir)
+      ? h("p", { class: "help" }, l("settings.folder.sync_help")) : null);
+  folderSection.dataset.settingsAnchor = "meeting-folder";
+  const templatesList = await templateSection(ctx, templates);
+  templatesList.dataset.settingsAnchor = "meeting-templates";
   return h("div", { class: "settings-pane" },
-    reviewProcessingChoice(ctx).root,
-    section(l("settings.after_meeting"), null,
-      h("h3", {}, l("meetings.automatic_titles_title")), h("p", { class: "help" }, l("meetings.automatic_titles_help")),
-      h("h3", {}, l("meetings.summary_automation_title")),
-      summaryAutomationChoice({ ...ctx, get info() { return ctx.info; }, onInfoChange: () => undefined }).root,
-      suggestionAutomationChoice(ctx).root),
-    section(l("settings.folder.title"), l("settings.folder.help"),
-      h("div", { class: "row" }, path,
-        controlButton({ class: "btn", disabled: pathLocked, onclick: async () => {
-          const selected = await api.chooseMeetingsDir();
-          if (selected !== null) await ctx.save((next) => { next.meetings_dir = selected; });
-        } }, l("settings.folder.choose")),
-        settings.meetings_dir ? controlButton({ class: "btn", disabled: pathLocked, onclick: () => ctx.save((next) => { next.meetings_dir = ""; }) }, l("settings.folder.default")) : null),
-      ctx.info.preview ? h("p", { class: "help" }, l("settings.folder.preview_help")) : null,
-      !ctx.info.preview && recording.busy ? h("p", { class: "help" }, l("settings.folder.busy_help")) : null,
-      /(?:Mobile Documents|\/Documents(?:\/|$)|\/Desktop(?:\/|$))/.test(settings.meetings_dir)
-        ? h("p", { class: "help" }, l("settings.folder.sync_help")) : null),
+    afterMeeting,
     section(l("settings.template.default"), null, select(templates.map((template) => [template.id, templateDisplayName(template)]), settings.default_template,
       (id) => ctx.save((next) => { next.default_template = id; }), "menu")),
-    await templateSection(ctx, templates),
+    templatesList,
     ...await speakerSections(ctx, setup),
-    writingProfileSection(ctx),
+    folderSection,
     section(l("settings.audio.title"), l("settings.audio.help"),
       select([["30", l("settings.audio.days30")], ["90", l("settings.audio.days90")], ["365", l("settings.audio.year")], ["0", l("settings.action.always")]], String(settings.meeting_audio_retention_days),
         (value) => ctx.save((next) => { next.meeting_audio_retention_days = Number(value); }))));
@@ -243,34 +224,38 @@ export async function recordingSettingsView(ctx: Context): Promise<HTMLElement> 
     await ctx.save((next) => { next.event_rules.push({ title, action: "always" }); });
   };
   addTitle.addEventListener("keydown", (event) => { if (event.key === "Enter") void add(); });
+  const detectSection = section(l("settings.recording.detect_title"), l("settings.recording.detect_help"),
+    toggle(l("settings.recording.auto_detect"), settings.auto_detect, (value) => ctx.save((next) => { next.auto_detect = value; }), capabilities.call_detection),
+    shortcutToggle, shortcutError,
+    h("button", { class: "text-button", onclick: () => ctx.navigate("shortcuts") }, l("shortcuts.all")),
+    toggle(l("settings.recording.echo"), settings.echo_cancellation,
+      (value) => ctx.save((next) => { next.echo_cancellation = value; }), capabilities.echo_cancellation),
+    toggle(l("settings.recording.consent"), settings.consent_enabled,
+      (value) => ctx.save((next) => { next.consent_enabled = value; })));
+  detectSection.dataset.settingsAnchor = "recording-detect";
+  const calendarSection = section(l("settings.calendar.title"), platform === "macos"
+    ? l("settings.calendar.mac_help")
+    : l("settings.calendar.help"),
+    toggle(l("settings.calendar.use"), settings.calendar_enabled, async (value) => {
+      if (value && capabilities.calendar.status === "permission_required") await api.requestPermission("calendar");
+      await ctx.save((next) => { next.calendar_enabled = value; });
+    }, capabilities.calendar),
+    settings.calendar_enabled && !locked(capabilities.calendar) ? snapshot.calendars.map((calendar) => h("div", { class: "row rule-row" },
+      h("span", { class: "grow" }, calendar.name),
+      select(recordActionOptions(), settings.calendar_rules.find((rule) => rule.calendar_id === calendar.id)?.action ?? "ask", (action) => ctx.save((next) => {
+        next.calendar_rules = next.calendar_rules.filter((rule) => rule.calendar_id !== calendar.id);
+        if (action !== "ask") next.calendar_rules.push({ calendar_id: calendar.id, calendar_name: calendar.name, action });
+      })))) : null);
+  calendarSection.dataset.settingsAnchor = "recording-calendar";
   return h("div", { class: "settings-pane" },
-    section(l("settings.recording.detect_title"), l("settings.recording.detect_help"),
-      toggle(l("settings.recording.auto_detect"), settings.auto_detect, (value) => ctx.save((next) => { next.auto_detect = value; }), capabilities.call_detection),
-      shortcutToggle, shortcutError,
-      h("button", { class: "text-button", onclick: () => ctx.navigate("shortcuts") }, l("shortcuts.all")),
-      toggle(l("settings.recording.echo"), settings.echo_cancellation,
-        (value) => ctx.save((next) => { next.echo_cancellation = value; }), capabilities.echo_cancellation),
-      toggle(l("settings.recording.consent"), settings.consent_enabled,
-        (value) => ctx.save((next) => { next.consent_enabled = value; }))),
+    detectSection,
+    calendarSection,
     section(l("settings.recording.per_app"), null,
       [...appIds].map(([id, name]) => h("div", { class: "row rule-row" }, appBadge(id).icon, h("span", { class: "grow" }, name),
         select(recordActionOptions(), settings.app_rules.find((rule) => rule.bundle_id === id)?.action ?? "ask", (action) => ctx.save((next) => {
           next.app_rules = next.app_rules.filter((rule) => rule.bundle_id !== id);
           if (action !== "ask") next.app_rules.push({ bundle_id: id, action });
         }))))),
-    section(l("settings.calendar.title"), platform === "macos"
-      ? l("settings.calendar.mac_help")
-      : l("settings.calendar.help"),
-      toggle(l("settings.calendar.use"), settings.calendar_enabled, async (value) => {
-        if (value && capabilities.calendar.status === "permission_required") await api.requestPermission("calendar");
-        await ctx.save((next) => { next.calendar_enabled = value; });
-      }, capabilities.calendar),
-      settings.calendar_enabled && !locked(capabilities.calendar) ? snapshot.calendars.map((calendar) => h("div", { class: "row rule-row" },
-        h("span", { class: "grow" }, calendar.name),
-        select(recordActionOptions(), settings.calendar_rules.find((rule) => rule.calendar_id === calendar.id)?.action ?? "ask", (action) => ctx.save((next) => {
-          next.calendar_rules = next.calendar_rules.filter((rule) => rule.calendar_id !== calendar.id);
-          if (action !== "ask") next.calendar_rules.push({ calendar_id: calendar.id, calendar_name: calendar.name, action });
-        })))) : null),
     section(l("settings.recording.per_meeting"), l("settings.recording.rule_help"),
       h("div", { class: "row" }, addTitle, controlButton({ class: "btn", onclick: add }, l("settings.recording.add_rule"))),
       settings.event_rules.map((rule) => h("div", { class: "row rule-row" }, h("span", { class: "grow" }, rule.title),

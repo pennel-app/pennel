@@ -62,13 +62,10 @@ export async function checkReviewSetupNavigation() {
  const setup = review.querySelector('.insight-connection-settings');
  assert(!setup.hidden, 'Unavailable Review has no connection setup action.');
  setup.click();
- await until(() => document.querySelector('[data-settings-category="advanced"][aria-current="page"]'), 'Review setup did not open Advanced settings.');
- await until(() => document.querySelector('details[data-settings-detail="models"]'), 'Advanced model settings did not mount.');
- const models = document.querySelector('details[data-settings-detail="models"]');
- assert(models?.open, 'Review setup did not open the Models section containing the tested setup.');
- assert(!document.querySelector('details[data-settings-detail="providers"]').open, 'Review setup opened Providers instead of its tested model setup.');
- await until(() => models.querySelector('details[data-inference-experimental]'), 'Experimental model connections did not mount.');
- const experimental = models.querySelector('details[data-inference-experimental]');
+ await until(() => document.querySelector('[data-settings-category="ai-models"][aria-current="page"]'), 'Review setup did not open AI & Models.');
+ await until(() => document.querySelector('.ai-models-hub'), 'AI & Models hub did not mount.');
+ await until(() => document.querySelector('.ai-models-hub details[data-inference-experimental]'), 'Experimental model connections did not mount.');
+ const experimental = document.querySelector('.ai-models-hub details[data-inference-experimental]');
  experimental.querySelector(':scope > summary').click();
  await until(() => experimental.open && experimental.querySelector('[data-tested-suggestion-apply]'), 'Tested Review setup is not reachable from the connection action.');
  const forbidden = ['begin_insights_analysis', 'verify_inference', 'inference_decide', 'inference_rerank', 'set_key', 'download_model'];

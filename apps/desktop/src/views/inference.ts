@@ -61,7 +61,7 @@ export async function inferenceModelsView(ctx: Context): Promise<HTMLElement[]> 
   const supported = Array.isArray(protocols) ? protocols.filter((item) => Array.isArray(item.allowed_provider_kinds) && typeof item.managed === "boolean") : [];
   let renderRequested = false;
   const rerender = () => { if (!renderRequested) { renderRequested = true; queueMicrotask(() => ctx.rerender()); } };
-  const sections = await Promise.all((["decision", "reranking"] as const).map((capability) => inferenceSection(ctx, capability, supported, rerender, capability === "decision" ? presets : [])));
+  const sections = await Promise.all((["decision"] as const).map((capability) => inferenceSection(ctx, capability, supported, rerender, presets)));
   const root = h("details", { class: "experimental-connections", "data-inference-experimental": true, open: experimentalOpen },
     h("summary", {}, label(presets.length ? "experimental_review" : "experimental")), h("p", { class: "help" }, label(presets.length ? "experimental_review_help" : "experimental_help")), sections);
   root.addEventListener("toggle", () => { if (root.isConnected) experimentalOpen = root.open; });

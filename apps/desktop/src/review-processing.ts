@@ -67,7 +67,7 @@ export function reviewProcessingChoice(ctx: Context) {
   const option = (value: "cloud" | "local") => controlButton({ class: "review-processing-option", role: "radio", "data-review-processing-source": value,
     onclick: () => choose(value) }, h("strong", {}, label(value)), h("span", { class: "help" }, label(value === "cloud" ? "cloud_help" : "local_help")));
   const cloudOption = option("cloud"), localOption = option("local");
-  const signIn = controlButton({ class: "btn", "data-review-processing-sign-in": true, onclick: () => ctx.navigate("cloud") }, label("sign_in"));
+  const signIn = controlButton({ class: "btn", "data-review-processing-sign-in": true, onclick: () => ctx.navigate("account") }, label("sign_in"));
   const download = controlButton({ class: "btn", "data-review-processing-download": true, onclick: () => { void acquire(); } }, label("download"));
   const cancel = controlButton({ class: "btn", "data-review-processing-cancel": true, onclick: async () => {
     cancelling = true;
