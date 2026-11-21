@@ -125,6 +125,15 @@ impl Shared {
         }
     }
 
+    pub fn keys_for_meeting_review(&self) -> Result<ApiKeys, String> {
+        let settings = self.settings();
+        if let Some(config) = settings.decision {
+            self.keys_for(&[config.provider_id.as_str()])
+        } else {
+            self.keys_for(&[settings.llm.provider_id.as_str()])
+        }
+    }
+
     /// Model listings must not fail because one unrelated saved key is blocked.
     pub fn accessible_keys(&self) -> ApiKeys {
         let settings = self.settings();

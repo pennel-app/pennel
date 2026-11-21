@@ -3314,6 +3314,10 @@ impl PennelEngine {
         Ok(Transcript { raw, text, cleanup })
     }
 
+    pub(crate) fn system_llm_model(&self) -> Option<Arc<dyn SystemLanguageModel>> {
+        self.system_llm.read().unwrap().clone()
+    }
+
     pub(crate) fn complete_llm(
         &self,
         provider: &ProviderConfig,

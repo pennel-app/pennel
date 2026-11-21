@@ -373,7 +373,7 @@ pub(crate) fn run_after_summary(app: AppHandle, shared: Arc<Shared>, id: String)
     };
     let backend = CoreBackend {
         engine: shared.engine.clone(),
-        read_keys: || shared.keys_for_inference(pennel_core::InferenceCapability::Decision),
+        read_keys: || shared.keys_for_meeting_review(),
     };
     drive(
         &backend,

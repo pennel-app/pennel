@@ -997,6 +997,68 @@ impl<T: Send + 'static> MeetingAnalysisCoordinator<T> {
         ))
     }
 
+    pub(crate) fn begin_manual_direct(
+        &self,
+        identity: MeetingAnalysisIdentity,
+        deadline: Instant,
+        parent: Arc<InferenceCancellation>,
+        configured: &crate::MeetingConfiguredInference,
+    ) -> Result<MeetingAnalysisAdmission, MeetingAnalysisScheduleError> {
+        if deadline <= (self.inner.clock)() {
+            return Err(MeetingAnalysisScheduleError::Expired);
+        }
+        if !identity.valid() || parent.is_cancelled() {
+            return Err(MeetingAnalysisScheduleError::Stale);
+        }
+        let mut state = self.inner.state.lock().unwrap();
+        let meeting = state
+            .meetings
+            .get(&identity.meeting_uid)
+            .ok_or(MeetingAnalysisScheduleError::Unavailable)?;
+        if !meeting.identity.same_binding(&identity) {
+            return Err(MeetingAnalysisScheduleError::Stale);
+        }
+        if let Some(active) = &meeting.active {
+            if active.priority == InferencePriority::BackgroundAnalysis {
+                active.cancellation.cancel();
+            }
+            return Err(MeetingAnalysisScheduleError::Busy);
+        }
+        if meeting.hints.speech_busy
+            || meeting.hints.foreground_busy
+            || state.meetings.values().any(|meeting| {
+                meeting
+                    .active
+                    .as_ref()
+                    .is_some_and(|active| active.priority == InferencePriority::ExplicitAnalysis)
+            })
+        {
+            return Err(MeetingAnalysisScheduleError::Busy);
+        }
+        for meeting in state.meetings.values() {
+            if let Some(active) = meeting
+                .active
+                .as_ref()
+                .filter(|active| active.priority == InferencePriority::BackgroundAnalysis)
+            {
+                active.cancellation.cancel();
+            }
+        }
+        state
+            .meetings
+            .get_mut(&identity.meeting_uid)
+            .unwrap()
+            .pending = None;
+        Ok(self.admission(
+            identity,
+            deadline,
+            parent,
+            InferencePriority::ExplicitAnalysis,
+            configured,
+            &mut state,
+        ))
+    }
+
     pub fn offer_background(
         &self,
         snapshot: ScheduledMeetingSnapshot<T>,
