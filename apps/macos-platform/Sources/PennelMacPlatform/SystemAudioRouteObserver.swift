@@ -57,7 +57,7 @@ final class SystemAudioRouteObserver: @unchecked Sendable {
         return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &value) == noErr ? value : nil
     }
 
-    private static func systemSubscription(object: AudioObjectID, selector: AudioObjectPropertySelector,
+    static func systemSubscription(object: AudioObjectID, selector: AudioObjectPropertySelector,
                                            handler: @escaping @Sendable () -> Void) -> (() -> Void)? {
         var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
                                                 mElement: kAudioObjectPropertyElementMain)

@@ -516,14 +516,8 @@ public func captureStop(_ handle: UnsafeMutableRawPointer?) {
 func meetingStart(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: UnsafePointer<CChar>?, _ echo: Bool, _ sink: @escaping AudioSink, _ context: UnsafeMutableRawPointer?, _ errorOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> UnsafeMutableRawPointer? {
     guard let directory = decodeString(rawDirectory) else { errorOut?.pointee = bridgeString("No meeting folder specified"); return nil }
     let app = decodeString(rawApp)
-    return onMain {
-        let capture = NativeMeetingRecorder()
-        do {
-            let processes: (() -> [AudioObjectID])? = app.map { app in { MicUsageMonitor.processObjects(bundleId: app) } }
-            try capture.start(directory: URL(fileURLWithPath: directory), sink: sink, context: context, tapProcesses: processes, echoCancellation: echo)
-            return Unmanaged.passRetained(capture).toOpaque()
-        } catch { _ = capture.stop(); writeError(errorOut, error); return nil }
-    }
+    return startMeetingCapture(directory: directory, app: app, microphone: nil, system: nil, echo: echo,
+                               sink: sink, context: context, scopeChanged: nil, level: nil, errorOut: errorOut)
 }
 
 @_cdecl("pennel_mac_meeting_status")
@@ -557,17 +551,28 @@ private func startMeetingPaths(_ rawDirectory: UnsafePointer<CChar>?, _ rawApp: 
         errorOut?.pointee = bridgeString("No recording paths provided")
         return nil
     }
-    let app = decodeString(rawApp)
-    return onMain {
-        let capture = NativeMeetingRecorder()
-        do {
-            let processes: (() -> [AudioObjectID])? = app.map { app in { MicUsageMonitor.processObjects(bundleId: app) } }
-            try capture.start(directory: URL(fileURLWithPath: directory), sink: sink, context: context,
-                              tapProcesses: processes, echoCancellation: echo,
-                              microphoneURL: URL(fileURLWithPath: microphone), systemURL: URL(fileURLWithPath: system),
-                              scopeChanged: scopeChanged, level: level)
-            return Unmanaged.passRetained(capture).toOpaque()
-        } catch { _ = capture.stop(); writeError(errorOut, error); return nil }
+    return startMeetingCapture(directory: directory, app: decodeString(rawApp), microphone: microphone,
+                               system: system, echo: echo, sink: sink, context: context,
+                               scopeChanged: scopeChanged, level: level, errorOut: errorOut)
+}
+
+private func startMeetingCapture(directory: String, app: String?, microphone: String?, system: String?,
+                                 echo: Bool, sink: @escaping AudioSink, context: UnsafeMutableRawPointer?,
+                                 scopeChanged: ((Bool) -> Void)?, level: ((UInt32, Float) -> Void)?,
+                                 errorOut: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> UnsafeMutableRawPointer? {
+    let capture = onMain { NativeMeetingRecorder() }
+    do {
+        let processes: (() -> [AudioObjectID])? = app.map { app in { MicUsageMonitor.processObjects(bundleId: app) } }
+        try capture.start(directory: URL(fileURLWithPath: directory), sink: sink, context: context,
+                          tapProcesses: processes, echoCancellation: echo,
+                          microphoneURL: microphone.map { URL(fileURLWithPath: $0) },
+                          systemURL: system.map { URL(fileURLWithPath: $0) },
+                          scopeChanged: scopeChanged, level: level)
+        return Unmanaged.passRetained(capture).toOpaque()
+    } catch {
+        _ = onMain { capture.stop() }
+        writeError(errorOut, error)
+        return nil
     }
 }
 

@@ -137,6 +137,9 @@ struct MacCaptureHealth {
     echo_cancellation: bool,
     archive_error: Option<String>,
     capture_warning: Option<String>,
+    capture_warnings: Option<Vec<String>>,
+    #[serde(skip)]
+    diagnostics_save_failed: bool,
     terminal_error: Option<String>,
     capture_diagnostics: serde_json::Value,
 }
@@ -150,18 +153,25 @@ impl MacCaptureHealth {
         })
     }
 
-    fn warning(&self) -> Option<String> {
+    fn warning(&self, language: pennel_core::InterfaceLanguage) -> Option<String> {
+        // Older native snapshots supplied only a single warning.
+        let capture = self
+            .capture_warnings
+            .as_deref()
+            .unwrap_or(self.capture_warning.as_slice());
         let mut warnings = Vec::new();
         for warning in [
-            &self.microphone_error,
-            &self.system_audio_error,
-            &self.archive_error,
-            &self.capture_warning,
+            self.microphone_error.as_deref(),
+            self.system_audio_error.as_deref(),
+            self.archive_error.as_deref(),
+            self.diagnostics_save_failed
+                .then_some("The recording diagnostics could not be saved."),
         ]
         .into_iter()
         .flatten()
+        .chain(capture.iter().map(String::as_str))
         {
-            let warning = crate::commands::localize_error_message(warning);
+            let warning = crate::commands::localize_error_message_for_language(warning, language);
             if !warnings.contains(&warning) {
                 warnings.push(warning);
             }
@@ -237,7 +247,7 @@ impl MacCaptureMonitor {
             let mut lost_events = 0;
             loop {
                 let mut snapshot = MacCaptureHealth::from_status(native.status());
-                if crate::recording_metadata::persist_capture(
+                snapshot.diagnostics_save_failed = crate::recording_metadata::persist_capture(
                     &engine,
                     &id,
                     &snapshot.capture_diagnostics,
@@ -245,11 +255,7 @@ impl MacCaptureMonitor {
                     &mut last_sequence,
                     &mut lost_events,
                 )
-                .is_err()
-                {
-                    snapshot.capture_warning =
-                        Some("The recording diagnostics could not be saved.".into());
-                }
+                .is_err();
                 *next_health.lock().unwrap() = snapshot;
                 match receiver.recv_timeout(Duration::from_secs(1)) {
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => {
@@ -1311,7 +1317,7 @@ impl MeetingRecorder {
         {
             self.native
                 .as_ref()
-                .and_then(|native| native.snapshot().warning())
+                .and_then(|native| native.snapshot().warning(crate::ui::language()))
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -1919,9 +1925,66 @@ mod tests {
         assert!(!status.echo_cancellation);
         assert_eq!(status.terminal_error, None);
         assert_eq!(
-            status.warning().as_deref(),
+            status
+                .warning(pennel_core::InterfaceLanguage::English)
+                .as_deref(),
             Some("Only the microphone is being recorded. Echo cancellation is not active.")
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_capture_warnings_localize_each_message_in_priority_order() {
+        let microphone = "Microphone recording was interrupted. Check your microphone.";
+        let system = "System audio is unavailable. Only the microphone is being recorded.";
+        let archive = "The audio recording could not be saved. Check your free disk space.";
+        let timing = "System audio was interrupted by a timing problem. Check the recording.";
+        let echo = "Echo cancellation is not active. If you are using speakers, headphones can help prevent echo.";
+        let status = MacCaptureHealth::from_status(serde_json::json!({
+            "microphone_error": microphone, "system_audio_error": system, "archive_error": archive,
+            "capture_warning": format!("{archive} {timing} {echo}"),
+            "capture_warnings": [archive, timing, echo],
+            "terminal_error": archive
+        }));
+        assert_eq!(status.terminal_error.as_deref(), Some(archive));
+        assert_eq!(
+            status
+                .warning(pennel_core::InterfaceLanguage::English)
+                .unwrap(),
+            [microphone, system, archive, timing, echo].join(" "),
+        );
+        assert_eq!(
+            status.warning(pennel_core::InterfaceLanguage::Dutch).unwrap(),
+            [
+                "De microfoonopname is onderbroken. Controleer je microfoon.",
+                "Systeemgeluid is niet beschikbaar. Alleen de microfoon wordt opgenomen.",
+                "De audio-opname kon niet worden bewaard. Controleer de vrije schijfruimte.",
+                "Het systeemgeluid was onderbroken door een timingprobleem. Controleer de opname.",
+                "Echo-onderdrukking is niet actief. Als je via luidsprekers luistert, kan een koptelefoon echo helpen voorkomen.",
+            ].join(" "),
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_warning_list_keeps_the_rust_diagnostics_save_failure() {
+        let warning = "System audio was interrupted by a timing problem. Check the recording.";
+        let failure = "The recording diagnostics could not be saved.";
+        for capture in [vec![], vec![warning]] {
+            let mut status = MacCaptureHealth::from_status(serde_json::json!({
+                "capture_warning": (!capture.is_empty()).then(|| capture.join(" ")),
+                "capture_warnings": capture,
+            }));
+            status.diagnostics_save_failed = true;
+            let expected = std::iter::once(failure)
+                .chain(capture)
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert_eq!(
+                status.warning(pennel_core::InterfaceLanguage::English),
+                Some(expected)
+            );
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -1965,7 +2028,12 @@ mod tests {
             "terminal_error": failure
         }));
         assert_eq!(status.terminal_error.as_deref(), Some(failure));
-        assert_eq!(status.warning().as_deref(), Some("Saving audio failed."));
+        assert_eq!(
+            status
+                .warning(pennel_core::InterfaceLanguage::English)
+                .as_deref(),
+            Some("Saving audio failed.")
+        );
         assert!(status.microphone_active);
         assert!(status.system_audio_available);
     }
@@ -1974,7 +2042,11 @@ mod tests {
     #[test]
     fn malformed_native_health_is_visible_without_claiming_a_terminal_capture_failure() {
         let status = MacCaptureHealth::from_status(serde_json::Value::Null);
-        assert!(status.warning().is_some());
+        assert!(
+            status
+                .warning(pennel_core::InterfaceLanguage::English)
+                .is_some()
+        );
         assert!(status.terminal_error.is_none());
     }
 

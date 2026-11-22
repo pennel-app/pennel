@@ -68,6 +68,19 @@ test("lightweight recording metadata localizes errors while preserving identity 
   assert.equal(Object.hasOwn(value, "transcript"), false);
 });
 
+test("Mac echo guidance follows the UI language only on the recording warning", () => {
+  const english = "Echo cancellation is not active. If you are using speakers, headphones can help prevent echo.";
+  const dutch = "Echo-onderdrukking is niet actief. Als je via luidsprekers luistert, kan een koptelefoon echo helpen voorkomen.";
+  const original = { audio_warning: english, notes: english, title: english, echo_cancellation_active: false };
+  try {
+    setInterfaceLanguage("nl");
+    const localized = localizeUiResponse("meeting_runtime_status", original);
+    assert.deepEqual(localized, { ...original, audio_warning: dutch });
+    setInterfaceLanguage("en");
+    assert.deepEqual(localizeUiResponse("meeting_runtime_status", localized), original);
+  } finally { setInterfaceLanguage("en"); }
+});
+
 test("structured pill problems localize recovery copy without changing delivery or preview data", () => {
   setInterfaceLanguage("en");
   const preview = { session_id: "pill-session", revision: 7, text: "Kies een spraakmodel." };
